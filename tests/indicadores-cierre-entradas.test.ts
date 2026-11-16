@@ -21,7 +21,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { cerrarMes, resumenDeCierre } from "@/db/consultas/indicadores/cierre";
+import { cerrarMes, cierres, resumenDeCierre } from "@/db/consultas/indicadores/cierre";
 import { asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
@@ -154,6 +154,33 @@ describe("el cierre cierra los periodos de los datos", () => {
       const m3 = await fila(tx, await medicionDe(tx, conVencido.id, MARZO));
       expect([m3.estado, m3.resultado_exacto]).toEqual(["cerrada", null]);
       expect((await fila(tx, await medicionDe(tx, conEnPlazo.id, MARZO))).estado).toBe("abierta");
+    }));
+});
+
+describe("lo que queda escrito del cierre cuenta los periodos de los datos (ola final, O9)", () => {
+  it("el resumen guardado, la bitácora y «Cierres anteriores» dicen cuántos periodos de datos cerró, y cuántos sin dato", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, nuevo, dato, abrirDato, reportarElDato, reportarLoPropio } = await entorno(tx);
+      const reportado = await dato("ZZ Reportado");
+      const vencido = await dato("ZZ Vencido");
+      const conReportado = await nuevo({ variables: { B: { datoId: reportado } } });
+      const conVencido = await nuevo({ variables: { B: { datoId: vencido } } });
+      await reportarElDato(await abrirDato(reportado), "10");
+      await abrirDato(vencido);
+      for (const ind of [conReportado, conVencido]) await reportarLoPropio(mide, await medicionDe(tx, ind.id, MARZO), { A: "9" });
+
+      const r = await cerrarMes(admin, MARZO, opc(tx));
+      expect(r).toMatchObject({ cerradas: 2, datosCerrados: 2 });
+      const [c] = await tx`SELECT resumen FROM cierres_indicadores WHERE id = ${r.cierreId}`;
+      expect(c.resumen).toMatchObject({ cerradas: 2, datos: { cerrados: 2, sinDato: 1 } });
+      const [b] = await tx`SELECT detalle FROM auditoria WHERE accion = 'indicadores_mes_cerrado' AND entidad_id = ${r.cierreId}`;
+      expect(b.detalle).toMatchObject({ mes: MARZO, cerradas: 2, datos: { cerrados: 2, sinDato: 1 } });
+      expect((await cierres({ sql: tx })).find((x) => x.id === r.cierreId)).toMatchObject({ cerradas: 2, datosCerrados: 2 });
+
+      // Un cierre anterior a este cambio no trae la cuenta: no dice nada, no dice cero.
+      const [viejo] = await tx`INSERT INTO cierres_indicadores (mes, cerrado_por, cerrado_en, resumen)
+        VALUES ('2003-02-28', ${admin.usuarioId}, ${ABRE}, ${tx.json({ cerradas: 4 })}) RETURNING id`;
+      expect((await cierres({ sql: tx })).find((x) => x.id === Number(viejo.id))).toMatchObject({ cerradas: 4, datosCerrados: null });
     }));
 });
 

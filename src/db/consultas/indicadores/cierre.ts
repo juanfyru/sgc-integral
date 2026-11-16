@@ -128,6 +128,11 @@ type Cuentas = {
   enPlazo: number;
   historicosSinRegistrar: number;
   porProceso: CuentasDeProceso[];
+  /**
+   * Los periodos de los datos compartidos que el cierre cerró, y cuántos de ellos sin valor («Sin dato»). Un cierre anterior
+   * a esta cuenta no la trae: quien lo lee no dice nada de ellos.
+   */
+  datos: { cerrados: number; sinDato: number };
 };
 
 function exigirAdministrar(sesion: SujetoPermiso): void {
@@ -404,6 +409,7 @@ function cuentas(c: Clasificacion, observaciones: { procesoId: number; proceso: 
     enPlazo: c.enPlazo,
     historicosSinRegistrar: c.historicosSinRegistrar,
     porProceso,
+    datos: { cerrados: c.datos.cierran.length, sinDato: c.datos.cierran.filter((d) => d.sinDato).length },
   };
 }
 
@@ -535,10 +541,16 @@ const mesRepetido = (err: unknown) =>
 /**
  * Cierra `mes` (spec §9): en una transacción, la fila del cierre con las cuentas del resumen, cada medición alcanzada a
  * `cerrada` con su evento `cierre` y cada periodo de un dato que se cierra a `cerrado` (sin valor, «Sin dato», el pendiente
- * que venció), con su evento `cierre` en su historial (anexo 14C, §3.5). Rechaza un mes que no ha terminado o que ya se
- * cerró (también si otro cierre del mismo mes gana la carrera: el `23505` de su índice único).
+ * que venció), con su evento `cierre` en su historial (anexo 14C, §3.5). El resumen guardado y la bitácora llevan también
+ * cuántos periodos de datos cerró (`datos`): un cierre no se modifica, así que lo que no se guarde aquí no se sabrá después.
+ * Rechaza un mes que no ha terminado o que ya se cerró (también si otro cierre del mismo mes gana la carrera: el `23505` de su
+ * índice único).
  */
-export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opciones): Promise<{ cierreId: number; cerradas: number }> {
+export async function cerrarMes(
+  sesion: SesionFlujo,
+  mes: string,
+  opciones?: Opciones,
+): Promise<{ cierreId: number; cerradas: number; datosCerrados: number }> {
   exigirAdministrar(sesion);
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
@@ -599,7 +611,7 @@ export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opc
         entidadId: cierreId,
         detalle: { mes: periodo.clave, ...resumen },
       });
-      return { cierreId, cerradas: resumen.cerradas };
+      return { cierreId, cerradas: resumen.cerradas, datosCerrados: resumen.datos.cerrados };
     });
   } catch (err) {
     if (mesRepetido(err)) throw new ErrorIndicador(YA_CERRADO);
@@ -607,10 +619,16 @@ export async function cerrarMes(sesion: SesionFlujo, mes: string, opciones?: Opc
   }
 }
 
-/** Los cierres hechos, del mes más reciente al más antiguo. Quien llama comprueba que la persona administra. */
-export async function cierres(opciones?: { sql?: Cliente }): Promise<{ id: number; mes: string; cerradoPor: string; cerradoEn: Date; cerradas: number }[]> {
+/**
+ * Los cierres hechos, del mes más reciente al más antiguo. `datosCerrados` son los periodos de datos compartidos que cerró;
+ * `null` en un cierre anterior a esa cuenta, que no la guardó. Quien llama comprueba que la persona administra.
+ */
+export async function cierres(
+  opciones?: { sql?: Cliente },
+): Promise<{ id: number; mes: string; cerradoPor: string; cerradoEn: Date; cerradas: number; datosCerrados: number | null }[]> {
   const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT c.id, to_char(c.mes, 'YYYY-MM') AS mes, u.nombre, c.cerrado_en, c.resumen->>'cerradas' AS cerradas
+  const filas = await sql`SELECT c.id, to_char(c.mes, 'YYYY-MM') AS mes, u.nombre, c.cerrado_en, c.resumen->>'cerradas' AS cerradas,
+      c.resumen #>> '{datos,cerrados}' AS datos_cerrados
     FROM cierres_indicadores c JOIN usuarios u ON u.id = c.cerrado_por
     ORDER BY c.mes DESC`;
   return filas.map((f) => ({
@@ -619,6 +637,7 @@ export async function cierres(opciones?: { sql?: Cliente }): Promise<{ id: numbe
     cerradoPor: f.nombre as string,
     cerradoEn: new Date(f.cerrado_en as string),
     cerradas: Number(f.cerradas ?? 0),
+    datosCerrados: f.datos_cerrados === null ? null : Number(f.datos_cerrados),
   }));
 }
 

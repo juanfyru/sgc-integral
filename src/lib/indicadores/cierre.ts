@@ -124,6 +124,9 @@ export function fraseDeDatosDelCierre(d: { seCierran: number; sinDato: number })
   return `También se ${d.seCierran === 1 ? "cerrará" : "cerrarán"} ${cuantos}${d.sinDato > 0 ? `, ${d.sinDato} sin dato` : ""}.`;
 }
 
+/** «1 periodo de un dato compartido», «3 periodos de datos compartidos»: los que cerró un cierre (el aviso, la bitácora). */
+export const periodosDeDatos = (n: number): string => (n === 1 ? "1 periodo de un dato compartido" : `${n} periodos de datos compartidos`);
+
 /** Lo que va a pasar al confirmar el cierre (spec §9.3), con singular y plural: «Se cerrará 1 medición: 1 reportada, …». */
 export function fraseDelCierre(r: { aCerrar: number; reportadas: number; sinDato: number; noAplica: number; sinAnalisis: number }): string {
   if (r.aCerrar === 0) return "No hay mediciones que cerrar: el mes queda cerrado igual y el siguiente cierre empieza después de él.";

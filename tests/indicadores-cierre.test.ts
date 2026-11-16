@@ -235,6 +235,7 @@ describe("el resumen y el cierre del mes", () => {
         enPlazo: 1,
         historicosSinRegistrar: 1,
         porProceso: [fila0(gth.nombre, { reportadas: 2, sinDato: 1, noAplica: 1, sinAnalisis: 1 })],
+        datos: { cerrados: 0, sinDato: 0 },
       });
       expect(cerradas).toBe(5);
 
@@ -266,7 +267,7 @@ describe("el resumen y el cierre del mes", () => {
       const [b] = await bitacora(tx, "indicadores_mes_cerrado", "cierre_indicadores", cierreId);
       expect(Number(b.usuario_id)).toBe(admin.usuarioId);
       expect(b.detalle).toEqual({ mes: MARZO, ...c.resumen });
-      expect((await cierres(opc(tx))).find((x) => x.id === cierreId)).toEqual({ id: cierreId, mes: MARZO, cerradoPor: admin.nombre, cerradoEn: AHORA, cerradas: 5 });
+      expect((await cierres(opc(tx))).find((x) => x.id === cierreId)).toEqual({ id: cierreId, mes: MARZO, cerradoPor: admin.nombre, cerradoEn: AHORA, cerradas: 5, datosCerrados: 0 });
     }));
 
   it("«cerrar hasta marzo» alcanza también enero y febrero", () =>

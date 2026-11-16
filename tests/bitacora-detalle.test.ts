@@ -987,6 +987,15 @@ describe("la medición de un indicador", () => {
       describirEvento({ accion: "indicadores_mes_cerrado", entidad: "cierre_indicadores", entidadId: 3, detalle });
     expect(delCierre({ mes: "2026-03", cerradas: 12, sinDato: 2 })).toBe("Cerró marzo de 2026 en los indicadores: 12 mediciones cerradas");
     expect(delCierre({ mes: "2026-03", cerradas: 1 })).toBe("Cerró marzo de 2026 en los indicadores: 1 medición cerrada");
+    // Con los periodos de los datos compartidos que cerró (ola final, O9); un cierre anterior no trae la cuenta y no dice nada.
+    expect(delCierre({ mes: "2026-03", cerradas: 12, datos: { cerrados: 3, sinDato: 1 } })).toBe(
+      "Cerró marzo de 2026 en los indicadores: 12 mediciones cerradas y 3 periodos de datos compartidos",
+    );
+    expect(delCierre({ mes: "2026-03", cerradas: 0, datos: { cerrados: 1, sinDato: 0 } })).toBe(
+      "Cerró marzo de 2026 en los indicadores: 0 mediciones cerradas y 1 periodo de un dato compartido",
+    );
+    expect(delCierre({ mes: "2026-03", cerradas: 12, datos: { cerrados: 0, sinDato: 0 } })).toBe("Cerró marzo de 2026 en los indicadores: 12 mediciones cerradas");
+    expect(delCierre({ mes: "2026-03", cerradas: 12, datos: "x" })).toBe("Cerró marzo de 2026 en los indicadores: 12 mediciones cerradas");
     expect(delCierre({})).toBe("Cerró un mes en los indicadores");
     const de = { codigo: "SGC-IND-01", periodo: "2026-03" };
     expect(frase("medicion_reabierta", { ...de, justificacion: "El dato venía de otro informe" })).toBe(

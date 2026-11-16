@@ -8,7 +8,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { cierres, mesPorOmision, resumenDeCierre } from "@/db/consultas/indicadores/cierre";
 import { pestanaDeDatos } from "@/db/consultas/indicadores/datos";
-import { esMesTerminado, etiquetaDeMes, mesesParaCerrar, PATRON_MES } from "@/lib/indicadores/cierre";
+import { esMesTerminado, etiquetaDeMes, mesesParaCerrar, PATRON_MES, periodosDeDatos } from "@/lib/indicadores/cierre";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -24,15 +24,20 @@ const COLUMNAS_CIERRES = [
   { clave: "por", etiqueta: "Cerrado por" },
   { clave: "cuando", etiqueta: "Cuándo" },
   { clave: "cerradas", etiqueta: "Mediciones cerradas", numerica: true },
+  { clave: "datos", etiqueta: "Periodos de datos cerrados", numerica: true },
 ];
 
 type Parametros = Record<string, string | string[] | undefined>;
 
-/** «Se cerró marzo de 2026: 12 mediciones cerradas.» tras cerrar (`?cerrado=AAAA-MM&cerradas=N`); `null` sin eso. */
+/**
+ * «Se cerró marzo de 2026: 12 mediciones cerradas.» tras cerrar (`?cerrado=AAAA-MM&cerradas=N`); `null` sin eso. Si además
+ * cerró periodos de datos compartidos (`&datos=M`), «… 12 mediciones cerradas y 3 periodos de datos compartidos.».
+ */
 function avisoDeCierre(sp: Parametros): string | null {
-  const { cerrado, cerradas } = sp;
+  const { cerrado, cerradas, datos } = sp;
   if (typeof cerrado !== "string" || !PATRON_MES.test(cerrado) || typeof cerradas !== "string" || !/^\d{1,6}$/.test(cerradas)) return null;
-  return `Se cerró ${etiquetaDeMes(cerrado).toLowerCase()}: ${cuenta(Number(cerradas), "medición cerrada", "mediciones cerradas")}.`;
+  const deDatos = typeof datos === "string" && /^[1-9]\d{0,5}$/.test(datos) ? ` y ${periodosDeDatos(Number(datos))}` : "";
+  return `Se cerró ${etiquetaDeMes(cerrado).toLowerCase()}: ${cuenta(Number(cerradas), "medición cerrada", "mediciones cerradas")}${deDatos}.`;
 }
 
 /**
@@ -125,6 +130,8 @@ export default async function PaginaCierre({ searchParams }: { searchParams: Pro
               <td className={celda}>{c.cerradoPor}</td>
               <td className={celda}>{fechaHoraLarga(c.cerradoEn)}</td>
               <td className={celdaNumerica}>{c.cerradas}</td>
+              {/* Un cierre anterior a esta cuenta no la guardó: no se sabe, y no se dice cero. */}
+              <td className={celdaNumerica}>{c.datosCerrados ?? <span className="text-muted-foreground">—</span>}</td>
             </tr>
           ))}
         </TablaDatos>

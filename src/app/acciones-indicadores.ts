@@ -452,15 +452,15 @@ export async function borrarIndicadorAccion(_prev: EstadoAccion, formData: FormD
 
 /**
  * Cierra el mes elegido (spec §9), sin clave (F14-DC9), y vuelve a «Cierre del mes» con cuántas mediciones cerró
- * (`cerrado=AAAA-MM&cerradas=N`).
+ * (`cerrado=AAAA-MM&cerradas=N`) y, si cerró alguno, cuántos periodos de datos compartidos (`&datos=M`).
  */
 // El cierre del mes y la reapertura en cascada bloquean varios indicadores: un `40P01` con quien reporta o cierra a la vez
 // llega legible (`sinInterbloqueoDelCierre`), sin reintentar.
 export async function cerrarMesAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { mes } = parsearFormulario(formData, EsquemaCierreMes);
-    const { cerradas } = await cerrarMes(sesion, mes).catch(sinInterbloqueoDelCierre);
-    return `/indicadores/cierre?cerrado=${mes}&cerradas=${cerradas}`;
+    const { cerradas, datosCerrados } = await cerrarMes(sesion, mes).catch(sinInterbloqueoDelCierre);
+    return `/indicadores/cierre?cerrado=${mes}&cerradas=${cerradas}${datosCerrados > 0 ? `&datos=${datosCerrados}` : ""}`;
   });
 }
 

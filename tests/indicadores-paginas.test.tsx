@@ -441,6 +441,16 @@ describe("el cierre del mes", () => {
       for (const raro of [{ cerrado: "2003-13", cerradas: "1" }, { cerrado: "2003-01", cerradas: "x" }]) {
         expect(await cierre(raro)).not.toContain("Se cerró");
       }
+      // Con los periodos de datos compartidos que cerró (ola final, O9); lo que no es un número no se dice.
+      expect(await cierre({ cerrado: "2003-01", cerradas: "2", datos: "3" })).toContain("Se cerró enero de 2003: 2 mediciones cerradas y 3 periodos de datos compartidos.");
+      expect(await cierre({ cerrado: "2003-01", cerradas: "2", datos: "1" })).toContain("Se cerró enero de 2003: 2 mediciones cerradas y 1 periodo de un dato compartido.");
+      expect(await cierre({ cerrado: "2003-01", cerradas: "2", datos: "x" })).toContain("Se cerró enero de 2003: 2 mediciones cerradas.");
+      // «Cierres anteriores» los cuenta; un cierre que no guardó la cuenta deja la celda en «—».
+      expect(cerrado).toContain(">Periodos de datos cerrados</th>");
+      expect(cerrado).toMatch(new RegExp(`Enero de 2003</td>.*?<td[^>]*>${cerradas}</td><td[^>]*>0</td>`));
+      await tx`INSERT INTO cierres_indicadores (mes, cerrado_por, cerrado_en, resumen)
+        VALUES ('2002-12-31', ${admin.usuarioId}, now(), ${tx.json({ cerradas: 4 })})`;
+      expect(await cierre({ mes: "2003-01" })).toMatch(/Diciembre de 2002<\/td>.*?<td[^>]*>4<\/td><td[^>]*><span[^>]*>—<\/span><\/td>/);
     }), 20_000);
 
   it("/indicadores/[codigo]: el acumulado del año que no alcanza la meta no pinta un Bien a secas", () =>

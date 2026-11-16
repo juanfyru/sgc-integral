@@ -1,4 +1,5 @@
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { periodosDeDatos } from "@/lib/indicadores/cierre";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "@/lib/indicadores/filtros";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION } from "@/lib/normograma/tipos";
 import { cuenta } from "@/lib/plural";
@@ -1065,7 +1066,10 @@ export function describirEvento(e: EventoAuditoria): string {
       const etiqueta = mes ? (periodoDe(mes, zonaHoraria())?.etiqueta ?? mes) : null;
       if (!etiqueta) return "Cerró un mes en los indicadores";
       const cerradas = numero(d.cerradas);
-      return `Cerró ${etiqueta} en los indicadores${cerradas === null ? "" : `: ${cuenta(cerradas, "medición cerrada", "mediciones cerradas")}`}`;
+      // Los periodos de datos compartidos que cerró (`datos.cerrados`); un cierre anterior a esa cuenta no la trae.
+      const datos = typeof d.datos === "object" && d.datos !== null ? numero((d.datos as { cerrados?: unknown }).cerrados) : null;
+      const deDatos = cerradas !== null && datos !== null && datos > 0 ? ` y ${periodosDeDatos(datos)}` : "";
+      return `Cerró ${etiqueta} en los indicadores${cerradas === null ? "" : `: ${cuenta(cerradas, "medición cerrada", "mediciones cerradas")}${deDatos}`}`;
     }
     case "medicion_reabierta": {
       // La fuente de una cascada va solo por su referencia (`porFuente`): la frase dice qué fue, sin nombrarla.
