@@ -43,7 +43,7 @@ import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propaga
 import { reaperturaEnTexto, type ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import { soportesDeVarias } from "@/db/consultas/indicadores/soportes";
 import { puedeAnalizar, puedeObservar, puedeRegistrarHistoricos } from "@/lib/alcance";
-import { soporteDeDatoEnPantalla, type SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
+import { soportesDeDatosDeLaMedicion, type SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
 import type { EstadoIndicador, Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import type { SesionValida } from "@/lib/sesion";
@@ -127,7 +127,7 @@ export async function datosDeResultados(
     const zona = zonaHoraria();
     const periodoDeMedicion = new Map(filas.flatMap((f) => (f.medicionId === null ? [] : [[f.medicionId, f.periodo] as const])));
     for (const [medicionId, variables] of await soportesDeDatosDeMediciones(sesion, indicador.id, medidas)) {
-      const deLaMedicion = variables.flatMap((v) => v.soportes.map((s) => soporteDeDatoEnPantalla(s, periodoDeMedicion.get(medicionId) ?? "", zona)));
+      const deLaMedicion = soportesDeDatosDeLaMedicion(variables, periodoDeMedicion.get(medicionId) ?? "", zona);
       if (deLaMedicion.length > 0) soportesDeDatos.set(medicionId, deLaMedicion);
     }
   }

@@ -19,3 +19,19 @@ export function soporteDeDatoEnPantalla(
   const deQue = s.periodo === periodo ? null : (periodoDe(s.periodo, zona)?.etiqueta ?? s.periodo);
   return { id: s.id, datoId: s.datoId, nombre: s.nombre, mime: s.mime, tamano: s.tamano, deQue };
 }
+
+/**
+ * Los soportes de los datos de una medición, de todas sus letras, cada archivo una vez: dos letras de una versión pueden
+ * tomar el mismo dato y entonces traen la misma lista (la clave de la lista en pantalla es el id del archivo).
+ */
+export function soportesDeDatosDeLaMedicion(
+  variables: readonly { soportes: readonly { id: number; datoId: number; nombre: string; mime: string; tamano: number; periodo: string }[] }[],
+  periodo: string,
+  zona: string,
+): SoporteDeDatoEnPantalla[] {
+  const vistos = new Set<number>();
+  return variables
+    .flatMap((v) => v.soportes)
+    .filter((s) => !vistos.has(s.id) && vistos.add(s.id))
+    .map((s) => soporteDeDatoEnPantalla(s, periodo, zona));
+}
