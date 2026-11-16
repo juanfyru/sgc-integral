@@ -346,7 +346,7 @@ la Fase 14, su entrega complementaria y el anexo de la 14B, y manda sobre los tr
 del 2026-11-15 están en su §2, las de Claude F14C-DC1 a DC42 en su §13; **el usuario aprobó el anexo el 2026-11-15**
 («acept»), con sus maquetas 9 a 15 y las decisiones 5.1 y 8.1). Plan:
 `docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con subagentes). La rama
-`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 50 confirmaciones al cerrar la Tarea 18, antes de
+`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 52 confirmaciones al cerrar la Tarea 18, antes de
 la verificación de cierre) se trabaja en el worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no
 está fusionada:** espera la verificación de cierre, el visto bueno del usuario a las decisiones de la ejecución
 («Decisiones adicionales (Fase 14C)») y su decisión de fusionar. Con ella se cierra la Fase 14 del diseño maestro. **Sin
@@ -396,7 +396,7 @@ de la demo, `npm run lint` y `npm run build`.
 - **La medición por sede o por servicio (Tareas 14 y 15):** la lista de categorías congelada en cada medición, la rejilla
   (escritorio y 390 px) con «Sin casos» y «No aplica» por fila, el total que escribe el sistema, «Actualizar categorías»,
   el resultado y el color de cada categoría al leer, «1 en Crítico» y su aviso con el total en Bien, la sección **Por
-  Sede** con barras acostadas y su tabla, el impreso y la hoja **Por categoría** del Excel.
+  Sede** con barras acostadas y su tabla, el impreso y la hoja **Por categoría <año>** del Excel.
 - **El cierre y la reapertura (Tarea 16):** una medición cerrada tiene cerradas sus entradas: el cierre espera a sus
   fuentes, cierra también los periodos de los datos y dice quién debía lo que quedó sin dato; la reapertura de un dato o de
   un componente va en cascada, con la lista antes de confirmar; «Cerrar de nuevo» exige la fuente cerrada y lo copiado al
@@ -433,14 +433,15 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
      del dato, y a `lider.cex` le llegó la «Corrección»); septiembre en **Falta un dato** (lo suyo ya reportado, sin tarea
      ni vencido); octubre en 95,6 %, Bien.
    - `CEX-ID-002` **Consultas de medicina general del trimestre** (trimestral, sin variables propias: nadie lo mide; meta
-     5.000): segundo trimestre cerrado en 5.178, Bien; **tercer trimestre en Falta un dato**, esperando septiembre.
+     5000): segundo trimestre cerrado en 5178, Bien; **tercer trimestre en Falta un dato**, esperando septiembre. (Las
+     pantallas del dato escriben sus cifras con punto de miles, decisión 3; las de los indicadores, no.)
    - `CEX-ID-003` **Adherencia a la guía de hipertensión arterial** (mensual, **por Sede**, meta 85 %, lo mide `lider.cex`
      y le hace seguimiento `coordinadora.sgc`): septiembre en 85,5 %, Bien, con **Puesto de salud Oriente en Crítico**
      (55 %), y el aviso sin leer de `coordinadora.sgc` («…: 85,5 %, Bien. En Crítico: Puesto de salud Oriente (55 %).
      Septiembre de 2026»); octubre en 89,1 %, Bien, con **Puesto de salud Norte «Sin casos»** y **Puesto de salud Sur «No
      aplica»** (cerrado por el arreglo de la planta física).
    - `SGC-ID-003` **Índice de desempeño del SGC** (trimestral, general, meta 90 %): el promedio del porcentaje de
-     cumplimiento de `SGC-IND-01`, `-02`, `-05`, `-06` y `-07`; tercer trimestre en 91,0 %, Bien.
+     cumplimiento de `SGC-IND-01`, `-02`, `-05`, `-06` y `-07`; tercer trimestre en 91 %, Bien.
    - `SGC-ID-004` **Índice de capacidad de atención** (trimestral, **restringido**, meta 90 %, aprobado por Gerencia): el
      promedio del cumplimiento de `GTH-IND-01` (restringido) y de `CEX-IND-01` (mensual: su acumulado del trimestre);
      tercer trimestre en 100 %, Bien. Es del proceso SGC, no de Consulta Externa (un restringido lo ve quien está asignado
@@ -458,37 +459,44 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
    realizadas, septiembre de 2026», en plazo (`lider.cex` también la tiene: responde por el dato). Ábrala: **Reportar el
    dato** muestra septiembre. Escriba **1600**, adjunte un PDF en **Soporte (opcional)** y pulse **Reportar**. Debe ver el
    dato puesto en dos indicadores de distinta periodicidad: `CEX-ID-001` septiembre en 87,9 %, Atención, y `CEX-ID-002`
-   tercer trimestre en 4.982, Atención (julio, agosto y septiembre juntados), los dos con su alerta en la campana de
-   `lider.cex`, que los analiza (si lo reporta `lider.cex`, a él no le llega el aviso de su propio reporte).
+   tercer trimestre en 4982, Atención (julio, agosto y septiembre juntados), los dos con su alerta en la campana de
+   `lider.cex`, que los analiza: «Uso de la agenda de medicina general: 87,9 % frente a una meta de 90 %, Atención.
+   Septiembre de 2026» y «Consultas de medicina general del trimestre: 4982 frente a una meta de 5000, Atención. Tercer
+   trimestre de 2026». Como su fecha límite ya había pasado (10 de octubre), el plazo de su análisis cuenta otra vez
+   desde hoy (F14C-DC42).
 3. **Corregir el dato antes del cierre.** En **Periodos del dato**, septiembre → **Corregir** → **1745** → **Guardar la
    corrección**: su historial guarda el antes y el después, con quién y cuándo; `CEX-ID-001` septiembre pasa a 95,9 %,
-   Bien, y `CEX-ID-002` el tercer trimestre a 5.127, Bien, cada uno con su «Corrección» y, en el historial de la
-   medición, el cambio puesto por «El sistema».
+   Bien, y `CEX-ID-002` el tercer trimestre a 5127, Bien, cada uno con su «Corrección» a `lider.cex` («Corrección: … pasó
+   de Atención a Bien. …») y, en el historial de la medición, el cambio puesto por «El sistema».
 4. **Cerrar el mes y reabrir el dato.** Como `coordinadora.sgc`: **Cierre del mes** → **Cerrar hasta** septiembre de 2026 →
-   **Ver el resumen** (el periodo de septiembre del dato se cierra; `AIN-IND-01` septiembre queda sin dato) → **Cerrar el
-   mes**. Si hace el paso 7 sin reabrir, hágalo antes: este cierre cierra también los trimestrales del tercer trimestre.
-   Después, en la página del dato, **agosto** → **Reabrir**: el diálogo lista lo que se reabre (`CEX-ID-001` agosto y
-   `CEX-ID-002` tercer trimestre, que lo usaron) y el botón dice «Reabrir el dato y 2 mediciones»; escriba la
-   justificación (al menos 10 caracteres) y confirme. Las dos quedan **Corregida**, con la justificación en su historial;
-   a `lider.cex` le llega el aviso de cada una y a `consulta`, «Dato compartido reabierto: …». Ciérrelas otra vez con
-   **Cerrar de nuevo**: primero el periodo del dato (las mediciones dicen «Su fuente sigue abierta: ciérrela primero»
-   mientras no).
+   **Ver el resumen** → **Cerrar el mes**. Se cierran el periodo de septiembre del dato, `CEX-ID-003` septiembre,
+   `AIN-IND-01` septiembre (sin dato) y los trimestrales del tercer trimestre (`SGC-IND-01`, `SGC-ID-003`, `SGC-ID-004`…);
+   **`CEX-ID-001` septiembre y `CEX-ID-002` tercer trimestre no**: el paso 2 les volvió a contar el plazo, siguen en él y
+   quedan para el siguiente cierre. Si hace el paso 7 sin reabrir, hágalo antes de este cierre. Después, en la página del
+   dato, **agosto** → **Reabrir**: el diálogo lista lo que se reabre («CEX-ID-001 Uso de la agenda de medicina general ·
+   agosto de 2026», la única medición cerrada que lo usó) y el botón dice «Reabrir el dato y 1 medición»; escriba la
+   justificación (al menos 10 caracteres) y confirme. La medición queda **Corregida**, con la justificación en su
+   historial; a `lider.cex` le llega su aviso y a `consulta`, «Dato compartido reabierto: …». Ciérrela otra vez con
+   **Cerrar de nuevo**: primero el periodo del dato (la medición dice «Su fuente sigue abierta: ciérrela primero»
+   mientras no). (Sin los pasos 2 y 3, septiembre del dato sigue pendiente en plazo y el cierre lo deja, con las dos
+   mediciones que lo esperan.)
 5. **La medición por sede.** Como `coordinadora.sgc`: **Administración** → **Configuración de indicadores** →
    **Dimensiones**: «Sede» con sus cuatro categorías (**Nueva dimensión** y **Nueva categoría** crean otras). Abra
    `CEX-ID-003`: en la lista y en la tabla del año, septiembre con «1 en Crítico» por Sede; la sección **Por Sede** con las
-   barras acostadas de cada sede, la meta como línea y su tabla; elija octubre: Norte «Sin casos» y Sur «No aplica», sin
-   barra. **Excel** trae la hoja **Por categoría**; **Imprimir ficha**, el desglose del último periodo. Para la rejilla,
+   barras acostadas de cada sede, la meta como línea y su tabla; elija octubre: Norte «Sin casos» y Sur «No aplica», con
+   su estado escrito y «—» por cifra. **Excel** trae la hoja **Por categoría 2026**; **Imprimir ficha**, el desglose del
+   último periodo. Para la rejilla,
    como `lider.cex`, **Corregir** octubre (en escritorio y a 390 px: una tarjeta por sede y el total fijo abajo), cambie
    una celda y pulse **Reportar**. Un indicador por sede nuevo se reporta cuando termine su primer mes.
 6. **Desactivar una categoría.** En **Dimensiones**, desactive «Puesto de salud Sur». La rejilla de octubre (ya abierta)
    la conserva, y noviembre también la pedirá, porque se desactivó durante noviembre; diciembre ya no. Lo de noviembre y
    diciembre se ve cuando esos meses terminen (lo cubren las pruebas).
 7. **El compuesto se recalcula solo.** Como `coordinadora.sgc`: `SGC-IND-01` tercer trimestre → **Corregir** → A de 3 a
-   4 → **Guardar la corrección**: `SGC-ID-003` pasa de 91,0 % a 95,4 % sin que nadie lo toque (su historial: «El sistema»).
-   Después marque **No aplica en este periodo** en `SGC-IND-07` tercer trimestre: `SGC-ID-003` queda «No aplica» con «SGC-IND-07
-   Gestión de Riesgos y Oportunidades no aplicó en el periodo»; **Quitar «No aplica»** y reportarlo otra vez lo devuelve a
-   su cifra. Si septiembre ya está cerrado (paso 4), corrija con **Reabrir** en `SGC-IND-01`: la lista incluye
-   `SGC-ID-003`.
+   4 → **Guardar la corrección**: `SGC-ID-003` pasa de 91 % a 95,4 % sin que nadie lo toque (su historial: «El sistema»).
+   Después marque **No aplica en este periodo** en `SGC-IND-07` tercer trimestre: `SGC-ID-003` queda «No aplica» con
+   «SGC-IND-07 Gestión de Riesgos y Oportunidades no aplicó en el periodo»; **Quitar «No aplica»** y reportarlo otra vez
+   lo devuelve a su cifra. Si el tercer trimestre ya está cerrado (paso 4), corrija con **Reabrir** en `SGC-IND-01`: la
+   lista incluye «SGC-ID-003 Índice de desempeño del SGC · tercer trimestre de 2026».
 8. **El componente que no se ve.** Como `lider.cex`: `SGC-ID-004` muestra su resultado (100 %, Bien); su variable A dice
    **Indicador restringido** y **No disponible** en la tabla del año, las gráficas, el acumulado, la ficha técnica
    («Resultado de un indicador restringido»), **Excel** e **Imprimir ficha**; la B («Cumplimiento de la meta de

@@ -1266,8 +1266,8 @@ después, aunque el total no cambie.
 
 - En la página del indicador, la sección **Por Sede** (con el nombre de la dimensión) del periodo
   que elija; por omisión, el último medido. Trae barras acostadas con el color de cada categoría, la
-  fila del total y la meta como una línea, y debajo su tabla. «Sin casos» y «No aplica» salen
-  escritos, sin barra.
+  fila del total y la meta como una línea, y debajo su tabla. Una fila «Sin casos» o «No aplica» no
+  tiene cifra: sale con su estado escrito y «—».
 - Cada categoría lleva su color y, cuando corresponde, «Bien · no alcanza la meta», como el total.
   La cifra nunca contradice el color.
 - **Una sede en Crítico con el total en Bien:** la lista y la tabla del año la marcan («1 en
@@ -1277,7 +1277,7 @@ después, aunque el total no cambie.
   siempre añade esa frase. No pide análisis ni pone «Requiere acción de mejora»: eso sigue sobre el
   total.
 - El impreso trae el desglose del último periodo medido, y el Excel del indicador, la hoja **Por
-  categoría** con una fila por periodo medido del año y categoría.
+  categoría** con el año («Por categoría 2026»), con una fila por periodo medido del año y categoría.
 
 ## 13. Indicadores compuestos
 
@@ -1365,9 +1365,11 @@ guardar, al enviar y al aprobar:
 
 En la pestaña **Ficha técnica** de un indicador, **Lo toman** lista los compuestos que usan su
 resultado (solo los que usted ve). Mientras un compuesto activo lo use, el SGC no deja retirar el
-componente, restringirlo si el compuesto es general, quitarle la meta si se toma su cumplimiento,
-pasarlo a una periodicidad más larga que la del compuesto, ni deshacer el lote de importación del
-que salió: «Cambie antes el indicador que lo usa», con su código si usted puede verlo. **Crear a
+componente, restringirlo si el compuesto es general, quitarle la meta si se toma su cumplimiento ni
+pasarlo a una periodicidad más larga que la del compuesto: «Cambie antes el indicador que lo usa»,
+con su código si usted puede verlo. Y un lote de importación no se deshace mientras otra ficha,
+aunque sea un borrador, tome el resultado de una de las suyas: **Deshacer la importación** lo dice
+entre sus motivos («otra ficha toma el resultado de una ficha del lote»; sección 6.10). **Crear a
 partir de este** sobre un compuesto (o sobre una ficha con datos compartidos) crea una copia con
 variables propias.
 
