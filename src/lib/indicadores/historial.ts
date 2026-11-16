@@ -22,7 +22,7 @@ export type EntradaDeHistorial = { id: number; que: string; quien: string; cuand
 /**
  * Lo que quien lee no ve de los componentes de la medición (anexo 14C, §6.5), ya resuelto con `componentesVisibles`: los
  * ids de los que no ve, las letras que salen de ellos (su antes y su después no se pintan) y cómo se nombra cada uno que sí
- * ve («CEX-ID-002 Oportunidad de la cita», en la propagación y en el motivo del contagio).
+ * ve («CEX-ID-002 Oportunidad de la cita», en la propagación y, si no tiene ninguno oculto, en el motivo del contagio).
  */
 export type ComponentesDelHistorial = { ocultos: ReadonlySet<number>; letras: ReadonlySet<string>; nombres: ReadonlyMap<number, string> };
 
@@ -94,11 +94,14 @@ function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, stri
 
 /**
  * El motivo de «No aplica» para quien lee: el del contagio (`MOTIVO_COMPONENTE_NO_APLICA`) con el componente del evento
- * (`detalle.componente`, su id) si quien lee lo ve (`motivoParaQuienLee`); cualquier otro, tal cual.
+ * (`detalle.componente`, su id) solo a quien ve **todos** los componentes del indicador (`motivoParaQuienLee`). El evento
+ * guarda el primero que no aplicó entre todos, también los ocultos: a quien tiene alguno oculto, nombrar el del evento le
+ * dejaría deducir si ese aplicó, así que lee siempre el genérico (anexo 14C, §6.5). Cualquier otro motivo, tal cual.
  */
 function motivoDelEvento(v: unknown, e: EventoDeMedicion, componentes: ComponentesDelHistorial): string | null {
   const id = typeof e.detalle.componente === "number" ? e.detalle.componente : null;
-  return motivoParaQuienLee(texto(v), id === null ? null : (componentes.nombres.get(id) ?? null));
+  const nombre = id === null || componentes.ocultos.size > 0 ? null : (componentes.nombres.get(id) ?? null);
+  return motivoParaQuienLee(texto(v), nombre);
 }
 
 function queHizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>, componentes: ComponentesDelHistorial): string {

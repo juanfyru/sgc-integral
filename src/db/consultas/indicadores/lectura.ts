@@ -30,6 +30,7 @@ import { acumulado } from "@/lib/indicadores/acumulado";
 import { calculoDe } from "@/lib/indicadores/calculos/registro";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion, estadoVisible, type EstadoVisible } from "@/lib/indicadores/estados";
 import { cuandoSeToma, sePuedeVolverACalcular, textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
+import { analizar } from "@/lib/indicadores/formula/analizar";
 import { enPalabras } from "@/lib/indicadores/formula/formas";
 import { aDecimal, aTexto, comparar, deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { esperaUnDato as esperaUnDatoSegunOrigen, letrasAjenas } from "@/lib/indicadores/origen";
@@ -983,8 +984,8 @@ type FijosDelAcumulado = { valores: Record<string, Fraccion | null>; parcial: bo
  * el mismo cálculo de la propagación, en su modo del acumulado): nunca la suma ni el promedio de lo copiado mes a mes. Como
  * el acumulado propio del componente, salta un periodo ordinario suyo sin dato y queda `parcial`, también si empieza después
  * que el tramo; un componente sin resultado en ninguno de esos periodos deja la letra en `null` y el acumulado sin resultado
- * (`sinComponente`). `undefined` si la versión que manda no toma nada de otro indicador: el acumulado de siempre, sin una
- * consulta más.
+ * (`sinComponente`). Solo cuentan las letras de la fórmula. `undefined` si la versión que manda no toma nada de otro
+ * indicador en su fórmula: el acumulado de siempre, sin una consulta más.
  */
 async function fijosDelAcumulado(
   sql: Cliente,
@@ -993,7 +994,10 @@ async function fijosDelAcumulado(
   ahora: Date,
 ): Promise<FijosDelAcumulado | undefined> {
   const t = tramoDelAcumulado(leidos, versiones, ahora);
-  const tomadas = t ? t.ultimo.version.variables.filter((v) => v.origen === "indicador") : [];
+  // Solo las letras que usa la fórmula (no todas las declaradas, `calculo.letras`): una tomada que la fórmula no usa (la B de un
+  // espejo) no cambia el resultado, así que ni se consulta, ni lo deja parcial, ni lo deja sin acumulado.
+  const enLaFormula = t ? letrasDeLaFormula(t.ultimo.version.calculo) : new Set<string>();
+  const tomadas = t ? t.ultimo.version.variables.filter((v) => v.origen === "indicador" && enLaFormula.has(v.letra)) : [];
   if (!t || tomadas.length === 0) return undefined;
   const sobre = leidos
     .filter((l) => l.fila.medicionId !== null && t.rachaDe(l) === t.racha && !l.fila.noAplica && l.resultado !== null)
@@ -1008,9 +1012,14 @@ async function fijosDelAcumulado(
     valores[v.letra] = r?.estado === "listo" ? r.valor : null;
     if (r?.estado === "listo" && (r.desde !== null || r.incompleto === true)) parcial = true;
   }
-  // Solo cuentan las letras de la fórmula: una tomada que la fórmula no usa (la B de un espejo) no deja sin acumulado.
-  const sinComponente = sobre.length > 0 && t.ficha.letras.some((l) => Object.hasOwn(valores, l) && valores[l] === null);
+  const sinComponente = sobre.length > 0 && Object.values(valores).some((x) => x === null);
   return { valores, parcial, sinComponente };
+}
+
+/** Las letras que usa la fórmula (`analizar`); si no se lee, todas las declaradas. */
+function letrasDeLaFormula(calculo: CalculoEnTexto): Set<string> {
+  const a = analizar(calculo.formula);
+  return new Set(a.ok ? a.variables : calculo.letras);
 }
 
 /**

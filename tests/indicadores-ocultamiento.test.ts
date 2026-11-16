@@ -66,6 +66,7 @@ import { componentesVisibles, type SujetoVisibilidad } from "@/lib/alcance";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
 import { camposDeFicha } from "@/lib/indicadores/ficha-en-texto";
+import { historialDeCorreccion, type ComponentesDelHistorial, type EventoDeMedicion } from "@/lib/indicadores/historial";
 import { COMPONENTE_OCULTO, ErrorIndicador, MOTIVO_COMPONENTE_NO_APLICA, RESULTADO_OCULTO, VALOR_OCULTO } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
 import { indicadorDePrueba, versionNueva, type IndicadorDePrueba } from "./utiles/indicadores";
@@ -641,6 +642,55 @@ describe("el motivo vigente nombra al primero que no aplica entre los que quien 
       expect([await e.motivoDe(e.ana, e.rg), await e.motivoDe(e.ana, e.gr)]).toEqual([e.porG, e.porG]);
       expect([await e.motivoDe(e.gerente, e.rg), await e.motivoDe(e.gerente, e.gr)]).toEqual([e.porG, e.porG]);
     }));
+});
+
+describe("la línea del historial de un contagio (anexo 14C, §6.5)", () => {
+  // Las variables en el orden [R, G]: R oculto a Ana, G no. El evento guarda el primer componente que no aplicó de todos.
+  const R = 701;
+  const G = 702;
+  const evento = (id: number, tipo: EventoDeMedicion["tipo"], detalle: Record<string, unknown>): EventoDeMedicion => ({
+    id,
+    tipo,
+    quien: null,
+    creadoEn: new Date("2003-04-20T15:00:00Z"),
+    detalle,
+  });
+  /** El historial de una medición reabierta que después queda «No aplica» por el contagio de `componente`. */
+  const linea = (componente: number, componentes: ComponentesDelHistorial) => {
+    const [, contagio] = historialDeCorreccion(
+      [
+        evento(1, "reapertura", { justificacion: "Se corrige el periodo" }),
+        evento(2, "propagacion", {
+          fuentes: [],
+          componente,
+          antes: { A: null, B: null, noAplica: false, motivo: null },
+          despues: { A: null, B: null, noAplica: true, motivo: MOTIVO_COMPONENTE_NO_APLICA },
+        }),
+      ],
+      { unidad: { sufijo: " %", decimales: 1 }, nombres: { A: COMPONENTE_OCULTO, B: "Casos de G" }, conSoportes: false, componentes },
+    );
+    return contagio.cambios.find((c) => c.startsWith("Motivo:"));
+  };
+  // Como los arma `historialDeCorregidas`: los ocultos de Ana y los nombres de los que ve.
+  const deAna: ComponentesDelHistorial = { ocultos: new Set([R]), letras: new Set(["A"]), nombres: new Map([[G, "G-1 Indicador G"]]) };
+  const deGerente: ComponentesDelHistorial = {
+    ocultos: new Set(),
+    letras: new Set(),
+    nombres: new Map([
+      [R, "R-1 Indicador R"],
+      [G, "G-1 Indicador G"],
+    ]),
+  };
+
+  it("quien tiene un componente oculto lee siempre el genérico, no aplique R o sí; quien ve todos, el del evento", () => {
+    const generico = `Motivo: — → ${MOTIVO_COMPONENTE_NO_APLICA}`;
+    // G y R no aplican (el evento guardó R) y solo G no aplica (guardó G): Ana lee lo mismo.
+    expect([linea(R, deAna), linea(G, deAna)]).toEqual([generico, generico]);
+    expect([linea(R, deGerente), linea(G, deGerente)]).toEqual([
+      "Motivo: — → R-1 Indicador R no aplicó en el periodo",
+      "Motivo: — → G-1 Indicador G no aplicó en el periodo",
+    ]);
+  });
 });
 
 describe("lo que se oculta en el acumulado sigue a la versión que manda (M2)", () => {

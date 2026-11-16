@@ -340,6 +340,83 @@ describe("el componente sin resultado en el tramo del acumulado (anexo 14C, §6.
     }));
 });
 
+describe("el parcial mira solo las letras de la fórmula; la constancia congela su causa", () => {
+  it("una variable tomada que la fórmula no usa no deja parcial el acumulado", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const r = await e.componenteR();
+      // R2 se mide desde febrero: su acumulado del trimestre empieza después, pero la fórmula («A») no lo usa.
+      const r2 = await e.nuevo({ mide: [e.mide.usuarioId], inicioMedicion: "2003-02" });
+      await e.abrir(r2.id);
+      await e.reportarAB(e.mide, r2.id, "2003-02", "5", "10");
+      await e.reportarAB(e.mide, r2.id, "2003-03", "5", "10");
+      const c = await e.nuevo({
+        periodicidad: "trimestral",
+        inicioMedicion: "2003-T1",
+        formula: "A",
+        variables: { A: { indicadorOrigenId: r.id, toma: "valor" }, B: { indicadorOrigenId: r2.id, toma: "valor" } },
+      });
+      await e.abrir(c.id);
+      await propagar(opc(tx));
+      const deC = await resultadosDelAnio(e.admin, c.id, 2003, opc(tx));
+      expect(deC.acumulado).toMatchObject({ exacto: ACUMULADO_DE_R, rotulo: null });
+      expect(deC.acumulado).not.toHaveProperty("componenteParcial");
+    }));
+
+  /** Registra la constancia del periodo externo `periodo` de `indicadorId`, con su soporte, y devuelve lo que congeló. */
+  async function registrada(tx: TransactionSql, admin: SesionFlujo, indicadorId: number, periodo: string, ahora: Date) {
+    await asegurarConstancias({ sql: tx, ahora, indicadorId });
+    const [k] = await tx`SELECT id FROM reportes_externos WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`;
+    await tx`INSERT INTO archivos (contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+      VALUES ('reporte_externo', ${k.id}, 'evidencia', ${`reportes-externos/${k.id}/${unico()}.pdf`}, 'radicado.pdf', 'pdf',
+        'application/pdf', 1024, ${"a".repeat(64)})`;
+    await registrarConstancia(admin, { reporteId: Number(k.id), fechaEnvio: "2004-07-10", radicado: `ENTE-${unico()}` }, opc(tx, ahora));
+    const [fila] = await tx`SELECT resultado_enviado, resultado_detalle FROM reportes_externos WHERE id = ${k.id}`;
+    const [evento] = await tx`SELECT detalle FROM reporte_externo_eventos WHERE reporte_id = ${k.id} AND tipo = 'registro'`;
+    return { enviado: fila.resultado_enviado as string | null, detalle: fila.resultado_detalle as Record<string, unknown>, evento: evento.detalle as Record<string, unknown> };
+  }
+
+  it("sin acumulado por un componente: congela `sinComponente` y no `componenteParcial`", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const r = await e.nuevo({ mide: [e.mide.usuarioId], inicioMedicion: "2004-01", aprobadaEn: APROBADOS_EN_JULIO });
+      const c = await e.nuevo({
+        inicioMedicion: "2004-01",
+        aprobadaEn: APROBADOS_EN_JULIO,
+        formula: "A",
+        ente: { nombre: "Ente de prueba", periodicidad: "semestral", plazoDias: 30, desde: new Date("2004-01-01T05:00:00Z") },
+        variables: { A: { indicadorOrigenId: r.id, toma: "valor" }, B: { indicadorOrigenId: r.id, toma: "cumplimiento" } },
+      });
+      await historicosDe(tx, e.admin, c.id, MESES_DEL_SEMESTRE, JULIO);
+      const k = await registrada(tx, e.admin, c.id, "2004-S1", JULIO);
+      expect(k.enviado).toBeNull();
+      expect(k.detalle).toMatchObject({ exacto: null, parcial: true, sinComponente: true });
+      expect(k.detalle).not.toHaveProperty("componenteParcial");
+      expect(k.evento).toMatchObject({ sinComponente: true });
+    }));
+
+  it("parcial por un componente: congela `componenteParcial` y no `sinComponente`", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      // R, aprobado antes, sin dato en mayo, bajo los históricos de abril a junio del compuesto.
+      const r = await e.nuevo({ mide: [e.mide.usuarioId], inicioMedicion: "2004-03", aprobadaEn: new Date("2004-02-20T15:00:00Z") });
+      await asegurarMediciones({ sql: tx, ahora: JULIO, indicadorId: r.id });
+      for (const periodo of ["2004-03", "2004-04", "2004-06"]) await reportarEn(tx, e.mide, r.id, periodo, "9", "10", JULIO);
+      const c = await e.nuevo({
+        inicioMedicion: "2004-03",
+        aprobadaEn: APROBADOS_EN_JULIO,
+        formula: "A",
+        ente: { nombre: "Ente de prueba", periodicidad: "trimestral", plazoDias: 30, desde: new Date("2004-01-01T05:00:00Z") },
+        variables: { A: { indicadorOrigenId: r.id, toma: "valor" }, B: { indicadorOrigenId: r.id, toma: "cumplimiento" } },
+      });
+      await historicosDe(tx, e.admin, c.id, ["2004-03", "2004-04", "2004-05", "2004-06"], JULIO);
+      const k = await registrada(tx, e.admin, c.id, "2004-T2", JULIO);
+      expect(k.enviado).toBe("90 %");
+      expect(k.detalle).toMatchObject({ exacto: "90/1", parcial: true, componenteParcial: true });
+      expect(k.detalle).not.toHaveProperty("sinComponente");
+    }));
+});
+
 describe("la racha distingue de qué componente sale una letra (anexo 14C, §6.4; spec §8.10)", () => {
   it("A propia «último» en la versión 1 y tomada de R en la 2, con la misma fórmula: el acumulado parte en la 2", () =>
     revertida(sql, async (tx) => {
