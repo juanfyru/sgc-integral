@@ -3,6 +3,7 @@
 // Acciones del módulo de indicadores (Fase 14). Cada una pasa por `mutacion` con su permiso de la matriz; la condición
 // de persona la vuelve a comprobar la consulta. Las de los maestros viven en `src/app/admin/acciones-indicadores.ts`.
 
+import { revalidatePath } from "next/cache";
 import { rutaDeEdicion, rutaDeIndicador } from "@/app/(app)/indicadores/_comun";
 import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion, type EstadoConAviso } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
@@ -28,7 +29,7 @@ import {
   retirar,
 } from "@/db/consultas/indicadores/operacion";
 import { propagarSinFallar } from "@/db/consultas/indicadores/propagacion";
-import { reabrirEnCascada, sinInterbloqueoDelCierre } from "@/db/consultas/indicadores/reapertura";
+import { LO_QUE_SE_REABRE_CAMBIO, reabrirEnCascada, sinInterbloqueoDelCierre } from "@/db/consultas/indicadores/reapertura";
 import { quitarSoporte } from "@/db/consultas/indicadores/soportes";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
@@ -59,6 +60,7 @@ import {
 } from "@/lib/esquemas/indicadores";
 import { EsquemaReporteDeDato, juntarValoresDeDato } from "@/lib/esquemas/indicadores-datos";
 import { destinoTrasReportar, type EstadoReporte } from "@/lib/indicadores/reporte";
+import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { rutaInterna } from "@/lib/rutas";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -467,6 +469,17 @@ export async function cerrarMesAccion(_prev: EstadoAccion, formData: FormData): 
 }
 
 /**
+ * Para el `.catch` de una reapertura: si lo que se reabriría ya no es lo que el diálogo listó (`LO_QUE_SE_REABRE_CAMBIO`), la
+ * pantalla se repinta con la lista de ahora, para que el siguiente intento confirme esa. `mutacion` solo revalida cuando la
+ * acción sale bien, y sin esto cada reintento mandaba la lista vieja y fallaba igual hasta recargar la página. El diálogo
+ * sigue abierto, con el error y lo escrito.
+ */
+function repintarSiLaListaCambio(err: unknown): never {
+  if (err instanceof ErrorIndicador && err.message === LO_QUE_SE_REABRE_CAMBIO) revalidatePath("/", "layout");
+  throw err;
+}
+
+/**
  * `id` es el de la medición cerrada. La reabre con justificación y sin clave, con las cerradas que la tomaron (en cascada,
  * anexo 14C §3.5), si es lo que listó el diálogo (`vistas`, obligatorio: la medición sola si no listó otras); no navega: la
  * tabla se repinta.
@@ -474,7 +487,9 @@ export async function cerrarMesAccion(_prev: EstadoAccion, formData: FormData): 
 export async function reabrirMedicionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { justificacion, vistas } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
-    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion, vistas }).catch(sinInterbloqueoDelCierre);
+    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion, vistas })
+      .catch(sinInterbloqueoDelCierre)
+      .catch(repintarSiLaListaCambio);
     await propagarSinFallar();
   });
 }
@@ -488,7 +503,7 @@ export async function reabrirDatoCompartido(_prev: EstadoAccion, formData: FormD
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { justificacion, vistas } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
     const fuente = { clase: "dato" as const, periodoId: idNumerico(formData, "id") };
-    await reabrirEnCascada(sesion, { fuente, justificacion, vistas }).catch(sinInterbloqueoDelCierre);
+    await reabrirEnCascada(sesion, { fuente, justificacion, vistas }).catch(sinInterbloqueoDelCierre).catch(repintarSiLaListaCambio);
   });
 }
 

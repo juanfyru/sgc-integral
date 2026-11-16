@@ -12,17 +12,20 @@ const dominio = vi.hoisted(() => ({
   cerrarDeNuevoElDato: vi.fn(),
   actualizarCategoriasDelDato: vi.fn(),
   actualizarCategorias: vi.fn(),
+  reabrirMedicion: vi.fn(),
+  reabrirEnCascada: vi.fn(),
   reportar: vi.fn(),
   propagarSinFallar: vi.fn(async () => {}),
 }));
-const { redirect, requerirSesion } = vi.hoisted(() => ({
+const { redirect, requerirSesion, revalidatePath } = vi.hoisted(() => ({
   redirect: vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
   }),
   requerirSesion: vi.fn(),
+  revalidatePath: vi.fn(),
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
 vi.mock("@/db/consultas/indicadores/datos-periodos", async (original) => ({
@@ -30,6 +33,14 @@ vi.mock("@/db/consultas/indicadores/datos-periodos", async (original) => ({
   reportarDato: dominio.reportarDato,
   cerrarDeNuevoElDato: dominio.cerrarDeNuevoElDato,
   actualizarCategoriasDelDato: dominio.actualizarCategoriasDelDato,
+}));
+vi.mock("@/db/consultas/indicadores/cierre", async (original) => ({
+  ...(await original<typeof import("@/db/consultas/indicadores/cierre")>()),
+  reabrirMedicion: dominio.reabrirMedicion,
+}));
+vi.mock("@/db/consultas/indicadores/reapertura", async (original) => ({
+  ...(await original<typeof import("@/db/consultas/indicadores/reapertura")>()),
+  reabrirEnCascada: dominio.reabrirEnCascada,
 }));
 vi.mock("@/db/consultas/indicadores/categorias", async (original) => ({
   ...(await original<typeof import("@/db/consultas/indicadores/categorias")>()),
@@ -48,10 +59,14 @@ import {
   actualizarCategoriasDelDatoCompartido,
   actualizarCategoriasDeMedicion,
   cerrarDeNuevoElDatoCompartido,
+  reabrirDatoCompartido,
+  reabrirMedicionAccion,
   reportarAccion,
   reportarDatoCompartido,
 } from "@/app/acciones-indicadores";
 import { INTERBLOQUEO_NORMA_O_FICHA } from "@/db/consultas/indicadores/impactos";
+import { LO_QUE_SE_REABRE_CAMBIO } from "@/db/consultas/indicadores/reapertura";
+import { ErrorIndicador } from "@/lib/indicadores/tipos";
 
 function formulario(campos: Record<string, string>) {
   const datos = new FormData();
@@ -137,6 +152,32 @@ describe("un interbloqueo de la base llega legible a la persona (ola final, O11)
     requerirSesion.mockResolvedValue({ usuarioId: 7, rol: "admin_sgc", verHistorial: true });
     dominio.cerrarDeNuevoElDato.mockRejectedValue(new Error("Solo se cierra de nuevo un periodo reabierto"));
     expect(await cerrarDeNuevoElDatoCompartido(null, formulario({ id: "5" }))).toMatchObject({ ok: false, error: "Solo se cierra de nuevo un periodo reabierto" });
+  });
+});
+
+describe("una reapertura cuya lista cambió repinta la pantalla (ola final, O12)", () => {
+  const campos = { id: "5", justificacion: "El dato venía de otro informe", vistas: "[5]" };
+  const admin = { usuarioId: 7, rol: "admin_sgc", verHistorial: true };
+
+  it("con «Lo que se reabre cambió…», la acción revalida aunque falle: el diálogo recibe la lista de ahora", async () => {
+    requerirSesion.mockResolvedValue(admin);
+    dominio.reabrirMedicion.mockRejectedValue(new ErrorIndicador(LO_QUE_SE_REABRE_CAMBIO));
+    expect(await reabrirMedicionAccion(null, formulario(campos))).toMatchObject({ ok: false, error: LO_QUE_SE_REABRE_CAMBIO });
+    expect(revalidatePath).toHaveBeenCalledTimes(1);
+    expect(revalidatePath).toHaveBeenLastCalledWith("/", "layout");
+    dominio.reabrirEnCascada.mockRejectedValue(new ErrorIndicador(LO_QUE_SE_REABRE_CAMBIO));
+    expect(await reabrirDatoCompartido(null, formulario(campos))).toMatchObject({ ok: false, error: LO_QUE_SE_REABRE_CAMBIO });
+    expect(revalidatePath).toHaveBeenCalledTimes(2);
+    expect(dominio.propagarSinFallar).not.toHaveBeenCalled();
+  });
+
+  it("cualquier otro error no revalida, como siempre", async () => {
+    requerirSesion.mockResolvedValue(admin);
+    dominio.reabrirMedicion.mockRejectedValue(new ErrorIndicador("Solo se reabre una medición cerrada"));
+    expect(await reabrirMedicionAccion(null, formulario(campos))).toMatchObject({ ok: false, error: "Solo se reabre una medición cerrada" });
+    dominio.reabrirEnCascada.mockRejectedValue(new Error(LO_QUE_SE_REABRE_CAMBIO));
+    expect(await reabrirDatoCompartido(null, formulario(campos))).toMatchObject({ ok: false });
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
 
