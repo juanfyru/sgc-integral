@@ -69,7 +69,7 @@ import { camposDeFicha } from "@/lib/indicadores/ficha-en-texto";
 import { historialDeCorreccion, type ComponentesDelHistorial, type EventoDeMedicion } from "@/lib/indicadores/historial";
 import { COMPONENTE_OCULTO, ErrorIndicador, MOTIVO_COMPONENTE_NO_APLICA, RESULTADO_OCULTO, VALOR_OCULTO } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
-import { indicadorDePrueba, versionNueva, type IndicadorDePrueba } from "./utiles/indicadores";
+import { datoDePrueba, indicadorDePrueba, periodoDeDatoDePrueba, versionNueva, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -715,6 +715,134 @@ describe("lo que se oculta en el acumulado sigue a la versión que manda (M2)", 
       expect(r.acumulado).toMatchObject({ texto: "40 %", valores: { A: "4", B: "10" }, numeros: { A: 4, B: 10 } });
       expect(r.acumulado).not.toHaveProperty("ocultas");
     }));
+});
+
+describe("una letra que cambia de fuente entre versiones (ola final, O8)", () => {
+  const filasDeValores = async (tx: TransactionSql, medicionId: number) =>
+    (
+      await tx`SELECT iv.letra, iv.origen, mv.valor::text AS valor FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
+        WHERE mv.medicion_id = ${medicionId} ORDER BY iv.letra, mv.id`
+    ).map((f) => [f.letra, f.origen, Number(f.valor)]);
+
+  /**
+   * C v1 toma A de R (oculto para Ana) y B de G. Con R reportado y G sin reportar, el 37,5 de R queda copiado en la medición
+   * de marzo, que sigue esperando a G. Entonces se aprueba la v2, que rige desde marzo: A sale ahora del dato D y B sigue
+   * saliendo de G. La propagación aún no ha pasado.
+   */
+  async function conLaFuenteCambiada(tx: TransactionSql) {
+    const e = await escenario(tx, { reportados: false });
+    await e.reportarAB(e.mideR, e.m.r, "3", "8");
+    await propagar(opc(tx));
+    expect(await filasDeValores(tx, e.m.c)).toEqual([["A", "indicador", 37.5]]);
+    expect((await tx`SELECT resultado_exacto FROM mediciones WHERE id = ${e.m.c}`)[0].resultado_exacto).toBeNull();
+    // Con la v1, para Ana la letra A va oculta.
+    const antes = await tablaDelAnio(e.ana, e.c.id, 2003, opc(tx));
+    expect(antes.find((f) => f.periodo === MARZO)!.valores[0]).toMatchObject({ letra: "A", oculta: true });
+
+    const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+    const datoId = await datoDePrueba(tx, { procesoId: e.p1, nombre: `ZZ Casos del mes ${unico()}`, responsables: [responsable.usuarioId] });
+    await versionNueva(tx, {
+      indicadorId: e.c.id,
+      usuarioId: e.admin.usuarioId,
+      tipoCambio: "mayor",
+      rigeDesde: MARZO,
+      aprobadaEn: AHORA,
+      formula: "(A + B) / 2",
+      variables: { A: { datoId }, B: { indicadorOrigenId: e.g.id, toma: "valor", nombre: "Casos atendidos" } },
+    });
+    return { ...e, datoId };
+  }
+
+  it("lo que el sistema copió de R no se lee como el valor de la fuente nueva: la tabla, las series y la pantalla de Ana no traen su cifra", () =>
+    revertida(sql, async (tx) => {
+      const e = await conLaFuenteCambiada(tx);
+      const tabla = await tablaDelAnio(e.ana, e.c.id, 2003, opc(tx));
+      const marzo = tabla.find((f) => f.periodo === MARZO)!;
+      // La letra A ya no es de un componente oculto: se ve, y aún no tiene valor (el dato no se ha reportado).
+      expect(marzo.valores[0]).toMatchObject({ letra: "A", valor: null });
+      expect(marzo.valores[0]).not.toHaveProperty("oculta");
+      expect(rastros(tabla, e.r)).toEqual([]);
+      expect(rastros(await resultadosDelAnio(e.ana, e.c.id, 2003, opc(tx)), e.r)).toEqual([]);
+      expect(rastros(await medicionParaReportar(e.ana, e.c.codigo, MARZO, opc(tx)), e.r)).toEqual([]);
+    }));
+
+  it("el evento que después limpia lo copiado no guarda la cifra de R como el «antes» del dato", () =>
+    revertida(sql, async (tx) => {
+      const e = await conLaFuenteCambiada(tx);
+      const propagaciones = () => tx`SELECT detalle FROM medicion_eventos WHERE medicion_id = ${e.m.c} AND tipo = 'propagacion' ORDER BY id`;
+      const hasta = (await propagaciones()).length;
+      // La propagación que pasa antes de que llegue el dato quita lo copiado de R, sin evento: para la versión nueva, la
+      // letra no tenía valor y sigue sin tenerlo.
+      await propagar(opc(tx));
+      expect(await filasDeValores(tx, e.m.c)).toEqual([]);
+      expect(await propagaciones()).toHaveLength(hasta);
+
+      await periodoDeDatoDePrueba(tx, { datoId: e.datoId, periodo: MARZO, valor: "50", ahora: AHORA });
+      await propagar(opc(tx));
+      expect(await filasDeValores(tx, e.m.c)).toEqual([["A", "compartida", 50]]);
+      const eventos = await propagaciones();
+      expect(eventos).toHaveLength(hasta + 1);
+      const ultimo = eventos.at(-1)!.detalle as { fuentes: unknown[] };
+      expect(ultimo.fuentes).toEqual([{ letra: "A", clase: "dato", id: e.datoId, antes: null, despues: "50" }]);
+      expect(JSON.stringify(ultimo)).not.toContain("37.5");
+    }));
+
+  it("un cambio menor (otros ids, la misma fuente) sigue leyendo lo ya copiado", () =>
+    revertida(sql, async (tx) => {
+      const e = await escenario(tx, { reportados: false });
+      await e.reportarAB(e.mideR, e.m.r, "3", "8");
+      await propagar(opc(tx));
+      await versionNueva(tx, {
+        indicadorId: e.c.id,
+        usuarioId: e.admin.usuarioId,
+        tipoCambio: "menor",
+        rigeDesde: MARZO,
+        aprobadaEn: AHORA,
+        formula: "(A + B) / 2",
+        variables: { A: { indicadorOrigenId: e.r.id, toma: "valor", nombre: e.nombreDeR }, B: { indicadorOrigenId: e.g.id, toma: "valor", nombre: "Casos atendidos" } },
+      });
+      // La gerente, que ve a R, sigue leyendo su 37,5 en A aunque la fila esté en la variable de la versión anterior.
+      const suya = await tablaDelAnio(e.gerente, e.c.id, 2003, opc(tx));
+      expect(suya.find((f) => f.periodo === MARZO)!.valores[0]).toMatchObject({ letra: "A", valor: "37,5" });
+      // Lo que se toma de la misma fuente pero es otra cosa (su cumplimiento y no su valor) no se lee como lo mismo.
+      await versionNueva(tx, {
+        indicadorId: e.c.id,
+        usuarioId: e.admin.usuarioId,
+        tipoCambio: "mayor",
+        rigeDesde: MARZO,
+        aprobadaEn: AHORA,
+        formula: "(A + B) / 2",
+        variables: { A: { indicadorOrigenId: e.r.id, toma: "cumplimiento", nombre: e.nombreDeR }, B: { indicadorOrigenId: e.g.id, toma: "valor", nombre: "Casos atendidos" } },
+      });
+      const despues = await tablaDelAnio(e.gerente, e.c.id, 2003, opc(tx));
+      expect(despues.find((f) => f.periodo === MARZO)!.valores[0]).toMatchObject({ letra: "A", valor: null });
+    }));
+
+  it("el historial tapa la cifra de toda fuente cuya letra es oculta para quien lee, sea de la clase que sea", () => {
+    const evento: EventoDeMedicion = {
+      id: 2,
+      tipo: "propagacion",
+      quien: null,
+      creadoEn: new Date("2003-05-10T15:00:00Z"),
+      detalle: {
+        fuentes: [
+          { letra: "A", clase: "dato", id: 9, antes: "37.5", despues: "50" },
+          { letra: "B", clase: "indicador", id: 4, antes: "80", despues: "90" },
+        ],
+        antes: { A: "37.5", B: "80" },
+        despues: { A: "50", B: "90" },
+      },
+    };
+    const reapertura: EventoDeMedicion = { id: 1, tipo: "reapertura", quien: "Admin", creadoEn: new Date("2003-05-09T15:00:00Z"), detalle: { justificacion: JUSTIFICACION } };
+    const paraAna: ComponentesDelHistorial = { ocultos: new Set([7]), letras: new Set(["A"]), nombres: new Map([[4, "G-ID-001 Casos atendidos"]]) };
+    const opciones = { unidad: { sufijo: " %", decimales: 1 }, nombres: { A: "Casos del mes", B: "Casos atendidos" }, conSoportes: false };
+    const [, deAna] = historialDeCorreccion([reapertura, evento], { ...opciones, componentes: paraAna });
+    expect(JSON.stringify(deAna)).not.toContain("37");
+    expect(deAna.que).toBe("El sistema actualizó «Casos atendidos» (sale de G-ID-001 Casos atendidos): de 80 a 90; un componente");
+    // Quien no tiene nada oculto lo lee completo.
+    const [, completo] = historialDeCorreccion([reapertura, evento], opciones);
+    expect(completo.que).toContain("«Casos del mes»: de 37,5 a 50");
+  });
 });
 
 describe("«Lo toman» por la lectura de la página (M6)", () => {

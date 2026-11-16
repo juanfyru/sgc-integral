@@ -67,7 +67,8 @@ const MOTIVO_DE_RECALCULO: Readonly<Record<string, string>> = {
  * sistema quitó «No aplica»»: su motivo y los valores van en los cambios. Sin fuentes, «El sistema actualizó los valores por
  * categoría» si cambiaron celdas de un desagregado (anexo 14C, §5.7: van en los cambios), y si no, «El sistema actualizó un
  * valor». Lo de un componente que quien lee no ve (§6.5) se dice «un componente», sin su nombre ni sus cifras: «El sistema
- * actualizó un componente»; el que sí ve, con su código y su nombre («El sistema actualizó «Cumplimiento» (sale de
+ * actualizó un componente»; y lo mismo toda fuente cuya letra es de las ocultas para quien lee (`componentes.letras`), sea
+ * de la clase que sea: en esa letra pudo quedar la cifra de un componente oculto de otra versión. El que sí ve, con su código y su nombre («El sistema actualizó «Cumplimiento» (sale de
  * SGC-IND-01 Programa de Auditorías Internas): de 60 a 75»), si `componentes.nombres` lo trae.
  */
 function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>, componentes: ComponentesDelHistorial): string {
@@ -78,8 +79,9 @@ function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, stri
   }
   const fuentes = Array.isArray(e.detalle.fuentes) ? e.detalle.fuentes.map(objeto) : [];
   if (fuentes.length === 0) return categoriasDe(e).length > 0 ? "El sistema actualizó los valores por categoría" : "El sistema actualizó un valor";
-  const oculta = (f: Record<string, unknown>) => f.clase === "indicador" && (componentes.ocultos.has(Number(f.id)) || componentes.letras.has(String(f.letra)));
-  const ocultos = new Set(fuentes.filter(oculta).map((f) => Number(f.id)));
+  const oculta = (f: Record<string, unknown>) => componentes.letras.has(String(f.letra)) || (f.clase === "indicador" && componentes.ocultos.has(Number(f.id)));
+  // Por clase e id: el número de un dato puede ser el de un indicador.
+  const ocultos = new Set(fuentes.filter(oculta).map((f) => `${String(f.clase)}:${String(f.id)}`));
   const cada = fuentes
     .filter((f) => !oculta(f))
     .map((f) => {

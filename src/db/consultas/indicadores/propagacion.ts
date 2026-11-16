@@ -17,7 +17,9 @@
  *   variables propias ya tiene todo y aún no está reportada, o si su «No aplica» del sistema dejó de ser cierto.
  * - **Escribe solo lo ajeno:** la fila de la variable en la versión con que se calcula, sin quien la reportó, y quita las
  *   que el sistema copió en otra versión para la misma letra; si la fuente dejó de tener valor, quita la fila. Nunca toca lo
- *   que digitó una persona.
+ *   que digitó una persona. Lo copiado en otra versión desde **otra fuente** (un cambio mayor cambió de dónde sale la letra)
+ *   no se lee como el valor de la fuente nueva (`elegirValores`): se quita sin más (`filasDeOtraFuente`), y su cifra no va al
+ *   «antes» de ningún evento, que podría leer quien no ve la fuente anterior (anexo 14C, §6.5).
  * - **Quién reportó:** en un indicador sin variables propias, el sistema, al llegar el último valor (`reportada_en`, sin
  *   usuario); en un mixto, nadie más que quien mide, salvo el contagio.
  * - **El contagio** (§6.3): si un componente no aplicó en el periodo, la medición queda «No aplica» con
@@ -83,6 +85,8 @@ import {
   esDeOtraPeriodicidad,
   escribirCelda,
   escribirTotal,
+  filasDeOtraFuente,
+  filasDeValores,
   listaDe,
   mide,
   mismoTotal,
@@ -446,6 +450,8 @@ type Plan = {
   noAplica: { motivo: string | null } | null;
   /** El componente que no aplicó, cuando el plan pone el «No aplica» del contagio. */
   componente: number | null;
+  /** Las filas (sus ids) que el sistema copió en otra versión desde otra fuente: se quitan (`filasDeOtraFuente`). */
+  obsoletas: number[];
 };
 
 /**
@@ -454,9 +460,16 @@ type Plan = {
  * indicador sin variables propias que ya tiene todo; y el «No aplica» del sistema: el del contagio, si algún componente no
  * aplicó (con el reporte del sistema si no estaba reportada), o si no, el de nada que medir, que vale con todos los valores,
  * la medición reportada y la fórmula dividiendo por cero. Al salir del contagio, el reporte que puso vuelve a quien le toca.
- * Un «No aplica» de una persona no se toca. No consulta nada.
+ * Un «No aplica» de una persona no se toca. `obsoletas` son las filas copiadas en otra versión desde otra fuente
+ * (`filasDeOtraFuente`): quitarlas también es trabajo. No consulta nada.
  */
-function planear(m: Row, version: VersionDeCalculo, guardados: Readonly<Record<string, Fraccion>>, ajenos: ReadonlyMap<string, ValorAjeno>): Plan | null {
+function planear(
+  m: Row,
+  version: VersionDeCalculo,
+  guardados: Readonly<Record<string, Fraccion>>,
+  ajenos: ReadonlyMap<string, ValorAjeno>,
+  obsoletas: number[],
+): Plan | null {
   const valores: Record<string, Fraccion> = { ...guardados };
   const cambios: Cambio[] = [];
   for (const v of version.variables) {
@@ -494,8 +507,16 @@ function planear(m: Row, version: VersionDeCalculo, guardados: Readonly<Record<s
   const debido = contagio ? MOTIVO_COMPONENTE_NO_APLICA : nadaQueMedir ? MOTIVO_NADA_QUE_MEDIR : null;
   const noAplica = !dePersona && debido !== delSistema ? { motivo: debido } : null;
   const reportar = !dePersona && !reportada && (contagio || reportarPorSistema);
-  if (cambios.length === 0 && !reportar && !quitarReporte && noAplica === null) return null;
-  return { cambios, valores, reportar, quitarReporte, noAplica, componente: noAplica?.motivo === MOTIVO_COMPONENTE_NO_APLICA ? sinAplicar!.fuenteId : null };
+  if (cambios.length === 0 && !reportar && !quitarReporte && noAplica === null && obsoletas.length === 0) return null;
+  return {
+    cambios,
+    valores,
+    reportar,
+    quitarReporte,
+    noAplica,
+    componente: noAplica?.motivo === MOTIVO_COMPONENTE_NO_APLICA ? sinAplicar!.fuenteId : null,
+    obsoletas,
+  };
 }
 
 /** Lo que la propagación le cambia a una medición desagregada (`planearRejilla`). */
@@ -666,10 +687,12 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
   const version = versionQuePropaga(m, await versionesAprobadas(tx, indicadorId), zona);
   if (!version) return null;
   if (listaDe(m)) return propagarRejilla(tx, i, m, version, ahora);
-  const guardados = await valoresPorLetra(tx, medicionId, version);
-  const plan = planear(m, version, guardados, await ajenosDe(tx, version, m, await filasDeDatos(tx, datosDe(version))));
+  const filas = await filasDeValores(tx, medicionId);
+  const guardados = elegirValores(filas, version);
+  const plan = planear(m, version, guardados, await ajenosDe(tx, version, m, await filasDeDatos(tx, datosDe(version))), filasDeOtraFuente(filas, version));
   if (!plan) return null;
 
+  if (plan.obsoletas.length > 0) await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND id = ANY(${plan.obsoletas})`;
   for (const c of plan.cambios) await escribirAjeno(tx, { id: medicionId, indicadorId }, c, ahora);
   if (plan.reportar) await tx`UPDATE mediciones SET reportada_en = ${ahora}, reportada_por = NULL WHERE id = ${medicionId}`;
   if (plan.quitarReporte) await tx`UPDATE mediciones SET reportada_en = NULL, reportada_por = NULL WHERE id = ${medicionId}`;
@@ -814,10 +837,11 @@ async function conTrabajo(sql: Cliente, candidatas: readonly Candidata[]): Promi
     try {
       const filas = (porMedicion.get(id) ?? []) as unknown as (ValorGuardado & { categoria_id: unknown })[];
       // El total (o los valores de una sin desagregar) es la fila sin categoría; las celdas de una desagregada, las demás.
-      const valores = elegirValores(filas.filter((f) => f.categoria_id === null), version);
+      const sinCategoria = filas.filter((f) => f.categoria_id === null);
+      const valores = elegirValores(sinCategoria, version);
       const plan = listaDe(m)
         ? planearRejilla(m, version, celdasDeFilas(filas, version), valores, deDatos)
-        : planear(m, version, valores, await ajenosDe(sql, version, m, deDatos));
+        : planear(m, version, valores, await ajenosDe(sql, version, m, deDatos), filasDeOtraFuente(sinCategoria, version));
       if (plan) ids.push(id);
     } catch {
       ids.push(id);

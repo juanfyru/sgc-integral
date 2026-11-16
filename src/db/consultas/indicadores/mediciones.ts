@@ -516,6 +516,10 @@ export type ValorGuardado = {
   variable_id: unknown;
   letra: unknown;
   origen: unknown;
+  /** De dónde sale la variable de la fila: el dato compartido, o el indicador y lo que se toma de él; nulos si no es ajena. */
+  variable_compartida_id: unknown;
+  indicador_origen_id: unknown;
+  toma: unknown;
   valor: unknown;
   valor_exacto: unknown;
   reportado_en: unknown;
@@ -523,12 +527,31 @@ export type ValorGuardado = {
 };
 
 /**
+ * ¿La fila salió de la misma fuente que la variable `x` (ajena) de la versión? El mismo dato, o el mismo componente y lo
+ * mismo que se toma de él (su valor o su cumplimiento).
+ */
+const mismaFuente = (f: ValorGuardado, x: VariableDeVersion): boolean =>
+  x.origen === "compartida"
+    ? f.origen === "compartida" && f.variable_compartida_id !== null && Number(f.variable_compartida_id) === x.datoId
+    : f.origen === "indicador" && f.indicador_origen_id !== null && Number(f.indicador_origen_id) === x.indicadorOrigenId && f.toma === x.toma;
+
+/** ¿La fila, que es de una variable de otra versión, no sirve para la letra en `v` porque allí la letra sale de otra fuente? */
+function esDeOtraFuente(f: ValorGuardado, v: VersionDeCalculo, deLaVersion: ReadonlySet<number>): boolean {
+  if (deLaVersion.has(Number(f.variable_id)) || !esAjena(f.origen)) return false;
+  const x = v.variables.find((y) => y.letra === f.letra);
+  return x !== undefined && esAjena(x.origen) && !mismaFuente(f, x);
+}
+
+/**
  * Los valores de una medición por letra de la versión dada, de sus filas guardadas: primero los de las variables de esa
  * versión; si no, los de otra versión (un cambio menor da otros ids a las mismas letras), el más reciente. Cada valor con
  * su fracción exacta, si la tiene (`valor_exacto`), y si no, la de `valor`. Una letra ajena en la versión solo toma filas
  * de variables ajenas, y una que no lo es, solo de las que no lo son (anexo 14C, §3.1): el valor que la persona guardó
  * cuando la letra era suya no entra cuando un cambio mayor la vuelve un dato, ni el que copió el sistema cuando la letra
- * era ajena entra cuando la vuelve propia.
+ * era ajena entra cuando la vuelve propia. Y lo que el sistema copió en otra versión solo sirve si salió de **la misma
+ * fuente** (`mismaFuente`): el valor de un componente no se lee como el del dato, ni como el de otro componente, que un
+ * cambio mayor puso en su letra (para quien lee, esa letra pudo estar oculta en la versión anterior y ya no estarlo: anexo
+ * 14C, §6.5). Esas filas las quita la propagación (`filasDeOtraFuente`).
  */
 export function elegirValores(filas: readonly ValorGuardado[], v: VersionDeCalculo): Record<string, Fraccion> {
   const deLaVersion = new Set(v.variables.map((x) => x.id));
@@ -544,21 +567,37 @@ export function elegirValores(filas: readonly ValorGuardado[], v: VersionDeCalcu
   for (const f of ordenadas) {
     const letra = f.letra as string;
     if (!v.calculo.letras.includes(letra) || Object.hasOwn(salida, letra) || esAjena(f.origen) !== ajenas.has(letra)) continue;
+    if (esDeOtraFuente(f, v, deLaVersion)) continue;
     const valor = typeof f.valor_exacto === "string" ? deTexto(f.valor_exacto) : fr(f.valor);
     if (valor) salida[letra] = valor;
   }
   return salida;
 }
 
-/** Las columnas de `medicion_valores mv` e `indicador_variables iv` que lee `elegirValores`. */
-export const columnasDeValor = (sql: Cliente) => sql`mv.id, mv.variable_id, iv.letra, iv.origen, mv.valor, mv.valor_exacto, mv.reportado_en`;
+/**
+ * De `filas` (las de la medición, sin categoría), los ids de las que el sistema copió en otra versión para una letra que en
+ * `v` sale de otra fuente: `elegirValores` no las lee, y la propagación las quita sin dejar su cifra en ningún evento.
+ */
+export function filasDeOtraFuente(filas: readonly ValorGuardado[], v: VersionDeCalculo): number[] {
+  const deLaVersion = new Set(v.variables.map((x) => x.id));
+  return filas.filter((f) => esDeOtraFuente(f, v, deLaVersion)).map((f) => Number(f.id));
+}
 
-/** Los valores de la medición por letra de la versión dada (`elegirValores`). */
-export async function valoresPorLetra(sql: Cliente, medicionId: number, v: VersionDeCalculo): Promise<Record<string, Fraccion>> {
+/** Las columnas de `medicion_valores mv` e `indicador_variables iv` que lee `elegirValores`. */
+export const columnasDeValor = (sql: Cliente) =>
+  sql`mv.id, mv.variable_id, iv.letra, iv.origen, iv.variable_compartida_id, iv.indicador_origen_id, iv.toma, mv.valor, mv.valor_exacto, mv.reportado_en`;
+
+/** Las filas con valor de la medición, sin categoría (los valores de una sin desagregar, o el total), como las lee `elegirValores`. */
+export async function filasDeValores(sql: Cliente, medicionId: number): Promise<ValorGuardado[]> {
   const filas = await sql`SELECT ${columnasDeValor(sql)}
     FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
     WHERE mv.medicion_id = ${medicionId} AND mv.categoria_id IS NULL AND mv.valor IS NOT NULL`;
-  return elegirValores(filas as unknown as ValorGuardado[], v);
+  return filas as unknown as ValorGuardado[];
+}
+
+/** Los valores de la medición por letra de la versión dada (`elegirValores`). */
+export async function valoresPorLetra(sql: Cliente, medicionId: number, v: VersionDeCalculo): Promise<Record<string, Fraccion>> {
+  return elegirValores(await filasDeValores(sql, medicionId), v);
 }
 
 /** Los valores en el texto de los eventos, uno por letra de la versión («5», `null` si no hay). */
