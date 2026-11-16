@@ -4,7 +4,14 @@ import { Check, TriangleAlert } from "lucide-react";
 import { claseControl } from "@/componentes/ui/Campo";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
-import { avisoDeDeduccion, ETIQUETA_PERIODICIDAD, type Consolidacion, type OpcionesFicha, type Toma } from "@/lib/indicadores/tipos";
+import {
+  AVISO_DE_NO_NOMBRARLO,
+  avisoDeDeduccion,
+  ETIQUETA_PERIODICIDAD,
+  type Consolidacion,
+  type OpcionesFicha,
+  type Toma,
+} from "@/lib/indicadores/tipos";
 
 /**
  * De dónde sale cada variable de una ficha manual (anexo 14C, §3.1): la digita quien mide («Propia»), la reporta el
@@ -261,8 +268,15 @@ export function OrigenDeVariable({
       ) : null}
 
       {/* Siempre presente, para que el aviso se anuncie al elegir el componente y no solo se vea. */}
-      <div id={`${id}-aviso`} aria-live="polite" className="min-w-0 sm:col-span-2">
-        {tomable?.restringido ? <AvisoDeDeduccion nombre={tomable.nombre} /> : null}
+      <div id={`${id}-aviso`} aria-live="polite" className="flex min-w-0 flex-col items-start gap-1 sm:col-span-2">
+        {tomable?.restringido ? (
+          <>
+            <AvisoDeDeduccion nombre={tomable.nombre} />
+            <Insignia variante="atencion" icono={TriangleAlert}>
+              {AVISO_DE_NO_NOMBRARLO}
+            </Insignia>
+          </>
+        ) : null}
       </div>
     </>
   );

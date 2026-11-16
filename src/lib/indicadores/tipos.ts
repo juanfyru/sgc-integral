@@ -78,6 +78,9 @@ export const AVISO_DESAGREGACION =
 export const avisoDeDeduccion = (nombre: string) =>
   `Quien vea este indicador podrá deducir el resultado de «${nombre}» si es el único componente que no puede ver`;
 
+/** Lo que el formulario añade a esa advertencia: el nombre de la variable se sustituye a quien no ve el componente; esos textos, no. */
+export const AVISO_DE_NO_NOMBRARLO = "No lo nombre en el propósito ni en el motivo del cambio: esos textos los lee quien ve este indicador.";
+
 /** El detalle de una tarea que el Admin SGC tiene de respaldo (spec 14 §6.1): sin designado ni líder en la función. */
 export const SIN_RESPONSABLE = "Sin responsable: designe a alguien";
 

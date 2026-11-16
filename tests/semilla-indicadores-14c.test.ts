@@ -367,6 +367,10 @@ describe("la demo de la 14C", () => {
     // Gerencia ve los dos.
     expect((await componentesVisibles(sql, await sesionDe(sql, "gerente"), [gth.id, cex.id])).size).toBe(2);
 
+    // Lo que `lider.cex` lee de la ficha no nombra el área del componente que no ve: el propósito es de quien ve el indicador.
+    const [ficha] = await sql`SELECT v.nombre, v.proposito FROM indicador_versiones v WHERE v.indicador_id = ${restringido.id} AND v.estado = 'aprobada'`;
+    expect(`${ficha.nombre as string} ${ficha.proposito as string}`).not.toMatch(/talento humano|ausentismo/i);
+
     const m = await medicion(SGC_INDICE_RESTRINGIDO.codigo, cal.trimestres[2].clave);
     expect(m).toMatchObject({ semaforo: "bien" });
     expect((await revisarFuentes(sql, [Number(m.id)])).get(Number(m.id))).toMatchObject({ coincide: true, faltan: [] });

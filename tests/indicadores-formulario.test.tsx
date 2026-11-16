@@ -29,7 +29,7 @@ import { cambioDeIndicador, cambioDeOrigen, nombreDeVariable, ORIGENES_DE_VARIAB
 import { EsquemaFicha, type DatosFicha } from "@/lib/esquemas/indicadores";
 import { CALCULOS, CLAVES_DE_CALCULO, ETIQUETA_ALCANCE, META_ENTERA } from "@/lib/indicadores/calculos/registro";
 import { unidadDeForma } from "@/lib/indicadores/formula/formas";
-import { AVISO_DESAGREGACION, avisoDeDeduccion, NADIE_MIDE_AJENO, ORIGEN_AJENO, type OpcionesFicha } from "@/lib/indicadores/tipos";
+import { AVISO_DE_NO_NOMBRARLO, AVISO_DESAGREGACION, avisoDeDeduccion, NADIE_MIDE_AJENO, ORIGEN_AJENO, type OpcionesFicha } from "@/lib/indicadores/tipos";
 
 /** Los cálculos del registro tal como los arma `opcionesDeFicha`. */
 const CALCULOS_DEL_REGISTRO: OpcionesFicha["calculos"] = CLAVES_DE_CALCULO.map((clave) => {
@@ -1164,10 +1164,14 @@ describe("FormularioFicha: el origen de cada variable y la desagregación (14C, 
     const aviso = avisoDeDeduccion("Ausentismo laboral");
     expect(aviso).toBe("Quien vea este indicador podrá deducir el resultado de «Ausentismo laboral» si es el único componente que no puede ver");
     // Dentro de una región `aria-live` que ya estaba: se anuncia al elegir el componente (ronda 1).
-    expect(h).toMatch(new RegExp(`<div id="ficha-variable-A-aviso" aria-live="polite"[^>]*><span data-variante="atencion"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${aviso}</span></div>`));
+    // Y, junto a él, que no lo nombre en los textos que sí lee quien ve el indicador (ola final, O18).
+    expect(AVISO_DE_NO_NOMBRARLO).toBe("No lo nombre en el propósito ni en el motivo del cambio: esos textos los lee quien ve este indicador.");
+    const insignia = (texto: string) => `<span data-variante="atencion"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${texto}</span>`;
+    expect(h).toMatch(new RegExp(`<div id="ficha-variable-A-aviso" aria-live="polite"[^>]*>${insignia(aviso)}${insignia(AVISO_DE_NO_NOMBRARLO)}</div>`));
     // La región está en toda variable, vacía hasta que haga falta.
     const general = pintar14c(conVariables([tomada("A", 70), propia("B")]));
     expect(general).not.toContain("podrá deducir");
+    expect(general).not.toContain(AVISO_DE_NO_NOMBRARLO);
     for (const letra of ["A", "B"]) expect(general).toMatch(new RegExp(`<div id="ficha-variable-${letra}-aviso" aria-live="polite"[^>]*></div>`));
   });
 

@@ -917,13 +917,14 @@ export const SGC_INDICE: FichaDemo14C = {
  * Restringido porque toma uno restringido (anexo 14C, §6.1), y por eso lo aprueba Gerencia. Es del SGC, no de consulta
  * externa: un restringido lo ve quien está asignado a su proceso, y `consulta` lo está a consulta externa. `lider.cex` lo ve
  * porque le hace seguimiento; ve el componente de consulta externa (mensual: en el trimestre, su acumulado) y no el de
- * talento humano.
+ * talento humano. Por eso su propósito no nombra ese área: el propósito lo lee quien ve este indicador (la ficha, el impreso y
+ * el Excel), y el nombre de la variable A, que sí lo nombra, se le sustituye a quien no ve el componente.
  */
 export const SGC_INDICE_RESTRINGIDO: FichaDemo14C = {
   ...compuestoDelSgc,
   codigo: "SGC-ID-004",
   nombre: "Índice de capacidad de atención",
-  proposito: "Seguir en un solo número el cumplimiento de las metas de talento humano y de oportunidad de la cita, para la revisión por la dirección.",
+  proposito: "Seguir en un solo número la capacidad de atención de la entidad, para la revisión por la dirección.",
   tipo: "Efectividad",
   formula: "(A + B) / 2",
   nivelAcceso: "restringido",
