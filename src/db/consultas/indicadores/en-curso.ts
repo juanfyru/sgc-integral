@@ -13,12 +13,13 @@ import { esDeOtraPeriodicidad, recalcularMedicion, versionesAprobadas } from "./
  * Las mediciones que todavía siguen su curso: sin cerrar y no históricas (un histórico no tiene plazo ni avisos), bloqueadas.
  * `plazo_desde` es la hora de la última vez que el sistema les movió la fecha límite, o nulo: la foto que la movió (el evento
  * `foto` con `venceEn`, anexo 14B §5.4; a lo sumo una) o la propagación que la dejó pidiendo un análisis (el evento
- * `propagacion` con `venceEn`, anexo 14C §3.4), que puede moverla más de una vez.
+ * `propagacion` con `venceEn`, anexo 14C §3.4, o el `recalculo` de la racha que esa propagación disparó), que puede moverla
+ * más de una vez.
  */
 export const enCurso = (tx: TransactionSql, indicadorId: number) =>
   tx`SELECT m.id, m.periodo, m.vence_en, m.aviso_previo_en, m.aviso_vencido_en, m.escalado_en,
       (SELECT e.creado_en FROM medicion_eventos e
-        WHERE e.medicion_id = m.id AND e.tipo IN ('foto', 'propagacion') AND e.detalle->>'venceEn' IS NOT NULL
+        WHERE e.medicion_id = m.id AND e.tipo IN ('foto', 'propagacion', 'recalculo') AND e.detalle->>'venceEn' IS NOT NULL
         ORDER BY e.id DESC LIMIT 1) AS plazo_desde
     FROM mediciones m
     WHERE m.indicador_id = ${indicadorId} AND m.estado <> 'cerrada' AND NOT m.historica

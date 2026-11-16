@@ -33,6 +33,7 @@ import { estadoDeFila, listaDelPeriodo, resultadoDeCategoria, totalDeCategorias,
 import { analisisCompleto, analisisExigido, cumpleDeFila, esRepetido } from "@/lib/indicadores/estados";
 import { aDecimal, aTexto, comparar, deTexto, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { alguienMide, esAjena, letrasAjenas } from "@/lib/indicadores/origen";
+import { laFuenteMueveElPlazo } from "@/lib/indicadores/propagacion";
 import {
   fechaLimiteDeReporte,
   periodicidadDe,
@@ -978,6 +979,49 @@ export async function recalcularMedicion(
   return r;
 }
 
+/** ¿La medición pide un análisis que no tiene? El que exige su resultado (`analisisExigido`) frente al guardado. */
+function pideAnalisis(d: { semaforo: Semaforo | null; cumple: boolean | null; repetido: boolean; noAplica: boolean }, m: Record<string, unknown>): boolean {
+  return !analisisCompleto(analisisExigido({ ...d, historica: false }), analisisDe(m));
+}
+
+/**
+ * El `conElResultado` de un recálculo que nace de una fuente (la propagación, y la racha que ella dispara en las siguientes,
+ * `recalcularSiguientes`): un cambio ajeno que deja a la medición `m` (su fila de antes) pidiendo el análisis con la fecha ya
+ * pasada no la deja vencida (anexo 14C, §3.4); ni el contagio que llegó a tiempo y, al quitarse, le devuelve el reporte a
+ * quien mide un mixto (`devuelveATiempo`): nadie amanece vencido por lo que cambió otro. Si el contagio llegó tarde, la fecha y
+ * las marcas de aviso no se tocan: ya debía su reporte. `noAplica` es el «No aplica» que le queda; `i`, su indicador, con
+ * `plazo_reporte_dias`.
+ *
+ * Cuando la fecha se mueve porque la medición pasa a pedir el análisis, el evento guarda también la que tenía (`venceAntes`):
+ * esa fecha nueva es la del análisis, y «Reportes a tiempo» (`reportesDelPeriodo`, `calculos.ts`) sigue juzgando el reporte
+ * contra la del primer evento que la lleva. Cuando se mueve porque el reporte vuelve a quien mide (`devuelveATiempo`), no: esa
+ * sí es la fecha nueva de su reporte.
+ *
+ * Vive aquí y no en `propagacion.ts`, que importa este archivo: la racha también lo usa.
+ */
+export function plazoPorLaFuente(
+  tx: TransactionSql,
+  i: Record<string, unknown>,
+  m: Record<string, unknown>,
+  c: { noAplica: boolean; devuelveATiempo: boolean; ahora: Date },
+) {
+  const semaforo = (m.semaforo as Semaforo | null) ?? null;
+  const pedia = pideAnalisis(
+    { semaforo, cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo }), repetido: m.incumplimiento_repetido === true, noAplica: m.no_aplica === true },
+    m,
+  );
+  return async (r: Recalculo): Promise<Record<string, unknown>> => {
+    const pide = pideAnalisis({ semaforo: r.despues, cumple: r.cumple, repetido: r.repetido, noAplica: c.noAplica }, m);
+    const plazo = { venceEn: new Date(m.vence_en as string), ahora: c.ahora, plazoDias: Number(i.plazo_reporte_dias), zona: zonaHoraria() };
+    const porElAnalisis = laFuenteMueveElPlazo({ pedia, pide, ...plazo });
+    const vence = porElAnalisis ?? (c.devuelveATiempo ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
+    if (!vence) return {};
+    await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
+      WHERE id = ${Number(m.id)}`;
+    return { venceEn: vence.toISOString(), ...(porElAnalisis ? { venceAntes: plazo.venceEn.toISOString() } : {}) };
+  };
+}
+
 /**
  * El incumplimiento repetido de una medición sale de si cumplieron la meta las n − 1 anteriores medidas (spec §10.3; con
  * `cumple`, spec 14A §3.1: un Bien que no la alcanza también cuenta): cuando una cambia de semáforo, de `cumple` o de
@@ -990,14 +1034,20 @@ export async function recalcularMedicion(
  * depende (la marca, el análisis exigido y con él el estado); la falta de un soporte que se volvió obligatorio después no la
  * reabre. El semáforo de una siguiente no depende de las anteriores: su recálculo no sigue en cadena. Sus avisos son los de
  * `alRecalcular`, por el último nivel alertado.
+ *
+ * Cuando la racha nace de una propagación (`c.sistema` es `"fuente"`: un dato corregido, la meta de un componente, lo
+ * recalculado tras una reapertura en cascada), la siguiente que pasa de no pedir el análisis a pedirlo con su fecha ya pasada
+ * recibe la regla de la propia propagación (`plazoPorLaFuente`, con su antes y su después; anexo 14C §3.4, F14C-DC42): su fecha
+ * se cuenta otra vez desde ese día y su evento `recalculo` lleva `venceEn` y `venceAntes`. La racha que nace de quien mide el
+ * mismo indicador no mueve ninguna fecha (14A).
  */
 async function recalcularSiguientes(
   tx: TransactionSql,
   m: { id: number; indicadorId: number; periodo: string; hasta: Date },
-  c: { ahora: Date; actorId: number | null },
+  c: { ahora: Date; actorId: number | null; sistema?: RecalculoDeSistema },
 ): Promise<void> {
   const { incumplimientoPeriodos: n } = await obtenerParametros({ sql: tx });
-  const siguientes = await tx`SELECT id, periodo, estado FROM mediciones
+  const siguientes = await tx`SELECT * FROM mediciones
     WHERE indicador_id = ${m.indicadorId} AND id <> ${m.id} AND desde > ${m.hasta}
       AND NOT historica AND NOT no_aplica AND resultado_exacto IS NOT NULL
     ORDER BY desde, id
@@ -1007,6 +1057,8 @@ async function recalcularSiguientes(
   if (abiertas.length === 0) return;
   const zona = zonaHoraria();
   const versiones = await versionesAprobadas(tx, m.indicadorId);
+  // Quien propaga ya tiene el indicador `FOR SHARE`: su plazo no cambia mientras tanto.
+  const porFuente = c.sistema === "fuente" ? (await tx`SELECT plazo_reporte_dias FROM indicadores WHERE id = ${m.indicadorId}`)[0] : null;
   for (const s of abiertas) {
     const clave = s.periodo as string;
     const periodo = periodoDe(clave, zona);
@@ -1018,6 +1070,7 @@ async function recalcularSiguientes(
       evento: "recalculo",
       detalle: { causa: "racha", periodo: m.periodo },
       sistema: "racha",
+      ...(porFuente ? { conElResultado: plazoPorLaFuente(tx, porFuente, s, { noAplica: false, devuelveATiempo: false, ahora: c.ahora }) } : {}),
     });
   }
 }

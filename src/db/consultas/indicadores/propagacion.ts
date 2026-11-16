@@ -52,12 +52,11 @@ import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo"
 import { acumulado, juntadoONada } from "@/lib/indicadores/acumulado";
 import { calcular } from "@/lib/indicadores/calculo";
 import { porcentajeDeCumplimiento } from "@/lib/indicadores/cumplimiento";
-import { analisisCompleto, analisisExigido, cumpleDeFila } from "@/lib/indicadores/estados";
+import { cumpleDeFila } from "@/lib/indicadores/estados";
 import { aTexto, comparar, deTexto, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { nivelesBajo, porNiveles } from "@/lib/indicadores/grafo";
 import { clavesFinas, contiene, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { esAjena } from "@/lib/indicadores/origen";
-import { laFuenteMueveElPlazo } from "@/lib/indicadores/propagacion";
 import { fichaDeCalculo, reglaDeTexto, valorEnTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
 import { rachasDe } from "@/lib/indicadores/resultados";
 import type { Regla } from "@/lib/indicadores/semaforo";
@@ -75,7 +74,6 @@ import {
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { aristasDeComponentes } from "./componentes";
 import {
-  analisisDe,
   asegurarMediciones,
   celdasDeFilas,
   celdasPorCategoria,
@@ -88,6 +86,7 @@ import {
   listaDe,
   mide,
   mismoTotal,
+  plazoPorLaFuente,
   primeraAprobada,
   recalcularMedicion,
   texto,
@@ -99,7 +98,6 @@ import {
   versionesDeCalculo,
   type CambioDeCelda,
   type CambioDeFila,
-  type Recalculo,
   type ValorGuardado,
   type VersionDeCalculo,
 } from "./mediciones";
@@ -628,11 +626,6 @@ async function escribirAjeno(tx: TransactionSql, m: { id: number; indicadorId: n
 const enTexto = (version: VersionDeCalculo, valores: Readonly<Record<string, Fraccion>>): Record<string, string | null> =>
   Object.fromEntries(version.calculo.letras.map((l) => [l, valores[l] ? valorEnTexto(valores[l]) : null]));
 
-/** ¿La medición pide un análisis que no tiene? El que exige su resultado (`analisisExigido`) frente al guardado. */
-function pideAnalisis(d: { semaforo: Semaforo | null; cumple: boolean | null; repetido: boolean; noAplica: boolean }, m: Row): boolean {
-  return !analisisCompleto(analisisExigido({ ...d, historica: false }), analisisDe(m));
-}
-
 /**
  * ¿El último contagio de la medición (`propagacion` con `detalle.componente`) llegó en su fecha límite o antes? La misma
  * condición de «Reportes a tiempo» (`reportesDelPeriodo`): si llegó después, quien mide ya debía su reporte.
@@ -655,35 +648,6 @@ async function sinCategoriaATiempo(tx: TransactionSql, medicionId: number, categ
       AND (f.fila ->> 'id')::bigint = ANY(${categorias as number[]}::bigint[])
       AND f.fila -> 'despues' ->> 'noAplica' = ${MOTIVO_DATO_SIN_CATEGORIA}`;
   return c?.en !== null && c?.en !== undefined && new Date(c.en as Date).getTime() <= venceEn.getTime();
-}
-
-/**
- * El `conElResultado` de una propagación: un cambio ajeno que deja a la medición `m` pidiendo el análisis con la fecha ya
- * pasada no la deja vencida (anexo 14C, §3.4); ni el contagio que llegó a tiempo y, al quitarse, le devuelve el reporte a
- * quien mide un mixto (`devuelveATiempo`): nadie amanece vencido por lo que cambió otro. Si el contagio llegó tarde, la fecha y
- * las marcas de aviso no se tocan: ya debía su reporte. `noAplica` es el «No aplica» que le queda.
- *
- * Cuando la fecha se mueve porque la medición pasa a pedir el análisis, el evento guarda también la que tenía (`venceAntes`):
- * esa fecha nueva es la del análisis, y «Reportes a tiempo» (`reportesDelPeriodo`, `calculos.ts`) sigue juzgando el reporte
- * contra la del primer evento que la lleva. Cuando se mueve porque el reporte vuelve a quien mide (`devuelveATiempo`), no: esa
- * sí es la fecha nueva de su reporte.
- */
-function plazoPorLaFuente(tx: TransactionSql, i: Row, m: Row, c: { noAplica: boolean; devuelveATiempo: boolean; ahora: Date }) {
-  const semaforo = (m.semaforo as Semaforo | null) ?? null;
-  const pedia = pideAnalisis(
-    { semaforo, cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo }), repetido: m.incumplimiento_repetido === true, noAplica: m.no_aplica === true },
-    m,
-  );
-  return async (r: Recalculo): Promise<Record<string, unknown>> => {
-    const pide = pideAnalisis({ semaforo: r.despues, cumple: r.cumple, repetido: r.repetido, noAplica: c.noAplica }, m);
-    const plazo = { venceEn: new Date(m.vence_en as string), ahora: c.ahora, plazoDias: Number(i.plazo_reporte_dias), zona: zonaHoraria() };
-    const porElAnalisis = laFuenteMueveElPlazo({ pedia, pide, ...plazo });
-    const vence = porElAnalisis ?? (c.devuelveATiempo ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
-    if (!vence) return {};
-    await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
-      WHERE id = ${Number(m.id)}`;
-    return { venceEn: vence.toISOString(), ...(porElAnalisis ? { venceAntes: plazo.venceEn.toISOString() } : {}) };
-  };
 }
 
 /**

@@ -19,6 +19,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { analizar } from "@/db/consultas/indicadores/analisis";
 import { tomarCalculo } from "@/db/consultas/indicadores/calculos";
 import { asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { basesDe, leerPeriodos } from "@/db/consultas/indicadores/lectura";
@@ -591,6 +592,94 @@ describe("el plazo del análisis", () => {
       // Otro plazo cuenta desde la última vez que la fuente la movió.
       await plazo(7, dic10);
       expect((await fila(tx, medicion)).vence_en).toEqual(fechaLimite(nov20, 7, ZONA));
+    }));
+});
+
+describe("la racha que nace de una propagación", () => {
+  const JUNIO = new Date("2026-06-15T15:00:00Z");
+  /** Con B en 50.000.000, 38.529.000 es el 77,1 %: no cumple la meta (90) y queda en Atención (desde 63). */
+  const ATENCION = "50000000";
+
+  /**
+   * El mixto desde julio, con n = 3: julio no cumple (Crítico), agosto cumple y septiembre no cumple en Atención, con su
+   * análisis simple hecho: reportada, sin racha. Septiembre vence el 10 de octubre.
+   */
+  async function conSeptiembreAnalizado(tx: TransactionSql) {
+    await tx`UPDATE configuracion SET valor = '3' WHERE clave = 'ind_incumplimiento_periodos'`;
+    const x = await mixto(tx, { inicioMedicion: "2026-07", aprobadaEn: JUNIO });
+    const de = { julio: await medicionDe(tx, x.ind.id, "2026-07"), agosto: await medicionDe(tx, x.ind.id, "2026-08"), septiembre: await medicionDe(tx, x.ind.id, "2026-09") };
+    for (const id of Object.values(de)) await reportarLoMio(tx, x.mide, id, { A: "38529000" });
+    await reportarElDato(tx, x.responsable, x.datoId, "2026-07", "1284300000");
+    await reportarElDato(tx, x.responsable, x.datoId, "2026-08", "40000000");
+    await reportarElDato(tx, x.responsable, x.datoId, "2026-09", ATENCION);
+    await propagarA(tx, AHORA, [x.ind.id]);
+    await analizar(x.analiza, { medicionId: de.septiembre, analisis: "La glosa subió por la facturación de urgencias." }, { sql: tx, ahora: AHORA });
+    const antes = await fila(tx, de.septiembre);
+    expect([antes.semaforo, antes.cumple, antes.estado, antes.incumplimiento_repetido]).toEqual(["atencion", false, "reportada", false]);
+    expect(antes.vence_en).toEqual(VENCE_SEPTIEMBRE);
+    expect([(await fila(tx, de.julio)).semaforo, (await fila(tx, de.agosto)).cumple]).toEqual(["critico", true]);
+    return { ...x, de };
+  }
+
+  it("la siguiente que pasa a «repetido» con la fecha ya pasada cuenta su plazo desde ese día, y su evento lo dice", () =>
+    revertida(sql, async (tx) => {
+      const x = await conSeptiembreAnalizado(tx);
+      await tx`UPDATE mediciones SET aviso_previo_en = ${AHORA}, aviso_vencido_en = ${AHORA}, escalado_en = ${AHORA} WHERE id = ${x.de.septiembre}`;
+
+      // El 20 de octubre se corrige el dato de agosto, que deja de cumplir: septiembre pasa a «repetido» y exige causa y acción.
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-08", "1284300000", TARDE);
+      await propagarA(tx, TARDE, [x.ind.id]);
+      expect((await fila(tx, x.de.agosto)).cumple).toBe(false);
+
+      const m = await fila(tx, x.de.septiembre);
+      expect([m.estado, m.incumplimiento_repetido]).toEqual(["abierta", true]);
+      const movida = fechaLimite(TARDE, 10, ZONA);
+      expect(m.vence_en).toEqual(movida);
+      expect([m.aviso_previo_en, m.aviso_vencido_en, m.escalado_en]).toEqual([null, null, null]);
+      const ultimo = (await eventos(tx, x.de.septiembre)).at(-1)!;
+      expect(ultimo).toMatchObject({ tipo: "recalculo", usuarioId: null, detalle: { causa: "racha", periodo: "2026-08" } });
+      expect(ultimo.detalle.venceEn).toBe(movida.toISOString());
+      expect(ultimo.detalle.venceAntes).toBe(VENCE_SEPTIEMBRE.toISOString());
+
+      // El plazo nuevo del indicador cuenta desde el día en que la racha la movió, como con la propagación.
+      const admin = await sesionAdmin(tx);
+      await cambiarOperacion(
+        admin,
+        { indicadorId: x.ind.id, plazoReporteDias: 5, inicioMedicion: "2026-07", soporteObligatorio: false, nivelAcceso: "general" },
+        { sql: tx, ahora: new Date("2026-10-21T15:00:00Z") },
+      );
+      expect((await fila(tx, x.de.septiembre)).vence_en).toEqual(fechaLimite(TARDE, 5, ZONA));
+    }));
+
+  it("si la fecha aún no pasó, o si ya pedía el análisis, la racha no la mueve", () =>
+    revertida(sql, async (tx) => {
+      const x = await conSeptiembreAnalizado(tx);
+      // El 8 de octubre septiembre sigue en plazo (vence el 10): pasa a «repetido» y conserva su fecha.
+      const EN_PLAZO = new Date("2026-10-08T15:00:00Z");
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-08", "1284300000", EN_PLAZO);
+      await propagarA(tx, EN_PLAZO, [x.ind.id]);
+      let m = await fila(tx, x.de.septiembre);
+      expect([m.estado, m.incumplimiento_repetido, m.vence_en]).toEqual(["abierta", true, VENCE_SEPTIEMBRE]);
+      expect((await eventos(tx, x.de.septiembre)).at(-1)!.detalle).not.toHaveProperty("venceEn");
+
+      // El 20, con la fecha ya pasada, otra corrección de agosto que tampoco cumple: septiembre ya pedía la causa y la acción
+      // (no pasa de no pedir a pedir), así que su fecha no se mueve.
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-08", "1000000000", TARDE);
+      await propagarA(tx, TARDE, [x.ind.id]);
+      m = await fila(tx, x.de.septiembre);
+      expect([m.estado, m.incumplimiento_repetido, m.vence_en]).toEqual(["abierta", true, VENCE_SEPTIEMBRE]);
+      expect((await tx`SELECT 1 FROM medicion_eventos WHERE medicion_id = ${x.de.septiembre} AND detalle ? 'venceEn'`).length).toBe(0);
+    }));
+
+  it("la racha que nace de quien mide el mismo indicador no mueve la fecha (14A)", () =>
+    revertida(sql, async (tx) => {
+      const x = await conSeptiembreAnalizado(tx);
+      // Quien mide corrige lo suyo en agosto el 20 de octubre y deja de cumplir: septiembre pasa a «repetido», vencida.
+      await reportarLoMio(tx, x.mide, x.de.agosto, { A: "1000000" }, TARDE);
+      expect((await fila(tx, x.de.agosto)).cumple).toBe(false);
+      const m = await fila(tx, x.de.septiembre);
+      expect([m.estado, m.incumplimiento_repetido, m.vence_en]).toEqual(["abierta", true, VENCE_SEPTIEMBRE]);
+      expect((await eventos(tx, x.de.septiembre)).at(-1)!.detalle).not.toHaveProperty("venceEn");
     }));
 });
 
