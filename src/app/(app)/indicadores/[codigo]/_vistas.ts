@@ -34,6 +34,7 @@ import {
   type ResultadoExterno,
 } from "@/db/consultas/indicadores/constancias";
 import { desgloseDe } from "@/db/consultas/indicadores/categorias";
+import { loToman } from "@/db/consultas/indicadores/componentes";
 import { desagregacionDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { observacionesDe, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
@@ -142,10 +143,12 @@ export async function datosDeResultados(
   }
 
   // Los históricos del año, a quien los registra (spec §8.8): el modo edición existe si alguno sigue abierto. Los que
-  // calcula el sistema (la versión que rige su periodo es automática, anexo 14B §4) no se digitan: no entran.
-  const registra = activo && (await puedeRegistrarHistoricos(indicador.id, sesion)).puede;
-  const editables: FilaHistoricaVista[] = filas
-    .filter((f) => f.historica && f.medicionId !== null && f.deOtraPeriodicidad !== true && !f.automatica)
+  // calcula el sistema (la versión que rige su periodo es automática, anexo 14B §4) no se digitan: no entran. Los de un
+  // compuesto con un componente que la persona no ve tampoco: los registra quien administra (F14C-DC38, `registrarHistoricos`).
+  const historicos = filas.filter((f) => f.historica && f.medicionId !== null && f.deOtraPeriodicidad !== true && !f.automatica);
+  const conOculta = historicos.some((f) => f.valores.some((v) => v.oculta === true));
+  const registra = activo && !conOculta && (await puedeRegistrarHistoricos(indicador.id, sesion)).puede;
+  const editables: FilaHistoricaVista[] = historicos
     .map((f) => ({
       periodo: f.periodo,
       etiqueta: f.etiqueta,
@@ -254,7 +257,10 @@ export async function datosDeReportes(c: ContextoDeVista, ente: EnteDeLaFicha): 
   return { codigo: indicador.codigo, ente, constancias, soportes, historial, registro };
 }
 
-/** «Ficha técnica»: lo que «Aprobar» firma, si la versión está por aprobar, y los datos de operación a quien los ve. */
+/**
+ * «Ficha técnica»: lo que «Aprobar» firma, si la versión está por aprobar, los datos de operación a quien los ve y, a quien
+ * ve el indicador, «Lo toman»: los compuestos que toman su resultado y que la persona ve (`loToman`, anexo 14C §6.5).
+ */
 export async function datosDeFicha(c: ContextoDeVista): Promise<DatosDeFicha> {
   const { ficha, indicador } = c;
   const codigo = indicador.codigo;
@@ -272,7 +278,7 @@ export async function datosDeFicha(c: ContextoDeVista): Promise<DatosDeFicha> {
       elaboro: ficha.firmas.elaboro?.nombre ?? "",
       enviada: ficha.firmas.elaboro ? fechaYHora(ficha.firmas.elaboro.fecha) : "",
       enlace: enlaceDeVersion(codigo, ficha.numero),
-      restringidos: await restringidosQueToma(obtenerSql(), ficha.versionId),
+      restringidos: await restringidosQueToma(obtenerSql(), ficha.versionId, c.sesion),
     };
   }
   return {
@@ -284,6 +290,7 @@ export async function datosDeFicha(c: ContextoDeVista): Promise<DatosDeFicha> {
     porAprobar,
     pideCodigo: c.sesion.totpActivo,
     operacion: c.ve || ficha.aprueba ? await operacionDeIndicador(indicador.id) : null,
+    loToman: c.ve ? await loToman(obtenerSql(), c.sesion, indicador.id) : [],
   };
 }
 

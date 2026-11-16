@@ -5,6 +5,7 @@ import { deTexto, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
 import { numeroEs } from "@/lib/indicadores/semaforo";
 import { textoValor } from "@/lib/indicadores/textos";
+import { VALOR_OCULTO } from "@/lib/indicadores/tipos";
 import { VolverACalcular } from "./VolverACalcular";
 
 export const LO_CALCULA_EL_SISTEMA = "Este indicador lo calcula el sistema. Nadie digita sus datos.";
@@ -22,12 +23,17 @@ const valorEnPantalla = (valor: string) => {
 
 const deIndicador = (a: VariableAjena) => [a.codigo, a.nombre].filter(Boolean).join(" ");
 
+/** El aviso de un componente que la persona no ve y aún no tiene resultado (anexo 14C, §6.5): sin nombrarlo. */
+export const FALTA_UN_COMPONENTE = "Falta un dato de un componente.";
+
 /**
  * El aviso de «Falta un dato» de una variable ajena que aún no llega (anexo 14C, §3.1, maqueta 14); `null` si ya llegó o si
- * la variable es propia. Con `mide`, a quien mide le dice que ya puede reportar lo suyo.
+ * la variable es propia. Con `mide` (quien mide y aún no reportó lo suyo), le dice que ya puede reportarlo. La de un
+ * componente que la persona no ve, `FALTA_UN_COMPONENTE`.
  */
 export function avisoDeFalta(v: VariableDeReporte, mide: boolean): string | null {
   const a = v.ajena;
+  if (a?.oculta) return a.llego ? null : FALTA_UN_COMPONENTE;
   if (!a || a.valor !== null) return null;
   if (a.clase === "indicador") return `Falta un dato. Sale de ${deIndicador(a)}, que aún no tiene resultado.`;
   const quien = a.proceso ? `«${a.nombre}» lo reporta ${a.proceso}${a.venceEl ? `; vence el ${a.venceEl}` : ""}.` : `«${a.nombre}» aún no se reporta.`;
@@ -58,7 +64,8 @@ export function AvisosDeFalta({ variables, mide }: { variables: VariableDeReport
 /**
  * Una variable que no digita quien mide (anexo 14C, §3.1, maqueta 14): fija, con su nombre, de dónde llega («Dato
  * compartido» o «De otro indicador»), su valor o que aún no llega y, de un dato, quién lo reportó y cuándo. No se cambia
- * desde aquí: no hay campo, y el servidor rechaza un valor para ella.
+ * desde aquí: no hay campo, y el servidor rechaza un valor para ella. La de un componente que la persona no ve (anexo 14C,
+ * §6.5) llega sin nombre ni cifra: «Indicador restringido», con «No disponible» si ya llegó.
  */
 export function VariableFija({ variable: v, id }: { variable: VariableDeReporte; id: string }) {
   const a = v.ajena;
@@ -71,6 +78,15 @@ export function VariableFija({ variable: v, id }: { variable: VariableDeReporte;
           ? `Lo reportó ${a.reporto} el ${a.reportadoEl}. No se cambia desde aquí.`
           : "No se cambia desde aquí."
         : `Sale de ${deIndicador(a)}. No se cambia desde aquí.`;
+  const valor = a.oculta
+    ? a.llego
+      ? VALOR_OCULTO
+      : "Aún no tiene resultado"
+    : a.valor === null
+      ? a.clase === "dato"
+        ? "Aún no lo reportan"
+        : "Aún no tiene resultado"
+      : valorEnPantalla(a.valor);
   return (
     <div role="group" aria-labelledby={`${id}-etiqueta`} className="flex min-w-0 flex-col gap-1">
       <p id={`${id}-etiqueta`} className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium">
@@ -80,7 +96,7 @@ export function VariableFija({ variable: v, id }: { variable: VariableDeReporte;
       <p
         className={`break-words rounded-md border border-dashed border-border bg-muted px-3 py-2 text-sm tabular-nums ${a.valor === null ? "text-muted-foreground" : ""}`}
       >
-        {a.valor === null ? (a.clase === "dato" ? "Aún no lo reportan" : "Aún no tiene resultado") : valorEnPantalla(a.valor)}
+        {valor}
       </p>
       {v.descripcion ? <p className="text-xs text-muted-foreground">{v.descripcion}</p> : null}
       {nota ? <p className="text-xs text-muted-foreground">{nota}</p> : null}

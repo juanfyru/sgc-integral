@@ -270,5 +270,14 @@ export const COMPONENTE_OCULTO = "Indicador restringido";
 export const VALOR_OCULTO = "No disponible";
 export const RESULTADO_OCULTO = "Resultado de un indicador restringido";
 
+/**
+ * El motivo del contagio (`MOTIVO_COMPONENTE_NO_APLICA`) para quien lee (anexo 14C, §6.3, F14C-DC29): con el componente que
+ * no aplicó («CEX-ID-002 Oportunidad de la cita»), a quien lo ve; sin él, el motivo tal cual se guardó. Cualquier otro
+ * motivo sale igual.
+ */
+export function motivoParaQuienLee(motivo: string | null, componente: string | null): string | null {
+  return motivo === MOTIVO_COMPONENTE_NO_APLICA && componente ? `${componente} no aplicó en el periodo` : motivo;
+}
+
 /** Cuántos niveles de indicadores que toman de otros se admiten. */
 export const MAXIMO_NIVELES = 5;

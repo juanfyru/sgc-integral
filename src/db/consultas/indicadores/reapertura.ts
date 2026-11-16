@@ -28,7 +28,7 @@
  * reabierto con el valor de hoy de su fuente.
  *
  * El aviso de cada dependiente nombra la fuente solo a quien puede verla (un dato, `puedeVerDato`; un componente,
- * `puedeVerIndicador`), por destinatario; a los demás, «un componente» o, si es un dato, «una de sus fuentes». El evento y la
+ * `componentesVisibles`, la regla única del anexo §6.5), por destinatario; a los demás, «un componente» o, si es un dato, «una de sus fuentes». El evento y la
  * bitácora guardan solo su referencia (`porFuente`, `{ clase, id }`), nunca su nombre: el historial la resuelve al leer
  * (`fuenteEnTexto`), con la visibilidad de quien lee. Al reabrir un periodo de un dato se avisa también a sus responsables.
  */
@@ -38,10 +38,10 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import {
+  componentesVisibles,
   puedeMedir,
   puedeReportarDato,
   puedeVerDato,
-  puedeVerIndicador,
   responsablesDeAnalizar,
   responsablesDeDato,
   responsablesDeMedir,
@@ -135,7 +135,7 @@ export async function fuenteEnTexto(sql: Cliente, ref: { clase: Fuente["clase"];
   return {
     texto: `${m.codigo as string} ${nombre}, ${etiquetaDe(m.periodo as string)}`,
     oculta: OCULTA.medicion,
-    ve: (sujeto) => puedeVerIndicador(indicadorId, sujeto, { sql }),
+    ve: async (sujeto) => (await componentesVisibles(sql, sujeto, [indicadorId])).has(indicadorId),
   };
 }
 

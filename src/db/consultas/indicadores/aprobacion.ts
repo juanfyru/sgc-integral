@@ -24,7 +24,7 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { registrarFirma } from "@/db/consultas/firmas";
 import { ErrorFirma, enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { aprobadoresDeFicha, filtroAcceso, puedeAprobarFicha, puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
+import { aprobadoresDeFicha, componentesVisibles, filtroAcceso, puedeAprobarFicha, puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
 import { verificarParaFirmar, type CredencialesFirma } from "@/lib/firma";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { calculoDe, META_ENTERA, metaNoEntera, type DefinicionDeCalculo } from "@/lib/indicadores/calculos/registro";
@@ -37,6 +37,7 @@ import { reglaDeTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
 import { errorDeRegla, numeroExacto } from "@/lib/indicadores/semaforo";
 import {
   AVISO_DESIGNACION,
+  COMPONENTE_OCULTO,
   ErrorIndicador,
   FUNCIONES_DESIGNADO,
   MAXIMO_EN_BLOQUE,
@@ -997,17 +998,19 @@ export type FichaPorAprobar = {
 /**
  * Los indicadores restringidos hoy de los que la versión toma alguna variable, una vez cada uno y en el orden de sus
  * variables, con el nombre que firmó la ficha: los del aviso de deducción al aprobar (anexo 14C, §6.1). Una lectura, sin
- * candados: quién aprueba lo decide `aprobadoresDeFicha` con los suyos.
+ * candados: quién aprueba lo decide `aprobadoresDeFicha` con los suyos. Quien lee (`sujeto`) ve el nombre de los que ve
+ * (`componentesVisibles`, §6.5); de los demás, `COMPONENTE_OCULTO`. Quien aprueba una ficha así es Gerencia, que los ve todos.
  */
-export async function restringidosQueToma(sql: Cliente, versionId: number): Promise<string[]> {
+export async function restringidosQueToma(sql: Cliente, versionId: number, sujeto: SujetoVisibilidad): Promise<string[]> {
   const filas = await sql`SELECT v.indicador_origen_id, v.origen_nombre, i.codigo
     FROM indicador_variables v JOIN indicadores i ON i.id = v.indicador_origen_id
     WHERE v.version_id = ${versionId} AND i.nivel_acceso = 'restringido'
     ORDER BY v.orden, v.letra`;
+  const visibles = await componentesVisibles(sql, sujeto, filas.map((f) => Number(f.indicador_origen_id)));
   const nombres = new Map<number, string>();
   for (const f of filas) {
     const id = Number(f.indicador_origen_id);
-    if (!nombres.has(id)) nombres.set(id, (f.origen_nombre as string | null) ?? (f.codigo as string));
+    if (!nombres.has(id)) nombres.set(id, visibles.has(id) ? ((f.origen_nombre as string | null) ?? (f.codigo as string)) : COMPONENTE_OCULTO);
   }
   return [...nombres.values()];
 }
@@ -1045,7 +1048,7 @@ export async function fichasPorAprobar(sesion: SujetoVisibilidad, opciones?: { s
       motivo: (f.motivo_cambio as string | null) ?? null,
       elaboro: (f.elaboro as string | null) ?? "",
       enviadaEn: new Date(f.elaborada_en as string),
-      restringidos: await restringidosQueToma(sql, versionId),
+      restringidos: await restringidosQueToma(sql, versionId, sesion),
     });
   }
   return salida;
@@ -1158,8 +1161,14 @@ export type FichaLeida = {
   motivo: string | null;
   notaDevolucion: string | null;
   elaboradaEn: Date | null;
-  /** El contenido firmado; sin el id del procedimiento si la persona no ve ese documento. */
+  /**
+   * El contenido firmado; sin el id del procedimiento si la persona no ve ese documento, y la variable tomada de un componente
+   * que no ve (anexo 14C, §6.5) sin nada de él: su nombre es `COMPONENTE_OCULTO` y no lleva descripción, fuente, unidad, id,
+   * código ni nombre del componente. Es para leer: la huella y los cambios se calculan con el contenido entero.
+   */
   contenido: ContenidoFicha;
+  /** Los componentes que la persona ve, por id (`componentesVisibles`): con ellos la ficha en texto dice de dónde sale cada variable. */
+  componentesVisibles: number[];
   /** El procedimiento enlazado, solo si la persona ve ese documento (F13C-R11). */
   procedimiento: { id: number; codigo: string; titulo: string } | null;
   /** Tomadas de `firmas`: el nombre y el cargo congelados al firmar. */
@@ -1173,7 +1182,25 @@ export type FichaLeida = {
 const firmaDe = (f: Record<string, unknown> | undefined): FirmaDeFicha | null =>
   f ? { nombre: f.nombre_firmante as string, cargo: (f.cargo_firmante as string | null) ?? null, fecha: new Date(f.creado_en as string) } : null;
 
-/** Una versión de la ficha para leerla, si la persona puede abrirla (`versionesVisibles`); si no, `null`. */
+/**
+ * La variable tomada de un componente que la persona no ve, para leer (anexo 14C, §6.5): sin su nombre (el de quien elaboró
+ * puede nombrar al componente), su descripción, su fuente, su unidad ni nada del componente.
+ */
+const VARIABLE_OCULTA = {
+  nombre: COMPONENTE_OCULTO,
+  descripcion: null,
+  fuente: null,
+  unidad: null,
+  indicadorOrigenId: null,
+  origenCodigo: null,
+  origenNombre: null,
+} as const;
+
+/**
+ * Una versión de la ficha para leerla, si la persona puede abrirla (`versionesVisibles`); si no, `null`. La variable tomada de
+ * un componente que no ve sale oculta (`VARIABLE_OCULTA`); `componentesVisibles` dice cuáles ve. Así la leen la vista, las
+ * versiones anteriores, el impreso y la hoja «Ficha» del Excel.
+ */
 export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: number, opciones?: { sql?: Cliente }): Promise<FichaLeida | null> {
   const sql = opciones?.sql ?? obtenerSql();
   const [v] = await sql`SELECT indicador_id, numero, estado, tipo_cambio, rige_desde, motivo_cambio, nota_devolucion, huella, elaborada_en
@@ -1184,6 +1211,11 @@ export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: numbe
   if (!visible) return null;
 
   const contenido = await contenidoDeVersion(sql, versionId);
+  const tomados = contenido.variables.flatMap((x) => (x.origen === "indicador" && x.indicadorOrigenId !== null ? [x.indicadorOrigenId] : []));
+  const visibles = await componentesVisibles(sql, sesion, tomados);
+  const variables = contenido.variables.map((x) =>
+    x.origen === "indicador" && x.indicadorOrigenId !== null && !visibles.has(x.indicadorOrigenId) ? { ...x, ...VARIABLE_OCULTA } : x,
+  );
   let procedimiento: FichaLeida["procedimiento"] = null;
   if (contenido.procedimientoDocumentoId !== null) {
     const [doc] = await sql`SELECT d.id, d.codigo, d.titulo FROM documentos d
@@ -1203,7 +1235,8 @@ export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: numbe
     motivo: (v.motivo_cambio as string | null) ?? null,
     notaDevolucion: (v.nota_devolucion as string | null) ?? null,
     elaboradaEn: fecha(v.elaborada_en),
-    contenido: { ...contenido, procedimientoDocumentoId: procedimiento ? procedimiento.id : null },
+    contenido: { ...contenido, variables, procedimientoDocumentoId: procedimiento ? procedimiento.id : null },
+    componentesVisibles: [...visibles].sort((a, b) => a - b),
     procedimiento,
     firmas: {
       elaboro: huella === null ? null : firmaDe(firmas.find((f) => f.firma === "elaboro" && f.hash_sha256 === huella)),

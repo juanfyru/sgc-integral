@@ -163,6 +163,7 @@ function fichaCompleta(): FichaLeida {
       ],
       normas: [{ normaNombre: "Resolución 1 de 2020" }],
     },
+    componentesVisibles: [],
     procedimiento: { id: 9, codigo: "SGC-PR-01", titulo: "Auditorías internas" },
     firmas: { elaboro: null, aprobo: null },
     aprueba: false,
@@ -176,6 +177,8 @@ function fichaDe14c(): FichaLeida {
   const [a, b] = base.contenido.variables;
   return {
     ...base,
+    // Quien la lee ve el indicador del que sale B (anexo 14C, §6.5).
+    componentesVisibles: [9],
     contenido: {
       ...base.contenido,
       variables: [

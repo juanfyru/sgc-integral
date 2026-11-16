@@ -24,6 +24,8 @@ export type DatosDeFicha = {
   pideCodigo: boolean;
   /** Los datos de operación, a quien ve el indicador y a quien debe aprobar su ficha. */
   operacion: OperacionLeida | null;
+  /** Los compuestos que toman su resultado y que la persona ve (`loToman`, anexo 14C §6.5); vacío, sin sección. */
+  loToman?: { codigo: string; nombre: string }[];
 };
 
 /**
@@ -104,12 +106,41 @@ function EstadoDeLaVersion({ ficha, codigo, vigente, enCurso, administra, porApr
   );
 }
 
-/** «Ficha técnica» (spec §12.3): el estado de la versión mostrada y su contenido en lectura, con los datos de operación. */
-export function VistaFicha({ operacion, ...d }: DatosDeFicha) {
+/**
+ * «Lo toman» (anexo 14C, §6.5): los compuestos que toman el resultado de este indicador y que la persona ve, con su enlace. Si
+ * no ve ninguno, la sección no existe: no se dice si hay otros.
+ */
+function LoToman({ indicadores }: { indicadores: { codigo: string; nombre: string }[] }) {
+  if (indicadores.length === 0) return null;
+  return (
+    <section aria-labelledby="indicador-lo-toman" className="rounded-lg border border-border bg-card p-4">
+      <h2 id="indicador-lo-toman" className="text-base font-semibold">
+        Lo toman
+      </h2>
+      <p className="mt-0.5 text-sm text-muted-foreground">Los indicadores que usan su resultado.</p>
+      <ul className="mt-2 flex list-none flex-col gap-1 text-sm">
+        {indicadores.map((i) => (
+          <li key={i.codigo} className="min-w-0 break-words">
+            <Link href={rutaDeIndicador(i.codigo)} className={ENLACE}>
+              {`${i.codigo} ${i.nombre}`}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * «Ficha técnica» (spec §12.3): el estado de la versión mostrada y su contenido en lectura, con los datos de operación y
+ * «Lo toman».
+ */
+export function VistaFicha({ operacion, loToman = [], ...d }: DatosDeFicha) {
   return (
     <>
       <EstadoDeLaVersion {...d} />
       <FichaTecnica ficha={d.ficha} operacion={operacion} />
+      <LoToman indicadores={loToman} />
     </>
   );
 }

@@ -33,6 +33,7 @@ import {
 } from "./ficha-en-texto";
 import { estadoDeCategoria } from "./categorias";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "./filtros";
+import { VALOR_OCULTO } from "./tipos";
 
 const MES_CORTO = MESES.map((m) => m.charAt(0).toUpperCase() + m.slice(1, 3));
 
@@ -51,11 +52,14 @@ const FICHA: Array<Columna<FilaDeFicha>> = [
 const enSeccion = (seccion: string, campos: CampoDeTexto[]): FilaDeFicha[] =>
   campos.map((c) => ({ seccion, termino: c.termino, valor: c.detalle ? `${c.valor} — ${c.detalle}` : c.valor }));
 
-/** Una fila de la hoja de resultados: un periodo o el acumulado del año, ya en texto salvo las variables (números). */
+/**
+ * Una fila de la hoja de resultados: un periodo o el acumulado del año, ya en texto salvo las variables (números; la de un
+ * componente que la persona no ve, `VALOR_OCULTO`, anexo 14C §6.5).
+ */
 type FilaDeResultado = {
   periodo: string;
   version: number | null;
-  valores: Record<string, number | null>;
+  valores: Record<string, number | string | null>;
   resultado: string | null;
   meta: string | null;
   cumple: string;
@@ -119,7 +123,8 @@ function filasPorCategoria(desgloses: readonly Desglose[]): FilaDeCategoria[] {
  * sus firmas y los datos de operación, y la hoja «Resultados <año>», con una fila por periodo (periodo, versión con que se
  * calculó, cada variable, resultado, meta, «Cumple», semáforo, estado, análisis y marcas) y la del «Acumulado del año». Un
  * desagregado trae además la hoja «Por categoría <año>» (anexo 14C, §5.6): una fila por periodo medido y categoría, con cada
- * variable, el resultado y el estado de la categoría (el total de cada periodo, en «Resultados <año>»).
+ * variable, el resultado y el estado de la categoría (el total de cada periodo, en «Resultados <año>»). Lo de un componente que
+ * la persona no ve ya viene oculto de las lecturas (`impresionDelAnio`, anexo 14C §6.5); un desagregado no toma componentes.
  */
 export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaHoja): Promise<Buffer> {
   const zona = zonaHoraria();
@@ -150,8 +155,9 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   const filas: FilaDeResultado[] = r.filas.map((f) => ({
     periodo: f.etiqueta,
     version: f.version,
-    // Las variables, como número de celda (se pueden sumar en la hoja); el resultado y la meta, con su texto.
-    valores: Object.fromEntries(f.valores.map((v) => [v.letra, v.numero])),
+    // Las variables, como número de celda (se pueden sumar en la hoja); el resultado y la meta, con su texto. La de un
+    // componente que la persona no ve ya llega sin número de la lectura: aquí dice «No disponible».
+    valores: Object.fromEntries(f.valores.map((v) => [v.letra, v.oculta ? VALOR_OCULTO : v.numero])),
     resultado: f.resultado,
     meta: f.meta,
     cumple: cumpleEnTexto(f.cumple),
@@ -164,7 +170,7 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   filas.push({
     periodo: "Acumulado del año",
     version: null,
-    valores: a.numeros,
+    valores: Object.fromEntries(Object.entries(a.numeros).map(([letra, n]) => [letra, a.valores[letra] === VALOR_OCULTO ? VALOR_OCULTO : n])),
     resultado: a.texto,
     meta: a.metaEnTexto,
     cumple: a.texto ? cumpleEnTexto(a.cumple) : "",

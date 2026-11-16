@@ -5,7 +5,10 @@
  * se aprueban (`revisarEnBloque`, con todas las del bloque). Y, del lado del componente (§6.6), quiénes lo toman
  * (`quienesToman`), a quiénes una versión suya ya no les sirve (`aQuienesDejaDeServir`) y el mensaje que lo dice
  * (`cambieAntes`), que lleva el código del otro indicador solo a quien puede verlo. Y si cambiar la clase de un objetivo en
- * el maestro cerraría un ciclo oculto de «Objetivos cumplidos» (`cambiarClaseCierraCiclo`).
+ * el maestro cerraría un ciclo oculto de «Objetivos cumplidos» (`cambiarClaseCierraCiclo`). Y, para quien lee un compuesto
+ * (§6.5), «Lo toman» de la página de un componente (`loToman`), qué componentes no ve (`componentesOcultos`, con la regla
+ * única `componentesVisibles`), las letras que salen de ellos y el motivo del contagio que nombra al componente solo a quien
+ * lo ve (`contagiosParaQuienLee`).
  *
  * Módulo liviano: lo importan `fichas`, la aprobación, la operación y los maestros, así que no importa `lectura`, `fichas`, `aprobacion`
  * ni `operacion`, ni `datos`, `dimensiones` o `mediciones` (arrastran la bitácora): lee el dato, el componente, la dimensión,
@@ -19,13 +22,15 @@
  * puede darse entre dos guardados cruzados le llega a la persona legible (`sinInterbloqueoCrudo`).
  */
 import type { Cliente } from "@/db/cliente";
-import { puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
+import { componentesVisibles, puedeVerIndicador, type SujetoVisibilidad } from "@/lib/alcance";
 import { errorDeDesagregacion, FORMULA_NO_DESAGREGABLE } from "@/lib/indicadores/categorias";
 import { alcanza, caminoDeCiclo, nivelesBajo } from "@/lib/indicadores/grafo";
 import { contiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import {
   ErrorIndicador,
   MAXIMO_NIVELES,
+  MOTIVO_COMPONENTE_NO_APLICA,
+  motivoParaQuienLee,
   type Consolidacion,
   type Forma,
   type OrigenVariable,
@@ -556,6 +561,91 @@ export async function cambieAntes(sujeto: SujetoVisibilidad, toman: readonly Tom
     if (await puedeVerIndicador(t.indicadorId, sujeto, { sql: opciones.sql })) return `${CAMBIE_ANTES}: ${t.codigo}`;
   }
   return CAMBIE_ANTES;
+}
+
+/**
+ * Cómo se nombra hoy cada indicador de `ids`: «CEX-ID-002 Oportunidad de la cita», el código y el nombre de su última versión
+ * aprobada (sin ella, el código). No mira quién lee: quien lo llama ya filtró con `componentesVisibles`.
+ */
+export async function nombresDeComponentes(sql: Cliente, ids: readonly number[]): Promise<Map<number, string>> {
+  const unicosIds = unicos(ids);
+  if (unicosIds.length === 0) return new Map();
+  const filas = await sql`SELECT i.id, i.codigo,
+      (SELECT v.nombre FROM indicador_versiones v WHERE v.indicador_id = i.id AND v.estado = 'aprobada' ORDER BY v.numero DESC LIMIT 1) AS nombre
+    FROM indicadores i WHERE i.id IN ${sql(unicosIds)}`;
+  return new Map(filas.map((f) => [Number(f.id), [f.codigo as string, textoONulo(f.nombre)].filter(Boolean).join(" ")]));
+}
+
+/**
+ * «Lo toman» de la página de un indicador (anexo 14C, §6.5): los compuestos activos que toman hoy su resultado
+ * (`quienesToman`, sin borradores) y que la persona ve (`componentesVisibles`), por código, con el nombre de su ficha vigente.
+ * Vacío si no ve ninguno: no se dice si hay otros.
+ */
+export async function loToman(sql: Cliente, sujeto: SujetoVisibilidad, indicadorId: number): Promise<{ codigo: string; nombre: string }[]> {
+  const toman = await quienesToman(sql, indicadorId);
+  const visibles = await componentesVisibles(sql, sujeto, toman.map((t) => t.indicadorId));
+  if (visibles.size === 0) return [];
+  const filas = await sql`SELECT i.codigo,
+      (SELECT v.nombre FROM indicador_versiones v WHERE v.indicador_id = i.id AND v.estado = 'aprobada' ORDER BY v.numero DESC LIMIT 1) AS nombre
+    FROM indicadores i WHERE i.id IN ${sql([...visibles])} ORDER BY i.codigo`;
+  return filas.map((f) => ({ codigo: f.codigo as string, nombre: textoONulo(f.nombre) ?? (f.codigo as string) }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lo que se oculta de un compuesto (anexo 14C, §6.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Lo que estas funciones leen de una versión: sus variables, con el indicador del que sale cada una. */
+type ConVariables = { variables: readonly { letra: string; origen: string; indicadorOrigenId: number | null }[] };
+
+const tomadosDe = (versiones: readonly ConVariables[]): number[] =>
+  versiones.flatMap((v) => v.variables.flatMap((x) => (x.origen === "indicador" && x.indicadorOrigenId !== null ? [x.indicadorOrigenId] : [])));
+
+/**
+ * Los componentes de `versiones` que la persona no ve (la regla única, `componentesVisibles`). Una versión sin variables
+ * tomadas de otro indicador no consulta nada: las fichas sin componentes se leen como siempre.
+ */
+export async function componentesOcultos(sql: Cliente, sujeto: SujetoVisibilidad, versiones: readonly ConVariables[]): Promise<Set<number>> {
+  const ids = unicos(tomadosDe(versiones));
+  if (ids.length === 0) return new Set();
+  const visibles = await componentesVisibles(sql, sujeto, ids);
+  return new Set(ids.filter((id) => !visibles.has(id)));
+}
+
+/** Las letras que la versión toma de un componente de `ocultos`. */
+export function letrasOcultas(version: ConVariables, ocultos: ReadonlySet<number>): Set<string> {
+  return new Set(version.variables.flatMap((x) => (x.origen === "indicador" && x.indicadorOrigenId !== null && ocultos.has(x.indicadorOrigenId) ? [x.letra] : [])));
+}
+
+/**
+ * Las letras que alguna de las versiones toma de un componente de `ocultos`: la regla conservadora de lo que no dice con qué
+ * versión se escribió (el acumulado del año, los eventos de una medición).
+ */
+export function letrasOcultasEnAlguna(versiones: readonly ConVariables[], ocultos: ReadonlySet<number>): Set<string> {
+  return new Set(versiones.flatMap((v) => [...letrasOcultas(v, ocultos)]));
+}
+
+/**
+ * El motivo del contagio de cada medición de `medicionIds` para quien lee (anexo 14C, §6.3): con el código y el nombre del
+ * componente que no aplicó, el del último evento `propagacion` que lo dejó (`detalle.componente`, su id), solo si la persona lo
+ * ve. Las demás no salen: su motivo se lee tal cual se guardó («Un componente no aplicó en el periodo»).
+ */
+export async function contagiosParaQuienLee(sql: Cliente, sujeto: SujetoVisibilidad, medicionIds: readonly number[]): Promise<Map<number, string>> {
+  const ids = unicos(medicionIds);
+  if (ids.length === 0) return new Map();
+  const filas = await sql`SELECT DISTINCT ON (e.medicion_id) e.medicion_id, (e.detalle ->> 'componente')::bigint AS componente
+    FROM medicion_eventos e
+    WHERE e.medicion_id IN ${sql(ids)} AND e.tipo = 'propagacion' AND e.detalle ? 'componente'
+    ORDER BY e.medicion_id, e.id DESC`;
+  const componentes = filas.map((f) => Number(f.componente));
+  const visibles = await componentesVisibles(sql, sujeto, componentes);
+  const nombres = await nombresDeComponentes(sql, [...visibles]);
+  const salida = new Map<number, string>();
+  for (const f of filas) {
+    const nombre = nombres.get(Number(f.componente));
+    if (nombre) salida.set(Number(f.medicion_id), motivoParaQuienLee(MOTIVO_COMPONENTE_NO_APLICA, nombre)!);
+  }
+  return salida;
 }
 
 /**

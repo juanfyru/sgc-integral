@@ -11,6 +11,9 @@ import { numeroExacto, type Regla } from "./semaforo";
 import type { Unidad } from "./textos";
 import type { Consolidacion, LimiteDeGrafica } from "./tipos";
 
+/** Por qué es parcial el acumulado de un compuesto cuyo componente acumula desde después del tramo (anexo 14C, §6.4). */
+export const COMPONENTE_PARCIAL = "un componente se acumula desde un periodo posterior";
+
 /** El año de una clave de periodo (`2026-T3` → 2026). */
 export const anioDeClave = (clave: string): number => Number(clave.slice(0, 4));
 
@@ -80,10 +83,13 @@ function enumerar(claves: readonly string[]): string {
 
 /**
  * El rótulo del acumulado (spec §8.10): «Acumulado parcial: falta julio» si falta un periodo ya terminado; «Acumulado
- * desde julio, versión 2» si en el año rigieron fórmulas o variables distintas; los dos, juntos. `null` si no hace falta.
+ * desde julio, versión 2» si en el año rigieron fórmulas o variables distintas; los dos, juntos. `null` si no hace falta. En un
+ * compuesto cuyo componente acumula desde después del tramo (`componenteParcial`, anexo 14C §6.4), «Acumulado parcial: un
+ * componente se acumula desde un periodo posterior», sin nombrarlo ni decir desde cuándo.
  */
-export function rotuloDelAcumulado(faltan: readonly string[], desde: { clave: string; numero: number } | null): string | null {
-  const parcial = faltan.length > 0 ? enumerar(faltan) : null;
+export function rotuloDelAcumulado(faltan: readonly string[], desde: { clave: string; numero: number } | null, componenteParcial = false): string | null {
+  const partes = [faltan.length > 0 ? enumerar(faltan) : null, componenteParcial ? COMPONENTE_PARCIAL : null].filter((p): p is string => p !== null);
+  const parcial = partes.length > 0 ? partes.join("; ") : null;
   if (desde) {
     const inicio = `Acumulado desde ${conArticulo(desde.clave, nombreCorto(desde.clave))}, versión ${desde.numero}`;
     return parcial ? `${inicio}; parcial: ${parcial}` : inicio;

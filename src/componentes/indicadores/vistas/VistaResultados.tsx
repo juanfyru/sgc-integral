@@ -15,7 +15,7 @@ import type { ResultadosDelAnio, UltimoResultado } from "@/db/consultas/indicado
 import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
-import type { Periodicidad } from "@/lib/indicadores/tipos";
+import { VALOR_OCULTO, type Periodicidad } from "@/lib/indicadores/tipos";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { ENLACE, FOCO } from "./comun";
 import { DesglosePorCategoria, type DatosDeDesglose } from "./DesglosePorCategoria";
@@ -167,7 +167,8 @@ export function VistaResultados(d: DatosDeResultados) {
                   {r.variables.map((v) => (
                     <div key={v.letra} className="flex min-w-0 flex-col gap-1">
                       <p className="text-xs text-muted-foreground">{v.nombre}</p>
-                      <MiniTubos titulo={v.nombre} serie={v.serie} />
+                      {/* La de un componente que la persona no ve no se dibuja (anexo 14C, §6.5). */}
+                      {v.oculta ? <p className="text-sm text-muted-foreground">{VALOR_OCULTO}</p> : <MiniTubos titulo={v.nombre} serie={v.serie} />}
                     </div>
                   ))}
                 </div>

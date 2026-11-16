@@ -26,6 +26,7 @@ import {
   NADIE_MIDE_AJENO,
   NO_ALCANZA_LA_META,
   ORIGEN_AJENO,
+  RESULTADO_OCULTO,
   sinAlcanzarLaMeta,
   type ModoSemaforo,
   type OrigenVariable,
@@ -110,13 +111,16 @@ const NINGUNO = "(ninguno)";
 /**
  * De dónde sale una variable que no digita quien mide (anexo 14C, §4.2 y §6.1), tal como la ficha lo firmó: «Dato compartido ·
  * Mensual · se suma» o «Resultado de SGC-ID-004 Satisfacción del usuario: su valor». `null` en una propia o una del cálculo.
+ * La tomada de un componente fuera de `visibles` (los que la persona ve, §6.5), o que ya llega oculta (sin su id), dice
+ * `RESULTADO_OCULTO`, sin código ni nombre.
  */
-export function origenDeVariableEnTexto(v: VariableDeFicha): string | null {
+export function origenDeVariableEnTexto(v: VariableDeFicha, visibles?: ReadonlySet<number>): string | null {
   if (v.origen === "compartida") {
     const periodicidad = v.datoPeriodicidad ? (ETIQUETA_PERIODICIDAD[v.datoPeriodicidad as Periodicidad] ?? v.datoPeriodicidad) : null;
     return ["Dato compartido", periodicidad, (CONSOLIDACION[v.consolidacion] ?? v.consolidacion).toLowerCase()].filter(Boolean).join(" · ");
   }
   if (v.origen === "indicador") {
+    if (v.indicadorOrigenId === null || (visibles !== undefined && !visibles.has(v.indicadorOrigenId))) return RESULTADO_OCULTO;
     const componente = [v.origenCodigo, v.origenNombre].filter(Boolean).join(" ");
     return `Resultado de ${componente}: ${v.toma === "cumplimiento" ? "su porcentaje de cumplimiento" : "su valor"}`;
   }
@@ -126,10 +130,10 @@ export function origenDeVariableEnTexto(v: VariableDeFicha): string | null {
 /**
  * La línea de una variable: de dónde sale, qué incluye, su fuente, su unidad, cómo se junta en el año y sus límites de
  * captura. «Cómo se junta» solo en la que no dice su origen: el de un dato ya lo dice, y una tomada no se junta (anexo 14C,
- * §6.4). La misma en la pantalla, el impreso y el Excel.
+ * §6.4). La misma en la pantalla, el impreso y el Excel. `visibles`, los componentes que la persona ve (`origenDeVariableEnTexto`).
  */
-export function detalleDeVariable(v: VariableDeFicha): string {
-  const origen = origenDeVariableEnTexto(v);
+export function detalleDeVariable(v: VariableDeFicha, visibles?: ReadonlySet<number>): string {
+  const origen = origenDeVariableEnTexto(v, visibles);
   const captura =
     v.capturaMin !== null || v.capturaMax !== null
       ? `Se captura ${[v.capturaMin !== null ? `desde ${v.capturaMin.replace(".", ",")}` : null, v.capturaMax !== null ? `hasta ${v.capturaMax.replace(".", ",")}` : null].filter(Boolean).join(" ")}`
@@ -160,10 +164,12 @@ export const desagregacionEnTexto = (c: Pick<ContenidoFicha, "dimensionNombre">)
 /**
  * La identificación y la estructura de medición de una versión firmada (spec §7.2), en texto: la fórmula en palabras
  * (con la de letras como detalle) y los rangos del semáforo en palabras. El procedimiento solo se nombra si la persona ve
- * ese documento (`ficha.procedimiento`, F13C-R11).
+ * ese documento (`ficha.procedimiento`, F13C-R11). Una variable tomada de un componente que la persona no ve llega oculta de
+ * `fichaDeVersion` y dice `RESULTADO_OCULTO` (anexo 14C, §6.5).
  */
 export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto[]; estructura: CampoDeTexto[] } {
   const c = ficha.contenido;
+  const visibles = new Set(ficha.componentesVisibles);
   const u = unidadDeFicha(c);
   const regla = reglaDeFicha(c);
   const nombres = Object.fromEntries(c.variables.map((v) => [v.letra, v.nombre?.trim() || v.letra]));
@@ -207,7 +213,7 @@ export function camposDeFicha(ficha: FichaLeida): { identificacion: CampoDeTexto
     ...campo("Cómo se obtiene el dato", origenEnTexto(c)),
     ...campo("Cómo se calcula", c.forma ? (FORMA[c.forma] ?? c.forma) : NINGUNO),
     ...campo("Fórmula", c.formula ? enPalabras(c.formula, nombres) : null, c.formula),
-    ...c.variables.flatMap((v) => campo(`Variable ${v.letra}`, v.nombre ?? v.letra, detalleDeVariable(v))),
+    ...c.variables.flatMap((v) => campo(`Variable ${v.letra}`, v.nombre ?? v.letra, detalleDeVariable(v, visibles))),
     ...campo("Unidad del resultado", `${c.unidadNombre ?? ""}${u.sufijo.trim() ? ` (${u.sufijo.trim()})` : ""} · ${cuenta(c.decimales ?? 0, "decimal", "decimales")}`),
     ...campo("Periodicidad", periodicidad),
     ...campo("Desagregación", desagregacionEnTexto(c)),

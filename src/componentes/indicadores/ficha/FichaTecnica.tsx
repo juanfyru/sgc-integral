@@ -93,6 +93,8 @@ export function FichaTecnica({
   // Los datos de operación según el origen de esta versión: en una automática nadie mide (anexo 14B, §5.3).
   const segun = operacionSegunOrigen(c);
   const nombres = Object.fromEntries(c.variables.map((v) => [v.letra, v.nombre?.trim() || v.letra]));
+  // Lo tomado de un componente que la persona no ve ya llega oculto de `fichaDeVersion` (anexo 14C, §6.5).
+  const visibles = new Set(ficha.componentesVisibles);
   const medir = c.responsables.filter((r) => r.funcion === "medir").map((r) => r.cargoNombre);
   const analizar = c.responsables.filter((r) => r.funcion === "analizar").map((r) => r.cargoNombre);
   const lineaBase = c.lineaBaseValor !== null ? `${cifra(c.lineaBaseValor, u)}${c.lineaBasePeriodo ? ` (${c.lineaBasePeriodo})` : ""}` : null;
@@ -151,7 +153,7 @@ export function FichaTecnica({
             {c.variables.map((v) => (
               <li key={v.letra}>
                 <span className="font-medium">{`${v.letra} · ${v.nombre ?? ""}`}</span>
-                <span className="block text-muted-foreground">{detalleDeVariable(v)}</span>
+                <span className="block text-muted-foreground">{detalleDeVariable(v, visibles)}</span>
               </li>
             ))}
           </ul>

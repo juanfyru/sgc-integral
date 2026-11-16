@@ -44,7 +44,7 @@ import type { Tarea } from "@/lib/tareas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { CONSTANCIA_NO_EXISTE as NO_EXISTE, constanciaQueSePide, puedeRegistrarConstancia } from "./constancias-soporte";
-import { basesDe, leerPeriodos, resumenAcumulado } from "./lectura";
+import { basesDe, fijosDelAcumulado, leerPeriodos, resumenAcumulado } from "./lectura";
 import { conMayuscula } from "./mediciones";
 import type { Soporte } from "./soportes";
 
@@ -174,13 +174,17 @@ export type ResultadoExterno = {
    * medición (la ficha cambió de fórmula o de variables dentro de él: «agosto de 2026»); `null` en lo demás.
    */
   desde: string | null;
+  /** En un compuesto, el acumulado de algún componente no cubre todo el periodo (anexo 14C, §6.4); sin nombrarlo. */
+  componenteParcial?: true;
 };
 
 /**
  * El resultado del periodo externo (anexo §8): el acumulado de §8.10 de la página del indicador (`resumenAcumulado`, el
  * mismo cálculo y la misma racha) sobre los periodos de medición que el periodo externo contiene, de la periodicidad que
  * rige (`leerPeriodos`). Es parcial si falta el dato de alguno, alguno no está cerrado o acumula desde una racha que empezó
- * dentro del periodo (`desde`): lo que se le dijo al ente cubre solo una parte; se puede registrar igual.
+ * dentro del periodo (`desde`): lo que se le dijo al ente cubre solo una parte; se puede registrar igual. El de un compuesto
+ * toma de cada componente su acumulado en el tramo (`fijosDelAcumulado`, anexo 14C §6.4), y si el de alguno es parcial,
+ * también lo es (`componenteParcial`).
  */
 export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: number, periodo: string, ahora: Date): Promise<ResultadoExterno> {
   const zona = zonaHoraria();
@@ -195,17 +199,18 @@ export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: numb
       l.periodo.hasta.getTime() <= externo.hasta.getTime(),
   );
   const sinCerrar = dentro.filter((l) => l.fila.estado !== "cerrada").map((l) => l.periodo.etiqueta);
-  const a = resumenAcumulado(dentro, base.versiones, ahora);
+  const a = resumenAcumulado(dentro, base.versiones, ahora, await fijosDelAcumulado(sql, dentro, base.versiones, ahora));
   const etiqueta = (clave: string) => periodoDe(clave, zona)?.etiqueta ?? clave;
   const faltan = a.faltan.map(etiqueta);
   const desde = a.desde === null ? null : etiqueta(a.desde);
   return {
     texto: a.texto,
     exacto: a.exacto,
-    parcial: faltan.length > 0 || sinCerrar.length > 0 || desde !== null,
+    parcial: faltan.length > 0 || sinCerrar.length > 0 || desde !== null || a.componenteParcial === true,
     faltan,
     sinCerrar,
     desde,
+    ...(a.componenteParcial ? { componenteParcial: true as const } : {}),
   };
 }
 
@@ -270,7 +275,14 @@ export async function registrarConstancia(
     const [s] = await tx`SELECT count(*)::int AS n FROM archivos WHERE contexto = 'reporte_externo' AND contexto_id = ${c.id}`;
     if (Number(s.n) === 0) throw new ErrorIndicador(SIN_SOPORTE);
     const r = await resultadoDelPeriodoExterno(tx, c.indicadorId, c.periodo, ahora);
-    const detalle = { exacto: r.exacto, parcial: r.parcial, faltan: r.faltan, sinCerrar: r.sinCerrar, desde: r.desde };
+    const detalle = {
+      exacto: r.exacto,
+      parcial: r.parcial,
+      faltan: r.faltan,
+      sinCerrar: r.sinCerrar,
+      desde: r.desde,
+      ...(r.componenteParcial ? { componenteParcial: true } : {}),
+    };
     await tx`UPDATE reportes_externos SET estado = 'registrada', fecha_envio = ${envio.fechaEnvio}, radicado = ${envio.radicado},
         nota = ${envio.nota}, resultado_enviado = ${r.texto}, resultado_detalle = ${tx.json(detalle)},
         registrada_por = ${sesion.usuarioId}, registrada_en = ${ahora}

@@ -237,8 +237,17 @@ export function valorDeComponente(
   return valorSobre(sql, { indicadorId: d.indicadorId, toma: d.toma, sobre: [{ clave: d.periodo, desde: d.desde, hasta: d.hasta }] }, new Set());
 }
 
+/**
+ * Lo mismo sobre varios periodos del compuesto, en orden de calendario: el acumulado propio del componente en ese tramo (anexo
+ * 14C, §6.4), el que usa el acumulado del año de un compuesto (`fijosDelAcumulado`, `lectura.ts`) con los periodos que entran
+ * a él. Es el mismo cálculo que hace la propagación para el componente interior de un compuesto de compuestos.
+ */
+export function valorDeComponenteSobre(sql: Cliente, d: { indicadorId: number; toma: Toma; sobre: readonly Cubierto[] }): Promise<ValorDeComponente> {
+  return valorSobre(sql, d, new Set());
+}
+
 /** Un periodo de quien toma al componente: el del compuesto o, para un componente interior, uno que usa el intermedio. */
-type Cubierto = { clave: string; desde: Date; hasta: Date };
+export type Cubierto = { clave: string; desde: Date; hasta: Date };
 
 /**
  * `valorDeComponente` sobre los periodos `sobre` de quien lo toma, en orden de calendario: el del compuesto o, dentro del

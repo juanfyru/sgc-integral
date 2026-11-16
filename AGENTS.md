@@ -274,6 +274,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   (`variable_responsables`, anexo 14C §4.4 y §4.7: lo ve, lo reporta y lo corrige sin liderar el
   proceso dueño). Las reglas de los indicadores son las funciones de
   `src/lib/alcance.ts` (`filtroIndicadores` para un `WHERE`, `puedeVerIndicador`,
+  `componentesVisibles` (quién ve un componente de un compuesto, anexo 14C §6.5),
   `puedeVerSoportes`, `puedeMedir`, `puedeAnalizar`, `puedeRegistrarHistoricos`, `puedeObservar`,
   `aprobadoresDeFicha`, `puedeAprobarFicha`, `esAprobadorDe`, `responsableDe` y `participaEn`), y
   las de los datos compartidos, las del mismo archivo (`filtroDatos` para un `WHERE`, `puedeVerDato`,
@@ -643,6 +644,38 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   id; y **3.** las mediciones `FOR UPDATE`, por `indicador_id, desde, id` (la cascada, de cada indicador todas
   desde la más temprana que reabre: `recalcularSiguientes` bloquea las siguientes). Un `40P01` llega legible
   a la persona (`sinInterbloqueoDelCierre`).
+- **Lo que se ve de un compuesto** (anexo 14C, §6.4 y §6.5). **Quién ve un componente** lo decide solo
+  `componentesVisibles` (`src/lib/alcance.ts`: los de una lista que pasan `filtroIndicadores`, en una
+  consulta); `componentesOcultos` y `letrasOcultas` (`componentes.ts`) la aplican a las variables de una
+  versión. A quien ve el compuesto y no un componente, la variable tomada de él le llega oculta **desde la
+  lectura**, nunca solo en el componente de React: `COMPONENTE_OCULTO` como nombre, `VALOR_OCULTO` como
+  valor, sin número, sin id, sin código ni nombre del componente, y `oculta: true`, en la tabla del año y el
+  motivo del contagio (`paraQuienLee`, `lectura.ts`), las series de «Sus variables», los valores del acumulado
+  (`acumuladoParaQuienLee`), la pantalla de reportar (`datosDeReporte`: la ajena trae solo si `llego`; su aviso
+  es «Falta un dato de un componente.» y el resultado en vivo no se calcula en el navegador), la ficha en
+  todas sus formas (`fichaDeVersion` la entrega sin nada del componente y con `componentesVisibles`; la ficha
+  en texto dice `RESULTADO_OCULTO`, `origenDeVariableEnTexto`; así la vista, las versiones anteriores, el
+  impreso y la hoja «Ficha» del Excel), el Excel y el impreso (salen de esas lecturas) y el historial de
+  «Corregida» (`historialDeCorregidas`: el antes y el después de esas letras no se pintan, conservador por
+  letra en cualquier versión, y su propagación se lee «El sistema actualizó un componente»). El resultado
+  del compuesto, su color, su análisis y sus demás variables no se tocan. El motivo
+  `MOTIVO_COMPONENTE_NO_APLICA` se guarda sin nombrar y se pinta «{código} {nombre} no aplicó en el periodo»
+  a quien ve el componente (su id va en `detalle.componente` del evento, `contagiosParaQuienLee`), y tal cual
+  a quien no. El aviso de deducción (`restringidosQueToma`) y el aviso y el historial de la cascada lo
+  nombran por la misma regla; «Lo toman» de la página de un indicador (`loToman`) muestra solo los
+  compuestos que la persona ve y, sin ninguno, no existe; los históricos de un compuesto no los registra quien
+  no ve alguno de sus componentes (`HISTORICOS_DE_UN_COMPONENTE_OCULTO`, `historicos.ts`). La matriz, la
+  lista, sus Excel, «Objetivos» y las alertas no muestran variables; un desagregado no toma componentes; la
+  bitácora la leen Admin SGC y Control Interno, que ven todo; las superficies de quien administra (la lista
+  de la reapertura, el resumen del cierre) ven todo. Una superficie nueva que pinte una variable tomada de
+  otro indicador pasa por esta regla. **El acumulado de un compuesto**: cada variable tomada vale el
+  acumulado propio de su componente sobre los periodos que entran al acumulado del compuesto (su valor, o su
+  cumplimiento contra la meta del último periodo medido del componente), nunca la suma ni el promedio de lo
+  copiado mes a mes (`fijosDelAcumulado`, `lectura.ts`, con `valorDeComponenteSobre` de `propagacion.ts`: el
+  mismo cálculo de la propagación); si el de algún componente empieza después del tramo, el del compuesto es
+  parcial y lo dice sin nombrarlo (`componenteParcial`). Es el mismo en la página, la matriz, el impreso, el
+  Excel y el resultado del periodo externo de una constancia (`resultadoDelPeriodoExterno`); `resumenAcumulado`
+  sin `fijos` es el de siempre.
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`

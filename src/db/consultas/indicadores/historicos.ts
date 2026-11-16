@@ -3,7 +3,8 @@
  * aprobarse la primera versión de la ficha. Entran solo por aquí, en la tabla del año y por lote; `reportar` los rechaza.
  * Los registra el Admin SGC o quien puede medir (`puedeRegistrarHistoricos`), también en un indicador sin variables propias,
  * y se digitan completos: también las variables de un dato compartido o de otro indicador (anexo 14C, §3.6; la historia no
- * se propaga). Cada fila se valida como un reporte
+ * se propaga). Por eso los de un compuesto no los registra quien no ve alguno de sus componentes (F14C-DC38, §6.5:
+ * `HISTORICOS_DE_UN_COMPONENTE_OCULTO`), con la versión que rige cada fila. Cada fila se valida como un reporte
  * (`planDeReporte`, sin la confirmación por variación y sin exigir soporte) y se escribe como él (`escribirReporte`), o
  * se marca «no aplica» con su motivo (`escribirNoAplica`, sin tocar sus valores), con el evento `historico` la primera vez
  * y `correccion` después. No piden análisis, no llevan «Requiere acción de mejora»
@@ -22,6 +23,7 @@ import { textoValor } from "@/lib/indicadores/textos";
 import { ErrorIndicador, MAXIMO_HISTORICOS } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { componentesOcultos } from "./componentes";
 import {
   asegurarMediciones,
   conMayuscula,
@@ -38,6 +40,12 @@ import {
 type Opciones = { sql?: Cliente; ahora?: Date };
 
 const NO_HISTORICO = "Ese periodo no es histórico: repórtelo por «Reportar»";
+/**
+ * Un histórico se digita completo, también lo que toma de otro indicador (anexo 14C, §3.6): quien no ve ese componente no
+ * puede escribirlo ni leerlo (F14C-DC38, §6.5), así que no los registra.
+ */
+export const HISTORICOS_DE_UN_COMPONENTE_OCULTO =
+  "Este indicador toma el resultado de un indicador que usted no puede ver: sus históricos los registra el Administrador del SGC";
 
 /** Una fila de la tabla del año: sus valores por letra o, con `noAplica`, el motivo (sus valores no se registran). */
 type FilaHistorica = { periodo: string; valores: Record<string, string>; noAplica?: boolean; motivo?: string };
@@ -87,6 +95,7 @@ export async function registrarHistoricos(
       // Un indicador sin variables propias también tiene históricos (anexo 14C, §3.6): solo se rechaza el automático.
       const ctx = await contextoDeMedicion(tx, sesion, Number(fila.id), true, { exigir: puedeRegistrarHistoricos, digita: "historico" });
       if (ctx.medicion.historica !== true) throw new ErrorIndicador(NO_HISTORICO);
+      if ((await componentesOcultos(tx, sesion, [ctx.version])).size > 0) throw new ErrorIndicador(HISTORICOS_DE_UN_COMPONENTE_OCULTO);
       // Lo que no sirve de la fila dice su periodo; la división por cero, cómo salir desde la tabla del año.
       const enLaFila = async <T>(paso: () => T | Promise<T>): Promise<T> => {
         try {

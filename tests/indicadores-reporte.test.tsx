@@ -1062,6 +1062,43 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     );
   });
 
+  it("con lo propio ya reportado y el dato sin llegar: el aviso no le pide que reporte lo suyo", () => {
+    const html = formulario({ ...conDato(), reportada: true });
+    expect(html).toContain(
+      ">Falta un dato. «Total facturado en el mes» lo reporta Facturación; vence el 10 de noviembre de 2026. El resultado se calcula solo cuando el dato llegue.</p>",
+    );
+    expect(html).not.toContain("Usted ya puede reportar lo suyo");
+  });
+
+  it("de un componente que la persona no ve (anexo 14C, §6.5): sin nombre ni cifra, «No disponible» si llegó y, si no, «Falta un dato de un componente.»", () => {
+    const oculta = (llego: boolean): DatosDeReporte => ({
+      ...DATOS,
+      variables: [
+        DATOS.variables[0],
+        {
+          ...DATOS.variables[1],
+          nombre: "Indicador restringido",
+          descripcion: null,
+          fuente: null,
+          valor: null,
+          oculta: true,
+          ajena: { ...AJENA_DATO, clase: "indicador", fuenteId: null, nombre: "Indicador restringido", proceso: null, venceEn: null, venceEl: null, oculta: true, llego },
+        },
+      ],
+    });
+    const llego = formulario(oculta(true));
+    expect(llego).toContain(">Indicador restringido</span>");
+    expect(llego).toContain(">No disponible</p>");
+    expect(llego).not.toContain("Falta un dato");
+    expect(llego).toMatch(/<button(?=[^>]*value="reportar")[^>]*>Reportar<\/button>/);
+    // Sin la cifra, el resultado no se calcula en el navegador: lo dice en su lugar.
+    expect(llego).toContain("El resultado lo calcula el sistema al guardar: incluye un indicador que usted no puede ver.");
+    const falta = formulario(oculta(false));
+    expect(falta).toContain(">Aún no tiene resultado</p>");
+    expect(falta).toContain(">Falta un dato de un componente.</p>");
+    expect(falta).toMatch(/<button(?=[^>]*value="reportar")[^>]*>Reportar lo mío<\/button>/);
+  });
+
   it("con el dato puesto: su valor, quién lo reportó y cuándo, «Reportar», y el resultado en vivo lo usa", () => {
     const datos = conDato({ valor: "1284300000", reporto: "Luisa Rojas", reportadoEn: new Date("2026-11-05T15:00:00Z"), reportadoEl: "5 de noviembre de 2026", venceEn: null, venceEl: null });
     // El valor de la medición es el que llegó del dato: los dos vienen iguales de `datosDeReporte`.

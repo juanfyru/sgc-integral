@@ -4,7 +4,7 @@
  * de `lectura.ts`: son los mismos de la página del indicador. El Excel de resultados (spec §13) lee aquí las celdas de los
  * indicadores de la lista (`resultadosDeLaLista`).
  */
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
 import { filtroIndicadores, type SujetoVisibilidad } from "@/lib/alcance";
 import { mesesDe } from "@/lib/indicadores/periodos";
 import { mesesEnPalabras, nombreCorto, repartirMeses } from "@/lib/indicadores/resultados";
@@ -12,6 +12,7 @@ import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { nombreDeEstado, type EstadoDePunto } from "@/lib/indicadores/tipos";
 import {
   anioValido,
+  fijosDelAcumulado,
   leerPeriodos,
   resumenAcumulado,
   type Base,
@@ -80,16 +81,18 @@ function celdaDelAnio(a: ResumenAcumulado, anio: number, ruta: string): CeldaDeM
  * Las celdas de un indicador en el año: cada periodo en sus meses (`mesesDe`), lo que no se mide en una celda vacía y la
  * del acumulado. `null` si no se mide ese año: ni un activo con periodos en él, ni uno con mediciones de ese año. De un
  * retirado solo cuentan los periodos con medición: lo posterior al retiro (y lo vacío que el retiro quitó) no se mide, no
- * está «por venir» (Tarea 19, D-9).
+ * está «por venir» (Tarea 19, D-9). El acumulado de un compuesto toma el de cada componente en el tramo (`fijosDelAcumulado`,
+ * anexo 14C §6.4), como la página. La matriz no muestra variables: no hay nada de un componente que ocultar.
  */
-function celdasDelAnio(
+async function celdasDelAnio(
+  sql: Cliente,
   codigo: string,
   estado: string,
   todos: readonly PeriodoLeido[],
   versiones: readonly VersionDeCalculo[],
   anio: number,
   ahora: Date,
-): { celdas: CeldaDeMatriz[]; anio: CeldaDeMatriz; acumulado: ResumenAcumulado; rigen: PeriodoLeido[] } | null {
+): Promise<{ celdas: CeldaDeMatriz[]; anio: CeldaDeMatriz; acumulado: ResumenAcumulado; rigen: PeriodoLeido[] } | null> {
   const propios = estado === "retirado" ? todos.filter((l) => l.fila.medicionId !== null) : todos;
   const rigen = propios.filter((l) => l.fila.deOtraPeriodicidad !== true);
   if (!propios.some((l) => l.fila.medicionId !== null) && !(estado === "activo" && rigen.length > 0)) return null;
@@ -99,7 +102,7 @@ function celdasDelAnio(
     propios.map((l) => ({ celda: celdaDe(l, ruta), prioridad: (l.fila.deOtraPeriodicidad ? 0 : 10_000) + l.version.numero })),
     (desdeMes, hastaMes): CeldaDeMatriz => ({ desdeMes, hastaMes, texto: "", estado: "vacia", nombre: `${mesesEnPalabras(desdeMes, hastaMes)}: no se mide`, enlace: null, cumple: null }),
   );
-  const acumulado = resumenAcumulado(rigen, versiones, ahora);
+  const acumulado = resumenAcumulado(rigen, versiones, ahora, await fijosDelAcumulado(sql, rigen, versiones, ahora));
   return { celdas, anio: celdaDelAnio(acumulado, anio, ruta), acumulado, rigen };
 }
 
@@ -147,7 +150,7 @@ export async function matrizDelAnio(
   for (const x of filas) {
     const id = Number(x.id);
     const codigo = x.codigo as string;
-    const medido = celdasDelAnio(codigo, x.estado as string, leidos.get(id) ?? [], versiones.get(id) ?? [], f.anio, ahora);
+    const medido = await celdasDelAnio(sql, codigo, x.estado as string, leidos.get(id) ?? [], versiones.get(id) ?? [], f.anio, ahora);
     if (!medido) continue;
     const fila: FilaDeMatriz = {
       codigo,
@@ -226,12 +229,13 @@ export async function resultadosDeLaLista(
     versiones: versiones.get(Number(d.id)) ?? [],
   }));
   const leidos = await leerPeriodos(sql, bases, { desde: anio, hasta: anio }, ahora);
-  return lista.map((f) => {
+  const salida: FilaDeResultados[] = [];
+  for (const f of lista) {
     const d = porId.get(f.id);
-    const medido = celdasDelAnio(f.codigo, f.estado, leidos.get(f.id) ?? [], versiones.get(f.id) ?? [], anio, ahora);
+    const medido = await celdasDelAnio(sql, f.codigo, f.estado, leidos.get(f.id) ?? [], versiones.get(f.id) ?? [], anio, ahora);
     // La meta del año: la del último periodo que ya empezó (la congelada o la programada); si ninguno, la de la lista.
     const empezado = medido?.rigen.filter((l) => l.periodo.desde.getTime() <= ahora.getTime()).at(-1);
-    return {
+    salida.push({
       codigo: f.codigo,
       nombre: f.nombre,
       retirado: f.estado === "retirado",
@@ -244,6 +248,7 @@ export async function resultadosDeLaLista(
       celdas: medido?.celdas ?? null,
       anio: medido?.anio ?? null,
       nota: medido?.acumulado.rotulo ?? null,
-    };
-  });
+    });
+  }
+  return salida;
 }

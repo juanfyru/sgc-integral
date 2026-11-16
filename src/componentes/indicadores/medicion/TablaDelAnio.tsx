@@ -102,13 +102,14 @@ function Analisis({ f }: { f: FilaDelAnio }) {
 /**
  * El valor de una variable en un periodo. Si la ficha que rige ese periodo nombra la letra distinto que el encabezado de
  * la columna (el de la versión más reciente), lo dice debajo, en texto: se lee sin cursor y lo leen los lectores de
- * pantalla.
+ * pantalla. La de un componente que la persona no ve llega «No disponible» (anexo 14C, §6.5), en el gris del texto
+ * secundario.
  */
 function ValorDeVariable({ columna, valor }: { columna: { letra: string; nombre: string }; valor: FilaDelAnio["valores"][number] | undefined }) {
   if (!valor) return <>—</>;
   return (
     <>
-      {valor.valor ?? "—"}
+      {valor.oculta ? <span className="font-normal text-muted-foreground">{valor.valor}</span> : (valor.valor ?? "—")}
       {valor.nombre !== columna.nombre ? <span className="block text-xs font-normal text-muted-foreground">{`(${valor.nombre})`}</span> : null}
     </>
   );

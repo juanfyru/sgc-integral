@@ -35,7 +35,7 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { puedeVerIndicador, puedeVerSoportes, responsablesDeMedir, type SujetoVisibilidad } from "@/lib/alcance";
+import { componentesVisibles, puedeVerIndicador, puedeVerSoportes, responsablesDeMedir, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { analisisCompleto, analisisExigido, cumpleDeMedicion } from "@/lib/indicadores/estados";
 import { mesPorOmisionDe, PATRON_MES } from "@/lib/indicadores/cierre";
@@ -47,6 +47,7 @@ import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { serializarCierreYReapertura } from "./candado-del-cierre";
+import { componentesOcultos, letrasOcultasEnAlguna, nombresDeComponentes } from "./componentes";
 import { asegurarPeriodosDeDatos } from "./datos-periodos";
 import { dependientesDe, memoriaNueva, revisarFuentes, type FuenteQueFalta, type RevisionDeFuentes } from "./dependencias";
 import { tomarFotos } from "./fotos";
@@ -718,7 +719,9 @@ export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opc
  * desde la primera reapertura, para quien ve el indicador; los eventos de los soportes, solo para quien ve los soportes.
  * Las demás no salen. Una reapertura en cascada (`detalle.porFuente`, anexo 14C §3.5) dice por qué fuente fue, resuelto al
  * leer con la visibilidad de quien lee (`fuenteEnTexto`): «Por un cambio en …» con su nombre a quien la ve, y a quien no,
- * «Por un cambio en un componente» o «Por un cambio en una de sus fuentes» (un dato).
+ * «Por un cambio en un componente» o «Por un cambio en una de sus fuentes» (un dato). De un componente que quien lee no ve
+ * (§6.5, `componentesOcultos`), el antes y el después de sus letras no se pintan (las que alguna versión toma de él) y su
+ * propagación se lee «El sistema actualizó un componente»; el motivo del contagio lo nombra solo a quien lo ve.
  */
 export async function historialDeCorregidas(
   sesion: SujetoVisibilidad,
@@ -748,6 +751,17 @@ export async function historialDeCorregidas(
     const f = leidas.get(clave);
     fuentes.set(Number(e.id), `Por un cambio en ${f && (await f.ve(sesion)) ? f.texto : OCULTA[ref.clase]}`);
   }
+  // Lo que quien lee no ve de los componentes (anexo 14C, §6.5), y el nombre de los que sí ve y dejaron un contagio.
+  const ocultos = await componentesOcultos(sql, sesion, versiones);
+  const contagiaron = eventos.flatMap((e) => {
+    const id = (e.detalle as { componente?: unknown } | null)?.componente;
+    return e.tipo === "propagacion" && typeof id === "number" && !ocultos.has(id) ? [id] : [];
+  });
+  const componentes = {
+    ocultos,
+    letras: letrasOcultasEnAlguna(versiones, ocultos),
+    nombres: await nombresDeComponentes(sql, [...(await componentesVisibles(sql, sesion, contagiaron))]),
+  };
   for (const c of corregidas) {
     const id = Number(c.id);
     const version = versiones.find((v) => v.id === Number(c.version_id)) ?? versiones[0];
@@ -762,7 +776,7 @@ export async function historialDeCorregidas(
         detalle: typeof e.detalle === "object" && e.detalle !== null ? (e.detalle as Record<string, unknown>) : {},
       }));
     const nombres = Object.fromEntries(version.variables.map((v) => [v.letra, v.nombre]));
-    salida.set(id, historialDeCorreccion(propios, { unidad: version.unidad, nombres, conSoportes, fuentes }));
+    salida.set(id, historialDeCorreccion(propios, { unidad: version.unidad, nombres, conSoportes, fuentes, componentes }));
   }
   return salida;
 }

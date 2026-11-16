@@ -411,6 +411,19 @@ export function filtroIndicadores(sql: Cliente, sujeto: SujetoVisibilidad) {
     )))`;
 }
 
+/**
+ * Los indicadores de `indicadorIds` que la persona ve (los que pasan `filtroIndicadores`), en una consulta. Es **la única
+ * regla** de quién ve un componente de un compuesto (anexo 14C, §6.5): el valor y el nombre de una variable tomada de otro
+ * indicador los ve quien ve ese indicador; a los demás les llegan como «Indicador restringido» y «No disponible». La aplican
+ * las lecturas de la medición, de la ficha y de su historial, y los avisos que nombran un componente.
+ */
+export async function componentesVisibles(sql: Cliente, sujeto: SujetoVisibilidad, indicadorIds: readonly number[]): Promise<Set<number>> {
+  const ids = [...new Set(indicadorIds)];
+  if (ids.length === 0) return new Set();
+  const filas = await sql`SELECT i.id FROM indicadores i WHERE i.id IN ${sql(ids)} AND ${filtroIndicadores(sql, sujeto)}`;
+  return new Set(filas.map((f) => Number(f.id)));
+}
+
 /** Quién ve un indicador: el que pasa `filtroIndicadores`. `false` si no existe. */
 export async function puedeVerIndicador(
   indicadorId: number,

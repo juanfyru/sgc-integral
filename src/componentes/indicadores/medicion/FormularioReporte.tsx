@@ -181,7 +181,9 @@ export function FormularioReporte({ datos, volver, administra = false }: { datos
 
   // Lo ajeno entra al cálculo en vivo tal como llegó, sin campo: no lo limitan las reglas de captura de quien mide.
   const variables = datos.variables.map((v) => (v.ajena ? { ...v, capturaMin: null, capturaMax: null, admiteNegativos: true } : v));
-  const faltaAjeno = datos.variables.some((v) => v.ajena !== null && v.ajena.valor === null);
+  // La de un componente que la persona no ve llega sin cifra (anexo 14C, §6.5): solo se sabe si llegó.
+  const faltaAjeno = datos.variables.some((v) => v.ajena !== null && (v.ajena.oculta ? v.ajena.llego !== true : v.ajena.valor === null));
+  const conOculta = datos.variables.some((v) => v.oculta === true);
   const vivo = calcularEnVivo({ ...datos, variables }, valores);
   const pregunta = vivo.variacion ?? (estado && !estado.ok ? (estado.confirmar ?? null) : null);
   const alCambiar = (letra: string, valor: string) => {
@@ -242,10 +244,12 @@ export function FormularioReporte({ datos, volver, administra = false }: { datos
             rangos={datos.rangos}
             anterior={datos.anterior}
             variacionPct={datos.variacionPct}
+            conOculta={conOculta}
           />
         </div>
 
-        <AvisosDeFalta variables={datos.variables} mide />
+        {/* «Usted ya puede reportar lo suyo» solo mientras lo suyo no está reportado. */}
+        <AvisosDeFalta variables={datos.variables} mide={!datos.reportada} />
 
         {pregunta ? (
           <div className={AVISO}>
