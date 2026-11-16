@@ -9,6 +9,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dominio = vi.hoisted(() => ({
   reportarDato: vi.fn(),
+  cerrarDeNuevoElDato: vi.fn(),
+  actualizarCategoriasDelDato: vi.fn(),
+  actualizarCategorias: vi.fn(),
   reportar: vi.fn(),
   propagarSinFallar: vi.fn(async () => {}),
 }));
@@ -25,6 +28,12 @@ vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
 vi.mock("@/db/consultas/indicadores/datos-periodos", async (original) => ({
   ...(await original<typeof import("@/db/consultas/indicadores/datos-periodos")>()),
   reportarDato: dominio.reportarDato,
+  cerrarDeNuevoElDato: dominio.cerrarDeNuevoElDato,
+  actualizarCategoriasDelDato: dominio.actualizarCategoriasDelDato,
+}));
+vi.mock("@/db/consultas/indicadores/categorias", async (original) => ({
+  ...(await original<typeof import("@/db/consultas/indicadores/categorias")>()),
+  actualizarCategorias: dominio.actualizarCategorias,
 }));
 vi.mock("@/db/consultas/indicadores/mediciones", async (original) => ({
   ...(await original<typeof import("@/db/consultas/indicadores/mediciones")>()),
@@ -35,7 +44,14 @@ vi.mock("@/db/consultas/indicadores/propagacion", async (original) => ({
   propagarSinFallar: dominio.propagarSinFallar,
 }));
 
-import { reportarAccion, reportarDatoCompartido } from "@/app/acciones-indicadores";
+import {
+  actualizarCategoriasDelDatoCompartido,
+  actualizarCategoriasDeMedicion,
+  cerrarDeNuevoElDatoCompartido,
+  reportarAccion,
+  reportarDatoCompartido,
+} from "@/app/acciones-indicadores";
+import { INTERBLOQUEO_NORMA_O_FICHA } from "@/db/consultas/indicadores/impactos";
 
 function formulario(campos: Record<string, string>) {
   const datos = new FormData();
@@ -97,6 +113,30 @@ describe("la confirmación de un dato viaja con el valor que confirma", () => {
     await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "5000", confirmadoValor: "2000" }));
     expect(dominio.reportarDato.mock.lastCall?.[1]).toMatchObject({ confirmado: false });
     expect(dominio.reportarDato.mock.lastCall?.[1].confirmadoValor).toBeUndefined();
+  });
+});
+
+describe("un interbloqueo de la base llega legible a la persona (ola final, O11)", () => {
+  const interbloqueo = () => Object.assign(new Error("deadlock detected"), { code: "40P01" });
+  const LEGIBLE = { ok: false, error: INTERBLOQUEO_NORMA_O_FICHA };
+
+  it("al reportar un dato, al actualizar las categorías de una medición o de un periodo del dato y al cerrar de nuevo un periodo", async () => {
+    requerirSesion.mockResolvedValue({ usuarioId: 7, rol: "admin_sgc", verHistorial: true });
+    dominio.reportarDato.mockRejectedValue(interbloqueo());
+    expect(await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "1284300000" }))).toMatchObject(LEGIBLE);
+    dominio.actualizarCategorias.mockRejectedValue(interbloqueo());
+    expect(await actualizarCategoriasDeMedicion(null, formulario({ id: "5" }))).toMatchObject(LEGIBLE);
+    dominio.actualizarCategoriasDelDato.mockRejectedValue(interbloqueo());
+    expect(await actualizarCategoriasDelDatoCompartido(null, formulario({ id: "5" }))).toMatchObject(LEGIBLE);
+    dominio.cerrarDeNuevoElDato.mockRejectedValue(interbloqueo());
+    expect(await cerrarDeNuevoElDatoCompartido(null, formulario({ id: "5" }))).toMatchObject(LEGIBLE);
+    expect(dominio.propagarSinFallar).not.toHaveBeenCalled();
+  });
+
+  it("cualquier otro error llega tal cual", async () => {
+    requerirSesion.mockResolvedValue({ usuarioId: 7, rol: "admin_sgc", verHistorial: true });
+    dominio.cerrarDeNuevoElDato.mockRejectedValue(new Error("Solo se cierra de nuevo un periodo reabierto"));
+    expect(await cerrarDeNuevoElDatoCompartido(null, formulario({ id: "5" }))).toMatchObject({ ok: false, error: "Solo se cierra de nuevo un periodo reabierto" });
   });
 });
 

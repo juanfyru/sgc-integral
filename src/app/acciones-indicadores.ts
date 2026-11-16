@@ -85,6 +85,8 @@ function destinoDeFirma(err: unknown): string {
 // Quien guarda, envía o aprueba una ficha bloquea el indicador y después lee sus normas; quien cambia el estado de una norma
 // la bloquea y después abre las revisiones de los indicadores que la citan (anexo 14B, §9). Si se cruzan, PostgreSQL cancela
 // una con `40P01`: a la persona le llega un mensaje legible, sin reintentar (`sinInterbloqueoCrudo`, `legibleSiInterbloqueo`).
+// Las acciones de los datos compartidos y de las categorías (anexo 14C) lo traducen igual: sin eso, `mutacion` le mostraría a
+// la persona el mensaje crudo de la base.
 
 // Las acciones que cambian una fuente (un dato compartido, o lo que otra medición toma de una: su resultado, su meta, su
 // «No aplica», una ficha que empieza a regir) llaman la propagación en cuanto confirman lo suyo (anexo 14C, §3.3:
@@ -293,7 +295,7 @@ export async function reportarDatoCompartido(_prev: EstadoReporte, formData: For
       porCategoria: d.porCategoria,
       confirmado: d.confirmado,
       ...(d.confirmado ? { confirmadoValor: d.confirmadoValor ?? "" } : {}),
-    });
+    }).catch(sinInterbloqueoCrudo);
     if (!r.ok) {
       dicho.confirmar = r.confirmar;
       dicho.valor = r.valor;
@@ -321,7 +323,7 @@ export async function actualizarCategoriasDeMedicion(_prev: EstadoConAviso, form
   let agregadas = 0;
   const estado = await mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
-    ({ agregadas } = await actualizarCategorias(sesion, idNumerico(formData, "id")));
+    ({ agregadas } = await actualizarCategorias(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoCrudo));
     // Una categoría nueva toma en seguida lo que un dato compartido por categoría ya trae para ella.
     if (agregadas > 0) await propagarSinFallar();
   });
@@ -494,7 +496,7 @@ export async function reabrirDatoCompartido(_prev: EstadoAccion, formData: FormD
 export async function cerrarDeNuevoElDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
-    await cerrarDeNuevoElDato(sesion, idNumerico(formData, "id"));
+    await cerrarDeNuevoElDato(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoCrudo);
   });
 }
 
