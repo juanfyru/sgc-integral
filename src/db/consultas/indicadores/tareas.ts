@@ -68,7 +68,9 @@ export const esPendiente = (sql: Cliente) => sql`m.estado = 'abierta' AND NOT m.
 
 /**
  * `falta` es lo primero que falta (con los datos, el análisis; si no, el reporte); `faltaSoporte`, que además falta el
- * soporte obligatorio de una medición ya reportada, que es de quien mide aunque falte el análisis.
+ * soporte obligatorio de una medición ya reportada, que es de quien mide aunque falte el análisis. Con `falta: "dato"`
+ * (quien mide ya entregó lo suyo y espera un valor ajeno), el soporte se le pide solo mientras la medición sigue en plazo
+ * (`debeElSoporte`).
  */
 export type Pendiente = { falta: Falta; faltaSoporte: boolean; periodo: Periodo; nombre: string | null };
 
@@ -125,10 +127,21 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
 const FALTA_SOPORTE = "Falta el soporte obligatorio";
 
 /**
- * Las de reportar y analizar: las mediciones de las que la persona es responsable de lo que les falta. Con el análisis y
- * el soporte pendientes, las dos: «Analizar» a quien analiza y «Reportar» a quien mide. «Falta un dato» no es tarea.
+ * ¿Quien mide debe el soporte de una medición que además espera un dato (`falta: "dato"` con `faltaSoporte`)? Solo mientras
+ * siga en plazo: «soporte obligatorio» rige hacia adelante y no queda guardado cuándo se activó, pero una medición en plazo
+ * que ya tiene lo propio y no tiene soporte solo puede estar así porque se activó dentro de su plazo. Vencido el plazo no se
+ * distingue de la que lo recibió ya vencida, y bajo «Falta un dato» nada vence: deja de pedirse, y el dato que llegue
+ * después la deja reportada (`recalcularMedicion`). La regla única de la tarea y de la lista.
  */
-async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]> {
+export const debeElSoporte = (p: Pick<Pendiente, "falta" | "faltaSoporte">, venceEn: Date, ahora: Date): boolean =>
+  p.falta === "dato" && p.faltaSoporte && venceEn.getTime() >= ahora.getTime();
+
+/**
+ * Las de reportar y analizar: las mediciones de las que la persona es responsable de lo que les falta. Con el análisis y
+ * el soporte pendientes, las dos: «Analizar» a quien analiza y «Reportar» a quien mide. «Falta un dato» no es tarea, salvo
+ * el soporte obligatorio que quien mide debe mientras tanto (`debeElSoporte`), con el mismo texto de siempre.
+ */
+async function deMediciones(sql: Cliente, sesion: SesionFlujo, ahora: Date): Promise<Tarea[]> {
   const filas = await sql`SELECT * FROM (
       SELECT ${columnasDePendiente(sql)}, i.codigo, p.nombre AS proceso,
         ${responsableDe(sql, sesion, "mide")} AS mide, ${responsableDe(sql, sesion, "analiza")} AS analiza
@@ -157,6 +170,7 @@ async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]>
     const reportada = f.reportada_en !== null;
     if (p.falta === "reporte" && mide) tareas.push(tarea("reporte", mide, reportada ? FALTA_SOPORTE : (f.proceso as string)));
     if (p.falta === "analisis" && p.faltaSoporte && mide) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
+    if (mide && debeElSoporte(p, new Date(f.vence_en as string), ahora)) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
     if (p.falta === "analisis" && analiza) tareas.push(tarea("analisis", analiza, f.proceso as string));
   }
   return tareas;
@@ -243,7 +257,7 @@ export async function tareasDeIndicadores(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const [mediciones, constancias, datos, impactos, observaciones, porAprobar, devueltas] = await Promise.all([
-    deMediciones(sql, sesion),
+    deMediciones(sql, sesion, ahora),
     tareasDeConstancias(sql, sesion),
     tareasDeDatos(sql, sesion),
     tareasDeImpactosDeIndicadores(sql, sesion),

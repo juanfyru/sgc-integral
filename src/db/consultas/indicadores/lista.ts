@@ -22,7 +22,7 @@ import { constanciaQueSePide } from "./constancias-soporte";
 import { agrupar, aNumero, comparacionDe, conResultado, vigentes, type Opciones } from "./lectura";
 import { conMayuscula, mide, reglaMostrada, texto, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
 import { asegurarMedicionesConFuentes } from "./propagacion";
-import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona } from "./tareas";
+import { columnasDePendiente, debeElSoporte, esPendiente, queFalta, type FaltaDePersona } from "./tareas";
 
 /** Los valores de los filtros de estado viven en `src/lib/indicadores/filtros.ts`, con sus nombres. */
 export { REPORTES_DE_LISTA, SEMAFOROS_DE_LISTA };
@@ -286,9 +286,11 @@ export async function listarIndicadores(
     const id = Number(m.indicador_id);
     const acc = pendientesDe.get(id) ?? { porReportar: false, faltaAnalisis: false, faltaDato: false, vencidas: 0, masAntigua: null };
     pendientesDe.set(id, acc);
-    // Lo que espera el dato del sistema no es de nadie: ni por reportar ni vencido.
+    // Lo que espera el dato del sistema no es de nadie: ni por reportar ni vencido. Salvo el soporte obligatorio que quien
+    // mide debe mientras tanto, en plazo (`debeElSoporte`, como su tarea): por reportar, nunca vencido.
     if (falta.falta === "dato") {
       acc.faltaDato = true;
+      if (debeElSoporte(falta, new Date(m.vence_en as string), ahora)) acc.porReportar = true;
       continue;
     }
     if (falta.falta === "reporte" || falta.faltaSoporte) acc.porReportar = true;

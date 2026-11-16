@@ -753,6 +753,115 @@ describe("«Reportes a tiempo» ante el plazo que mueve la fuente", () => {
     }));
 });
 
+describe("el soporte obligatorio de una medición que espera su dato", () => {
+  const SOPORTE = "Falta el soporte obligatorio";
+  const OCT_6 = new Date("2026-10-06T15:00:00Z");
+  const OCT_8 = new Date("2026-10-08T15:00:00Z");
+  const OCT_12 = new Date("2026-10-12T15:00:00Z");
+  const OCT_21 = new Date("2026-10-21T15:00:00Z");
+
+  /** Activa «soporte obligatorio» en el indicador a `ahora`, como lo hace quien administra. */
+  const activarSoporte = async (tx: TransactionSql, indicadorId: number, ahora: Date) =>
+    cambiarOperacion(
+      await sesionAdmin(tx),
+      { indicadorId, plazoReporteDias: 10, inicioMedicion: "2026-09", soporteObligatorio: true, nivelAcceso: "general" },
+      { sql: tx, ahora },
+    );
+  const tareaDeMedir = async (tx: TransactionSql, sesion: SesionFlujo, medicionId: number, ahora: Date) => {
+    const { tareas, vencidas } = await tareasDeIndicadores(sesion, { sql: tx, ahora });
+    return { tarea: tareas.find((t) => t.id === `medir:${medicionId}`) ?? null, vencidas };
+  };
+  const enLaLista = async (tx: TransactionSql, sesion: SesionFlujo, x: { procesoId: number; ind: { id: number } }, ahora: Date) =>
+    (await listarIndicadores(sesion, { procesoId: x.procesoId }, { sql: tx, ahora })).filas.find((f) => f.id === x.ind.id)?.reporte.texto;
+
+  it("activado con el plazo ya vencido: el dato que llega después no la deja pidiendo el soporte, ni vencida ni escalada", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const x = await mixto(tx);
+      // Quien mide entrega lo suyo el 5 (vence el 10), cuando el soporte no se pedía; el 12 se vuelve obligatorio.
+      await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" });
+      await activarSoporte(tx, x.ind.id, OCT_12);
+      const antes = await fila(tx, x.medicion);
+      expect([antes.estado, antes.reportada_en, antes.resultado_exacto]).toEqual(["abierta", AHORA, null]);
+      expect(await falta(tx, x.medicion)).toBe("dato");
+      // Se activó con el plazo ya vencido: mientras espera el dato no le pide el soporte a nadie.
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toEqual({ tarea: null, vencidas: 0 });
+
+      // El 20 llega el dato y el resultado es Bien (96,3 %).
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "40000000", TARDE);
+      await propagarA(tx, TARDE, [x.ind.id]);
+      await revisarVencimientosDeIndicadores({ sql: tx, ahora: OCT_21, config });
+
+      const m = await fila(tx, x.medicion);
+      expect([m.aviso_vencido_en, m.escalado_en]).toEqual([null, null]);
+      expect([m.semaforo, m.estado]).toEqual(["bien", "reportada"]);
+      expect((await avisos(tx, x.medicion)).map((a) => a.tipo)).not.toContain("indicadores.vencido");
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_21)).toEqual({ tarea: null, vencidas: 0 });
+    }));
+
+  it("activado dentro del plazo: quien mide lo debe aunque falte el dato, y lo sigue debiendo si el dato llega en plazo", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" });
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, AHORA)).toEqual({ tarea: null, vencidas: 0 });
+      await activarSoporte(tx, x.ind.id, OCT_6);
+
+      // Sigue en «Falta un dato», y además debe el soporte: la tarea y la lista lo dicen.
+      expect(await falta(tx, x.medicion)).toBe("dato");
+      const { tarea, vencidas } = await tareaDeMedir(tx, x.mide, x.medicion, OCT_6);
+      expect(tarea).toMatchObject({ titulo: `Reportar ${x.ind.codigo} Indicador de prueba ${x.ind.codigo}, septiembre de 2026`, detalle: SOPORTE, vence: VENCE_SEPTIEMBRE });
+      expect(vencidas).toBe(0);
+      expect(await enLaLista(tx, x.mide, x, OCT_6)).toBe("Por reportar");
+
+      // El dato llega el 8, en plazo, y cumple: queda abierta por el soporte, con la misma tarea.
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "40000000", OCT_8);
+      await propagarA(tx, OCT_8, [x.ind.id]);
+      const m = await fila(tx, x.medicion);
+      expect([m.semaforo, m.estado, m.vence_en]).toEqual(["bien", "abierta", VENCE_SEPTIEMBRE]);
+      expect(await falta(tx, x.medicion)).toBe("reporte");
+      expect((await tareaDeMedir(tx, x.mide, x.medicion, OCT_8)).tarea).toMatchObject({ detalle: SOPORTE });
+    }));
+
+  it("si el plazo pasa y el dato no ha llegado, el soporte deja de pedirse: bajo «Falta un dato» nada vence", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" });
+      await activarSoporte(tx, x.ind.id, OCT_6);
+      expect((await tareaDeMedir(tx, x.mide, x.medicion, OCT_6)).tarea).not.toBeNull();
+
+      // Pasado el 10 sigue esperando el dato: ni tarea, ni vencida, ni aviso.
+      await revisarVencimientosDeIndicadores({ sql: tx, ahora: OCT_12, config });
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toEqual({ tarea: null, vencidas: 0 });
+      expect(await enLaLista(tx, x.mide, x, OCT_12)).toBe("Falta un dato");
+      expect((await fila(tx, x.medicion)).aviso_vencido_en).toBeNull();
+
+      // Y cuando llega, con su plazo ya vencido, queda reportada.
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "40000000", TARDE);
+      await propagarA(tx, TARDE, [x.ind.id]);
+      expect((await fila(tx, x.medicion)).estado).toBe("reportada");
+    }));
+
+  it("la que ya tenía resultado y está abierta por el soporte no queda reportada porque se corrija el dato", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" });
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "40000000");
+      await propagarA(tx, AHORA, [x.ind.id]);
+      expect((await fila(tx, x.medicion)).estado).toBe("reportada");
+      // El 6, en plazo, se activa el soporte: vuelve a abierta para pedirlo (14A).
+      await activarSoporte(tx, x.ind.id, OCT_6);
+      expect((await fila(tx, x.medicion)).estado).toBe("abierta");
+
+      // El 20 se corrige el dato y sigue cumpliendo: lo que debía, lo sigue debiendo.
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "41000000", TARDE);
+      await propagarA(tx, TARDE, [x.ind.id]);
+      const m = await fila(tx, x.medicion);
+      expect([m.semaforo, m.estado]).toEqual(["bien", "abierta"]);
+      expect(await falta(tx, x.medicion)).toBe("reporte");
+    }));
+});
+
 describe("una falla no corta la pasada", () => {
   it("la medición que no se puede calcular se registra y se salta; las demás se propagan", () =>
     revertida(sql, async (tx) => {

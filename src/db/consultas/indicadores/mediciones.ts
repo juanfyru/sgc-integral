@@ -814,7 +814,8 @@ export function versionesDeCalculo(
  *   quien llama elige a qué mediciones (al activarlo, solo a las que siguen en plazo);
  * - `"fuente"` (la propagación, anexo 14C §3.3: llegó o cambió un valor ajeno) calcula con la versión congelada solo si la
  *   medición ya tenía resultado, y con la que rige si no (`versionesDeCalculo`), y como la racha, nunca regresa a `abierta`
- *   por falta del soporte una medición ya `reportada`.
+ *   por falta del soporte una medición ya `reportada`; ni deja pidiéndolo a la que esperaba el dato con lo propio entregado
+ *   y su plazo ya vencido (si el dato llega con el plazo en curso, el soporte sí se debe).
  * Una acción sobre la medición (reportar, corregir, analizar, la meta, un soporte, reabrir) aplica la regla viva.
  *
  * `c.conElResultado`, si algo cambió, corre con el resultado ya escrito y antes del evento, en la misma transacción; lo que
@@ -881,14 +882,19 @@ export async function recalcularMedicion(
   }
   const conAnalisis = analisisCompleto(analisisExigido({ semaforo, cumple, repetido, historica, noAplica }), analisisDe(m));
   // El soporte rige hacia adelante: la racha de una siguiente, o un valor ajeno que llega, no reabre por él lo que ya estaba
-  // reportado. Lo que nadie mide (un automático, anexo 14B §5.3, o un indicador sin variables propias, anexo 14C §3.1) no
-  // lleva soporte: nadie podría adjuntarlo.
+  // reportado. Tampoco el valor ajeno que completa, con su plazo ya vencido, a la que esperaba el dato con lo propio ya
+  // entregado (`reportada_en` y sin resultado): estaba `abierta` solo por esa espera, y lo suyo entró cuando el soporte no se
+  // pedía o se volvió obligatorio con su plazo ya vencido (`recalcularPorSoporte` salta las vencidas). Si el dato llega con el
+  // plazo en curso, el soporte se activó dentro de él y sí se debe, como en cualquier medición en plazo. Lo que nadie mide (un
+  // automático, anexo 14B §5.3, o un indicador sin variables propias, anexo 14C §3.1) no lleva soporte: nadie podría adjuntarlo.
+  const esperabaElDato = m.reportada_en !== null && m.resultado_exacto === null && new Date(m.vence_en as string).getTime() < c.ahora.getTime();
+  const yaReportada = m.estado === "reportada" || (c.sistema === "fuente" && esperabaElDato);
   const conSoporte =
     !mide(version) ||
     m.soporte_obligatorio !== true ||
     historica ||
     noAplica ||
-    ((c.sistema === "racha" || c.sistema === "fuente") && m.estado === "reportada") ||
+    ((c.sistema === "racha" || c.sistema === "fuente") && yaReportada) ||
     (await contarSoportes(tx, medicionId)) > 0;
   const conDato = noAplica || resultado !== null;
   const estado: EstadoMedicion = conDato && conAnalisis && conSoporte ? "reportada" : "abierta";
