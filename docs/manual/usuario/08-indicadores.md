@@ -5,9 +5,11 @@ que lo dice cada mes, trimestre o año: cuántas auditorías se hicieron de las 
 minutos esperó un paciente en triage, cuántas citas se dieron a tiempo. Este capítulo explica cómo
 se lee un indicador, cómo se reporta, cómo se analiza un resultado que no cumple y cómo se
 administra su ficha, con una sección por cada papel que usted puede tener. Lea la que le
-corresponde; las secciones 1, 2, 11 y 12 sirven a todos. Las secciones 7 a 10 explican lo que el SGC
+corresponde; las secciones 1, 2, 14 y 15 sirven a todos. Las secciones 7 a 10 explican lo que el SGC
 hace por usted: los indicadores que calcula solo, la página **Objetivos**, los reportes a un ente
-externo y lo que pasa cuando cambia una norma, cada una para todos los papeles que intervienen.
+externo y lo que pasa cuando cambia una norma, cada una para todos los papeles que intervienen. Las
+secciones 11 a 13 explican los datos que se reportan una vez para varios indicadores, los
+indicadores que se miden por sede o por servicio y los que se calculan con otros indicadores.
 
 Antes de seguir, vea el Capítulo 3 (la barra lateral, **Mis tareas** y la campana) y el Capítulo 1
 (la clave con que se firma).
@@ -51,18 +53,29 @@ Antes de seguir, vea el Capítulo 3 (la barra lateral, **Mis tareas** y la campa
   que lo pide, con su fecha, su radicado y su soporte (sección 9).
 - **Revisión por cambio de norma:** la que pide un indicador cuando una norma que su ficha cita se
   modifica, se deroga o se retira (sección 10).
+- **Dato compartido:** un dato que usan varios indicadores (las consultas de medicina general del
+  mes, el total facturado). Lo reporta una sola vez quien responde por él y el SGC lo pone en cada
+  indicador que lo usa (sección 11).
+- **Indicador por sede o por servicio** (desagregado): uno que se mide por categoría, con una fila
+  por sede y el total que suma el SGC (sección 12).
+- **Indicador compuesto:** uno que toma el resultado, o el porcentaje de cumplimiento, de otros
+  indicadores (sección 13).
+- **Falta un dato:** la medición que espera algo que no digita quien la mide: la foto de un
+  indicador que calcula el sistema, un dato compartido o el resultado de otro indicador. No es
+  tarea de nadie y no vence (sección 7.4).
 
 Dónde está cada cosa:
 
 - **Indicadores**, en la barra lateral, en su propio grupo **Indicadores**, para toda persona con
-  cuenta. Tiene las pestañas **Lista**, **Matriz del año** y **Objetivos** para todos, **Por aprobar**
-  para quien aprueba fichas (Gerencia y líderes) y para el Administrador del SGC, y **Cierre del
-  mes** para el Administrador del SGC. Junto a **Indicadores** aparece un número con lo vencido que
-  está a su cargo: los reportes y los análisis, las constancias de envío a un ente y, si usted
-  administra los indicadores, las revisiones por cambio de norma.
+  cuenta. Tiene las pestañas **Lista**, **Matriz del año** y **Objetivos** para todos, **Datos
+  compartidos** para quien ve algún dato (sección 11), **Por aprobar** para quien aprueba fichas
+  (Gerencia y líderes) y para el Administrador del SGC, y **Cierre del mes** para el Administrador
+  del SGC. Junto a **Indicadores** aparece un número con lo vencido que está a su cargo: los
+  reportes y los análisis, las constancias de envío a un ente y, si usted administra los
+  indicadores, las revisiones por cambio de norma.
 - **Mis tareas**, en **Inicio**: reportar, analizar, responder una observación, aprobar una ficha,
-  retomar una devuelta, registrar el reporte a un ente o revisar un indicador por el cambio de una
-  norma.
+  retomar una devuelta, registrar el reporte a un ente, revisar un indicador por el cambio de una
+  norma o reportar un dato compartido.
 - **Configuración de indicadores**, en el grupo **Administración**, solo para el Administrador del
   SGC (sección 6.9).
 - En la página de cada proceso, la sección **Indicadores del proceso**; en la búsqueda (`Ctrl K` y
@@ -71,10 +84,8 @@ Dónde está cada cosa:
 
 Lo que todavía no hace: no manda correos (los recordatorios y avisos llegan a **Mis tareas** y a la
 campana, y los ve quien entra al SGC; el correo llega con la Fase 16); no abre una acción de mejora
-desde un resultado crítico (deja la marca y el texto para la Fase 15); y ningún dato se comparte
-entre indicadores: lo que no calcula el sistema (sección 7) se digita en cada indicador. Los datos
-compartidos entre indicadores, los indicadores por categoría (por servicio, por sexo…) y los
-indicadores que se calculan con otros llegan en la siguiente entrega.
+desde un resultado crítico (deja la marca y el texto para la Fase 15); y un indicador se mide por
+una sola dimensión a la vez (por sede o por servicio, no por las dos).
 
 ## 2. Si usted es cualquier persona del hospital: leer un indicador
 
@@ -124,7 +135,7 @@ la clasificación y la versión de la ficha vigente; si una norma que la ficha c
   parte de lo firmado.
 - **Versiones:** el **control de cambios** (qué cambió en cada versión, por qué, desde cuándo rige,
   quién la elaboró y quién la aprobó) y cada versión anterior completa.
-- **Observaciones** (con su número): solo para quien ve los soportes (sección 12).
+- **Observaciones** (con su número): solo para quien ve los soportes (sección 15).
 - **Reportes al ente:** si la ficha se reporta a un ente externo o el indicador tiene constancias de
   envío (sección 9).
 
@@ -142,9 +153,10 @@ la clasificación y la versión de la ficha vigente; si una norma que la ficha c
 
 El estado del **reporte** de cada periodo: **Por reportar**, **Falta el análisis**, **Reportada**,
 **Cerrada** y, cuando pasó el plazo, **Vencida**; un histórico que aún no se digitó dice **Por
-registrar**, y un indicador que calcula el sistema y aún no tiene su cálculo, **Falta un dato**
-(sección 7.4). Un «No aplica» puede ponerlo también el sistema, con su motivo (sección 7.3). Las
-marcas que pueden acompañarlo:
+registrar**, y una medición que espera su cálculo, un dato compartido o el resultado de otro
+indicador, **Falta un dato** (sección 7.4). Un «No aplica» puede ponerlo también el sistema, con su
+motivo (secciones 7.3 y 13.2). En un indicador por sede, **1 en Crítico** dice cuántas sedes
+quedaron en Crítico (sección 12.4). Las marcas que pueden acompañarlo:
 **Histórico**, **Corregida** (con **Ver el historial**: qué había, qué quedó, quién, cuándo y por
 qué), **Requiere acción de mejora**, **Meta ajustada después del periodo** y **N periodos sin
 cumplir** (el indicador no cumple desde hace varios periodos seguidos: el color sigue diciendo el
@@ -252,7 +264,9 @@ tiene a nadie designado, miden los líderes del proceso; y si tampoco hay líder
 SGC, que solo en ese caso reporta (el reporte queda marcado y la tarea dice «Sin responsable:
 designe a alguien»). El Administrador del SGC no reporta los indicadores que tienen quien los mida:
 quien cierra el mes no produce los datos. Un indicador que calcula el sistema no lo mide nadie: no
-da tareas de reportar ni se digita (sección 7).
+da tareas de reportar ni se digita (sección 7). Tampoco uno cuyas variables llegan todas de otra
+parte, de un dato compartido o de otro indicador (secciones 11 y 13); si solo algunas llegan de
+otra parte, usted reporta las suyas y no espera a las demás (sección 11.3).
 
 ### 3.1 Su tarea y su plazo
 
@@ -492,6 +506,9 @@ En **Indicadores**, pulse **Nuevo indicador**.
    campo, el mensaje sale junto a ese campo y el cursor va a él; si está en **Más opciones**, la
    sección se abre sola. Al elegir **¿Cómo se calcula?** el SGC sugiere la unidad («Porcentaje»
    para un porcentaje, «Número» para un conteo); puede cambiarla.
+   En cada variable, **De dónde sale A** dice quién la pone: **Propia** (la digita quien mide),
+   **Dato compartido** (sección 11) o **Resultado de otro indicador** (sección 13). Y
+   **Desagregación** mide el indicador por sede o por servicio (sección 12).
 6. Pulse **Guardar borrador**. La ficha queda en borrador y se abre su página de edición.
 7. Al pie, **Enviar a aprobación**: la ventana muestra el indicador, la versión, el tipo y la huella
    de la ficha; firme con su clave. Queda la firma «Elaboró» y la ficha pasa a **Por aprobar**.
@@ -603,17 +620,46 @@ cerrado; nunca uno que no ha terminado) y pulse **Ver el resumen**:
   análisis un plazo contado desde ella, la medición queda en plazo y no se cierra «sin análisis»;
 - el resumen **Por proceso** y las observaciones que siguen sin respuesta (no impiden el cierre);
 - **No se cierran**: las mediciones que siguen dentro de su plazo de reporte (cerrar el 1 de abril
-  no deja sin dato lo que tenía plazo hasta el 10) y los históricos sin registrar.
+  no deja sin dato lo que tenía plazo hasta el 10), los históricos sin registrar, los periodos de
+  datos compartidos que siguen en plazo y las **mediciones que esperan una fuente** (con lo que
+  esperan).
+
+**Una medición cerrada tiene cerradas sus entradas.** Si usa un dato compartido o el resultado de
+otro indicador, el cierre la cierra solo si lo que usó también está cerrado o se cierra en este
+mismo cierre; si su fuente sigue en plazo, espera al siguiente cierre. Antes de clasificar, el
+cierre lleva a cada medición lo que sus fuentes ya tienen, y una medición cuyo valor copiado no
+coincide con el de su fuente también espera. El cierre **cierra también los periodos de los datos
+compartidos** que terminaron en el mes o antes: los reportados, y los vencidos sin reportar como
+«Sin dato» (con ellos, las mediciones que los esperaban). En **Mediciones que quedarán sin dato**,
+la columna **Quién debía** nombra a quien mide, a los responsables del dato que faltó o el
+indicador cuyo resultado faltó.
 
 Pulse **Cerrar …** y confirme con **Cerrar el mes**. No pide clave: es una rutina mensual. Después
 del cierre, los datos, el resultado, el análisis y los soportes de esas mediciones no cambian (sí
-admiten observaciones). Un cierre no se deshace.
+admiten observaciones). Un cierre no se deshace. Si dos personas cierran o reabren a la vez, la
+segunda espera unos segundos a que termine la primera.
 
 Para corregir una medición cerrada, en la tabla del año pulse **Reabrir**, escriba la
 **Justificación** (al menos 10 caracteres, sin clave) y pulse **Reabrir la medición**: vuelve a
 reportada (o a por reportar, si no tenía datos), queda marcada **Corregida** y se avisa a quien
 mide. Se cierra otra vez con el siguiente cierre del mes o con **Cerrar de nuevo**. **Cierres
 anteriores** lista los meses ya cerrados.
+
+**Reabrir en cascada.** Reabrir un periodo cerrado de un dato compartido (en la página del dato,
+**Reabrir**) o la medición cerrada de un indicador que otros toman reabre también las mediciones
+cerradas que los usaron, y las que dependen de esas. Antes de confirmar, el diálogo las lista: las
+que se reabren y quedan **Corregida** (cada una con la justificación en su historial y su aviso),
+las que **No se reabre** (las de un indicador retirado y las de otra periodicidad) y, como dato,
+las de un periodo cuya constancia ya se registró ante el ente («Ya se reportó al ente el …»: la
+constancia no cambia). El botón dice lo que hace («Reabrir el dato y 2 mediciones»). Si la lista
+cambió mientras usted confirmaba, nada se reabre: «Lo que se reabre cambió mientras se confirmaba:
+revise la lista y vuelva a intentarlo». Al reabrir un dato se avisa también a sus responsables;
+su fecha límite no se mueve. **Cerrar de nuevo** no cierra una medición cuya fuente sigue abierta
+(«Su fuente sigue abierta: ciérrela primero»): cierre primero el periodo del dato, también con
+**Cerrar de nuevo**.
+
+La justificación es texto libre y la lee quien ve cualquiera de las mediciones reabiertas: no
+nombre en ella un indicador restringido.
 
 ### 6.7 Retirar, crear a partir de este, borrar y descartar
 
@@ -647,6 +693,8 @@ Barra lateral → **Administración** → **Configuración de indicadores**:
   **Objetivos** (de calidad o institucionales, a los que una ficha puede aportar). Cada uno se
   crea, se edita, se activa o desactiva y se borra solo si ninguna ficha lo usa. Renombrar uno no
   cambia las fichas ya aprobadas (sección 6.3).
+- **Dimensiones** (Sede, Servicio…) y sus categorías, para los indicadores por sede o por servicio
+  (sección 12.1).
 - **Parámetros**: **Días de aviso previo** (3), **Plazo para reportar (días)** (10), **Periodos
   seguidos de incumplimiento** (3) y **Variación que se debe confirmar (%)** (30). Pulse **Guardar
   los parámetros**. El plazo es el que trae una ficha nueva; las ya creadas conservan el suyo. Ya
@@ -828,10 +876,11 @@ Documentos con revisión vencida es un conteo: cero vencidos es una cifra (y bue
 
 ### 7.4 «Falta un dato»
 
-Es el estado de una medición que espera la foto del sistema. **No es tarea de nadie:** no da la tarea
-de reportar, ni recordatorios, ni el aviso de vencido, ni el aviso al jefe, y nunca se muestra
-«Vencida» por eso. Cuando llega la foto se calcula el resultado, salen las alertas y, si no cumple,
-la tarea de analizar.
+Es el estado de una medición que espera la foto del sistema, un dato compartido (sección 11) o el
+resultado de otro indicador (sección 13), con lo propio ya reportado si lo tiene. **No es tarea de
+nadie:** no da la tarea de reportar, ni recordatorios, ni el aviso de vencido, ni el aviso al jefe,
+y nunca se muestra «Vencida» por eso. Cuando llega lo que espera se calcula el resultado, salen las
+alertas y, si no cumple, la tarea de analizar.
 
 Quien analiza puede abrir el periodo con **Ver** en la tabla del año: la pantalla dice «Este
 indicador lo calcula el sistema. Nadie digita sus datos.», cuándo se calculó o se calculará y, ya
@@ -979,7 +1028,7 @@ del ente pide su constancia de envío: la fecha, el radicado y al menos un sopor
 (**Pendiente**, **Vencida**, **Registrada** o **Registrada · corregida**), **Enviado el**,
 **Radicado**, **Resultado enviado** (con «(parcial)» si lo fue), **Registró**, **Soportes** y
 **Acciones**. Los soportes y **Ver el historial** solo los ve quien ve los soportes del indicador
-(sección 12).
+(sección 15).
 
 **Registrar el envío** (quien puede medir el indicador y el Administrador del SGC, sin clave):
 
@@ -1057,7 +1106,272 @@ publica («La norma … ya no está vigente: quítela de la ficha … antes de p
 En la página de impactos de la norma (Capítulo 7, sección 4.8), la sección **Indicadores** lista en
 lectura los indicadores del proceso que la citaban, con el estado de su revisión.
 
-## 11. Qué cambia respecto del Excel de indicadores
+## 11. Datos compartidos
+
+Hay datos que usan varios indicadores: las consultas de medicina general del mes sirven para el uso
+de la agenda y para la producción del trimestre; el total facturado, para varios indicadores
+financieros. Un **dato compartido** se reporta **una sola vez**, por quien responde por él, y el SGC
+lo pone en cada indicador que lo usa. Así no se digita dos veces ni con dos cifras distintas.
+
+### 11.1 Dónde están
+
+Pestaña **Datos compartidos** de **Indicadores**. La ven el Administrador del SGC, Gerencia,
+Control Interno, los líderes del proceso dueño del dato y quienes responden por él; para los demás
+no existe. El valor del dato sí aparece en la tabla de cada indicador que lo usa, a quien ve ese
+indicador. Junto a la pestaña, un número dice cuántos periodos de sus datos están por reportar.
+
+La lista trae cada dato con su proceso, su **Periodicidad**, su **Último valor**, quién **Lo
+reportó** y los indicadores que **Lo usan** (solo los que usted ve, sin decir si hay otros). Pulse
+el nombre para abrir la página del dato: su ficha (**Qué incluye**, **Fuente**, **Unidad**,
+**Periodicidad**, **Cómo se junta**, **Plazo**, quiénes **Responden** y quiénes **Lo usan**), el
+recuadro para reportarlo y **Periodos del dato**, con cada periodo y su historial.
+
+### 11.2 Si usted responde por un dato
+
+Responden por el dato las personas que el Administrador del SGC designó y los líderes del proceso
+dueño; si no hay ninguno activo, el Administrador del SGC, y la tarea lo dice («Sin responsable:
+designe a alguien»). Cuando termina un periodo que algún indicador necesita, le llega la tarea
+**Reportar el dato
+Consultas de medicina general realizadas, septiembre de 2026**, con su fecha límite (el fin del
+periodo más el plazo del dato), y los mismos recordatorios que un indicador: antes del plazo, al
+vencerse y, unos días después, un aviso a su jefe que no nombra el dato.
+
+1. Abra la tarea o la página del dato. **Reportar el dato** muestra el periodo que se pide, el más
+   antiguo primero.
+2. Escriba el **Valor**, con coma o punto decimal. Si el dato se reporta por categoría, escriba el
+   **Valor de cada categoría**: el dato del periodo es la suma de todas.
+3. Si quiere, adjunte en **Soporte (opcional)** el archivo de donde salió: PDF, imagen o Excel
+   `.xlsx`, como los soportes de una medición (sección 3.4).
+4. Pulse **Reportar**. Si el valor se aleja mucho del periodo anterior, el SGC pregunta: marque
+   **Sí, el valor es correcto** y pulse otra vez.
+
+En cuanto usted lo reporta, el SGC lo lleva a cada indicador que lo usa: el que ya tenía lo demás
+queda calculado, con su color y su alerta, igual que si lo hubiera reportado quien lo mide. Un dato
+no tiene «No aplica»: si no hubo nada que contar, su valor es 0.
+
+**Corregir antes del cierre:** en **Periodos del dato**, pulse **Corregir**, cambie el valor y
+pulse **Guardar la corrección**. No pide justificación: el historial guarda lo que había, lo que
+quedó, quién y cuándo, y los indicadores que lo usan se recalculan solos (también su alerta).
+Después del cierre del mes el periodo queda cerrado: solo el Administrador del SGC lo reabre, y le
+llega el aviso **Dato compartido reabierto: …** para que lo corrija o lo reporte tarde (sección
+6.6).
+
+### 11.3 Un indicador que usa un dato
+
+En la ficha, la variable dice de qué dato sale. En la pantalla **Reportar**, esa variable aparece ya
+puesta, con quién la reportó y cuándo, y no se cambia desde ahí. Si el indicador tiene también
+variables suyas (un indicador **mixto**):
+
+- reporte lo suyo aunque el dato no haya llegado: el botón dice **Reportar lo mío**. Cuenta como
+  reporte, a tiempo si fue a tiempo;
+- mientras el dato no llegue, la medición está en **Falta un dato**: no es tarea suya, no vence ni
+  le avisa (sección 7.4). Cuando el dato llega, la medición se calcula sola; si pide análisis y su
+  fecha límite ya había pasado, el plazo del análisis cuenta otra vez desde ese día;
+- si el dato venció y nunca llegó, el cierre del mes cierra la medición «Sin dato» y nombra a los
+  responsables del dato como quienes debían.
+
+Un indicador cuyas variables salen todas de datos compartidos (o de otros indicadores) no lo mide
+nadie: no da tareas de reportar y se calcula cuando llegan sus datos. Su ficha dice «Llega de datos
+compartidos o de otros indicadores».
+
+Un indicador trimestral (o de otra periodicidad más larga que la del dato) toma el dato **juntado**
+con la regla del dato: la suma de sus meses, el último valor o el promedio. Mientras falte alguno
+de esos meses, está en **Falta un dato**.
+
+### 11.4 Si usted es Administrador del SGC: crear y mantener un dato
+
+En **Datos compartidos**, pulse **Nuevo dato** y llene: **Proceso dueño**, **Nombre** (único en su
+proceso), **Qué incluye y qué excluye**, **Fuente**, **Unidad**, **Periodicidad**, **Cómo se
+junta** (se suma, último valor o promedio), **Mínimo de captura** y **Máximo de captura**, si admite
+negativos, **Plazo de reporte (días)** (de 0 a 90) y, si se reporta por categoría, la
+**Desagregación** (sección 12). Pulse **Crear el dato**. En su página, **Designar personas** elige
+quiénes responden por él.
+
+Para usarlo en una ficha, en la variable elija **De dónde sale A** → **Dato compartido** y el dato:
+el SGC copia su nombre, su descripción, su fuente, su unidad y cómo se junta, y la ficha los firma
+así (renombrar el dato después no cambia una ficha aprobada). La periodicidad del indicador debe
+ser la del dato o una que la contenga: un indicador trimestral puede usar un dato mensual; uno
+mensual no puede usar uno trimestral. Poner, quitar o cambiar el dato de una variable es un cambio
+mayor. Un indicador por sede solo usa un dato por la misma dimensión.
+
+Desde que una ficha aprobada cita el dato, su periodicidad, cómo se junta y su desagregación no
+cambian («Una ficha aprobada ya cita este dato…»): si hace falta otra cosa, cree otro dato. Lo
+demás se edita siempre. **Desactivar el dato** solo se puede si ningún indicador activo lo usa
+(«Lo usa un indicador activo: cambie antes su ficha»), y **Borrar el dato**, si no tiene historia
+(«Este dato ya tiene historia: desactívelo»).
+
+**Qué periodos se piden.** Solo los que necesita algún indicador activo, desde el periodo en curso
+al aprobarse su ficha (un indicador anual aprobado en noviembre pide los meses de ese año). Un
+periodo que ya había terminado cuando empezó a pedirse no nace vencido: su plazo cuenta desde ese
+día. Un periodo que ya ningún indicador necesita deja de pedirse («Ya no se pide»). Los históricos
+de un indicador (sección 3.6) se digitan completos en el indicador, también la variable del dato.
+
+## 12. Indicadores por sede o por servicio
+
+Un indicador **desagregado** se mide por categoría: por sede, por servicio, por sexo… Quien mide
+digita los datos de cada categoría y el SGC suma el **total**. El color, las alertas, el análisis,
+la racha, el acumulado, la matriz, los Excel, **Objetivos** y los reportes al ente van sobre el
+total, como en cualquier indicador. Cada categoría muestra además su propio resultado y su color.
+
+### 12.1 Las dimensiones y la ficha (Administrador del SGC)
+
+En **Configuración de indicadores**, sección **Dimensiones**: **Nueva dimensión** («Sede») y, en
+ella, **Nueva categoría** («Sede principal», «Puesto de salud Norte»…). Las categorías se ordenan
+con **Subir** y **Bajar** (su orden es el de la rejilla y el de las barras), se renombran y se
+desactivan. Una que ya se usó no se borra («Ya se usó: desactívela»), y una dimensión que usa una
+ficha vigente no se queda sin categorías activas. Renombrar no cambia lo ya firmado ni lo ya medido.
+
+En la ficha, el campo **Desagregación** elige ninguna o una dimensión activa. Desagregar es un
+cambio mayor. No se desagrega un indicador que calcula el sistema ni uno que toma el resultado de otro
+indicador, ni una fórmula libre con `min`, `max` o `abs`; un dato compartido que use debe tener la
+misma dimensión. El total suma cada variable entre las categorías: desagregue solo indicadores cuyas
+variables sean cantidades que se suman (casos, pacientes, pesos), no porcentajes ni promedios ya
+calculados.
+
+### 12.2 Qué categorías pide un periodo
+
+Cada periodo guarda su propia lista de categorías, con los nombres de entonces, desde que se abre:
+las que existían antes de terminar el periodo y estaban activas o se desactivaron después de que
+empezó. Por eso:
+
+- una sede que cerró a mitad del periodo se sigue pidiendo en ese periodo (márquela «No aplica» si
+  no operó) y deja de pedirse en el siguiente;
+- una sede creada después de terminar un periodo entra en el siguiente. Si sí operó en ese periodo,
+  el Administrador del SGC pulsa **Actualizar categorías** en la medición abierta sin reportar (en
+  la pantalla de reportar o en la tabla del año): añade al final las que hoy están activas y
+  faltaban, y no quita ninguna;
+- un periodo viejo que se reabre conserva su lista.
+
+### 12.3 Reportar por categoría
+
+La pantalla **Reportar** trae una rejilla: una fila por categoría y una casilla por variable (en el
+celular, una tarjeta por categoría y el total fijo abajo). Cada fila muestra al instante su
+resultado y su color.
+
+- **Sin casos:** si una fila divide por cero (en esa sede no hubo pacientes auditados), el SGC la
+  marca sola, sin motivo; sus ceros entran a la suma.
+- **No aplica:** marque la casilla de la fila y escriba su motivo (de 5 a 500 caracteres): esa
+  categoría no entra a la suma. Si todas quedan «No aplica», la medición entera queda «No aplica».
+- **Guardar sin reportar** guarda lo que haya, y solo las casillas que usted cambió: dos personas
+  pueden llenar partes distintas sin borrarse lo que digitó la otra. Una medición ya reportada no
+  se guarda a medias: corrija y pulse **Reportar**.
+- **Reportar** exige cada fila completa, «Sin casos» o «No aplica» («Faltan categorías por
+  completar: …»). Los límites de captura valen en cada casilla; la confirmación por un salto grande,
+  solo en el total.
+
+Cada corrección deja en el historial la categoría y la variable que cambió, con su antes y su
+después, aunque el total no cambie.
+
+### 12.4 Lo que se ve por categoría
+
+- En la página del indicador, la sección **Por Sede** (con el nombre de la dimensión) del periodo
+  que elija; por omisión, el último medido. Trae barras acostadas con el color de cada categoría, la
+  fila del total y la meta como una línea, y debajo su tabla. «Sin casos» y «No aplica» salen
+  escritos, sin barra.
+- Cada categoría lleva su color y, cuando corresponde, «Bien · no alcanza la meta», como el total.
+  La cifra nunca contradice el color.
+- **Una sede en Crítico con el total en Bien:** la lista y la tabla del año la marcan («1 en
+  Crítico», por Sede) y sale un aviso a quienes analizan y a quienes hacen seguimiento, con la sede
+  y su cifra: «Adherencia a la guía de hipertensión arterial: 85,5 %, Bien. En Crítico: Puesto de
+  salud Oriente (55 %). Septiembre de 2026». Con el total en Atención o en Crítico, la alerta de
+  siempre añade esa frase. No pide análisis ni pone «Requiere acción de mejora»: eso sigue sobre el
+  total.
+- El impreso trae el desglose del último periodo medido, y el Excel del indicador, la hoja **Por
+  categoría** con una fila por periodo medido del año y categoría.
+
+## 13. Indicadores compuestos
+
+Un indicador **compuesto** toma, en una o más de sus variables, el resultado de otro indicador (su
+**componente**): por ejemplo, el «Índice de desempeño del SGC» promedia el cumplimiento de las metas
+de cinco indicadores del SGC. Nadie digita lo que toma: el SGC lo copia cuando el componente tiene
+resultado, y lo recalcula solo cuando el componente se corrige.
+
+### 13.1 Qué se toma: el valor o el porcentaje de cumplimiento
+
+En la variable, **Qué se toma para A** ofrece **Su valor** (el resultado del componente, en su
+unidad) o **Su porcentaje de cumplimiento**, un número de 0 a 100 que dice cuánto alcanzó su meta:
+
+| El componente en ese periodo | Su porcentaje de cumplimiento |
+|---|---|
+| Alcanza su meta | 100 % |
+| No la alcanza y mayor es mejor | resultado ÷ meta, entre 0 y 100 % |
+| No la alcanza y menor es mejor | meta ÷ resultado, entre 0 y 100 % |
+| No la alcanza y debe mantenerse en un rango | 0 % |
+| No la alcanza y la meta o el resultado son cero o negativos | 0 % |
+
+«Bien · no alcanza la meta» no es 100 %: cumplir es alcanzar la meta. Un componente sin meta no
+tiene porcentaje de cumplimiento: de él solo se toma su valor.
+
+### 13.2 El valor de cada periodo
+
+- **Si el componente tiene la misma periodicidad**, se toma su resultado de ese periodo.
+- **Si es más fino** (un compuesto trimestral que toma uno mensual), se toma su **acumulado** en el
+  periodo del compuesto, calculado como el acumulado del año (sección 2.6): se juntan sus datos y se
+  aplica su fórmula, nunca se promedian resultados. Su porcentaje de cumplimiento se juzga contra la
+  meta del último periodo medido. Junto a la variable se lee desde cuándo acumula («acumulado de
+  julio a septiembre»), a quien puede ver el componente.
+- **Mientras el componente no tenga resultado**, el compuesto está en **Falta un dato**.
+- **Si el componente no aplicó**, el compuesto queda «No aplica», con el motivo «… no aplicó en el
+  periodo»; si después el componente se mide, el «No aplica» se quita solo.
+- **Si el componente se cerró «Sin dato»**, el compuesto también se cierra «Sin dato».
+
+Un compuesto sin variables propias no lo mide nadie (sección 3) y sí se analiza. Sus históricos los
+registra quien ve todos sus componentes; a quien no, el SGC le dice que los registra el
+Administrador del SGC.
+
+En el **acumulado del año** de un compuesto, cada variable tomada vale el acumulado propio del
+componente en ese tramo. Si el de algún componente no cubre todos los periodos, el acumulado del
+compuesto sale «parcial»; si un componente no tiene ningún periodo medido en el tramo, dice «Sin
+acumulado: un componente no tiene resultado en estos periodos».
+
+### 13.3 Si usted ve el compuesto pero no un componente
+
+Un compuesto que toma un indicador restringido es también restringido. Aun así, alguien puede ver
+el compuesto (porque está asignado a su proceso o designado en él) sin poder ver el componente. A
+esa persona:
+
+- se le muestra el **resultado** del compuesto, su color, su análisis y sus demás variables;
+- la variable que sale del componente aparece como **Indicador restringido** y su valor como **No
+  disponible**: en la tabla del año, las gráficas, el acumulado, el Excel, el impreso, la pantalla
+  de reportar y el historial; la ficha dice «Resultado de un indicador restringido», sin código ni
+  nombre;
+- ningún mensaje le nombra el componente: un «No aplica» dice «Un componente no aplicó en el
+  periodo», y una reapertura dice «por un cambio en un componente»;
+- si reporta algo propio del compuesto, la pantalla no calcula el resultado mientras escribe: lo
+  calcula el SGC al guardar.
+
+**Lo que el ocultamiento no tapa:** si un compuesto tiene un solo componente que usted no ve, su
+valor se puede despejar del resultado y de la fórmula. Por eso, al elaborar y al aprobar una ficha
+así, la pantalla advierte: «Quien vea este indicador podrá deducir el resultado de «…» si es el
+único componente que no puede ver».
+
+### 13.4 En la ficha (Administrador del SGC)
+
+En la variable, **De dónde sale A** → **Resultado de otro indicador**; elija el **Indicador del que
+sale A** y **Qué se toma para A**. Tomar un indicador es un cambio mayor. El SGC lo revisa al
+guardar, al enviar y al aprobar:
+
+- se toma un indicador activo con ficha vigente (también uno que calcula el sistema u otro
+  compuesto), nunca uno en borrador: primero se aprueba el componente y después el compuesto;
+- el componente tiene la misma periodicidad que el compuesto o una más fina;
+- para tomar su porcentaje de cumplimiento, el componente tiene meta;
+- sin ciclos («Esta ficha cerraría un ciclo entre indicadores») y con hasta cinco niveles de
+  compuestos sobre compuestos («Un indicador compuesto admite hasta cinco niveles»). Un compuesto
+  que toma, directamente o a través de otros, uno de «Objetivos cumplidos» no puede aportar a un
+  objetivo de esa misma clase;
+- si un componente es restringido, el compuesto debe serlo, y **lo aprueba Gerencia**, sea cual sea
+  su clasificación;
+- un compuesto no calcula el sistema ni se desagrega.
+
+En la pestaña **Ficha técnica** de un indicador, **Lo toman** lista los compuestos que usan su
+resultado (solo los que usted ve). Mientras un compuesto activo lo use, el SGC no deja retirar el
+componente, restringirlo si el compuesto es general, quitarle la meta si se toma su cumplimiento,
+pasarlo a una periodicidad más larga que la del compuesto, ni deshacer el lote de importación del
+que salió: «Cambie antes el indicador que lo usa», con su código si usted puede verlo. **Crear a
+partir de este** sobre un compuesto (o sobre una ficha con datos compartidos) crea una copia con
+variables propias.
+
+## 14. Qué cambia respecto del Excel de indicadores
 
 La ficha del SGC sigue la que el hospital propuso en su Excel, con estas diferencias:
 
@@ -1076,8 +1390,11 @@ La ficha del SGC sigue la que el hospital propuso en su Excel, con estas diferen
 7. **Lo que la plataforma ya sabe no se digita:** los indicadores del control de documentos, los
    reportes a tiempo y los objetivos cumplidos los calcula el SGC (sección 7), y los objetivos se
    ven cumplidos o no en su propia pestaña (sección 8).
+8. **Un dato que usan varios indicadores se digita una sola vez** (sección 11), un indicador por
+   sede trae su total sumado por el SGC (sección 12) y un índice que resume otros indicadores toma
+   sus resultados sin volver a digitarlos (sección 13).
 
-## 12. Quién ve qué
+## 15. Quién ve qué
 
 | Qué | Quién lo ve |
 |---|---|
@@ -1092,6 +1409,13 @@ La ficha del SGC sigue la que el hospital propuso en su Excel, con estas diferen
 | Registrar y corregir una constancia | Quien puede medir el indicador y el Administrador del SGC |
 | El recuadro **Revisión por cambio normativo** | Quien ve el indicador; sus salidas, el Administrador del SGC |
 | **Volver a calcular** | El Administrador del SGC |
+| Pestaña **Datos compartidos** y la página de un dato, con su historial | Administrador del SGC, Gerencia, Control Interno, los líderes del proceso dueño y quienes responden por el dato |
+| Reportar y corregir un dato compartido | Quienes responden por él y los líderes del proceso dueño (el Administrador del SGC, solo si no hay nadie más) |
+| Los soportes de un dato | Quien ve el dato y quien ve los soportes de algún indicador que lo usa |
+| El valor de un dato en un indicador | Quien ve el indicador |
+| El desglose por categoría de un indicador por sede | Quien ve el indicador |
+| El nombre y el valor de un componente de un compuesto | Quien ve el componente; a los demás, «Indicador restringido» y «No disponible» |
+| **Lo toman** (los compuestos que usan un indicador) | Quien ve esos compuestos |
 | Pestaña **Por aprobar** | Quien aprueba fichas y el Administrador del SGC |
 | Pestaña **Cierre del mes** y **Configuración de indicadores** | El Administrador del SGC |
 
@@ -1100,7 +1424,7 @@ la página del proceso, los Excel, las tareas ni los avisos, y su dirección dic
 encontrada». El aviso al jefe por un reporte vencido no nombra el indicador, por si el jefe no lo
 puede ver; tampoco los de una constancia de envío o una revisión por cambio de norma vencidas.
 
-## 13. Resumen de mensajes
+## 16. Resumen de mensajes
 
 | Mensaje | Qué significa | Qué hacer |
 |---|---|---|
@@ -1134,3 +1458,20 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 | Este indicador ya se envió a aprobación: descártelo | Un indicador enviado no se borra | Use **Descartar** |
 | La ficha no existe o no le corresponde aprobarla | Otra persona la aprobó o devolvió, o no le toca | Recargue **Por aprobar** |
 | No se puede borrar: lo usa algún indicador. Desactívelo. | Un tipo, clasificación, unidad u objetivo está en uso | Desactívelo en lugar de borrarlo |
+| «…» no se digita desde aquí: llega de otra fuente | Se intentó escribir una variable que pone un dato compartido o un componente | Nada: llega sola (secciones 11 y 13) |
+| Este indicador no tiene datos propios: nadie lo digita | Sus variables llegan todas de otra parte | Nada: se calcula cuando llegan |
+| El periodo está cerrado: lo reabre el Administrador del SGC | El periodo del dato ya se cerró con el mes | Pida la reapertura (sección 6.6) |
+| No hay cambios que corregir | Se guardó una corrección del dato con el mismo valor | Escriba el valor nuevo |
+| Faltan categorías por completar: … | Alguna fila de la rejilla no está completa, «Sin casos» ni «No aplica» | Llénela o márquela «No aplica» |
+| Escriba el motivo de «No aplica» de … | Una fila «No aplica» sin motivo | Escriba de 5 a 500 caracteres |
+| Ese motivo lo usa el sistema: escriba el suyo con otras palabras | El motivo es uno de los que pone el SGC | Redáctelo de otra forma |
+| Este «No aplica» lo puso el sistema: se quita solo cuando cambie el dato | Se intentó quitar un «No aplica» que puso el SGC | Nada: se quita solo |
+| La medición ya se reportó: corrija los datos y pulse «Reportar» | Se pulsó **Guardar sin reportar** en una medición ya reportada | Corrija y pulse **Reportar** |
+| Esta medición no tiene categorías: pida al Administrador del SGC que las actualice | La lista del periodo quedó vacía | Pida **Actualizar categorías** |
+| Cambie antes el indicador que lo usa | Un compuesto activo usa este indicador | Cambie o retire antes el compuesto |
+| Esta ficha cerraría un ciclo entre indicadores / Un indicador compuesto admite hasta cinco niveles | La cadena de compuestos no es válida | Tome otro indicador |
+| Su fuente sigue abierta: ciérrela primero | Se pidió **Cerrar de nuevo** con un dato o un componente aún abierto | Cierre primero la fuente |
+| Lo copiado de sus fuentes aún no está al día: vuelva a intentarlo en un momento | El SGC aún no llevó el último valor de la fuente | Espere un momento y repita |
+| Lo que se reabre cambió mientras se confirmaba: revise la lista y vuelva a intentarlo | Entre la lista y la confirmación cambió algo | Vuelva a abrir el diálogo |
+| Ya hay un dato con ese nombre en ese proceso / Ya hay una dimensión con ese nombre | El nombre ya existe | Use otro nombre |
+| Ya se usó: desactívela | Una dimensión o categoría con historia | Desactívela en lugar de borrarla |

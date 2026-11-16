@@ -56,7 +56,7 @@ Cada persona ve solo los enlaces que su rol permite. Un grupo sin enlaces no apa
 
 Todos ven además **Inicio**. En **Indicadores** cada persona ve solo los indicadores que puede
 ver: los generales y, de los restringidos, los de su proceso o donde está designada (Capítulo 8,
-sección 12). **Trámites** también le aparece a cualquier persona que
+sección 15). **Trámites** también le aparece a cualquier persona que
 participe en un trámite, sea cual sea su rol (Capítulo 5), y **Distribución** a cualquier
 persona que sea responsable de un punto de uso activo, con solo sus puntos (Capítulo 6), y **Vigencia**
 a cualquier persona que sea responsable técnico de un documento externo, con solo la pestaña

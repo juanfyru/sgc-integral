@@ -106,8 +106,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    con quién, qué y cuándo. `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`,
    `acuse_eventos`, `ratificaciones`, `externo_verificaciones`, `norma_cambios`,
    `medicion_eventos`, `medicion_observaciones`, `importaciones_indicadores`, `importacion_eventos`,
-   `reporte_externo_eventos` y `variable_eventos` son de solo inserción (trigger que rechaza `UPDATE` y `DELETE` incluso al
-   dueño del esquema, más los privilegios de `sgc_app`); los usuarios con historia se desactivan,
+   `reporte_externo_eventos` y `variable_eventos` son de solo inserción (trigger que rechaza
+   `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`); los usuarios
+   con historia se desactivan,
    nunca se borran, y una verificación cerrada no se modifica. Una revisión anual cerrada tampoco,
    ni sus procesos ni sus decisiones: el trigger `sgc_impedir_si_revision_cerrada` rechaza `UPDATE`
    y `DELETE` sobre ellas y la inserción de filas hijas. Lo mismo en los indicadores: una medición
@@ -131,7 +132,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
      importación» (`deshacerImportacion`, `src/db/consultas/indicadores/importacion.ts`), y solo
      mientras ninguna ficha del lote tenga periodos cerrados o con datos, personas designadas, otra
      versión, revisiones por cambio de norma (`impactos_indicadores`) ni constancias de envío al ente
-     (`reportes_externos`), ni una propuesta editada o enviada a aprobación después de importarse
+     (`reportes_externos`), ni una propuesta editada o enviada a aprobación después de importarse, ni
+     otra ficha, aunque sea un borrador, que tome el resultado de una ficha del lote (anexo 14C, §6.6)
      (`condicionDeDeshacer`, revisada otra vez con las filas bloqueadas), y toda versión que lleve el
      id del lote esté en el registro de su evento `importado`. El trigger la deja borrar
      si la transacción lleva la marca `sgc.deshacer_importacion` con el id de su lote, que se pone
@@ -221,6 +223,14 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   (módulo liviano: lo importa `admin.ts`, así que no importa `lectura`, `aprobacion` ni `fichas`),
   `constancias-vencidas.ts`, `pasada.ts` (el paso genérico de las pasadas de avisos, `correrPaso`) e
   `impactos.ts` (también liviano: lo importan el normograma, `publicacion.ts` y `operacion.ts`).
+  Lo de la 14C, en el mismo directorio: `datos.ts` (el catálogo de datos compartidos),
+  `datos-periodos.ts` (sus periodos, reportarlos y su tarea), `datos-soporte.ts`, `datos-vencidos.ts`
+  (su pasada de avisos), `dimensiones.ts` (el maestro de dimensiones y categorías), `categorias.ts`
+  (el desglose por categoría y «Actualizar categorías»), `componentes.ts` (los orígenes de una ficha,
+  quién toma a quién y lo que se oculta de un compuesto), `propagacion.ts` (lo que se copia de las
+  fuentes), `dependencias.ts` (las entradas de una medición y quién depende de una fuente),
+  `reapertura.ts` (la reapertura en cascada) y `candado-del-cierre.ts`; la pestaña «Datos
+  compartidos», en `app/(app)/indicadores/datos` y `src/componentes/indicadores/datos/`.
   **Ojo con los nombres de la 13C, que no son este módulo:** `/vigencia/indicadores`, el permiso
   `documentos.indicadores`, `src/lib/indicadores-documentales/`,
   `src/db/consultas/vigencia/indicadores.ts` y la acción de bitácora `exporto_indicadores`. La
@@ -346,8 +356,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     `api/reportes-externos/[id]/archivos` (el soporte de una constancia de envío al ente),
     `api/datos-compartidos/[id]/archivos` (el soporte de un periodo de un dato compartido; el mismo
     handler lo quita con `DELETE` y `?archivo=`) y
-    `api/importaciones-indicadores/[id]/archivo` (la plantilla de un lote, solo `.xlsx` y una vez), cada una con su caso en
-    `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
+    `api/importaciones-indicadores/[id]/archivo` (la plantilla de un lote, solo `.xlsx` y una vez),
+    cada una con su caso en `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
     201 (F13A-R10).
   - **Los formularios que envían un `id` de ruta** se leen con
@@ -438,7 +448,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Tests contra la BD de desarrollo:** todo usuario de prueba que genere filas en
   `auditoria`, `accesos`, `firmas`, `tramite_eventos`, `copia_eventos`, `acuse_eventos`,
   `ratificaciones`, `externo_verificaciones`, `norma_cambios`, `medicion_eventos`,
-  `medicion_observaciones`, `importaciones_indicadores`, `importacion_eventos`, `reporte_externo_eventos` o `variable_eventos` usa un nombre único por corrida
+  `medicion_observaciones`, `importaciones_indicadores`, `importacion_eventos`,
+  `reporte_externo_eventos` o `variable_eventos` usa un nombre único por corrida
   (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
   Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
@@ -500,9 +511,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   «Propuesto» son borradores normales, sin esas columnas; los periodos que terminaron antes de
   importar son históricos. «Deshacer» es del lote entero y su única excepción al trigger de las
   versiones aprobadas es la de la regla 5; las tablas de la 14B que cuelgan de una ficha
-  (`impactos_indicadores` y `reportes_externos`) ya están en `condicionDeDeshacer`, y una de la 14C
-  que cuelgue de una ficha del lote añade allí su motivo. Lo importado es siempre manual y sin ente
-  (la plantilla no los trae): ponérselos después es un cambio, que sí pasa por `alPublicarVersion`.
+  (`impactos_indicadores` y `reportes_externos`) ya están en `condicionDeDeshacer`, y la 14C añade
+  allí su motivo: otra ficha, aunque sea un borrador, que toma el resultado de una ficha del lote
+  (`tomada`). Una tabla nueva que cuelgue de una ficha del lote añade allí el suyo. Lo importado es
+  siempre manual, sin ente, sin dato compartido ni componente y sin desagregar (la plantilla no los
+  trae): ponérselos después es un cambio, que sí pasa por `alPublicarVersion`.
 - **Fórmulas:** una fórmula de indicador solo se evalúa con el intérprete de
   `src/lib/indicadores/formula/` (gramática cerrada, fracciones exactas con `bigint`, límites de
   longitud, profundidad y cifras); nunca `eval`, `Function` ni SQL armado con texto del usuario.
@@ -531,9 +544,62 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   desde ella, con el mismo plazo, si es de flujo o si esa fecha ya pasó al tomarla (la pasada solo
   corre cuando alguien usa la aplicación; con plazo 0, siempre), para que el análisis no nazca
   vencido (`laFotoMueveElPlazo`, `src/lib/indicadores/fotos.ts`). La de estado tomada a tiempo, y
-  la que cumple o queda «No aplica», no la mueven. «Volver a calcular» (solo flujo, sin cerrar ni reabrir,
-  de quien administra) la mueve una vez como mucho. Una medición cerrada no se recalcula nunca en
-  silencio.
+  la que cumple o queda «No aplica», no la mueven. «Volver a calcular» (solo flujo, sin cerrar ni
+  reabrir, de quien administra) la mueve una vez como mucho. Una medición cerrada no se recalcula
+  nunca en silencio.
+- **De dónde sale cada variable** (anexo 14C, §3.1, §4.2 y §6.1; `src/lib/indicadores/origen.ts` y
+  `componentes.ts`): en una ficha manual cada variable es **propia** (la digita quien mide), de un
+  **dato compartido** (`variable_compartida_id`: la reporta una vez quien responde por el dato) o el
+  **resultado de otro indicador** (`indicador_origen_id` y `toma`: su valor o su porcentaje de
+  cumplimiento, `porcentajeDeCumplimiento`). **Un indicador sin variables propias no lo mide nadie**
+  (`alguienMide`): sin cargo ni designados «mide», sin tarea de reportar, sin soporte obligatorio ni
+  soportes, sin prueba al enviarlo y fuera de «Reportes a tiempo», como un automático; al aprobarse
+  una versión así se quitan los «mide» y se apaga el soporte obligatorio, y sí se analiza. Lo propio
+  de un mixto se reporta sin esperar lo ajeno («Reportar lo mío», que cuenta como reporte), y una
+  variable ajena no se digita: el servidor rechaza su valor por su letra (`noSeDigitaDesdeAqui`).
+  `revisarOrigenes` (`componentes.ts`) es la única revisión de los orígenes, al guardar, al enviar y
+  al aprobar: un dato activo (solo en una cita nueva) de una periodicidad que la del indicador
+  contiene y, con dimensión, la misma; un componente activo con ficha vigente, de su periodicidad o
+  más fino, con meta si se toma su cumplimiento, sin ciclos y con hasta cinco niveles (con las fichas
+  del mismo bloque de aprobación, `revisarEnBloque`, y la arista oculta de «Objetivos cumplidos»);
+  restringido si toma un restringido; ni automático ni desagregado. **Una ficha que toma un indicador
+  restringido la aprueba Gerencia**, sea cual sea su clasificación (`tomaUnRestringido`, en
+  `aprobadoresDeFicha`), y se lee al aprobar, no al enviar. Enviar y aprobar fichas, y cambiar la
+  clase de un objetivo, toman antes que nada el candado consultivo `sgc.indicadores.compuestos`
+  (`serializarAprobaciones`, `aprobacion.ts`; `maestros.ts`): dos aprobaciones que cerrarían un ciclo
+  entre las dos van en fila, y la segunda ve lo que aprobó la primera. Guardar, enviar o aprobar una
+  ficha que toma otro indicador lo lee `FOR KEY SHARE` (`componentesCitados`, `bloquearComponentes`):
+  es la excepción nombrada a «un solo indicador por transacción», que no choca con el `FOR SHARE` del
+  cierre ni de la cascada; el `40P01` de dos guardados cruzados llega legible (`sinInterbloqueoCrudo`).
+  Del lado del componente (§6.6), mientras un compuesto activo lo use no se retira, no se restringe
+  bajo un compuesto general, y un cambio mayor no le quita la meta que otro toma, no lo pasa a una
+  periodicidad más gruesa que la del compuesto ni cierra un ciclo (`quienesToman`,
+  `aQuienesDejaDeServir`): «Cambie antes el indicador que lo usa» (`cambieAntes`, con su código solo a
+  quien puede verlo).
+- **Los datos compartidos** (anexo 14C, §4; `datos.ts` y `datos-periodos.ts`): el catálogo
+  (`variables_compartidas`, de quien administra; desde que una versión aprobada lo cita, su
+  periodicidad, su «cómo se junta» y su dimensión no cambian) y sus periodos (`variable_valores`).
+  **Se pide** el periodo terminado del dato que cae en un periodo ordinario sin cerrar de un
+  indicador activo cuya versión que rige lo cita, también el del periodo del indicador que sigue en
+  curso (`asegurarPeriodosDeDatos`: la pasada de vencimientos, el cierre y las páginas del dato). Lo
+  que se pide es `periodoQueSePide` (pendiente y `se_pide`), el mismo fragmento para la tarea, sus
+  avisos (`datos-vencidos.ts`), el número de la pestaña y el cierre: un periodo que ya nadie pide no
+  es tarea de nadie ni lo cierra el cierre. Un periodo no nace vencido: si su fecha límite ya pasó al
+  abrirlo, cuenta desde ese día. Lo reportan y lo corrigen (antes del cierre, sin justificación) sus
+  responsables y los líderes del proceso dueño, y el Admin SGC solo si no hay ninguno
+  (`puedeReportarDato`, con `indicadores.medir`, comprobado dentro de la transacción); cada cambio deja
+  su antes y su después en `variable_eventos` (regla 5). **Quien abre mediciones en una lectura les
+  lleva lo de sus fuentes** (`asegurarMedicionesConFuentes`, `propagacion.ts`: la página del
+  indicador, la de reportar, la lista, la matriz y el impreso), y una acción que cambia una fuente
+  propaga en cuanto confirma lo suyo.
+- **La prueba estática de ciclos** (`tests/indicadores-ciclos.test.ts`): ningún ciclo de imports
+  relativos entre los archivos de `src/db/consultas/indicadores/` (la única excepción nombrada,
+  `mediciones → alertas`, anterior a la 14B), y los módulos livianos de su lista (`LIVIANOS`:
+  `en-curso`, `constancias-soporte`, `impactos`, `fichas-de-calculo`, `componentes`, `datos-periodos`,
+  `propagacion`, `datos-soporte`, `dependencias` y `candado-del-cierre`) no importan `lectura`,
+  `fichas`, `aprobacion` ni `operacion`. Por eso entre esos archivos los imports van relativos, nunca
+  por el alias `@/db/consultas/indicadores/…`, y un módulo nuevo que llamen `alPublicarVersion` o la
+  operación entra a la lista.
 - **Un solo camino de cálculo:** solo `recalcularMedicion`
   (`src/db/consultas/indicadores/mediciones.ts`) escribe el resultado, el semáforo, la meta
   aplicada y el estado de una medición abierta o reportada; reportar, registrar históricos,
@@ -624,9 +690,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   cerrado de un dato (también para reportarlo tarde) o la medición cerrada de un componente reabre en una
   transacción cada medición cerrada que lo usó y las que dependen de esas (`dependientesDe`), salvo las de
   un indicador retirado o de otra periodicidad, que no se tocan; la lista se ve antes de confirmar
-  (`listaDeReapertura`, maqueta 13) y se confirma lo que se vio: los dos diálogos mandan siempre lo que listaron
-  (`vistas`; el sencillo de una medición sin dependientes, ella sola; el de un dato sin ninguna, la lista vacía), las
-  dos acciones lo exigen (`EsquemaReapertura`) y, si con todo bloqueado no es lo mismo, no se reabre nada. Cada una queda «Corregida» con el único `UPDATE`
+  (`listaDeReapertura`, maqueta 13) y se confirma lo que se vio: los dos diálogos mandan siempre lo
+  que listaron (`vistas`; el sencillo de una medición sin dependientes, ella sola; el de un dato sin
+  ninguna, la lista vacía), las dos acciones lo exigen (`EsquemaReapertura`) y, si con todo bloqueado
+  no es lo mismo, no se reabre nada. Cada una queda «Corregida» con el único `UPDATE`
   que el trigger admite, su evento `reapertura` (`detalle.porFuente = { clase, id }`, nunca el nombre de la
   fuente: el historial la nombra al leer, `fuenteEnTexto`, solo a quien puede verla), su aviso (que la nombra
   solo a quien puede verla, por destinatario; a los demás, «un componente» o, si es un dato, «una de sus
@@ -636,9 +703,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   responsables (`indicadores.dato_reabierto`, salvo a quien reabre) y su bitácora (`dato_reabierto`). Una
   constancia de envío al ente no cambia. **Orden de candados del cierre y de la cascada**, el mismo en los
   dos: **0.** el candado consultivo del cierre (`serializarCierreYReapertura`, `reapertura.ts`), la primera
-  sentencia de la transacción de todo lo que cierra o reabre (`cerrarMes`, `reabrirEnCascada`, el camino directo de
-  `reabrirMedicion`, `cerrarDeNuevo` y `cerrarDeNuevoElDato`; vive en `candado-del-cierre.ts`, liviano): es él, y no la relectura con todo bloqueado, lo que impide que un cierre decida con una
-  entrada que una reapertura cambia a la vez; toda lectura que decide va después de él, en la misma
+  sentencia de la transacción de todo lo que cierra o reabre (`cerrarMes`, `reabrirEnCascada`, el
+  camino directo de `reabrirMedicion`, `cerrarDeNuevo` y `cerrarDeNuevoElDato`; vive en
+  `candado-del-cierre.ts`, liviano): es él, y no la relectura con todo bloqueado, lo que impide que un
+  cierre decida con una entrada que una reapertura cambia a la vez; toda lectura que decide va después
+  de él, en la misma
   transacción (lo que se lee antes solo elige el camino o pinta, y se lee otra vez dentro); **1.** los
   periodos de los datos `FOR UPDATE`, por id (sin la fila del dato); **2.** los indicadores `FOR SHARE`, por
   id; y **3.** las mediciones `FOR UPDATE`, por `indicador_id, desde, id` (la cascada, de cada indicador todas
@@ -701,7 +770,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   los periodos medidos del compuesto, no hay acumulado y el rótulo lo
   dice, «Sin acumulado: un componente no tiene resultado en estos periodos» (`sinComponente`; la página y el
   impreso lo pintan en lugar de «Aún no hay periodos medidos»; la constancia queda parcial, con su propia marca
-  `sinComponente`, y su aviso dice «un componente no tiene resultado en estos periodos»). **La racha** (`rachasDe`, `firmaDeVersion` en `resultados.ts`) firma, de una
+  `sinComponente`, y su aviso dice «un componente no tiene resultado en estos periodos»). **La
+  racha** (`rachasDe`, `firmaDeVersion` en `resultados.ts`) firma, de una
   variable tomada, también su `indicadorOrigenId` y su `toma`: cambiar el componente, o el valor por el
   cumplimiento, parte el acumulado (en la página y en la propagación a la vez, así el «coincide» del cierre sigue
   de acuerdo); las demás variables firman como siempre.
@@ -772,7 +842,17 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   umbral o las tarjetas), y uno que corre la pasada de vencimientos silencia lo ajeno, también las
   fotos (`silenciarIndicadores`), siempre dentro de su transacción revertida. La semilla siembra por
   las funciones del dominio con `ahora` inyectado (`indicadores-demo-agenda.ts`, pura, y
-  `indicadores-demo-14b.ts`).
+  `indicadores-demo-14b.ts`), nunca por SQL directo sobre las mediciones ni los periodos de un dato.
+  Las funciones del dominio no propagan (lo hacen las acciones): después de cada paso que cambia una
+  fuente, la semilla abre las mediciones de las fichas con variables ajenas y propaga a esa hora
+  (`propagarALaHora`, `indicadores-demo.ts`), y un paso de la 14C que reporta un dato abre antes sus
+  periodos a esa hora; al final, `indicadores-demo-14c.ts` hace la pasada de la hora de la siembra.
+  Sembrada la demo, una lectura no tiene periodos que abrir ni valores que propagar (lo exige
+  `tests/semilla-indicadores-14c.test.ts`). Lo de la 14C sale del plan `planDe14C` (el dato
+  pendiente, el corregido que cierra el cierre del mes, el del soporte y el trimestre completo), que
+  `tests/semilla-indicadores-calendario.test.ts` comprueba en los días de un año de siembras; la
+  guarda de `tests/semilla-indicadores.test.ts` cuenta dos restringidos (`GTH-IND-01` y el compuesto
+  `SGC-ID-004`).
 
 ## Comandos
 

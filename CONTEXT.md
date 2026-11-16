@@ -1,10 +1,13 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-15**, al fusionar en `main` la **Fase 14B — Lo que el sistema ya
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-16**, al terminar de construir la **Fase 14C — Datos
+> compartidos, desagregación y compuestos** (rama `fase-14c-datos-desagregacion-compuestos`, sobre `main` en `44d8b9f`, en el
+> worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **sin fusionar**: esperan su verificación de cierre,
+> el visto bueno del usuario a las decisiones de la ejecución y su decisión de fusionar; ver su sección, arriba de la de la
+> 14B). Con ella se cierra la Fase 14 del diseño maestro. Antes, la **Fase 14B — Lo que el sistema ya
 > sabe y lo regulatorio** (rama `fase-14b-automaticos-regulatorios`, 45 confirmaciones al cerrar la Tarea 13 más las de la tanda final de corrección, sobre `main` en `f04b70b`; se trabajó en el
 > worktree `F:\sgc-integral-f14b` y contra la base aparte `sgc_f14b`; **fusionada en `main` el 2026-11-15 por decisión del
-> usuario, por avance rápido, y publicada en `origin` ese mismo día; la rama se borró**; ver su sección, arriba de «Entrega complementaria de la 14A»). Sigue la **Fase 14C** (datos compartidos,
-> desagregación y compuestos, con la `0015`), que cierra la Fase 14 del diseño maestro. La **Fase 14A** (`4afd205`), el
+> usuario, por avance rápido, y publicada en `origin` ese mismo día; la rama se borró**; ver su sección, arriba de «Entrega complementaria de la 14A»). La **Fase 14A** (`4afd205`), el
 > filtro de subproceso de la matriz (`5ce391a`), la **entrega complementaria de la 14A: rangos, códigos e importación**
 > (`d18e60d`) y la corrección `f14a-deuda-rangos` (`f04b70b`) **están en `main`**, publicado. La **Fase 13C — Vigencia, externos y normograma**
 > está fusionada en `main` (`8acc9cf`, PR #3, 2026-11-10, 64 confirmaciones sobre `4bbb428`; la rama
@@ -23,7 +26,18 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada y **fusionada en `main`**
+1. **Dónde quedamos:** la **Fase 14C — Datos compartidos, desagregación y compuestos** está construida (las dieciocho
+   tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`), en el worktree
+   `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`, **sin fusionar**. Con ella, un dato que usan varios
+   indicadores se reporta una vez y el SGC lo pone en cada uno; un indicador se mide por sede o por servicio, con su total
+   y el color de cada categoría; y un indicador compuesto toma el resultado o el cumplimiento de otros, con lo que se oculta
+   a quien no ve un componente restringido; el cierre del mes espera a las fuentes y la reapertura va en cascada. **Sin
+   dependencias npm nuevas.** Dos migraciones, la `0015` y la `0016`; diecisiete en total (`drizzle/0000` a
+   `drizzle/0016`). Detalle en «Hecho (Fase 14C)»; el recorrido, en «Qué probar y cómo (Fase 14C)»; las decisiones, en
+   «Decisiones adicionales (Fase 14C)»; el manual, en el capítulo 8 (secciones 11 a 13 y 6.6). **Falta:** la verificación
+   de cierre (la escribe el controlador en «Fase 14C»), el visto bueno del usuario a las 39 decisiones de la ejecución y su
+   decisión de fusionar. **`F:\sgc-integral` no se tocó, y la base `sgc` del usuario solo se lee.**
+   **Antes, la Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada y **fusionada en `main`**
    (rama `fase-14b-automaticos-regulatorios`: 45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección,
    sobre `main` en `f04b70b`; anexo
    `docs/superpowers/specs/2026-11-14-fase14b-automaticos-y-regulatorios-design.md`, que amplía el spec de la Fase 14 y
@@ -31,10 +45,9 @@
    usuario decidió fusionarla el 2026-11-15** (por avance rápido), **publicar `main` en `origin` y borrar la rama** ese mismo
    día; el worktree `F:\sgc-integral-f14b` y la base `sgc_f14b` **se borraron el 2026-11-15**, a pedido suyo. **La base
    `sgc` ya tiene las quince migraciones y los privilegios de la 14B** (comprobado ese día: `db:preparar` ya había corrido).
-   **En curso desde el 2026-11-15: la Fase 14C**, en el worktree `F:\sgc-integral-f14c` (rama
-   `fase-14c-datos-desagregacion-compuestos`, sale de `main` en `44d8b9f`) y contra la base aparte `sgc_f14c`; anexo
+   La 14C se empezó el 2026-11-15 con el anexo
    `docs/superpowers/specs/2026-11-15-fase14c-datos-compartidos-desagregacion-compuestos-design.md` (aprobado por el
-   usuario) y plan `docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con
+   usuario) y el plan `docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con
    subagentes). Con la 14B,
    lo que la plataforma ya sabe deja de digitarse: diez cálculos automáticos (los siete documentales de la 13C, la
    conformidad del periodo, «Reportes de indicadores a tiempo» y «Objetivos cumplidos») con su foto por periodo, «No
@@ -149,21 +162,15 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) el recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)», que empieza
-   por resembrar); (b) si no se hicieron, los recorridos del usuario de la 14A y
-   de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); (c) la **Fase 14C — Datos
-   compartidos, desagregación y compuestos** (spec de la Fase 14, §14 y §18; anexo de la 14B, §3 y §12): variables
-   compartidas entre indicadores, el maestro de dimensiones con los indicadores desagregados por categoría y los
-   indicadores compuestos, con la migración `0015`, que puede rehacer las tablas de la 14C que siguen vacías y sin uso
-   (`variables_compartidas`, `variable_responsables`, `variable_valores`, `dimensiones`, `dimension_categorias`). **Su
-   primera tarea es deshacer el ciclo de imports `publicacion → operacion → aprobacion → publicacion`** (el único ciclo
-   nuevo de la 14B, hoy inofensivo; `alPublicarVersion` es donde la 14C colgará más pasos, y un ciclo ya rompió una prueba
-   en esta rama). Su plan decide primero lo que el §12 del anexo dejó abierto: **la lista completa está allí** (el dato
-   compartido, la desagregación y los compuestos, cada uno con sus preguntas); entre ellas, copiar a la medición el valor
-   juntado o leerlo al vuelo, el dato que llega a una medición ya cerrada, qué categorías pide un periodo, el «porcentaje de
-   cumplimiento» de «mantenerse en un rango» y **la fuga por audiencia** (quién ve el valor de un componente restringido).
-   Hereda de la 14B el lugar único de los valores (`medicion_valores`, sin usuario), «Falta un dato», el evento de
-   sistema y el orden de candados. La Fase 14 del diseño maestro se cierra cuando se fusione la 14C. Enganches que deja la 14A: la marca
+2. **Lo que sigue:** (a) la verificación de cierre de la **14C** (el controlador), el visto bueno del usuario a sus 39
+   decisiones de la ejecución («Decisiones adicionales (Fase 14C)»), su recorrido («Qué probar y cómo (Fase 14C)», que
+   empieza por resembrar en `sgc_f14c`) y su decisión de fusionar; después de fusionar, aplicar la `0015` y la `0016` a la
+   base `sgc` («Avisos para el usuario (Fase 14C)»). La Fase 14 del diseño maestro se cierra al fusionar la 14C. (b) el
+   recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)»); (c) si no se hicieron, los recorridos
+   del usuario de la 14A y de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); y
+   (d) la **Fase 15 — Planes de mejoramiento**. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
+   tablero de la Fase 17 puede leer sin digitar nada (y donde entra el compuesto «promedio de los componentes medidos»), y
+   los avisos de los datos vencidos, que la Fase 16 lleva al correo. Enganches que deja la 14A: la marca
    «Requiere acción de mejora» con su causa y su acción propuesta, que la Fase 15 convierte en acción formal; los
    objetivos como maestro; las tareas y avisos de indicadores, que la Fase 16 lleva al correo; los resultados por periodo,
    la matriz y el Excel, para el tablero y los reportes de la Fase 17; de la 14B, las constancias de envío y las revisiones
@@ -277,11 +284,24 @@
    vencida. `SGC-IND-05` sigue manual y no hay revisiones de indicadores por cambio de norma: el recorrido las provoca.
    El detalle está en «Qué probar y cómo (Fase 14B)», paso 0. **La base de desarrollo NO se resembró en la 14B**: la demo se
    sembró y se probó en la base aparte `sgc_f14b`.
+   **Desde la 14C** (`src/db/semillas/indicadores-demo-14c.ts`, con su historia en la agenda y sus fichas en
+   `indicadores-demo-fichas.ts`, por las funciones del dominio con `ahora` inyectado): **24 indicadores**, la dimensión
+   «Sede» con cuatro sedes ficticias y el dato compartido «Consultas de medicina general realizadas» (Consulta Externa),
+   del que responden `consulta` y `lider.cex`, con meses cerrados (uno corregido), uno reportado con su soporte y uno
+   pendiente en plazo. Lo usan `CEX-ID-001` «Uso de la agenda de medicina general» (mensual, mixto) y `CEX-ID-002`
+   «Consultas de medicina general del trimestre» (trimestral, sin variables propias); `CEX-ID-003` «Adherencia a la guía de
+   hipertensión arterial» se mide por Sede (un mes con una sede en Crítico bajo un total en Bien, otro con una sede «Sin
+   casos» y otra «No aplica»); `SGC-ID-003` «Índice de desempeño del SGC» toma el cumplimiento de cinco indicadores del SGC,
+   y `SGC-ID-004` «Índice de capacidad de atención», restringido y aprobado por Gerencia, el de `GTH-IND-01` y el de
+   `CEX-IND-01`: lo ve `lider.cex` (le hace seguimiento) sin ver `GTH-IND-01`, y `consulta` no lo ve. El detalle está en «Qué
+   probar y cómo (Fase 14C)», paso 0. **La base de desarrollo NO se resembró en la 14C**: la demo se sembró y se probó en la
+   base aparte `sgc_f14c`.
    **La base de desarrollo se resembró en la 13B** (Tarea 15, con la demo de distribución; el recorrido de §18 la
    avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** al cierre de la 14B, antes de la tanda final, 6304 en 249 archivos, más 1 saltado (el de la línea base);
+5. **Tests:** las cifras de la 14C las escribe el controlador en su verificación de cierre («Fase 14C»). Al cierre de la
+   14B, antes de la tanda final, 6304 en 249 archivos, más 1 saltado (el de la línea base);
    después de la tanda final: 6318 pruebas en verde en 249 archivos, más 1 saltada. La entrega complementaria de la 14A cerró con 5997 en 240 archivos, más 1 saltado (la 14A, con 5696 en 235; la 13C, con 4722 en 197). En serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
    privilegios usa además `DATABASE_URL_MIGRADOR`. Los usuarios de prueba con historia
@@ -296,7 +316,7 @@
    CI → Run workflow**. Motivos: la cuota de almacenamiento de Actions es de la cuenta y
    la comparte con `sgc-suaza` (se agotó el 2026-08-25) y cada build ARM64 por QEMU es
    lento. La imagen `amd64` del CI llega en la Fase 20. La Fase 11 añadió `otpauth`,
-   `qrcode` y `zod` (todos JS puro); las Fases 12, 13A, 13B, 13C, 14A y 14B no añadieron dependencias. No consta que el
+   `qrcode` y `zod` (todos JS puro); las Fases 12, 13A, 13B, 13C, 14A, 14B y 14C no añadieron dependencias. No consta que el
    job ARM64 se haya relanzado desde la Fase 11: lanzarlo a mano antes de la Fase 20.
 7. **Despliegue: decidido en el spec §4 y escrito en `AGENTS.md` ("Piso de despliegue")**
    (contenedores portables, Windows con WSL2 o Linux, tres contenedores proxy + app +
@@ -318,6 +338,352 @@
 9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
    preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
    base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
+
+## Fase 14C — Datos compartidos, desagregación y compuestos
+
+Anexo: `docs/superpowers/specs/2026-11-15-fase14c-datos-compartidos-desagregacion-compuestos-design.md` (amplía el spec de
+la Fase 14, su entrega complementaria y el anexo de la 14B, y manda sobre los tres donde difieren; las decisiones del usuario
+del 2026-11-15 están en su §2, las de Claude F14C-DC1 a DC42 en su §13; **el usuario aprobó el anexo el 2026-11-15**
+(«acept»), con sus maquetas 9 a 15 y las decisiones 5.1 y 8.1). Plan:
+`docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con subagentes). La rama
+`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 50 confirmaciones al cerrar la Tarea 18, antes de
+la verificación de cierre) se trabaja en el worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no
+está fusionada:** espera la verificación de cierre, el visto bueno del usuario a las decisiones de la ejecución
+(«Decisiones adicionales (Fase 14C)») y su decisión de fusionar. Con ella se cierra la Fase 14 del diseño maestro. **Sin
+dependencias npm nuevas.** Dos migraciones: la `0015` (altera en su sitio las cinco tablas vacías de la 14C:
+`variables_compartidas`, `variable_responsables`, `variable_valores`, `dimensiones` y `dimension_categorias`, y añade a
+las de la 14A y la 14B solo columnas, índices y `CHECK` nuevos: el origen de cada variable, la fracción exacta, la lista
+de categorías de la medición, `variable_eventos` de solo inserción, el contexto `dato_compartido` de `archivos`) y la
+`0016` (`variable_valores.se_pide`: el periodo de un dato que alguna medición necesita). Diecisiete en total
+(`drizzle/0000` a `drizzle/0016`).
+
+**Verificación de cierre: pendiente.** La hace el controlador después de la Tarea 18 y la escribe aquí con sus cifras:
+`SEMILLA_RECIEN=1 npm test` con la demo recién sembrada, comparado con la línea base del Paso 0; `npm run lint`;
+`npm run build` sin `DATABASE_URL`; la `0015` y la `0016` sobre una copia de la base `sgc` de `main` (conteos y huellas
+de indicadores, versiones, mediciones y valores); el recorrido de §10 del anexo en el navegador (claro, oscuro y 390 px),
+por los pasos de «Qué probar y cómo (Fase 14C)»; y la revisión final de toda la rama, con su ola de corrección. Lo que
+corrió la Tarea 18 (no es la verificación de cierre): los siete archivos `tests/semilla-*.test.ts` con
+`SEMILLA_RECIEN=1` sobre la demo recién sembrada, los archivos `tests/indicadores-*.test.ts` y los que leen las cuentas
+de la demo, `npm run lint` y `npm run build`.
+
+### Hecho (Fase 14C)
+
+- **El ciclo de imports y su prueba (Tarea 1):** se deshizo el ciclo `publicacion → operacion → aprobacion →
+  publicacion` de la 14B y quedó `tests/indicadores-ciclos.test.ts`: ningún ciclo de imports entre los archivos de
+  `src/db/consultas/indicadores/`, y los módulos livianos no importan `lectura`, `fichas`, `aprobacion` ni `operacion`.
+- **La `0015`, las reglas puras y los maestros (Tareas 2 a 5):** la migración; las reglas puras de origen, porcentaje de
+  cumplimiento, grafo de compuestos (ciclos y niveles), categorías y huella; el catálogo de datos compartidos con sus
+  responsables y el maestro de dimensiones y categorías, de quien administra.
+- **La ficha (Tareas 6 a 8):** en cada variable, **De dónde sale A**: propia, dato compartido o resultado de otro
+  indicador (su valor o su porcentaje de cumplimiento); el campo **Desagregación**; la ficha firma los nombres copiados y
+  la huella de lo ya aprobado no cambia (los campos nuevos se omiten cuando son nulos). Enviar y aprobar revisan los
+  orígenes otra vez; un compuesto que toma un restringido es restringido y lo aprueba Gerencia; un candado consultivo pone
+  en fila las aprobaciones que podrían cerrar un ciclo; y se bloquea lo que dejaría a un compuesto esperando (retirar,
+  restringir, quitar la meta o engrosar la periodicidad de un componente, y deshacer un lote que otro toma). La ficha
+  técnica muestra el origen de cada variable y **Lo toman**.
+- **La medición por variable (Tarea 9):** un indicador sin variables propias no lo mide nadie; un mixto reporta lo suyo
+  («Reportar lo mío») y espera lo ajeno en **Falta un dato**, sin tarea ni vencido; el servidor rechaza un valor para una
+  variable ajena; la fracción exacta del valor copiado.
+- **Los periodos del dato (Tareas 10 y 13):** se piden solos (desde el periodo en curso al aprobarse la ficha, sin nacer
+  vencidos), se reportan una vez y se corrigen sin justificación antes del cierre, con historial de solo inserción, tarea,
+  recordatorios, vencido y escalamiento; la pestaña **Datos compartidos**, la página del dato con sus periodos, su
+  historial y su soporte (PDF, imagen o `.xlsx`, por `api/datos-compartidos/[id]/archivos`, fuera del `matcher`).
+- **La propagación (Tareas 11 y 12):** el valor de un dato (juntado a la periodicidad del indicador) y el de un componente
+  (su resultado o su cumplimiento, o su acumulado si es más fino) se copian a cada medición abierta que los espera, por
+  pasada (después de la acción, en la pasada de vencimientos y antes del cierre), idempotente y por niveles, con evento
+  del sistema; el componente que no aplicó deja el compuesto «No aplica»; el análisis que nace tarde por algo ajeno cuenta
+  su plazo desde ese día.
+- **La medición por sede o por servicio (Tareas 14 y 15):** la lista de categorías congelada en cada medición, la rejilla
+  (escritorio y 390 px) con «Sin casos» y «No aplica» por fila, el total que escribe el sistema, «Actualizar categorías»,
+  el resultado y el color de cada categoría al leer, «1 en Crítico» y su aviso con el total en Bien, la sección **Por
+  Sede** con barras acostadas y su tabla, el impreso y la hoja **Por categoría** del Excel.
+- **El cierre y la reapertura (Tarea 16):** una medición cerrada tiene cerradas sus entradas: el cierre espera a sus
+  fuentes, cierra también los periodos de los datos y dice quién debía lo que quedó sin dato; la reapertura de un dato o de
+  un componente va en cascada, con la lista antes de confirmar; «Cerrar de nuevo» exige la fuente cerrada y lo copiado al
+  día; un candado consultivo pone en fila cierres y reaperturas.
+- **Lo que se ve de un compuesto (Tarea 17):** a quien no ve un componente, «Indicador restringido» y «No disponible» en
+  la tabla, las gráficas, el acumulado, el Excel, el impreso, la pantalla de reportar, el historial y la ficha; el motivo
+  y los avisos sin nombrarlo; el acumulado de un compuesto con el de cada componente («parcial», «Sin acumulado»); el
+  «desde cuándo» acumula un componente más fino.
+- **Demo, manual y documentos (Tarea 18):** la demo de la 14C (ver «Qué probar y cómo (Fase 14C)», paso 0, y el punto de
+  reanudación, paso 4), con su test (`tests/semilla-indicadores-14c.test.ts`) y sus comprobaciones en el calendario de la
+  semilla para los días de un año de siembras; `guardarCategoria` fecha la categoría con `opciones.ahora`; el capítulo 8
+  del manual con las secciones 11 a 13 nuevas («Datos compartidos», «Indicadores por sede o por servicio» e «Indicadores
+  compuestos»), el ajuste de 6.6 («Cerrar el mes y reabrir») y las secciones de siempre renumeradas (14 a 16); y
+  `AGENTS.md`, este archivo y `PLAN.md`.
+
+### Qué probar y cómo (Fase 14C)
+
+Para una persona del hospital, con la clave común de la demo (`Demo-SGC-2026-clave`). Los periodos y las fechas son los de
+una siembra del **16 de noviembre de 2026**; sembrada otro día, la demo corre sus periodos con el calendario (el mes
+pendiente es el último que cierra un trimestre después del mes cerrado; si no hay ninguno, el último terminado).
+
+0. **La base.** El recorrido se hace sobre la demo recién sembrada: en el worktree, `bash
+   .superpowers/sdd/2026-11-15-fase14c-datos-desagregacion-compuestos/con-f14c.sh npm run db:seed`, después `… npm run
+   admin:asegurar`, y el servidor en otro puerto (`… npx next dev -p 3014`). Resembrar borra lo que se haya probado. Lo que
+   trae la demo de la 14C:
+   - La dimensión **Sede** con cuatro sedes ficticias: Sede principal, Puesto de salud Norte, Puesto de salud Sur y Puesto
+     de salud Oriente.
+   - El dato compartido **Consultas de medicina general realizadas** (Consulta Externa, mensual, se suma, 10 días de
+     plazo), del que responden `consulta` y `lider.cex`: abril a agosto de 2026 **cerrados** (agosto llegó bajo, 1.511, y
+     `lider.cex` lo corrigió a 1.679 antes del cierre de agosto); **septiembre pendiente**, en plazo hasta el 25 de
+     noviembre (empezó a pedirse ayer: no nace vencido); y **octubre reportado** (1.749) con su soporte en PDF.
+   - `CEX-ID-001` **Uso de la agenda de medicina general** (mensual, mixto: A es el dato y B, «Consultas ofertadas en la
+     agenda», la digita `lider.cex`; meta 90 %): agosto cerrado en 94,3 %, Bien (pasó de Atención a Bien con la corrección
+     del dato, y a `lider.cex` le llegó la «Corrección»); septiembre en **Falta un dato** (lo suyo ya reportado, sin tarea
+     ni vencido); octubre en 95,6 %, Bien.
+   - `CEX-ID-002` **Consultas de medicina general del trimestre** (trimestral, sin variables propias: nadie lo mide; meta
+     5.000): segundo trimestre cerrado en 5.178, Bien; **tercer trimestre en Falta un dato**, esperando septiembre.
+   - `CEX-ID-003` **Adherencia a la guía de hipertensión arterial** (mensual, **por Sede**, meta 85 %, lo mide `lider.cex`
+     y le hace seguimiento `coordinadora.sgc`): septiembre en 85,5 %, Bien, con **Puesto de salud Oriente en Crítico**
+     (55 %), y el aviso sin leer de `coordinadora.sgc` («…: 85,5 %, Bien. En Crítico: Puesto de salud Oriente (55 %).
+     Septiembre de 2026»); octubre en 89,1 %, Bien, con **Puesto de salud Norte «Sin casos»** y **Puesto de salud Sur «No
+     aplica»** (cerrado por el arreglo de la planta física).
+   - `SGC-ID-003` **Índice de desempeño del SGC** (trimestral, general, meta 90 %): el promedio del porcentaje de
+     cumplimiento de `SGC-IND-01`, `-02`, `-05`, `-06` y `-07`; tercer trimestre en 91,0 %, Bien.
+   - `SGC-ID-004` **Índice de capacidad de atención** (trimestral, **restringido**, meta 90 %, aprobado por Gerencia): el
+     promedio del cumplimiento de `GTH-IND-01` (restringido) y de `CEX-IND-01` (mensual: su acumulado del trimestre);
+     tercer trimestre en 100 %, Bien. Es del proceso SGC, no de Consulta Externa (un restringido lo ve quien está asignado
+     a su proceso, y `consulta` lo está a Consulta Externa); `lider.cex` lo ve porque le hace seguimiento, y no ve
+     `GTH-IND-01`.
+1. **Crear un dato y un indicador que lo usa.** Como `coordinadora.sgc`: **Indicadores** → **Datos compartidos** → **Nuevo
+   dato** (por ejemplo, «Pacientes atendidos en urgencias», de Atención Inmediata, mensual, se suma) → **Crear el dato** y,
+   en su página, **Designar personas** (`jefe.urgencias`). Después **Nuevo indicador** con una variable **Propia** y otra
+   con **De dónde sale B** → **Dato compartido** (ese dato): el SGC copia su nombre, su unidad y cómo se junta. Guárdela,
+   envíela con su clave y apruébela (si es «Operativo» de un proceso sin líder, la aprueba `gerente`). Su primer periodo es
+   el mes en curso y se reporta cuando termine: **para ver ya «Reportar lo mío» y «Falta un dato», use `CEX-ID-001`
+   septiembre** (paso 0): como `lider.cex`, su tabla del año dice **Falta un dato** en septiembre, sin **Reportar** ni
+   vencido, y **Mis tareas** no trae tarea de ese mes.
+2. **Reportar el dato una vez.** Como `consulta`: **Mis tareas** trae «Reportar el dato Consultas de medicina general
+   realizadas, septiembre de 2026», en plazo (`lider.cex` también la tiene: responde por el dato). Ábrala: **Reportar el
+   dato** muestra septiembre. Escriba **1600**, adjunte un PDF en **Soporte (opcional)** y pulse **Reportar**. Debe ver el
+   dato puesto en dos indicadores de distinta periodicidad: `CEX-ID-001` septiembre en 87,9 %, Atención, y `CEX-ID-002`
+   tercer trimestre en 4.982, Atención (julio, agosto y septiembre juntados), los dos con su alerta en la campana de
+   `lider.cex`, que los analiza (si lo reporta `lider.cex`, a él no le llega el aviso de su propio reporte).
+3. **Corregir el dato antes del cierre.** En **Periodos del dato**, septiembre → **Corregir** → **1745** → **Guardar la
+   corrección**: su historial guarda el antes y el después, con quién y cuándo; `CEX-ID-001` septiembre pasa a 95,9 %,
+   Bien, y `CEX-ID-002` el tercer trimestre a 5.127, Bien, cada uno con su «Corrección» y, en el historial de la
+   medición, el cambio puesto por «El sistema».
+4. **Cerrar el mes y reabrir el dato.** Como `coordinadora.sgc`: **Cierre del mes** → **Cerrar hasta** septiembre de 2026 →
+   **Ver el resumen** (el periodo de septiembre del dato se cierra; `AIN-IND-01` septiembre queda sin dato) → **Cerrar el
+   mes**. Si hace el paso 7 sin reabrir, hágalo antes: este cierre cierra también los trimestrales del tercer trimestre.
+   Después, en la página del dato, **agosto** → **Reabrir**: el diálogo lista lo que se reabre (`CEX-ID-001` agosto y
+   `CEX-ID-002` tercer trimestre, que lo usaron) y el botón dice «Reabrir el dato y 2 mediciones»; escriba la
+   justificación (al menos 10 caracteres) y confirme. Las dos quedan **Corregida**, con la justificación en su historial;
+   a `lider.cex` le llega el aviso de cada una y a `consulta`, «Dato compartido reabierto: …». Ciérrelas otra vez con
+   **Cerrar de nuevo**: primero el periodo del dato (las mediciones dicen «Su fuente sigue abierta: ciérrela primero»
+   mientras no).
+5. **La medición por sede.** Como `coordinadora.sgc`: **Administración** → **Configuración de indicadores** →
+   **Dimensiones**: «Sede» con sus cuatro categorías (**Nueva dimensión** y **Nueva categoría** crean otras). Abra
+   `CEX-ID-003`: en la lista y en la tabla del año, septiembre con «1 en Crítico» por Sede; la sección **Por Sede** con las
+   barras acostadas de cada sede, la meta como línea y su tabla; elija octubre: Norte «Sin casos» y Sur «No aplica», sin
+   barra. **Excel** trae la hoja **Por categoría**; **Imprimir ficha**, el desglose del último periodo. Para la rejilla,
+   como `lider.cex`, **Corregir** octubre (en escritorio y a 390 px: una tarjeta por sede y el total fijo abajo), cambie
+   una celda y pulse **Reportar**. Un indicador por sede nuevo se reporta cuando termine su primer mes.
+6. **Desactivar una categoría.** En **Dimensiones**, desactive «Puesto de salud Sur». La rejilla de octubre (ya abierta)
+   la conserva, y noviembre también la pedirá, porque se desactivó durante noviembre; diciembre ya no. Lo de noviembre y
+   diciembre se ve cuando esos meses terminen (lo cubren las pruebas).
+7. **El compuesto se recalcula solo.** Como `coordinadora.sgc`: `SGC-IND-01` tercer trimestre → **Corregir** → A de 3 a
+   4 → **Guardar la corrección**: `SGC-ID-003` pasa de 91,0 % a 95,4 % sin que nadie lo toque (su historial: «El sistema»).
+   Después marque **No aplica en este periodo** en `SGC-IND-07` tercer trimestre: `SGC-ID-003` queda «No aplica» con «SGC-IND-07
+   Gestión de Riesgos y Oportunidades no aplicó en el periodo»; **Quitar «No aplica»** y reportarlo otra vez lo devuelve a
+   su cifra. Si septiembre ya está cerrado (paso 4), corrija con **Reabrir** en `SGC-IND-01`: la lista incluye
+   `SGC-ID-003`.
+8. **El componente que no se ve.** Como `lider.cex`: `SGC-ID-004` muestra su resultado (100 %, Bien); su variable A dice
+   **Indicador restringido** y **No disponible** en la tabla del año, las gráficas, el acumulado, la ficha técnica
+   («Resultado de un indicador restringido»), **Excel** e **Imprimir ficha**; la B («Cumplimiento de la meta de
+   oportunidad de la cita») sí se ve. `GTH-IND-01` le dice «Página no encontrada». Como `consulta`, `SGC-ID-004` tampoco
+   existe. Como `gerente`, se ven los dos componentes.
+9. **El bloqueo.** Como `coordinadora.sgc`: `SGC-IND-01` → **Administrar** → **Retirar**: «Cambie antes el indicador que lo
+   usa: SGC-ID-003». En `GTH-IND-01`, lo mismo con `SGC-ID-004`. La ficha técnica de `SGC-IND-01` trae **Lo toman**.
+10. **Una ficha aprobada antes de esta entrega.** `SGC-IND-02` → **Versiones**: la misma huella de antes; **Administrar** →
+    **Editar ficha** → **Abrir un cambio** → **Guardar borrador** sin tocar nada: se guarda, y sus variables siguen
+    «Propia»; descarte el cambio.
+
+### Avisos para el usuario (Fase 14C)
+
+- **La rama no está fusionada.** Mientras se construyó, `F:\sgc-integral`, su base `sgc` y su `next dev` del 3002 no se
+  tocaron (la verificación de cierre solo lee `sgc`, con un `pg_dump`). **Después de fusionar hay que aplicar la `0015` y
+  la `0016` a la base `sgc`:** `npm run db:preparar` en `F:\sgc-integral` y reiniciar `next dev` (en desarrollo no
+  migran solas; la imagen sí, al arrancar). Hasta entonces las páginas de indicadores fallan. Para ver la demo de la 14C
+  en `sgc` hace falta además `npm run db:seed` (vacía la base y el almacén) y `npm run admin:asegurar`.
+- **Las 39 decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (Fase 14C)»): ninguna la tomó
+  usted. Las que más pesan: el aviso a los responsables al reabrir un dato sin mover su fecha límite (6); que un
+  resultado fuera de límites no bloquee «Reportar lo mío» (8); que el sistema reponga el plazo cuando quita su propio «No
+  aplica» (10); los textos que dicen desde cuándo acumula un componente (27) y el acumulado «parcial» de un compuesto (28);
+  el motivo de «No aplica» que nombra solo a un componente que usted ve (30); y que cierres y reaperturas vayan de a uno
+  (34).
+- **La demo nueva cambia lo que ven algunas cuentas:** `consulta` responde por el dato compartido (su **Mis tareas** trae
+  el de septiembre), `lider.cex` hace seguimiento de `SGC-ID-004` y `coordinadora.sgc` de `CEX-ID-003`. «Reportes a tiempo»
+  del SGC no cuenta los dos compuestos del SGC: nadie los mide.
+- **Código de la 14A tocado:** Enter en «Buscar persona» del diálogo de designar ya no envía el formulario (decisión 13), y
+  el encabezado «Debía medirla» del resumen del cierre pasa a «Quién debía» (decisión 38).
+- **Las dos fallas de la demo de antes siguen como estaban** (no son de la 14C): sembrar el primer día de un mes falla en el
+  lote importado de la 14A-C («No se puede dar la sigla TSR al subproceso Gestión Tesorería…»; la Tarea 18 lo vio otra vez
+  con el reloj corrido al 1 de marzo de 2027, también con la 14C apagada), y `tests/semilla-indicadores.test.ts` («hay una
+  meta programada…») espera `SGC-IND-06` «reportada», que el cierre de la demo cierra si se siembra entre el 11 del tercer
+  mes de un trimestre y el 10 del siguiente (visto con la siembra del 15 de diciembre y del 5 de enero). La demo de la 14C
+  sí se probó con el reloj corrido a esas fechas y al 15 de enero: siembra y pasa su test.
+- **Lo que no hace todavía:** medir un indicador por dos dimensiones a la vez; el compuesto «promedio de los componentes
+  medidos» (Fase 17); y el correo (Fase 16): los datos vencidos solo se ven al entrar.
+
+### Decisiones adicionales (Fase 14C)
+
+**Las del anexo (F14C-DC1 a DC42)**, en el §13 del anexo con su base (ISO, ISO derivada, Regulación o Práctica): DC1 a DC16
+son las «D» que el usuario aceptó el 2026-11-15 («las D quedan»), y DC17 a DC42 entraron con el anexo, que el usuario
+aprobó ese mismo día («acept»).
+
+**Las de la ejecución, pendientes del visto bueno del usuario.** Las tomó quien coordinó la ejecución del plan cuando el
+anexo o el plan callaban, se contradecían o un revisor halló un defecto; **ninguna la aprobó el usuario**. Cada una dice
+qué se decidió, porque qué, y su base (ISO 9001:2015 con su numeral, la decisión del usuario de la que se deriva, o
+Práctica). Las que el usuario cambie son un ajuste pequeño salvo donde se dice otra cosa. El detalle está en el registro
+de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
+
+**A. Datos compartidos**
+
+1. **Una columna y una migración más (`variable_valores.se_pide`, migración `0016`): las migraciones son diecisiete.** Un
+   periodo pendiente de un dato que ya ningún indicador necesita no se pide: ni tarea, ni avisos, ni lo cierra el cierre
+   «Sin dato». Porque sin la columna no había cómo saberlo con exactitud por periodo y alguien recibiría la tarea de
+   reportar un dato que nadie usa. Base: ISO 9.1.1 (se mide lo que se necesita) y la regla de las constancias de la 14B.
+2. **Activar, desactivar y borrar un dato tienen botones en la página del dato**, para quien administra. Porque el anexo
+   (§4.1) describe esas acciones y ninguna tarea del plan les había dado pantalla. Base: Práctica.
+3. **Las cifras de las pantallas del dato llevan punto de miles** («1.284.300.000»), solo al mostrar. Porque la maqueta
+   aprobada las trae así; el resto del módulo no se tocó. Base: Práctica.
+4. **Sobre un dato que ya cita una ficha aprobada se pueden cambiar la unidad, «admite negativos» y el proceso dueño;**
+   siguen congelados la periodicidad, «cómo se junta» y la dimensión. Porque el anexo solo congela esos tres y la ficha
+   firma lo que copió. Base: ISO 7.5.3 (lo firmado no cambia).
+5. **Cada subida de un soporte de un dato deja una sola fila de bitácora**, la genérica, más su evento en el historial del
+   dato. Porque el plan pedía una segunda fila que duplicaba la primera. Base: ISO 7.5.3 (trazabilidad sin ruido).
+6. **Al reabrir un periodo de un dato se avisa a sus responsables; su fecha límite no se mueve.** Porque el diálogo dice
+   «para que sus responsables lo corrijan o lo reporten tarde» y no se enteraban; el plazo queda como en una medición
+   reabierta (sale «Vencido» de inmediato). Si prefiere que el plazo cuente otra vez desde la reapertura, es un cambio
+   pequeño. Base: ISO 5.3 (responsabilidades comunicadas).
+7. **Quien abre una medición le trae de una vez lo que sus fuentes ya tienen.** Porque sin eso la persona veía «Sin dato»
+   con el dato ya reportado, hasta la siguiente pasada. Base: Práctica.
+
+**B. Reportar y «No aplica»**
+
+8. **Con variables que llegan de otra parte, un resultado fuera de límites no bloquea «Reportar lo mío»: pide
+   confirmación.** Porque la persona no puede cambiar ese valor y su tarea vencería por algo que no puede arreglar. Base:
+   ISO 9.1.1 y la anti-meta del anexo §9.
+9. **Los motivos de «No aplica» que usa el sistema quedan reservados**, y una persona no puede quitar un «No aplica» que
+   puso el sistema: se quita solo cuando cambia el dato. Porque el sistema reconoce su marca por el motivo. Base: ISO
+   7.5.3 (integridad del registro).
+10. **Cuando el sistema quita un «No aplica» que él mismo había puesto y la medición vuelve a pedir el reporte, el plazo
+    cuenta otra vez desde ese día, solo si el «No aplica» había llegado a tiempo.** Porque nadie debe quedar vencido por
+    algo que no debía; si ya estaba tarde, la tardanza se conserva. Base: Anexo aprobado (F14C-DC42), por analogía.
+11. **«Reportes a tiempo» no cuenta la medición que quedó «No aplica» por su componente antes de vencer.** Porque la
+    persona no debía nada. Base: Anexo aprobado (F14C-DC22).
+12. **Una ficha manual sin variables propias dice «Llega de datos compartidos o de otros indicadores»** y no exige cargo
+    de medir. Porque «Lo digita una persona» contradecía «Nadie: sus datos llegan de otras fuentes». Base: Práctica.
+13. **Enter en «Buscar persona» ya no envía el formulario**, tampoco en el diálogo de designar de la 14A. Porque guardaba
+    la selección a medio hacer. Toca un renglón de la 14A. Base: Práctica.
+
+**C. Medición por sede o servicio**
+
+14. **Una rejilla ya reportada no admite «Guardar sin reportar»:** se corrige y se reporta. Porque así es en todo
+    indicador y guardar a medias dejaba el total distinto de sus celdas. Base: ISO 7.5.3.
+15. **Qué celdas cambió cada persona se decide en el servidor.** Porque sin eso, dos personas que capturan a la vez podían
+    borrarse lo digitado (su decisión D9). Base: Decisión del usuario D9.
+16. **Si un dato por sede vuelve a traer una sede y a la medición ya reportada le faltan sus celdas propias, la medición
+    vuelve a «Por reportar».** Porque quedaba «Falta un dato» sin tarea de nadie. Base: ISO 9.1.1.
+17. **«Actualizar categorías» está también en la tabla del año**, para quien administra. Porque quien administra no llega
+    a la pantalla de reportar cuando otra persona mide. Base: Práctica.
+18. **Junto a «n en Crítico» se ve «por Sede»**, y el aviso de la pantalla de reportar trae la cifra («1 en Crítico: Puesto
+    de salud 3 (55 %)»). Porque el anexo pide el nombre de la dimensión a la vista y la maqueta trae la cifra. Base:
+    Maqueta 9 aprobada.
+19. **Los periodos que el sistema dejó «No aplica» entran al desglose por categoría**, con el total en «No aplica». Porque
+    el anexo pide todos los periodos del año. Base: Anexo §5.6.
+20. **La hoja «Por categoría» del Excel no lleva fila «Total»:** una fila por periodo y categoría. Porque una fila de total
+    mezclada duplica las sumas al filtrar. Si la prefiere, vuelve con un renglón. Base: Práctica.
+21. **Textos en plural:** «1 categoría de Sede en Crítico» / «2 categorías…», «Falta 1 categoría» / «Faltan 2 categorías».
+    Base: Práctica.
+
+**D. Indicadores compuestos**
+
+22. **El tope de cinco niveles se mide sobre toda la cadena**, no solo hacia abajo del indicador que cambia. Porque añadir
+    un componente a mitad de una cadena alarga la de quienes lo toman. Base: Anexo aprobado (hasta cinco niveles).
+23. **Cambiar la clase de un objetivo se rechaza si cerraría un ciclo entre indicadores.** Porque era el único camino que
+    podía crear un ciclo sin pasar por la revisión. Base: ISO 9.1.1 (resultados válidos).
+24. **Pasar un compuesto a «general» mira también los componentes de las versiones que todavía rigen mediciones sin
+    cerrar.** Porque, si no, un compuesto general seguiría recibiendo el valor de un restringido. Base: Decisión del
+    usuario 5.1 (ISO 7.5.3.1 b, confidencialidad).
+25. **Al restringir un componente, las fichas por aprobar que lo toman avisan a sus nuevos aprobadores.** Base: Decisión
+    del usuario 8.1.
+26. **El acumulado de un componente que es él mismo un compuesto es su acumulado propio**, calculado sobre los mismos
+    periodos; nunca se suman ni promedian resultados. Base: Anexo §6.4.
+27. **Junto a la variable que sale de un componente más fino se lee desde cuándo acumula** («acumulado de junio a
+    diciembre»), solo a quien puede ver el componente: en la pantalla de reportar, la tabla del año y el impreso. En el
+    Excel no (sus celdas son cifras) y el rótulo del acumulado del año queda genérico. Porque el anexo lo pide (§6.3) y
+    ninguna tarea del plan lo había recogido. Si el componente es a su vez un compuesto, ese «desde» es el suyo aunque le
+    venga de un indicador que la persona no ve (no dice cuál ni cuánto). Base: Anexo §6.3 (F14C-DC37).
+28. **En el acumulado del año de un compuesto, un periodo sin dato del componente se salta y deja el acumulado
+    «parcial»;** si el componente no tiene ningún periodo medido, el compuesto queda sin acumulado y lo dice, sin
+    nombrarlo. Porque antes la página decía «Aún no hay periodos medidos» con periodos medidos a la vista. En el valor de
+    cada periodo la regla no cambia: se espera al componente. Base: Anexo §6.4.
+29. **El acumulado se parte cuando una variable cambia de componente** (de propia a tomada, de un indicador a otro, o de
+    «valor» a «cumplimiento») aunque la fórmula sea la misma. Porque, si no, se aplicaba el componente de hoy sobre meses
+    en que el indicador tomaba otra cosa. Base: Spec 14 §8.10 (cambio de variables).
+30. **El motivo de un «No aplica» por un componente nombra al que hoy lo causa, entre los que la persona ve;** si no ve
+    ninguno de los que lo causan, dice «Un componente no aplicó en el periodo». Porque nombrar «el primero» dejaba deducir
+    si un componente oculto había aplicado. En el historial de una medición corregida, la línea de ese motivo nombra al
+    componente solo a quien ve todos los componentes del indicador. Base: Anexo §6.3 y decisión del usuario 5.1.
+31. **En el historial, a quien no ve un componente se le oculta el antes y el después de una letra si en alguna versión
+    esa letra salió de un componente que no ve.** Porque se prefirió ocultar de más a mostrar de menos. Base: Decisión del
+    usuario 5.1.
+32. **Con un componente que no puede ver, quien reporta no ve el resultado calcularse en vivo:** lo calcula el sistema al
+    guardar y la pantalla lo dice. Porque la cifra del componente no llega al navegador. Base: Decisión del usuario 5.1.
+33. **«Lo toman»** (los compuestos que usan un indicador, solo los que la persona ve) está en la pestaña «Ficha técnica».
+    Base: Práctica.
+
+**E. Cierre y reapertura**
+
+34. **El cierre del mes, las reaperturas y «Cerrar de nuevo» van de a uno:** si dos administradores los lanzan a la vez,
+    el segundo espera unos segundos. Porque un cierre cruzado con una reapertura podía dejar cerrada una medición con su
+    fuente abierta, sin que nadie lo notara. Base: ISO 7.5.3 (integridad de lo cerrado).
+35. **Al confirmar una reapertura se comprueba que lo que se reabre es lo que la pantalla listó;** si cambió, se rechaza y
+    se pide revisar la lista. Base: Decisión del usuario 2.1 (se confirma lo que se ve).
+36. **El historial de una medición reabierta dice por qué fuente fue**; a quien no puede ver el componente le dice «por un
+    cambio en un componente». Base: Decisión del usuario 5.1 y anexo §3.5.
+37. **«Cerrar de nuevo» exige que el valor copiado esté al día con su fuente.** Base: Anexo §3.5.
+38. **El encabezado «Debía medirla» del resumen del cierre pasa a «Quién debía».** Porque ahora puede nombrar un dato o un
+    indicador. Base: Práctica.
+39. **La justificación de una reapertura es texto libre y la ve quien ve cualquiera de las mediciones reabiertas.** El
+    sistema no la filtra; el diálogo lo advierte. Si quien administra nombra en ella un indicador restringido, lo nombra.
+    Base: ISO 7.5.3 (la reapertura deja quién, cuándo y por qué).
+
+**Decisiones de la Tarea 18** (de quien la implementó, también pendientes del visto bueno; van en su informe):
+`SGC-ID-004` es del proceso SGC con `lider.cex` en seguimiento, y no de Consulta Externa, para que `consulta` (asignada a
+Consulta Externa) no lo vea; el mes pendiente del dato es el último que cierra un trimestre después del mes cerrado y
+empieza a pedirse la víspera de la siembra, para que no nazca vencido y, al reportarlo, se vea puesto en los dos
+indicadores; y `coordinadora.sgc` hace seguimiento de `CEX-ID-003` para que la demo deje el aviso de la sede en Crítico
+(quien reporta no recibe el aviso de su propio reporte). Base: Práctica.
+
+### Deuda técnica (Fase 14C)
+
+Los pendientes menores de la ejecución que no se arreglaron (para decidir si entran) y lo que midió la Tarea 18 con la
+demo sembrada (un archivo sin carpeta es de `src/db/consultas/indicadores/`):
+
+- **La página de un dato** calcula, para quien administra, una lista de reapertura por cada periodo cerrado, en serie
+  (`reaperturaEnTexto`, desde `app/(app)/indicadores/datos/[id]/page.tsx`). Con la demo (cinco periodos cerrados): 76
+  sentencias y unos 140 ms para `coordinadora.sgc`, de las que 50 son esas listas (10 por periodo); 23 sentencias y unos
+  40 ms para `lider.cex`. Con años de historia crece lineal. La salida: calcular la lista al abrir el diálogo o agrupar las
+  candidatas de todos los periodos en una pasada.
+- **`valorSobre` no guarda memoria por componente y tramo:** la matriz del año 2026 hace unas 160 sentencias (unos 340 ms)
+  para `coordinadora.sgc`; solo el proceso SGC, con sus dos compuestos, 107 para 13 filas, frente a 30 de Consulta Externa
+  para 4 filas sin compuestos (unas 20 por fila de compuesto). La página de `SGC-ID-003` (cinco componentes), en
+  «Resultados»: 122 sentencias y unos 210 ms (83 de ellas, `datosDeResultados`), frente a 81 y unos 85 ms de `SGC-IND-01`.
+- El resumen guardado del cierre, «Cierres anteriores» y el mensaje «Se cerró {mes}: n mediciones cerradas» no cuentan los
+  periodos de datos que se cerraron.
+- Cuando faltan a la vez lo propio y el dato, «Quién debía» nombra solo a quien mide.
+- En la pantalla de reportar, «vence el {fecha}» de un dato que ya venció.
+- `lectura.ts` llegó a más de 1500 líneas: el ocultamiento cabría en un módulo propio.
+- Al intentar retirar un indicador que toman varios compuestos, «Cambie antes el indicador que lo usa: …» nombra uno solo;
+  tras cambiarlo, el siguiente intento nombra el siguiente.
+- **La demo no muestra «acumulado de … a …»:** `CEX-IND-01`, el componente mensual de `SGC-ID-004`, cubre todo el
+  trimestre, y el «desde» solo se lee cuando el componente empieza después. Lo cubren las pruebas de la Tarea 17.
+- **La semilla tarda más:** unos 18 s, frente a unos 12 s antes de la 14C (propaga después de cada paso que cambia una
+  fuente, como lo haría la acción).
 
 ## Fase 14B — Lo que el sistema ya sabe y lo regulatorio
 
