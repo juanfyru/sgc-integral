@@ -1625,6 +1625,9 @@ export const indicadores = pgTable(
     // Clave de periodo (`2026-03`, `2026-T1`…) desde la que se mide.
     inicioMedicion: text("inicio_medicion"),
     soporteObligatorio: boolean("soporte_obligatorio").notNull().default(false),
+    // Desde cuándo lo exige; nula si no lo exige (`indicadores_soporte_desde`). Se muestra y se audita: si una medición
+    // debe el soporte lo decide su marca (`mediciones.debe_soporte`), no esta fecha.
+    soporteObligatorioDesde: marca("soporte_obligatorio_desde"),
     bajaPor: refUsuario("baja_por"),
     bajaEn: marca("baja_en"),
     bajaMotivo: text("baja_motivo"),
@@ -1648,6 +1651,10 @@ export const indicadores = pgTable(
       sql`(${t.estado} IN ('retirado', 'descartado')) = (${t.bajaPor} IS NOT NULL AND ${t.bajaEn} IS NOT NULL AND ${t.bajaMotivo} IS NOT NULL)`,
     ),
     check("indicadores_calculo_coherente", sql`(${t.calculo} IS NULL) = (${t.calculoAlcance} IS NULL)`),
+    check(
+      "indicadores_soporte_desde",
+      sql`(${t.soporteObligatorio} AND ${t.soporteObligatorioDesde} IS NOT NULL) OR (NOT ${t.soporteObligatorio} AND ${t.soporteObligatorioDesde} IS NULL)`,
+    ),
   ],
 );
 
@@ -1943,6 +1950,8 @@ export const mediciones = pgTable(
     venceEn: marca("vence_en").notNull(),
     estado: text("estado").notNull().default("abierta"),
     historica: boolean("historica").notNull().default(false),
+    // Si quedó obligada a llevar soporte: se decide una vez, al activarse el soporte o al nacer la medición.
+    debeSoporte: boolean("debe_soporte").notNull().default(false),
     noAplica: boolean("no_aplica").notNull().default(false),
     noAplicaMotivo: text("no_aplica_motivo"),
     // La fracción exacta como «n/d»; con ella se decide el semáforo.

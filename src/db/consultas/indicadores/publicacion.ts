@@ -104,7 +104,7 @@ export async function alPublicarVersion(tx: TransactionSql, d: Publicacion): Pro
   const quitados = await tx`DELETE FROM indicador_designados WHERE indicador_id = ${d.indicadorId} AND funcion = 'mide' RETURNING usuario_id`;
   if (v.soporte_obligatorio === true) {
     // Como al desmarcarlo en «Datos de operación» (F14A-R52): la que solo esperaba el soporte queda reportada.
-    await tx`UPDATE indicadores SET soporte_obligatorio = false WHERE id = ${d.indicadorId}`;
+    await tx`UPDATE indicadores SET soporte_obligatorio = false, soporte_obligatorio_desde = NULL WHERE id = ${d.indicadorId}`;
     hecho.soporteApagado = true;
     hecho.medicionesRecalculadas = await recalcularPorSoporte(tx, d.indicadorId, { ahora: d.ahora, actorId: d.actorId, activado: false });
   }

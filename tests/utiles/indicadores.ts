@@ -167,10 +167,11 @@ export async function indicadorDePrueba(
   const forma = calculo?.forma ?? "porcentaje";
   if (o.calculo && aprobada) await liberarCalculo(tx, o.calculo.clave, o.calculo.alcance, procesoId);
 
+  // Como `crearIndicador`: si lo exige, lo exige desde que nace (`indicadores_soporte_desde`).
   const [indicador] = await tx`INSERT INTO indicadores
-      (codigo, proceso_id, estado, nivel_acceso, inicio_medicion, soporte_obligatorio, creado_por)
+      (codigo, proceso_id, estado, nivel_acceso, inicio_medicion, soporte_obligatorio, soporte_obligatorio_desde, creado_por)
     VALUES (${codigo}, ${procesoId}, ${aprobada ? "activo" : "borrador"}, ${o.nivelAcceso ?? "general"},
-      ${inicio}, ${o.soporteObligatorio ?? false}, ${elaboradaPor})
+      ${inicio}, ${o.soporteObligatorio ?? false}, CASE WHEN ${o.soporteObligatorio ?? false}::boolean THEN now() END, ${elaboradaPor})
     RETURNING id`;
   const indicadorId = Number(indicador.id);
 

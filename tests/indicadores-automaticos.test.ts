@@ -611,7 +611,7 @@ describe("la ficha automática en el servidor", () => {
       expect(menor.detalle).not.toHaveProperty("soporteApagado");
 
       // Un soporte obligatorio que quedara de antes de la 14B: el siguiente cambio menor lo apaga y lo dice.
-      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${indicadorId}`;
+      await tx`UPDATE indicadores SET soporte_obligatorio = true, soporte_obligatorio_desde = now() WHERE id = ${indicadorId}`;
       const otro = await abrirCambio(b.admin, indicadorId, { sql: tx, ahora: AHORA });
       const deOtro = await fichaParaEditar(b.admin, codigo, { sql: tx });
       await guardarBorrador(b.admin, otro.versionId, EsquemaFicha.parse({ ...deOtro!.valores, nombre: "Externos verificados al día", motivoCambio: "Otro nombre." }), {

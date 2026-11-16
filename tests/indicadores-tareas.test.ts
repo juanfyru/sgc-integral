@@ -235,7 +235,7 @@ describe("tareas de medir y analizar", () => {
       const t3 = await medicion(T3);
       await reportarCon(tx, mide, t3, { A: "1", B: "2" });
       // El soporte se volvió obligatorio después del reporte (dato de operación): falta además del análisis.
-      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${ind.id}`;
+      await tx`UPDATE indicadores SET soporte_obligatorio = true, soporte_obligatorio_desde = now() WHERE id = ${ind.id}`;
       expect(ids((await deIndicadores(tx, analiza)).tareas)).toEqual([`analizar:${t3}`]);
       expect((await deIndicadores(tx, mide)).tareas).toMatchObject([{ id: `medir:${t3}`, detalle: "Falta el soporte obligatorio" }]);
 
@@ -244,7 +244,7 @@ describe("tareas de medir y analizar", () => {
       const ambas = await indicador(tx, proceso.id, { mide: [persona.usuarioId], analiza: [persona.usuarioId] });
       const otra = await ambas.medicion(T3);
       await reportarCon(tx, persona, otra, { A: "1", B: "2" });
-      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${ambas.ind.id}`;
+      await tx`UPDATE indicadores SET soporte_obligatorio = true, soporte_obligatorio_desde = now() WHERE id = ${ambas.ind.id}`;
       const r = await deIndicadores(tx, persona, new Date("2026-10-12T15:00:00Z"));
       expect(ids(r.tareas).sort()).toEqual([`analizar:${otra}`, `medir:${otra}`]);
       expect(r.vencidas).toBe(1);
@@ -308,7 +308,7 @@ describe("un indicador que calcula el sistema (anexo 14B, §4): «Falta un dato�
       const t3 = await medicion(T3);
       await fotoDePrueba(tx, t3, { A: "1", B: "2" }, AHORA);
       // Un soporte obligatorio que quedara puesto no le pide «Reportar» a nadie: un automático no lleva soporte.
-      await tx`UPDATE indicadores SET soporte_obligatorio = true WHERE id = ${ind.id}`;
+      await tx`UPDATE indicadores SET soporte_obligatorio = true, soporte_obligatorio_desde = now() WHERE id = ${ind.id}`;
 
       expect((await deIndicadores(tx, analiza)).tareas).toEqual([
         {
