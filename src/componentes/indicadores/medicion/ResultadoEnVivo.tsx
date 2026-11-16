@@ -15,6 +15,11 @@ import type { Semaforo } from "@/lib/indicadores/tipos";
 
 const AVISO = "rounded-md border border-l-4 border-border bg-card px-3 py-2 text-sm";
 
+/** Lo que pide el resultado después de reportar (spec §8.4): el análisis en dos partes en Crítico, uno si no cumple. */
+export const ANALISIS_EN_CRITICO =
+  "El resultado queda en crítico: el análisis es obligatorio, en dos partes, y la medición quedará marcada «Requiere acción de mejora».";
+export const ANALISIS_SI_NO_CUMPLE = "No cumple: después de reportar, el análisis es obligatorio.";
+
 // El acento de la tarjeta sigue al resultado; sin resultado o sin meta, el borde neutro. Clases literales para Tailwind.
 const ACENTO: Record<Semaforo | "ninguno", string> = {
   bien: "border-l-estado-bien",
@@ -80,12 +85,9 @@ export function ResultadoEnVivo({
         {vivo.fueraDeLimites ? <p className={`${AVISO} border-l-estado-critico`}>{vivo.fueraDeLimites}</p> : null}
         {vivo.variacion ? <p className={`${AVISO} border-l-estado-atencion`}>{vivo.variacion}</p> : null}
         {vivo.semaforo === "critico" ? (
-          <p className={`${AVISO} border-l-estado-critico`}>
-            El resultado queda en crítico: el análisis es obligatorio, en dos partes, y la medición quedará marcada «Requiere acción de
-            mejora».
-          </p>
+          <p className={`${AVISO} border-l-estado-critico`}>{ANALISIS_EN_CRITICO}</p>
         ) : vivo.cumple === false ? (
-          <p className={`${AVISO} border-l-estado-atencion`}>No cumple: después de reportar, el análisis es obligatorio.</p>
+          <p className={`${AVISO} border-l-estado-atencion`}>{ANALISIS_SI_NO_CUMPLE}</p>
         ) : null}
       </>
     );

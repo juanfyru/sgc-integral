@@ -45,10 +45,10 @@ export type DatosDeResultados = {
   /** Los soportes de cada medición del año, solo a quien ve los soportes del indicador (`null` para los demás). */
   soportes: Map<number, Soporte[]> | null;
   /**
-   * Reabrir, cerrar de nuevo y volver a calcular la foto de un automático (quien administra; anexo 14B, §5.4) y el historial
-   * de cada medición corregida (spec §8.7).
+   * Reabrir, cerrar de nuevo, volver a calcular la foto de un automático (quien administra; anexo 14B, §5.4) y actualizar las
+   * categorías de un desagregado abierto sin reportar (anexo 14C, §5.3), y el historial de cada medición corregida (spec §8.7).
    */
-  cierre: { reabre: boolean; cierraDeNuevo: boolean; recalcula: boolean; historial: Map<number, EntradaDeHistorial[]> };
+  cierre: { reabre: boolean; cierraDeNuevo: boolean; recalcula: boolean; actualizaCategorias: boolean; historial: Map<number, EntradaDeHistorial[]> };
   /** «Por {dimensión}» de un desagregado (anexo 14C, §5.6), con el periodo elegido (`?desglose=`); `null` si no se desagrega. */
   desglose: DatosDeDesglose | null;
 };
@@ -231,6 +231,7 @@ export function VistaResultados(d: DatosDeResultados) {
             puedeReabrir={d.cierre.reabre}
             puedeCerrarDeNuevo={d.cierre.cierraDeNuevo}
             puedeVolverACalcular={d.cierre.recalcula}
+            puedeActualizarCategorias={d.cierre.actualizaCategorias}
             historial={d.cierre.historial}
             periodosSinCumplir={d.periodosSinCumplir}
           />

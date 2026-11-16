@@ -6,11 +6,13 @@ import type { EstadoAccion } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
+import { conCambio, pintadosDe, rejillaCalculada, semilla, type Edicion } from "@/lib/indicadores/rejilla-formulario";
 import { calcularEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
 import { MOTIVO_TODAS_NO_APLICAN, MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
+import { ActualizarCategorias } from "./ActualizarCategorias";
 import { AvisosDeFalta, VariableFija } from "./DatosDelSistema";
-import { ActualizarCategorias, RejillaDeCategorias } from "./RejillaDeCategorias";
+import { RejillaDeCategorias } from "./RejillaDeCategorias";
 import { ResultadoEnVivo } from "./ResultadoEnVivo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -136,12 +138,18 @@ export function FormularioReporte({ datos, volver, administra = false }: { datos
   );
   const [confirmado, setConfirmado] = useState(false);
   const [estado, enviar, pendiente] = useActionState(reportarAccion, null);
+  // Lo digitado en la rejilla de un desagregado, con el valor de la base que tenía cada campo al cambiarlo (anexo 14C, D9).
+  const [edicion, setEdicion] = useState<Edicion>(() => (datos.categorias ? semilla(estado, pintadosDe({ ...datos, categorias: datos.categorias })) : {}));
 
   // Un desagregado se reporta por su rejilla (anexo 14C, §5.4), también cuando quedó entero «No aplica» porque ninguna
   // categoría aplicó: se corrige reportando alguna fila. El «No aplica» de toda la medición que puso una persona, como siempre.
   const categorias = datos.categorias;
   if (categorias && (!datos.noAplica || datos.motivo === MOTIVO_TODAS_NO_APLICAN)) {
+    const rejilla = { ...datos, categorias };
+    const pintados = pintadosDe(rejilla);
     const abiertaSinReportar = datos.estado === "abierta" && !datos.reportada && !datos.noAplica;
+    // Como en el formulario de siempre, «No aplica en este periodo» se abre solo cuando el total divide por cero.
+    const dividePorCero = rejillaCalculada(rejilla, edicion).total?.sinResultado === "division_por_cero";
     return (
       <div className="flex min-w-0 flex-col gap-4">
         <form action={enviar} onSubmit={enviarConBoton(enviar)} className={CAJA}>
@@ -149,15 +157,22 @@ export function FormularioReporte({ datos, volver, administra = false }: { datos
           <input type="hidden" name="volver" value={volver} />
           <input type="hidden" name="periodo" value={datos.periodo} />
           <RejillaDeCategorias
-            datos={{ ...datos, categorias }}
+            datos={rejilla}
             estado={estado}
+            edicion={edicion}
+            alCambiar={(campo, valor) => {
+              setEdicion((actual) => conCambio(actual, pintados, campo, valor));
+              setConfirmado(false);
+            }}
+            confirmado={confirmado}
+            alConfirmar={setConfirmado}
             pendiente={pendiente}
             alPulsar={anotarBoton}
             mensaje={estado && !(estado.ok === false && estado.confirmar) ? <Mensaje estado={estado} /> : null}
           />
         </form>
-        {datos.noAplica ? null : <NoAplica medicionId={datos.medicionId} volver={volver} abierto={false} />}
-        {administra && abiertaSinReportar ? <ActualizarCategorias medicionId={datos.medicionId} /> : null}
+        {datos.noAplica ? null : <NoAplica medicionId={datos.medicionId} volver={volver} abierto={dividePorCero} />}
+        {administra && abiertaSinReportar ? <ActualizarCategorias medicionId={datos.medicionId} etiqueta={datos.etiqueta} conExplicacion /> : null}
       </div>
     );
   }

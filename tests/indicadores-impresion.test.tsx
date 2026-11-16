@@ -55,6 +55,8 @@ import {
   dimensionDePrueba,
   indicadorDePrueba,
   loteImportado,
+  nadaQueMedir,
+  OBRAS,
   versionTrimestral,
   type IndicadorDePrueba,
 } from "./utiles/indicadores";
@@ -701,6 +703,24 @@ describe("FichaImpresa", () => {
       // Sin desagregar, no hay bloque.
       const { ind: otro } = await trimestralMedido(tx);
       expect(await impreso(tx, await sesionAdmin(tx), otro)).not.toMatch(/Por [^<]* · Tercer trimestre/);
+    }));
+
+  it("el último periodo sin nada que medir es el del desglose impreso, con el total «No aplica»; una fila «No aplica» va sin valores (ronda 1, I2 e I3)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien, dimension } = await desagregadoDePrueba(tx, { procesoId: p.id, ahora: AHORA, aprobadaEn: APROBADA, reportados: { "2026-T2": "182" } });
+      await nadaQueMedir(tx, quien, ind.id, dimension.categorias, "2026-T3");
+      const html = await impreso(tx, quien, ind);
+      const desde = html.indexOf(`Por ${dimension.nombre} · Tercer trimestre de 2026`);
+      expect(desde).toBeGreaterThan(-1);
+      const bloque = html.slice(desde, html.indexOf("Representación gráfica", desde));
+      const total = bloque.slice(bloque.indexOf(">Total<"));
+      expect(total).toMatch(/data-variante="sin-dato"[^>]*>No aplica</);
+      expect(total).not.toContain("Sin dato");
+      // La sexta sede, «No aplica»: sin sus valores, con su motivo.
+      const sexta = bloque.slice(bloque.indexOf(">Puesto de salud 5<"), bloque.indexOf(">Total<"));
+      expect(sexta).not.toMatch(/>\d+</);
+      expect(sexta).toContain(OBRAS);
     }));
 
   it("el impreso y el Excel de una ficha sin variables propias dicen que el dato llega de otras fuentes; un mixto, que lo digita una persona (ronda 1)", () =>

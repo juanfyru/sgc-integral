@@ -6,14 +6,15 @@ import type { TransactionSql } from "postgres";
 import { maestroDeCategorias } from "@/db/consultas/indicadores/dimensiones";
 import { escribirFoto } from "@/db/consultas/indicadores/fotos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { asegurarMediciones, reportar, versionDelPeriodo, type FilaDeReporte } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, escribirTotal, reportar, versionDelPeriodo, type FilaDeReporte } from "@/db/consultas/indicadores/mediciones";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { CALCULOS, CLAVES_DE_CALCULO, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { listaDelPeriodo } from "@/lib/indicadores/categorias";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
+import { CERO } from "@/lib/indicadores/formula/fraccion";
 import { contiene, fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
-import type { Consolidacion, Periodicidad, Tendencia, Toma } from "@/lib/indicadores/tipos";
+import { MOTIVO_NADA_QUE_MEDIR, type Consolidacion, type Periodicidad, type Tendencia, type Toma } from "@/lib/indicadores/tipos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { usuarioDePrueba } from "./tramites";
@@ -614,4 +615,21 @@ export async function desagregadoDePrueba(
     );
   }
   return { ind, quien, dimension: { ...dimension, nombre }, mediciones };
+}
+
+/**
+ * Deja la medición `periodo` de un desagregado de `desagregadoDePrueba` como la deja la propagación cuando no hay nada que
+ * medir (anexo 14C, §5.7): las cinco primeras sedes en 0 ÷ 0 («Sin casos»), la sexta «No aplica», el total en cero escrito por
+ * el sistema y la medición reportada y «No aplica» con `MOTIVO_NADA_QUE_MEDIR`. Devuelve su id. Solo dentro de `revertida`.
+ */
+export async function nadaQueMedir(tx: TransactionSql, quien: SesionFlujo, indicadorId: number, categorias: readonly number[], periodo: string): Promise<number> {
+  const [m] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`;
+  const medicionId = Number(m.id);
+  const filas = filasDeMaqueta(categorias).map((f, i) => (i < 5 ? { categoriaId: f.categoriaId, valores: { A: "0", B: "0" } } : f));
+  await reportar(quien, { medicionId, valores: {}, filas, parcial: true, confirmado: true }, { sql: tx });
+  const version = (await versionDelPeriodo(tx, indicadorId, periodo))!;
+  await escribirTotal(tx, medicionId, version, { A: CERO, B: CERO }, new Date());
+  await tx`UPDATE mediciones SET no_aplica = true, no_aplica_motivo = ${MOTIVO_NADA_QUE_MEDIR}, reportada_por = ${quien.usuarioId}, reportada_en = now()
+    WHERE id = ${medicionId}`;
+  return medicionId;
 }

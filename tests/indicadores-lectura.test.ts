@@ -13,7 +13,7 @@ import { analizar } from "@/db/consultas/indicadores/analisis";
 import { asegurarConstancias, registrarConstancia } from "@/db/consultas/indicadores/constancias";
 import { abrirCambio } from "@/db/consultas/indicadores/fichas";
 import { resolverImpactoNoAfecta } from "@/db/consultas/indicadores/impactos";
-import { desgloseDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
+import { desagregacionDelAnio, desgloseDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { consultaDeFiltro, filtroDeConsulta, listarIndicadores, type FiltroDeLista } from "@/db/consultas/indicadores/lista";
 import { matrizDelAnio, type CeldaDeMatriz } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
@@ -21,12 +21,17 @@ import { retirar } from "@/db/consultas/indicadores/operacion";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import {
   desagregadoDePrueba,
+  dimensionDePrueba,
+  filasDeMaqueta,
   indicadorDePrueba,
+  nadaQueMedir,
   versionAutomatica,
+  versionNueva,
   versionTrimestral,
   type IndicadorDePrueba,
   type OpcionesIndicadorDePrueba,
 } from "./utiles/indicadores";
+import { MOTIVO_NADA_QUE_MEDIR } from "@/lib/indicadores/tipos";
 import { normaDePrueba } from "./utiles/normograma";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -865,9 +870,65 @@ describe("lo que se ve de un desagregado (14C, Tarea 15; anexo 14C §5.6)", () =
       expect(filas.find((f) => f.id === sinDesagregar.id)).toMatchObject({ enCritico: null, dimension: null });
 
       const anio = (await resultadosDelAnio(quien, ind.id, 2026, opc(tx))).filas;
-      expect(anio.find((f) => f.periodo === "2026-T3")).toMatchObject({ enCritico: 1, dimension: dimension.nombre });
-      // Un periodo abierto sin reportar y uno que no ha terminado no tienen marca.
-      expect(anio.find((f) => f.periodo === "2026-T2")).toMatchObject({ enCritico: null, dimension: null });
-      expect(anio.find((f) => f.periodo === "2026-T4")).toMatchObject({ enCritico: null, dimension: null });
+      expect(anio.find((f) => f.periodo === "2026-T3")).toMatchObject({ enCritico: 1, dimension: dimension.nombre, actualizable: false });
+      // Un periodo abierto sin reportar no tiene marca, pero sí su dimensión y se le pueden actualizar las categorías; uno
+      // que no ha terminado no tiene medición.
+      expect(anio.find((f) => f.periodo === "2026-T2")).toMatchObject({ enCritico: null, dimension: dimension.nombre, actualizable: true });
+      expect(anio.find((f) => f.periodo === "2026-T4")).toMatchObject({ enCritico: null, dimension: null, actualizable: false });
+      // Sin desagregar, nada que actualizar.
+      const otro = (await resultadosDelAnio(quien, sinDesagregar.id, 2026, opc(tx))).filas;
+      expect(otro.every((f) => f.dimension === null && f.actualizable === false)).toBe(true);
+    }));
+
+  it("una fila «No aplica» no lleva los valores que tenía antes de marcarla, aunque sigan guardados (ronda 1, I2)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien, dimension, mediciones } = await desagregadoDePrueba(tx, { procesoId: p.id, ahora: AHORA, aprobadaEn: APROBADA, reportados: { "2026-T3": "182" } });
+      // La corrección marca «No aplica» la segunda sede, que tenía 43 de 50.
+      const filas = filasDeMaqueta(dimension.categorias).map((f, i) => (i === 1 ? { categoriaId: f.categoriaId, valores: {}, noAplica: "No atendió pacientes en el trimestre" } : f));
+      await reportar(quien, { medicionId: mediciones["2026-T3"], valores: {}, filas, parcial: false, confirmado: true }, opc(tx));
+      const [t3] = await desgloseDelAnio(tx, ind.id, 2026);
+      expect(t3.filas[1]).toMatchObject({ estado: "no_aplica", valores: { A: null, B: null }, numeros: { A: null, B: null }, resultado: null });
+      expect(t3.total!.valores).toEqual({ A: "232", B: "270" });
+      // Las celdas siguen guardadas: al quitarle el «No aplica» vuelven.
+      const [celdas] = await tx`SELECT count(*)::int AS n FROM medicion_valores WHERE medicion_id = ${mediciones["2026-T3"]} AND categoria_id = ${dimension.categorias[1]}`;
+      expect(celdas.n).toBe(2);
+    }));
+
+  it("el «No aplica» que deja la propagación cuando no hay nada que medir entra al desglose, y el desglose lo dice (ronda 1, I3)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien, dimension } = await desagregadoDePrueba(tx, { procesoId: p.id, ahora: AHORA, aprobadaEn: APROBADA, reportados: { "2026-T2": "182" } });
+      const t3 = await nadaQueMedir(tx, quien, ind.id, dimension.categorias, "2026-T3");
+      const desgloses = await desgloseDelAnio(tx, ind.id, 2026);
+      expect(desgloses.map((d) => [d.periodo, d.noAplica])).toEqual([
+        ["2026-T2", null],
+        ["2026-T3", MOTIVO_NADA_QUE_MEDIR],
+      ]);
+      expect(desgloses[1].medicionId).toBe(t3);
+      expect(desgloses[1].filas.slice(0, 5).every((f) => f.estado === "sin_casos")).toBe(true);
+      // El «No aplica» de toda la medición puesto por una persona sigue fuera.
+      await tx`UPDATE mediciones SET no_aplica_motivo = 'No hubo auditorías en el trimestre' WHERE id = ${t3}`;
+      expect((await desgloseDelAnio(tx, ind.id, 2026)).map((d) => d.periodo)).toEqual(["2026-T2"]);
+    }));
+
+  it("desagregacionDelAnio: los periodos medidos por categoría y la dimensión que rige el año; un año sin desagregar no tiene (ronda 1, M5 y M7)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, dimension, mediciones } = await desagregadoDePrueba(tx, { procesoId: p.id, ahora: AHORA, aprobadaEn: APROBADA, reportados: { "2026-T2": "150", "2026-T3": "182" } });
+      expect(await desagregacionDelAnio(tx, ind.id, 2026)).toEqual({
+        medidos: [
+          { medicionId: mediciones["2026-T2"], periodo: "2026-T2" },
+          { medicionId: mediciones["2026-T3"], periodo: "2026-T3" },
+        ],
+        dimension: dimension.nombre,
+      });
+      // Un indicador que se midió sin desagregar en 2025 y se desagrega desde 2026.
+      const admin = await sesionAdmin(tx);
+      const sede = await dimensionDePrueba(tx, `Servicio ${p.id}`, ["Norte", "Sur"]);
+      const antes = await indicadorDePrueba(tx, { procesoId: p.id, periodicidad: "trimestral", inicioMedicion: "2025-T1", aprobadaEn: new Date("2024-12-15T15:00:00Z") });
+      await versionNueva(tx, { indicadorId: antes.id, usuarioId: admin.usuarioId, tipoCambio: "mayor", rigeDesde: "2026-T1", aprobadaEn: new Date("2025-12-20T15:00:00Z"), periodicidad: "trimestral", dimensionId: sede.id });
+      expect(await desagregacionDelAnio(tx, antes.id, 2025)).toEqual({ medidos: [], dimension: null });
+      expect((await desagregacionDelAnio(tx, antes.id, 2026)).dimension).toBe(`Servicio ${p.id}`);
     }));
 });

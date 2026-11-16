@@ -12,6 +12,7 @@ import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { InsigniaEnCritico, InsigniaSemaforo } from "../InsigniaSemaforo";
+import { ActualizarCategorias } from "./ActualizarCategorias";
 import { VolverACalcular } from "./VolverACalcular";
 
 /** Las columnas de las variables viven con los textos de la ficha: la impresa y el Excel las usan también. */
@@ -140,7 +141,8 @@ function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Sopor
  * cuántas categorías quedaron en Crítico («1 en Crítico», anexo 14C §5.6), que no cambia el estado del total. Una fila que
  * calcula el sistema dice cuándo se tomaron sus datos («Calculado por el sistema · foto del …») o cuándo se tomarán («Se
  * calcula el …»), y quien administra (`puedeVolverACalcular`) vuelve a calcular la foto de un cálculo de flujo sin cerrar ni
- * reabrir (anexo 14B, §5.4). Cada fila lleva
+ * reabrir (anexo 14B, §5.4), y actualiza las categorías de un desagregado abierto sin reportar (`puedeActualizarCategorias`,
+ * anexo 14C §5.3), aunque no lo mida. Cada fila lleva
  * el ancla `periodo-<clave>`: la matriz del año enlaza a ella. Las columnas de las variables son las que pasa quien llama
  * (`columnasDeVariables`: la unión de las letras del año); un periodo cuya ficha no tiene una, la deja en «—».
  */
@@ -155,6 +157,7 @@ export function TablaDelAnio({
   puedeReabrir = false,
   puedeCerrarDeNuevo = false,
   puedeVolverACalcular = false,
+  puedeActualizarCategorias = false,
   historial = null,
   periodosSinCumplir = 3,
 }: {
@@ -170,12 +173,14 @@ export function TablaDelAnio({
   puedeCerrarDeNuevo?: boolean;
   /** Quien administra un indicador activo vuelve a calcular la foto de un cálculo de flujo (anexo 14B, §5.4). */
   puedeVolverACalcular?: boolean;
+  /** Quien administra un indicador activo actualiza las categorías de un desagregado abierto sin reportar (anexo 14C, §5.3). */
+  puedeActualizarCategorias?: boolean;
   /** El historial de cada medición corregida, por medición. */
   historial?: Map<number, EntradaDeHistorial[]> | null;
   /** El parámetro del incumplimiento repetido (spec §10.3), para la marca «3 periodos sin cumplir». */
   periodosSinCumplir?: number;
 }) {
-  const conAcciones = puedeMedir || puedeAnalizar || puedeReabrir || puedeCerrarDeNuevo || puedeVolverACalcular;
+  const conAcciones = puedeMedir || puedeAnalizar || puedeReabrir || puedeCerrarDeNuevo || puedeVolverACalcular || puedeActualizarCategorias;
   const zona = zonaHoraria();
   const columnas: ColumnaTabla[] = [
     { clave: "periodo", etiqueta: "Periodo" },
@@ -227,6 +232,7 @@ export function TablaDelAnio({
         // Corregida y sin cerrar: solo la reapertura marca «corregida».
         const reabierta = puedeCerrarDeNuevo && tocable && f.corregida && f.estado !== "cerrada";
         const recalculable = puedeVolverACalcular && tocable && f.recalculable;
+        const actualizable = puedeActualizarCategorias && tocable && f.actualizable && f.medicionId !== null;
         return (
           <tr key={f.periodo} id={ancla} className="scroll-mt-24">
             {cabecera}
@@ -273,6 +279,7 @@ export function TablaDelAnio({
                   {reabrible ? <DialogoReabrir medicionId={f.medicionId!} codigo={codigo} etiqueta={f.etiqueta} /> : null}
                   {reabierta ? <CerrarDeNuevo medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
                   {recalculable ? <VolverACalcular medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
+                  {actualizable ? <ActualizarCategorias medicionId={f.medicionId!} etiqueta={f.etiqueta} /> : null}
                 </div>
               </td>
             ) : null}

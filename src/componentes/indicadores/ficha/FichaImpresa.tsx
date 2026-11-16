@@ -362,10 +362,11 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
                 ))}
                 <td className={`${TD} bg-muted whitespace-nowrap text-right font-bold tabular-nums`}>{desglose.total?.resultado ?? "—"}</td>
                 <td className={`${TD} ficha-color-exacto bg-muted`}>
-                  {desglose.total ? (
+                  {/* La medición entera «No aplica» (ninguna categoría aplicó, o no hubo nada que medir) lo dice en el total. */}
+                  {desglose.total && desglose.noAplica === null ? (
                     <InsigniaSemaforo semaforo={desglose.total.semaforo} cumple={desglose.total.cumple} conResultado={desglose.total.resultado !== null} />
                   ) : (
-                    <InsigniaSemaforo semaforo={null} noAplica />
+                    <InsigniaSemaforo semaforo={null} noAplica={desglose.noAplica !== null} />
                   )}
                 </td>
               </tr>

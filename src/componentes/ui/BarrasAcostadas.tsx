@@ -28,7 +28,8 @@ const alineacion = (pct: number) => (pct < 15 ? "" : pct > 85 ? "-translate-x-fu
 export function BarrasAcostadas({ titulo, filas, meta }: { titulo: string; filas: FilaDeBarra[]; meta: { posicion: number; texto: string } | null }) {
   const lectura = meta ? `${titulo} · ${meta.texto}` : titulo;
   return (
-    <figure className="tubo-color-exacto flex min-w-0 flex-col gap-2">
+    // La figura lleva su propio nombre: sin él, lo tomaría de la tabla entera del `figcaption`.
+    <figure className="tubo-color-exacto flex min-w-0 flex-col gap-2" aria-label={lectura}>
       <div
         aria-hidden="true"
         className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-sm sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] sm:gap-y-2"

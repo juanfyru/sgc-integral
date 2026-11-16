@@ -3,16 +3,21 @@ import { ETIQUETA_SEMAFORO, NO_ALCANZA_LA_META, sinAlcanzarLaMeta, type Semaforo
 import { cuenta } from "@/lib/plural";
 
 /**
- * Cuántas categorías de un desagregado quedaron en Crítico (anexo 14C, §5.6), junto al estado del total: «1 en Crítico», y
- * para los lectores de pantalla con el nombre de la dimensión («1 categoría de Sede en Crítico»). Sin ninguna, nada: la marca
- * no exige análisis ni cambia el color del total.
+ * Cuántas categorías de un desagregado quedaron en Crítico (anexo 14C, §5.6), junto al estado del total: «1 en Crítico» y, a
+ * la vista, el nombre de la dimensión («por Sede»); para los lectores de pantalla, una sola frase («1 categoría de Sede en
+ * Crítico»). No se parte en dos renglones. Sin ninguna, nada: la marca no exige análisis ni cambia el color del total.
  */
 export function InsigniaEnCritico({ n, dimension }: { n: number | null; dimension: string | null }) {
   if (n === null || n <= 0) return null;
   const categorias = cuenta(n, "categoría", "categorías");
   return (
-    <span role="img" aria-label={dimension ? `${categorias} de ${dimension} en Crítico` : `${categorias} en Crítico`} className="inline-flex">
+    <span
+      role="img"
+      aria-label={dimension ? `${categorias} de ${dimension} en Crítico` : `${categorias} en Crítico`}
+      className="inline-flex items-center gap-1 whitespace-nowrap"
+    >
       <Insignia variante="critico">{`${n} en Crítico`}</Insignia>
+      {dimension ? <span className="text-xs text-muted-foreground">{`por ${dimension}`}</span> : null}
     </span>
   );
 }

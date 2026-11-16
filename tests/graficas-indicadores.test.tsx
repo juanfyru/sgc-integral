@@ -579,6 +579,8 @@ describe("las barras acostadas de un desagregado (14C, Tarea 15; maqueta 8)", ()
     expect(cuenta(html, /<th scope="row">/g)).toBe(7);
     expect(html).not.toContain("NaN");
     expect(html).toMatch(/^<figure class="tubo-color-exacto /);
+    // La figura tiene su propio nombre: no lo toma de la tabla entera (ronda 1, M4).
+    expect(html).toMatch(/^<figure[^>]*aria-label="Por Sede, octubre de 2026 · Meta 85 %"/);
   });
 });
 

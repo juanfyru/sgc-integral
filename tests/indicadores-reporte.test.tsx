@@ -1137,6 +1137,7 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
       recalculable: false,
       enCritico: null,
       dimension: null,
+      actualizable: false,
       ...o,
     });
     const tabla = (filas: FilaDelAnio[]) =>
@@ -1223,8 +1224,29 @@ describe("las páginas de un desagregado (14C, Tarea 15)", () => {
       const admin = await sesionAdmin(tx);
       await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por) VALUES (${ind.id}, ${admin.usuarioId}, 'mide', ${admin.usuarioId})`;
       contexto.sesion = valida(admin);
-      expect(await reporte(ind.codigo, "2026-T1")).toMatch(/>Actualizar categorías<\/button>/);
+      expect(await reporte(ind.codigo, "2026-T1")).toMatch(/>Actualizar categorías<span class="sr-only"> · Primer trimestre de 2026<\/span><\/button>/);
       expect(await reporte(ind.codigo, "2026-T3")).not.toContain("Actualizar categorías");
+    }));
+
+  it("/indicadores/[codigo]: quien administra, aunque no mida, actualiza las categorías desde la tabla del año; los demás no (ronda 1, D1)", () =>
+    enTransaccion(async (tx) => {
+      const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
+      const sigla = `U${Date.now() % 100_000_000}`;
+      const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+        VALUES (${macro.id}, ${`Proceso ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
+      const { ind, quien } = await desagregadoDePrueba(tx, { procesoId: Number(p.id), ahora: new Date(), aprobadaEn: APROBADA, reportados: { "2026-T2": "150", "2026-T3": "182" } });
+      // Quien administra no está designado: no puede abrir la pantalla de reportar.
+      const admin = await sesionAdmin(tx);
+      contexto.sesion = valida(admin);
+      await expect(reporte(ind.codigo, "2026-T1")).rejects.toThrow("NO_ENCONTRADA");
+      const html = await pagina(ind.codigo, { vista: "resultados", anio: "2026" });
+      // Solo la medición abierta sin reportar (el primer trimestre) lo ofrece.
+      expect(html.match(/>Actualizar categorías<span class="sr-only"> · ([^<]*)<\/span>/g)).toEqual([
+        '>Actualizar categorías<span class="sr-only"> · Primer trimestre de 2026</span>',
+      ]);
+      // Quien mide, sin administrar, no.
+      contexto.sesion = valida(quien);
+      expect(await pagina(ind.codigo, { vista: "resultados", anio: "2026" })).not.toContain("Actualizar categorías");
     }));
 
   it("/indicadores/[codigo]: «Por {dimensión}» con las barras del periodo elegido; un periodo que no se midió cae al último", () =>

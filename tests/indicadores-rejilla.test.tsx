@@ -23,7 +23,9 @@ import { RejillaDeCategorias } from "@/componentes/indicadores/medicion/RejillaD
 import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import type { CategoriaDeReporte, DatosDeReporte, FilaDelAnio, VariableAjena } from "@/db/consultas/indicadores/lectura";
 import type { FilaDeLista } from "@/db/consultas/indicadores/lista";
+import { rejillaEnVivo } from "@/lib/indicadores/categorias";
 import type { EstadoReporte } from "@/lib/indicadores/reporte";
+import { conCambio, pintadosDe, semilla, valorEn } from "@/lib/indicadores/rejilla-formulario";
 import { MOTIVO_DATO_SIN_CATEGORIA, MOTIVO_TODAS_NO_APLICAN } from "@/lib/indicadores/tipos";
 
 const OBRAS = "Cerrado por obras todo octubre.";
@@ -96,10 +98,23 @@ const DATOS: DatosDeReporte = {
   dimension: "Sede",
 };
 
-const rejilla = (o: Partial<DatosDeReporte> = {}, estado: EstadoReporte = null) =>
-  renderToStaticMarkup(
-    <RejillaDeCategorias datos={{ ...DATOS, ...o, categorias: o.categorias ?? SEDES }} estado={estado} pendiente={false} alPulsar={() => {}} mensaje={null} />,
+/** La rejilla sola, con la edición que siembra `estado` (como la arma `FormularioReporte`). */
+const rejilla = (o: Partial<DatosDeReporte> = {}, estado: EstadoReporte = null) => {
+  const datos = { ...DATOS, ...o, categorias: o.categorias ?? SEDES };
+  return renderToStaticMarkup(
+    <RejillaDeCategorias
+      datos={datos}
+      estado={estado}
+      edicion={semilla(estado, pintadosDe(datos))}
+      alCambiar={() => {}}
+      confirmado={false}
+      alConfirmar={() => {}}
+      pendiente={false}
+      alPulsar={() => {}}
+      mensaje={null}
+    />,
   );
+};
 
 const formulario = (o: Partial<DatosDeReporte> = {}, administra = false) =>
   renderToStaticMarkup(<FormularioReporte datos={{ ...DATOS, ...o }} volver="/indicadores/PYP-ID-003" administra={administra} />);
@@ -146,7 +161,7 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     expect(html).toContain("85,9 %");
     expect(html).toContain("Cumple: 85,9 % frente a una meta de 85 %.");
     // La sede en Crítico se nombra, aunque el total cumpla.
-    expect(html).toContain("1 en Crítico: Puesto de salud 3");
+    expect(html).toContain("1 en Crítico: Puesto de salud 3 (55 %)");
     expect(html).not.toMatch(/Falta \d+ categor/);
     // Nada de `opacity` para atenuar.
     expect(html).not.toMatch(/opacity/);
@@ -167,7 +182,7 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     expect(valorDe(campo(html, "ona_11"))).toBe("0");
     expect(valorDe(campo(html, "omotivo_11"))).toBe("");
     // Nunca un `na_` oculto en «0»: quitaría el «No aplica» que otra persona acaba de poner.
-    expect(html).not.toMatch(/<input[^>]*type="hidden"[^>]*name="na_/);
+    expect(html).not.toMatch(/<input(?=[^>]*type="hidden")(?=[^>]*name="na_)[^>]*>/);
   });
 
   it("mientras falta una categoría lo dice con su nombre y no hay total", () => {
@@ -192,7 +207,7 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     const estado: EstadoReporte = {
       ok: false,
       error: "Puesto de salud 2: «Pacientes auditados» debe ser un número",
-      valores: { c_11_A: "999", o_11_A: "999", ona_11: "1", omotivo_11: "otra cosa", na_12: "1", ona_12: "0", motivo_12: "Sin pacientes este mes" },
+      valores: { c_11_A: "999", o_11_A: "182", ona_11: "1", omotivo_11: "otra cosa", na_12: "1", ona_12: "0", motivo_12: "Sin pacientes este mes", omotivo_12: "" },
     };
     const html = rejilla({}, estado);
     expect(valorDe(campo(html, "c_11_A"))).toBe("999");
@@ -230,6 +245,117 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     expect(html).toContain("Falta un dato");
     expect(html).toContain("Dato compartido · No se cambia desde aquí");
     expect(html).toMatch(/<button[^>]*value="reportar"[^>]*>Reportar lo mío<\/button>/);
+    // Ya reportada, la rejilla solo ofrece «Reportar», también en un mixto al que le falta el dato (ronda 1, M2).
+    const reportado = formulario({ ...mixto, reportada: true, estado: "reportada" });
+    expect(reportado).toMatch(/<button[^>]*value="reportar"[^>]*>Reportar<\/button>/);
+    expect(reportado).not.toContain("Reportar lo mío");
+  });
+
+  it("la pregunta de la confirmación y su casilla van en el pie fijo, con los botones (ronda 1, I1)", () => {
+    const pregunta = "El resultado (85,9 %) se aleja más de 30 % del segundo trimestre de 2026 (50 %). ¿Los datos son correctos?";
+    const html = rejilla({}, { ok: false, error: pregunta, confirmar: pregunta });
+    const pie = html.indexOf('data-pie="rejilla"');
+    expect(pie).toBeGreaterThan(-1);
+    const enElPie = html.slice(pie);
+    expect(enElPie).toContain(pregunta);
+    expect(enElPie).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*name="confirmado")(?=[^>]*id="rejilla-confirmado")[^>]*>/);
+    expect(enElPie).toContain("Sí, los datos son correctos");
+    expect(html.slice(0, pie)).not.toContain('name="confirmado"');
+    // El pie toma su alto en una variable: lo que recibe el foco se desplaza por encima de él.
+    expect(html).toContain("scroll-mb-[calc(var(--alto-pie,10rem)_+_0.5rem)]");
+  });
+
+  it("en el teléfono, el pie dice lo que diría el resultado del total: la división por cero y el análisis obligatorio (ronda 1, M3)", () => {
+    const ceros = SEDES.map((c) => (c.id === 16 ? c : { ...c, valores: { A: "0", B: "0" } }));
+    const html = rejilla({ categorias: ceros });
+    expect(html.slice(html.indexOf('data-pie="rejilla"'))).toContain("No se puede calcular: división por cero.");
+    const critico = rejilla({ categorias: SEDES.map((c) => (c.id === 11 ? { ...c, valores: { A: "10", B: "200" } } : c)) });
+    expect(critico.slice(critico.indexOf('data-pie="rejilla"'))).toContain("el análisis es obligatorio");
+    // «No aplica en este periodo» se abre solo cuando el total divide por cero, como en el formulario de siempre.
+    expect(formulario({ categorias: ceros })).toMatch(/<details open=""/);
+    expect(formulario()).not.toMatch(/<details open=""/);
+  });
+});
+
+describe("la rejilla del formulario, sin render (ronda 1, M8)", () => {
+  const pintados = pintadosDe({ ...DATOS, categorias: SEDES });
+
+  it("lo pintado sale de la base: las celdas propias con coma, la casilla y el motivo de una fila de persona", () => {
+    expect(pintados.get("c_11_A")).toBe("182");
+    expect(pintados.get("na_16")).toBe("1");
+    expect(pintados.get("motivo_16")).toBe(OBRAS);
+    expect(pintados.get("na_11")).toBe("0");
+    expect(pintadosDe({ ...DATOS, categorias: [sede(20, "Norte", "3.5", null)] }).get("c_20_A")).toBe("3,5");
+    // Una fila del sistema no tiene casilla.
+    expect(pintadosDe({ ...DATOS, categorias: [{ ...sede(21, "Sur", null, null, MOTIVO_DATO_SIN_CATEGORIA), delSistema: true }] }).has("na_21")).toBe(false);
+  });
+
+  it("sin JavaScript, siembra solo lo que la persona cambió frente a lo que se envió como original (M1)", () => {
+    const valores = {
+      // Cambió la celda: entra.
+      c_11_A: "999",
+      o_11_A: "182",
+      // Se envió igual que su original (que entonces era 43): no entra, aunque hoy la base diga otra cosa.
+      c_12_A: "43",
+      o_12_A: "43",
+      // Marcó una casilla que se pintó sin marcar, con su motivo: entran.
+      na_13: "1",
+      ona_13: "0",
+      motivo_13: "Sin pacientes este mes",
+      omotivo_13: "",
+      // Desmarcó una que se pintó marcada: entra desmarcada; su motivo se envió igual: no entra.
+      ona_16: "1",
+      motivo_16: OBRAS,
+      omotivo_16: OBRAS,
+      // Una casilla sin marcar que se pintó sin marcar: no entra.
+      ona_14: "0",
+    };
+    const conOtraBase = pintadosDe({ ...DATOS, categorias: SEDES.map((c) => (c.id === 12 ? { ...c, valores: { A: "45", B: "50" } } : c)) });
+    const e = semilla({ ok: false, error: "x", valores }, conOtraBase);
+    expect(Object.keys(e).sort()).toEqual(["c_11_A", "motivo_13", "na_13", "na_16"]);
+    expect(valorEn(e, conOtraBase, "c_11_A")).toBe("999");
+    expect(valorEn(e, conOtraBase, "c_12_A")).toBe("45");
+    expect(valorEn(e, conOtraBase, "na_13")).toBe("1");
+    expect(valorEn(e, conOtraBase, "na_16")).toBe("0");
+    expect(semilla(null, conOtraBase)).toEqual({});
+    expect(semilla({ ok: true, aviso: "ok" }, conOtraBase)).toEqual({});
+  });
+
+  it("lo que la persona cambia se muestra mientras la base no cambie ese campo; si cambia, se muestra lo nuevo", () => {
+    const e = conCambio({}, pintados, "c_11_A", "190");
+    expect(valorEn(e, pintados, "c_11_A")).toBe("190");
+    expect(valorEn(e, pintados, "c_11_B")).toBe("200");
+    const repintada = pintadosDe({ ...DATOS, categorias: SEDES.map((c) => (c.id === 11 ? { ...c, valores: { A: "195", B: "200" } } : c)) });
+    expect(valorEn(e, repintada, "c_11_A")).toBe("195");
+  });
+
+  it("rejillaEnVivo: con lo propio completo y sin el dato ajeno, el total espera; con todas las filas «No aplica», ninguna aplica (M9)", () => {
+    const d = {
+      calculo: DATOS.calculo,
+      regla: DATOS.regla,
+      unidad: DATOS.unidad,
+      variables: [
+        { letra: "A", nombre: "Atendidos", capturaMin: null, capturaMax: null, admiteNegativos: false, ajena: false },
+        { letra: "B", nombre: "Auditados", capturaMin: null, capturaMax: null, admiteNegativos: true, ajena: true },
+      ],
+    };
+    const espera = rejillaEnVivo(d, [
+      { id: 1, nombre: "Norte", noAplica: false, textos: { A: "4", B: "5" } },
+      { id: 2, nombre: "Sur", noAplica: false, textos: { A: "3", B: "" } },
+    ]);
+    expect(espera.total).toEqual({ clase: "espera" });
+    expect(espera.filas.map((f) => [f.estado, f.esperaDato])).toEqual([
+      ["completa", false],
+      ["incompleta", true],
+    ]);
+    // Sin lo propio, faltan (aunque también falte lo ajeno).
+    expect(rejillaEnVivo(d, [{ id: 2, nombre: "Sur", noAplica: false, textos: { A: "", B: "" } }]).total).toEqual({ clase: "faltan", categorias: ["Sur"] });
+    const ninguna = rejillaEnVivo(d, [
+      { id: 1, nombre: "Norte", noAplica: true, textos: { A: "4", B: "5" } },
+      { id: 2, nombre: "Sur", noAplica: true, textos: {} },
+    ]);
+    expect(ninguna.total).toEqual({ clase: "ninguna_aplica" });
+    expect(ninguna.enCritico).toEqual([]);
   });
 });
 
@@ -261,7 +387,7 @@ describe("FormularioReporte con una rejilla", () => {
   });
 
   it("«Actualizar categorías», solo a quien administra y en una medición abierta sin reportar", () => {
-    expect(formulario({}, true)).toMatch(/<button[^>]*type="submit"[^>]*>Actualizar categorías<\/button>/);
+    expect(formulario({}, true)).toMatch(/<button[^>]*type="submit"[^>]*>Actualizar categorías<span class="sr-only"> · Octubre de 2026<\/span><\/button>/);
     expect(formulario({}, false)).not.toContain("Actualizar categorías");
     expect(formulario({ reportada: true, estado: "reportada" }, true)).not.toContain("Actualizar categorías");
     expect(formulario({ categorias: null, dimension: null }, true)).not.toContain("Actualizar categorías");
@@ -304,6 +430,8 @@ describe("la marca «n en Crítico» (anexo 14C, §5.6)", () => {
     );
     expect(veces(html, ">1 en Crítico<")).toBe(1);
     expect(html).toContain('aria-label="1 categoría de Sede en Crítico"');
+    // El nombre de la dimensión, también a la vista (ronda 1, D2).
+    expect(veces(html, ">por Sede<")).toBe(1);
     expect(html).not.toContain("0 en Crítico");
   });
 
@@ -339,9 +467,56 @@ describe("la marca «n en Crítico» (anexo 14C, §5.6)", () => {
       recalculable: false,
       enCritico: 2,
       dimension: "Sede",
+      actualizable: false,
     };
     const html = renderToStaticMarkup(<TablaDelAnio filas={[fila]} variables={[]} anio={2026} codigo="PYP-ID-003" puedeMedir={false} />);
     expect(html).toContain(">2 en Crítico<");
     expect(html).toContain('aria-label="2 categorías de Sede en Crítico"');
+    expect(html).toContain(">por Sede<");
+    expect(html).not.toContain("Actualizar categorías");
+  });
+
+  it("«Actualizar categorías» en las acciones de la tabla del año, a quien administra y en la medición que lo admite (ronda 1, D1)", () => {
+    const base: FilaDelAnio = {
+      periodo: "2026-10",
+      etiqueta: "Octubre de 2026",
+      version: 1,
+      medicionId: 90,
+      estado: "por_reportar",
+      vencida: false,
+      vence: "10 de noviembre de 2026",
+      historica: false,
+      noAplica: false,
+      motivo: null,
+      valores: [],
+      resultado: null,
+      semaforo: null,
+      meta: "≥ 85 %",
+      cumple: null,
+      frase: null,
+      requiereAccion: false,
+      repetido: false,
+      corregida: false,
+      metaTardia: false,
+      sinAnalisis: false,
+      analisis: null,
+      causa: null,
+      accionPropuesta: null,
+      automatica: false,
+      fotoEn: null,
+      seCalcula: null,
+      recalculable: false,
+      enCritico: null,
+      dimension: "Sede",
+      actualizable: true,
+    };
+    const tabla = (f: FilaDelAnio, puede: boolean) =>
+      renderToStaticMarkup(<TablaDelAnio filas={[f]} variables={[]} anio={2026} codigo="PYP-ID-003" puedeMedir={false} puedeActualizarCategorias={puede} />);
+    const html = tabla(base, true);
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>Actualizar categorías<span class="sr-only"> · Octubre de 2026<\/span><\/button>/);
+    expect(html).toContain('<input type="hidden" name="id" value="90"/>');
+    expect(tabla(base, false)).not.toContain("Actualizar categorías");
+    expect(tabla({ ...base, actualizable: false }, true)).not.toContain("Actualizar categorías");
+    expect(tabla({ ...base, deOtraPeriodicidad: true }, true)).not.toContain("Actualizar categorías");
   });
 });

@@ -33,7 +33,8 @@ import {
   type EnteDeLaFicha,
   type ResultadoExterno,
 } from "@/db/consultas/indicadores/constancias";
-import { desgloseDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
+import { desgloseDe } from "@/db/consultas/indicadores/categorias";
+import { desagregacionDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { observacionesDe, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propagacion";
@@ -148,11 +149,14 @@ export async function datosDeResultados(
   if (editando && (sp.historicos !== "editar" || !registra || !editables.some((f) => !f.cerrada))) notFound();
   const vigentes = vista.ficha.contenido.variables.map((v) => ({ letra: v.letra, nombre: v.nombre ?? v.letra }));
 
-  // «Por {dimensión}» (anexo 14C, §5.6), a quien ve el indicador (ya lo decidió `obtenerIndicador`): el periodo de
-  // `?desglose=` si es uno medido del año; si no, sin decir nada, el último medido.
-  const desgloses = await desgloseDelAnio(obtenerSql(), indicador.id, a.anio);
-  const elegido = (typeof sp.desglose === "string" ? desgloses.find((x) => x.periodo === sp.desglose) : undefined) ?? desgloses.at(-1) ?? null;
-  const dimension = elegido?.dimension || vista.ficha.contenido.dimensionNombre;
+  // «Por {dimensión}» (anexo 14C, §5.6), a quien ve el indicador (ya lo decidió `obtenerIndicador`), si el año tiene periodos
+  // medidos por categoría o lo rige una versión desagregada: el periodo de `?desglose=` si es uno medido del año; si no, sin
+  // decir nada, el último medido. Solo se lee el desglose del elegido.
+  const desagregacion = await desagregacionDelAnio(obtenerSql(), indicador.id, a.anio);
+  const pedido = typeof sp.desglose === "string" ? desagregacion.medidos.find((x) => x.periodo === sp.desglose) : undefined;
+  const medida = pedido ?? desagregacion.medidos.at(-1);
+  const elegido = medida ? await desgloseDe(obtenerSql(), medida.medicionId) : null;
+  const dimension = elegido?.dimension || desagregacion.dimension;
 
   return {
     codigo: indicador.codigo,
@@ -172,8 +176,16 @@ export async function datosDeResultados(
     historicos: registra ? { editables, editando, variables: conLetrasDe(vigentes, editables) } : null,
     aviso: avisoDeHistoricos(sp.registrados),
     soportes,
-    cierre: { reabre: c.administra && activo, cierraDeNuevo: c.administra, recalcula: c.administra && activo, historial },
-    desglose: dimension ? { dimension, periodos: desgloses.map((x) => ({ periodo: x.periodo, etiqueta: periodoEnPalabras(x.periodo) })), elegido } : null,
+    cierre: {
+      reabre: c.administra && activo,
+      cierraDeNuevo: c.administra,
+      recalcula: c.administra && activo,
+      actualizaCategorias: c.administra && activo,
+      historial,
+    },
+    desglose: dimension
+      ? { dimension, periodos: desagregacion.medidos.map((x) => ({ periodo: x.periodo, etiqueta: periodoEnPalabras(x.periodo) })), elegido }
+      : null,
   };
 }
 

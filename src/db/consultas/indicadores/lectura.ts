@@ -32,6 +32,7 @@ import { comparacion, fraseDeResultado, textoMeta, textoValor, type Unidad } fro
 import {
   ErrorIndicador,
   ETIQUETA_SEMAFORO,
+  MOTIVO_NADA_QUE_MEDIR,
   MOTIVO_TODAS_NO_APLICAN,
   MOTIVOS_DEL_SISTEMA,
   nombreDeEstado,
@@ -477,8 +478,17 @@ export type FilaDelAnio = {
    * se desagrega o no tiene resultado.
    */
   enCritico: number | null;
-  /** El nombre con que se firmó la dimensión de la versión con que se calculó; `null` sin `enCritico`. */
+  /**
+   * El nombre con que se firmó la dimensión de la versión con que se calculó, si la medición se desagrega (tiene su lista de
+   * categorías); `null` si no.
+   */
   dimension: string | null;
+  /**
+   * Quien administra puede «Actualizar categorías» (anexo 14C, §5.3): el espejo de la guarda de `actualizarCategorias`, una
+   * medición con lista, abierta, sin reportar, no «No aplica» ni histórica. No sale del estado visible (una abierta sin reportar
+   * puede decir «Por reportar» o «Falta un dato»).
+   */
+  actualizable: boolean;
 };
 
 export const anioValido = (anio: number) => Number.isInteger(anio) && anio >= 1900 && anio <= 9999;
@@ -595,8 +605,8 @@ export async function leerPeriodos(
       const fila = m ? filaDeMedicion(m, p, version, regla, exactos, b.soporteObligatorio, ahora) : filaSinMedicion(p, version, regla, ahora);
       const conDato = m !== null && (m.no_aplica === true || typeof m.resultado_exacto === "string");
       const deLaMedicion = (conDato ? b.versiones.find((v) => v.id === Number(m.version_id)) : undefined) ?? version;
-      // La dimensión de la marca «n en Crítico» es la de la versión con que se calculó: la que firmó esas categorías.
-      const dimension = fila.enCritico === null ? null : (deLaMedicion.dimensionNombre ?? version.dimensionNombre);
+      // La dimensión es la de la versión con que se calculó: la que firmó esas categorías.
+      const dimension = m !== null && Array.isArray(m.categorias) ? (deLaMedicion.dimensionNombre ?? version.dimensionNombre) : null;
       return {
         periodo: p,
         version,
@@ -639,23 +649,49 @@ export async function tablaDelAnio(sesion: SujetoVisibilidad, indicadorId: numbe
 }
 
 /**
- * El desglose por categoría (`desgloseDe`, anexo 14C §5.6) de cada periodo medido de `anio` del indicador, en el orden del
- * calendario: las mediciones desagregadas con resultado o que quedaron «No aplica» porque ninguna categoría aplicó. No las que
- * se guardaron sin reportar, ni una «No aplica» de toda la medición puesta por una persona, ni un histórico (sin lista). No
- * comprueba la visibilidad: quien llama ya sabe que la persona ve el indicador.
+ * Las mediciones desagregadas de `anio` del indicador que cuentan como medidas por categoría (anexo 14C, §5.6), en el orden del
+ * calendario: con resultado, o «No aplica» del sistema porque ninguna categoría aplicó (`MOTIVO_TODAS_NO_APLICAN`) o porque no
+ * hubo nada que medir (`MOTIVO_NADA_QUE_MEDIR`: el total divide por cero). No las que se guardaron sin reportar, ni una «No
+ * aplica» de toda la medición puesta por una persona, ni un histórico (sin lista).
+ */
+async function medidasPorCategoria(sql: Cliente, indicadorId: number, anio: number): Promise<{ medicionId: number; periodo: string }[]> {
+  if (!anioValido(anio)) return [];
+  const filas = await sql`SELECT id, periodo FROM mediciones
+    WHERE indicador_id = ${indicadorId} AND left(periodo, 4) = ${String(anio)} AND categorias IS NOT NULL
+      AND (resultado_exacto IS NOT NULL OR (no_aplica AND no_aplica_motivo IN ${sql([MOTIVO_TODAS_NO_APLICAN, MOTIVO_NADA_QUE_MEDIR])}))
+    ORDER BY desde, id`;
+  return filas.map((f) => ({ medicionId: Number(f.id), periodo: f.periodo as string }));
+}
+
+/**
+ * El desglose por categoría (`desgloseDe`) de cada periodo medido de `anio` (`medidasPorCategoria`): el impreso usa el último y
+ * el Excel, todos. No comprueba la visibilidad: quien llama ya sabe que la persona ve el indicador.
  */
 export async function desgloseDelAnio(sql: Cliente, indicadorId: number, anio: number): Promise<Desglose[]> {
-  if (!anioValido(anio)) return [];
-  const filas = await sql`SELECT id FROM mediciones
-    WHERE indicador_id = ${indicadorId} AND left(periodo, 4) = ${String(anio)} AND categorias IS NOT NULL
-      AND (resultado_exacto IS NOT NULL OR (no_aplica AND no_aplica_motivo = ${MOTIVO_TODAS_NO_APLICAN}))
-    ORDER BY desde, id`;
   const salida: Desglose[] = [];
-  for (const f of filas) {
-    const d = await desgloseDe(sql, Number(f.id));
+  for (const m of await medidasPorCategoria(sql, indicadorId, anio)) {
+    const d = await desgloseDe(sql, m.medicionId);
     if (d) salida.push(d);
   }
   return salida;
+}
+
+/**
+ * Lo que la página del indicador necesita para «Por {dimensión}» sin leer cada desglose: los periodos medidos por categoría de
+ * `anio` (`medidasPorCategoria`, los del selector) y la dimensión que rige el año, la de la última versión desagregada que rige
+ * alguno de sus periodos (`null` si ninguna: un año que se midió sin desagregar no tiene sección). No comprueba la visibilidad.
+ */
+export async function desagregacionDelAnio(
+  sql: Cliente,
+  indicadorId: number,
+  anio: number,
+): Promise<{ medidos: { medicionId: number; periodo: string }[]; dimension: string | null }> {
+  if (!anioValido(anio)) return { medidos: [], dimension: null };
+  const [base] = await basesDe(sql, [indicadorId]);
+  const zona = zonaHoraria();
+  const periodos = base?.inicio ? periodosDelAnio(base.versiones, base.inicio, anio, zona) : [];
+  const dimensiones = periodos.map((p) => versionQueRigeEntre(base!.versiones, p, zona)?.dimensionNombre ?? null).filter((d): d is string => d !== null);
+  return { medidos: await medidasPorCategoria(sql, indicadorId, anio), dimension: dimensiones.at(-1) ?? null };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1056,6 +1092,7 @@ function filaSinMedicion(p: Periodo, version: VersionDeCalculo, regla: Regla, ah
     recalculable: false,
     enCritico: null,
     dimension: null,
+    actualizable: false,
   };
 }
 
@@ -1157,5 +1194,6 @@ function filaDeMedicion(
     enCritico: m.categorias_en_critico === null || m.categorias_en_critico === undefined ? null : Number(m.categorias_en_critico),
     // Quien la lee la pone con la versión con que se calculó (`leerPeriodos`).
     dimension: null,
+    actualizable: Array.isArray(m.categorias) && m.estado === "abierta" && m.reportada_en === null && m.no_aplica !== true && m.historica !== true,
   };
 }

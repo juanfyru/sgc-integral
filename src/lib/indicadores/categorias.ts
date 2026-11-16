@@ -88,6 +88,20 @@ export function estadoDeCategoria(f: { estado: EstadoDeFila; semaforo: Semaforo 
   return f.conResultado ? { punto: "sin-meta", texto: "Sin meta" } : { punto: "sin-dato", texto: "Sin dato" };
 }
 
+/**
+ * El estado del total de un desglose (anexo 14C, §5.6): «No aplica» si la medición entera quedó así (ninguna categoría aplicó,
+ * o no hubo nada que medir), aunque tenga su suma en cero; si no, el de su resultado, como una categoría completa; sin total,
+ * «Sin dato».
+ */
+export function estadoDelTotal(d: {
+  noAplica: string | null;
+  total: { semaforo: Semaforo | null; cumple: boolean | null; resultado: string | null } | null;
+}): { punto: EstadoDePunto; texto: string } {
+  if (d.noAplica !== null) return { punto: "no-aplica", texto: "No aplica" };
+  if (!d.total) return { punto: "sin-dato", texto: "Sin dato" };
+  return estadoDeCategoria({ estado: "completa", semaforo: d.total.semaforo, cumple: d.total.cumple, conResultado: d.total.resultado !== null });
+}
+
 /** Una fila de la rejilla mientras se digita (`rejillaEnVivo`). */
 export type FilaEnVivo = {
   id: number;

@@ -35,11 +35,14 @@ import { observar } from "@/db/consultas/indicadores/observaciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeIndicador, construirExcelDeResultados, detalleDeFiltros } from "@/lib/indicadores/excel";
+import { MOTIVO_NADA_QUE_MEDIR } from "@/lib/indicadores/tipos";
 import { crearSesion } from "@/lib/sesion";
 import {
   desagregadoDePrueba,
+  filasDeMaqueta,
   indicadorDePrueba,
   loteImportado,
+  nadaQueMedir,
   OBRAS,
   SEDES_DE_MAQUETA,
   versionTrimestral,
@@ -407,11 +410,12 @@ describe("el Excel de un indicador", () => {
       const hoja = libro["Por categoría 2026"];
       expect(cabecera(hoja, "Periodo")).toEqual(["Periodo", "Categoría", "Pacientes con manejo adherente", "Pacientes auditados", "Resultado", "Estado"]);
       const datosDe = (periodo: string) => hoja.filas.filter((f) => f[0] === periodo);
-      // Solo los periodos medidos (el primero no se reportó), una fila por categoría de su lista.
-      expect(hoja.filas.filter((f) => /trimestre de 2026$/.test(f[0]))).toHaveLength(12);
+      // Solo los periodos medidos (el primero no se reportó), una fila por categoría de su lista y la de su total.
+      expect(hoja.filas.filter((f) => /trimestre de 2026$/.test(f[0]))).toHaveLength(14);
       expect(datosDe("Primer trimestre de 2026")).toEqual([]);
       const t3 = datosDe("Tercer trimestre de 2026");
-      expect(t3.map((f) => f[1])).toEqual(["'=SUMA(A1)", ...SEDES_DE_MAQUETA.slice(1)]);
+      expect(t3.map((f) => f[1])).toEqual(["'=SUMA(A1)", ...SEDES_DE_MAQUETA.slice(1), "Total"]);
+      expect(t3[6]).toEqual(["Tercer trimestre de 2026", "Total", "275", "320", "85,9 %", "Bien"]);
       expect(t3[0]).toEqual(["Tercer trimestre de 2026", "'=SUMA(A1)", "182", "200", "91 %", "Bien"]);
       expect(t3[3]).toEqual(["Tercer trimestre de 2026", "Puesto de salud 3", "11", "20", "55 %", "Crítico"]);
       expect(t3[4]).toEqual(["Tercer trimestre de 2026", "Puesto de salud 4", "0", "0", "", "Sin casos"]);
@@ -420,6 +424,23 @@ describe("el Excel de un indicador", () => {
       // Las variables son celdas numéricas, como en la hoja de resultados.
       const crudas = await celdasCrudas(datos, "Por categoría 2026");
       expect(crudas.find((c) => c[0] === "Tercer trimestre de 2026")!.slice(2, 5)).toEqual([182, 200, "91 %"]);
+    }));
+
+  it("en la hoja por categoría, una fila «No aplica» va sin valores y el total de un periodo sin nada que medir dice «No aplica» (ronda 1, I2 e I3)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien, dimension, mediciones } = await desagregadoDePrueba(tx, { procesoId: p.id, ahora: AHORA, aprobadaEn: APROBADA, reportados: { "2026-T2": "182" } });
+      const filas = filasDeMaqueta(dimension.categorias).map((f, i) => (i === 1 ? { categoriaId: f.categoriaId, valores: {}, noAplica: "No atendió pacientes en el trimestre" } : f));
+      await reportar(quien, { medicionId: mediciones["2026-T2"], valores: {}, filas, parcial: false, confirmado: true }, opc(tx));
+      await nadaQueMedir(tx, quien, ind.id, dimension.categorias, "2026-T3");
+      const hoja = (await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META)))["Por categoría 2026"];
+      const t2 = hoja.filas.filter((f) => f[0] === "Segundo trimestre de 2026");
+      expect(t2[1]).toEqual(["Segundo trimestre de 2026", "Puesto de salud 1", "", "", "", "No aplica: No atendió pacientes en el trimestre"]);
+      expect(t2[6]).toEqual(["Segundo trimestre de 2026", "Total", "232", "270", "85,9 %", "Bien"]);
+      const t3 = hoja.filas.filter((f) => f[0] === "Tercer trimestre de 2026");
+      expect(t3.map((f) => f[1])).toEqual([...SEDES_DE_MAQUETA, "Total"]);
+      expect(t3[0].slice(2)).toEqual(["0", "0", "", "Sin casos"]);
+      expect(t3[6]).toEqual(["Tercer trimestre de 2026", "Total", "0", "0", "", `No aplica: ${MOTIVO_NADA_QUE_MEDIR}`]);
     }));
 
   it("un indicador sin desagregar no trae la hoja por categoría", () =>

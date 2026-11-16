@@ -2,7 +2,7 @@ import { BarrasAcostadas } from "@/componentes/ui/BarrasAcostadas";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import type { Desglose } from "@/db/consultas/indicadores/categorias";
-import { estadoDeCategoria } from "@/lib/indicadores/categorias";
+import { estadoDeCategoria, estadoDelTotal } from "@/lib/indicadores/categorias";
 import { periodoEnPalabras } from "@/lib/indicadores/ficha-en-texto";
 import { barrasAcostadas } from "@/lib/indicadores/geometria-barras";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
@@ -32,10 +32,8 @@ function barrasDe(d: Desglose) {
       etiqueta: "Total",
       numero: d.total?.numero ?? null,
       valor: d.total?.resultado ?? "—",
-      // Sin total, ninguna categoría aplicó: la medición quedó «No aplica».
-      ...(d.total
-        ? estadoDeCategoria({ estado: "completa", semaforo: d.total.semaforo, cumple: d.total.cumple, conResultado: d.total.resultado !== null })
-        : { punto: "no-aplica" as const, texto: "No aplica" }),
+      // La medición entera «No aplica» (ninguna categoría aplicó, o no hubo nada que medir) lo dice en el total.
+      ...estadoDelTotal(d),
       destacada: true,
     },
   ];

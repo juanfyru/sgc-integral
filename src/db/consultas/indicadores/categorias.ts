@@ -46,7 +46,8 @@ const SIN_DESAGREGAR = "Esta medición no se mide por categorías";
 /**
  * Una fila del desglose: su categoría (de la lista de la medición), su estado, sus valores y lo que da, calculado al leer. Los
  * números salen de la fracción exacta y solo dibujan: `numero`, la cifra (el ancho de la barra); `numeros`, cada valor (las
- * celdas del Excel). El color y el estado son siempre los del semáforo.
+ * celdas del Excel). El color y el estado son siempre los del semáforo. Una fila «No aplica» no lleva valores (no entran al
+ * total), aunque sigan guardados: si se le quita, vuelven.
  */
 export type FilaDeDesglose = {
   categoria: CategoriaDeMedicion;
@@ -80,6 +81,8 @@ export type Desglose = {
   meta: string | null;
   metaNumero: number | null;
   enCritico: string[];
+  /** El «No aplica» de toda la medición (su motivo; uno del sistema, como `MOTIVO_NADA_QUE_MEDIR`), o `null`: el total lo dice. */
+  noAplica: string | null;
 };
 
 const enTexto = (v: VersionDeCalculo, valores: Readonly<Record<string, Fraccion>>): Record<string, string | null> =>
@@ -118,15 +121,17 @@ export async function desgloseDe(sql: Cliente, medicionId: number): Promise<Desg
     const valores = celdas.get(c.id) ?? {};
     const estado = estadoDeFila(c, valores, ficha);
     const r = estado === "completa" ? resultadoDeCategoria(valores, ficha, regla) : { resultado: null, semaforo: null, cumple: null };
+    // Lo que una fila «No aplica» tenía guardado no cuenta: no se muestra ni se suma.
+    const cuentan = estado === "no_aplica" ? {} : valores;
     return {
       categoria: c,
       estado,
-      valores: enTexto(version, valores),
+      valores: enTexto(version, cuentan),
       resultado: r.resultado ? textoValor(r.resultado, version.unidad, regla) : null,
       semaforo: r.semaforo,
       cumple: r.cumple,
       numero: r.resultado ? aNumero(r.resultado) : null,
-      numeros: enNumeros(version, valores),
+      numeros: enNumeros(version, cuentan),
     };
   });
   const guardado = await valoresPorLetra(sql, medicionId, version);
@@ -152,6 +157,7 @@ export async function desgloseDe(sql: Cliente, medicionId: number): Promise<Desg
     meta: regla.meta ? `${numeroExacto(regla.meta, version.unidad.decimales)}${version.unidad.sufijo}` : null,
     metaNumero: regla.meta ? aNumero(regla.meta) : null,
     enCritico: filas.filter((f) => f.semaforo === "critico").map((f) => f.categoria.nombre),
+    noAplica: m.no_aplica === true ? ((m.no_aplica_motivo as string | null) ?? "") : null,
   };
 }
 
