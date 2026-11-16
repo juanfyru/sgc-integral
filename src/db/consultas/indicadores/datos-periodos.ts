@@ -70,15 +70,28 @@ export type PeriodoDeDato = {
   reporto: string | null;
   reportadoEn: Date | null;
   corregido: boolean;
+  /** Pendiente y se pide (`periodoQueSePide`): uno que ya nadie pide no es tarea de nadie ni está «por reportar». */
+  sePide: boolean;
 };
 
-const NO_EXISTE = "El periodo del dato no existe";
+export const PERIODO_NO_EXISTE = "El periodo del dato no existe";
 const CERRADO = "El periodo está cerrado: lo reabre el Administrador del SGC";
 const SIN_CAMBIOS = "No hay cambios que corregir";
 const FORMULARIO_CAMBIO = "El formulario no corresponde a este periodo: recargue la página";
 
-/** Lo que se pide de un dato, para un `WHERE` sobre `variable_valores vv`: lo comparten la tarea y sus recordatorios. */
-export const periodoQueSePide = (sql: Cliente) => sql`vv.estado = 'pendiente'`;
+/**
+ * Lo que se pide de un dato, para un `WHERE` sobre `variable_valores vv` (anexo 14C, §4.3): un periodo pendiente de un dato
+ * que cita alguna versión aprobada de un indicador activo. El pendiente que ya ningún indicador necesita y que se conserva
+ * solo porque tiene historial o un soporte (`asegurarDe` no lo quita) sigue existiendo, pero no se pide, como la constancia
+ * de la 14B (`constanciaQueSePide`). Es la regla por dato, no por periodo: la de qué periodo pide cada indicador vive en
+ * `loQuePiden` y no se repite en SQL. Lo comparten la tarea, sus recordatorios (`datos-vencidos.ts`), el número de la pestaña
+ * y el estado de la lista y de la página del dato.
+ */
+export const periodoQueSePide = (sql: Cliente) => sql`(vv.estado = 'pendiente' AND EXISTS (
+  SELECT 1 FROM indicador_variables qsp_iv
+  JOIN indicador_versiones qsp_v ON qsp_v.id = qsp_iv.version_id AND qsp_v.estado = 'aprobada'
+  JOIN indicadores qsp_i ON qsp_i.id = qsp_v.indicador_id AND qsp_i.estado = 'activo'
+  WHERE qsp_iv.variable_compartida_id = vv.variable_id))`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cuándo se abren
@@ -257,6 +270,7 @@ function aPeriodo(f: Record<string, unknown>): PeriodoDeDato {
     reporto: texto(f.reporto),
     reportadoEn: (f.reportado_en as Date | null) ?? null,
     corregido: f.corregido === true,
+    sePide: f.se_pide === true,
   };
 }
 
@@ -264,25 +278,32 @@ function aPeriodo(f: Record<string, unknown>): PeriodoDeDato {
 export async function periodosDeDato(
   sesion: SujetoVisibilidad,
   datoId: number,
-  opciones?: Opciones,
+  opciones?: { sql?: Cliente },
 ): Promise<PeriodoDeDato[] | null> {
   const sql = opciones?.sql ?? obtenerSql();
   if (!Number.isInteger(datoId) || datoId <= 0 || !(await puedeVerDato(datoId, sesion, { sql }))) return null;
-  const filas = await sql`SELECT vv.*, u.nombre AS reporto FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
+  const filas = await sql`SELECT vv.*, u.nombre AS reporto, ${periodoQueSePide(sql)} AS se_pide
+    FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
     WHERE vv.variable_id = ${datoId}
     ORDER BY vv.desde DESC, vv.id DESC`;
   return filas.map(aPeriodo);
 }
 
+/** Un evento del historial de un periodo del dato: qué pasó, quién (`null` si fue el sistema), cuándo y su detalle. */
+export type EventoDeDato = { tipo: string; quien: string | null; cuando: Date; detalle: Record<string, unknown> };
+
+const aEvento = (f: Record<string, unknown>): EventoDeDato => ({
+  tipo: f.tipo as string,
+  quien: texto(f.nombre),
+  cuando: f.creado_en as Date,
+  detalle: (f.detalle as Record<string, unknown> | null) ?? {},
+});
+
 /**
- * El historial de un periodo del dato (anexo 14C, §4.7): qué pasó, quién (`null` si fue el sistema), cuándo y su detalle,
- * en orden de llegada. `null` si el periodo no existe o la persona no ve el dato.
+ * El historial de un periodo del dato (anexo 14C, §4.7), en orden de llegada. `null` si el periodo no existe o la persona no
+ * ve el dato.
  */
-export async function historialDeDato(
-  sesion: SujetoVisibilidad,
-  periodoId: number,
-  opciones?: { sql?: Cliente },
-): Promise<{ tipo: string; quien: string | null; cuando: Date; detalle: Record<string, unknown> }[] | null> {
+export async function historialDeDato(sesion: SujetoVisibilidad, periodoId: number, opciones?: { sql?: Cliente }): Promise<EventoDeDato[] | null> {
   const sql = opciones?.sql ?? obtenerSql();
   if (!Number.isInteger(periodoId) || periodoId <= 0) return null;
   const [p] = await sql`SELECT variable_id FROM variable_valores WHERE id = ${periodoId}`;
@@ -291,19 +312,35 @@ export async function historialDeDato(
     LEFT JOIN usuarios u ON u.id = e.usuario_id
     WHERE e.valor_id = ${periodoId}
     ORDER BY e.creado_en, e.id`;
-  return filas.map((f) => ({
-    tipo: f.tipo as string,
-    quien: texto(f.nombre),
-    cuando: f.creado_en as Date,
-    detalle: (f.detalle as Record<string, unknown> | null) ?? {},
-  }));
+  return filas.map(aEvento);
+}
+
+/** El historial de todos los periodos del dato en una lectura, por periodo (la página del dato); `null` si no lo ve. */
+export async function historialesDeDato(
+  sesion: SujetoVisibilidad,
+  datoId: number,
+  opciones?: { sql?: Cliente },
+): Promise<Map<number, EventoDeDato[]> | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!Number.isInteger(datoId) || datoId <= 0 || !(await puedeVerDato(datoId, sesion, { sql }))) return null;
+  const filas = await sql`SELECT e.valor_id, e.tipo, e.creado_en, e.detalle, u.nombre FROM variable_eventos e
+    JOIN variable_valores vv ON vv.id = e.valor_id
+    LEFT JOIN usuarios u ON u.id = e.usuario_id
+    WHERE vv.variable_id = ${datoId}
+    ORDER BY e.creado_en, e.id`;
+  const porPeriodo = new Map<number, EventoDeDato[]>();
+  for (const f of filas) {
+    const id = Number(f.valor_id);
+    porPeriodo.set(id, [...(porPeriodo.get(id) ?? []), aEvento(f)]);
+  }
+  return porPeriodo;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reportar y corregir
 // ─────────────────────────────────────────────────────────────────────────────
 
-type PeriodoBloqueado = {
+export type PeriodoBloqueado = {
   id: number;
   datoId: number;
   nombre: string;
@@ -321,15 +358,16 @@ type Guardado = { valor: string; porCategoria?: Record<string, string> };
 
 /**
  * El periodo con sus candados (el dato `FOR SHARE` y el periodo `FOR UPDATE`, en ese orden) y lo que exige tocarlo: quien
- * no ve el dato recibe «no existe»; quien lo ve y no puede reportarlo, `ErrorPermiso`.
+ * no ve el dato recibe «no existe»; quien lo ve y no puede reportarlo, `ErrorPermiso`. Lo usan también la subida y la quitada
+ * de un soporte (`datos-soporte.ts`).
  */
-async function periodoBloqueado(tx: TransactionSql, sesion: SujetoVisibilidad, periodoId: number): Promise<PeriodoBloqueado> {
-  if (!Number.isInteger(periodoId) || periodoId <= 0) throw new ErrorIndicador(NO_EXISTE);
+export async function periodoBloqueado(tx: TransactionSql, sesion: SujetoVisibilidad, periodoId: number): Promise<PeriodoBloqueado> {
+  if (!Number.isInteger(periodoId) || periodoId <= 0) throw new ErrorIndicador(PERIODO_NO_EXISTE);
   const [d] = await tx`SELECT id, nombre, captura_min, captura_max, admite_negativos FROM variables_compartidas
     WHERE id = (SELECT variable_id FROM variable_valores WHERE id = ${periodoId}) FOR SHARE`;
   const [p] = await tx`SELECT * FROM variable_valores WHERE id = ${periodoId} FOR UPDATE`;
   if (!d || !p || Number(p.variable_id) !== Number(d.id) || !(await puedeVerDato(Number(d.id), sesion, { sql: tx }))) {
-    throw new ErrorIndicador(NO_EXISTE);
+    throw new ErrorIndicador(PERIODO_NO_EXISTE);
   }
   const capacidad = await puedeReportarDato(Number(d.id), sesion, { sql: tx });
   if (!capacidad.puede) throw new ErrorPermiso();

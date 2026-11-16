@@ -9,6 +9,7 @@ import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { ErrorPermiso } from "@/lib/permisos";
 import {
+  CONTEXTOS_CON_EXCEL,
   CONTEXTOS_SOLO_PDF,
   CONTEXTOS_SOLO_XLSX,
   ERROR_PLANTILLA,
@@ -77,7 +78,7 @@ export type DestinoVersion = {
 };
 /**
  * `carpeta` es relativa al almacén: `jornadas/<id>`, `verificaciones/<verificacionId>/items/<itemId>`, `normas/<id>`,
- * `mediciones/<id>` o `importaciones/<id>`. Una norma recibe solo un PDF, que reemplaza al que tuviera
+ * `mediciones/<id>`, `datos-compartidos/<id>` (el periodo del dato) o `importaciones/<id>`. Una norma recibe solo un PDF, que reemplaza al que tuviera
  * (`registrarArchivo`); un lote de importación, solo su plantilla en `.xlsx`, una vez.
  */
 export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string };
@@ -127,7 +128,7 @@ export async function recibirArchivo(
   const tipo = esEvidencia(destino)
     ? await validarTipoEvidencia(nombreCrudo, muestra, {
         soloPdf: CONTEXTOS_SOLO_PDF.includes(destino.contexto),
-        conExcel: destino.contexto === "medicion",
+        conExcel: CONTEXTOS_CON_EXCEL.includes(destino.contexto),
         soloXlsx: CONTEXTOS_SOLO_XLSX.includes(destino.contexto),
       })
     : await validarTipo(nombreCrudo, muestra);
@@ -181,7 +182,7 @@ export async function recibirArchivo(
     // `fileTypeFromFile` carga `node:fs/promises` y `strtok3` con un `import()` de especificador no literal, que el
     // empaquetador de Next reemplaza por un módulo que siempre lanza (ver `tests/file-type-empaquetado.test.ts`).
     let mimeGuardado = tipo.mime;
-    const conXlsx = esEvidencia(destino) && (destino.contexto === "medicion" || CONTEXTOS_SOLO_XLSX.includes(destino.contexto));
+    const conXlsx = esEvidencia(destino) && (CONTEXTOS_CON_EXCEL.includes(destino.contexto) || CONTEXTOS_SOLO_XLSX.includes(destino.contexto));
     if (conXlsx && tipo.extension === "xlsx") {
       if ((await fileTypeFromBuffer(await readFile(ruta.absoluta)))?.mime !== MIME_XLSX) throw new Error("no_xlsx");
       mimeGuardado = MIME_XLSX;

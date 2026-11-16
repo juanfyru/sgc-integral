@@ -8,6 +8,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { fichasPorAprobar } from "@/db/consultas/indicadores/aprobacion";
+import { pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { consultaDeFiltro, filtroDeConsulta, listarIndicadores, opcionesDeLista } from "@/db/consultas/indicadores/lista";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -29,10 +30,11 @@ export default async function PaginaIndicadores({ searchParams }: { searchParams
   const filtro = filtroDeConsulta(await searchParams);
   const administra = puede(sesion, "indicadores.administrar");
   const aprueba = apruebaFichas(sesion);
-  const [{ filas, resumen }, opciones, porAprobar] = await Promise.all([
+  const [{ filas, resumen }, opciones, porAprobar, datos] = await Promise.all([
     listarIndicadores(sesion, filtro),
     opcionesDeLista(sesion),
     aprueba ? fichasPorAprobar(sesion) : [],
+    pestanaDeDatos(sesion),
   ]);
   const filtrada = Object.keys(filtro).length > 0;
   // La barra se cuenta antes del filtro de semáforo: si ese filtro deja cero filas, la barra sigue diciendo lo visible.
@@ -60,7 +62,11 @@ export default async function PaginaIndicadores({ searchParams }: { searchParams
           </>
         }
       />
-      <PestanasIndicadores activa="lista" visibles={pestanasVisibles(sesion, { aprueba })} numeros={{ "por-aprobar": porAprobar.length }} />
+      <PestanasIndicadores
+        activa="lista"
+        visibles={pestanasVisibles(sesion, { aprueba, veDatos: datos.visible })}
+        numeros={{ "por-aprobar": porAprobar.length, datos: datos.porReportar }}
+      />
       <FiltrosIndicadores filtro={filtro} opciones={opciones} />
       {filas.length === 0 ? (
         filtrada ? (

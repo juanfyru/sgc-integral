@@ -72,6 +72,13 @@ async function entorno(tx: TransactionSql) {
   return { proceso, jefe, responsable, datoId };
 }
 
+/**
+ * Un indicador activo cuya ficha aprobada cita el dato (en B y, con `otro`, también ese en A): sin uno así, el periodo
+ * pendiente ya no se pide (`periodoQueSePide`) y no avisa. Sin mediciones abiertas, no avisa por sí mismo.
+ */
+const usado = (tx: TransactionSql, procesoId: number, datoId: number, otro?: number) =>
+  indicadorDePrueba(tx, { procesoId, variables: { B: { datoId }, ...(otro === undefined ? {} : { A: { datoId: otro } }) } });
+
 /** Octubre de 2026 del dato, abierto el 1 de noviembre: vence el 10. */
 const octubre = (tx: TransactionSql, datoId: number, valor?: string) =>
   periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-10", ahora: noviembre(1), ...(valor === undefined ? {} : { valor }) });
@@ -81,6 +88,7 @@ describe("datosVencidos", () => {
     revertida(sql, async (tx) => {
       const { proceso, responsable, datoId } = await entorno(tx);
       const otroDato = await datoDePrueba(tx, { procesoId: proceso.id, responsables: [responsable.usuarioId] });
+      await usado(tx, proceso.id, datoId, otroDato);
       const a = await octubre(tx, datoId);
       const b = await octubre(tx, otroDato);
 
@@ -106,6 +114,7 @@ describe("datosVencidos", () => {
     revertida(sql, async (tx) => {
       const { proceso, responsable, datoId } = await entorno(tx);
       const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [proceso.id] });
+      await usado(tx, proceso.id, datoId);
       const periodoId = await octubre(tx, datoId);
       await tx`UPDATE variable_valores SET aviso_previo_en = ${noviembre(7)} WHERE id = ${periodoId}`;
 
@@ -138,7 +147,8 @@ describe("datosVencidos", () => {
 
   it("escalamiento: pasados los días de Configuración documental, al jefe, una vez y sin nombrar el dato", () =>
     revertida(sql, async (tx) => {
-      const { jefe, responsable, datoId } = await entorno(tx);
+      const { proceso, jefe, responsable, datoId } = await entorno(tx);
+      await usado(tx, proceso.id, datoId);
       const periodoId = await octubre(tx, datoId);
       await tx`UPDATE variable_valores SET aviso_previo_en = ${noviembre(7)}, aviso_vencido_en = ${noviembre(11)} WHERE id = ${periodoId}`;
 
@@ -163,7 +173,8 @@ describe("datosVencidos", () => {
 
   it("un dato ya reportado no avisa", () =>
     revertida(sql, async (tx) => {
-      const { jefe, responsable, datoId } = await entorno(tx);
+      const { proceso, jefe, responsable, datoId } = await entorno(tx);
+      await usado(tx, proceso.id, datoId);
       const periodoId = await octubre(tx, datoId, "1284300000");
       for (const d of [7, 11, 20]) expect(await pasar(tx, noviembre(d))).toEqual(NADA);
       // Con la firma corta, los días del escalamiento salen de Configuración documental.
@@ -180,6 +191,7 @@ describe("datosVencidos", () => {
       const jefe = await usuarioDePrueba(tx, { rol: "consulta" });
       const admin = await usuarioDePrueba(tx, { rol: "admin_sgc", jefeId: jefe.usuarioId });
       const datoId = await datoDePrueba(tx, { procesoId: proceso.id, nombre: NOMBRE });
+      await usado(tx, proceso.id, datoId);
       const periodoId = await octubre(tx, datoId);
 
       expect((await pasar(tx, noviembre(11))).vencidos).toBe(1);

@@ -9,6 +9,15 @@ export const rutaDeIndicador = (codigo: string) => `/indicadores/${encodeURIComp
 /** La página de edición de la ficha de un indicador. */
 export const rutaDeEdicion = (codigo: string) => `${rutaDeIndicador(codigo)}/editar`;
 
+/** La página de un dato compartido (anexo 14C, §4.7). */
+export const rutaDeDato = (datoId: number) => `/indicadores/datos/${datoId}`;
+
+/** La descarga del soporte de un periodo de un dato compartido: siempre como descarga (anexo 14C, §4.6). */
+export const rutaDeSoporteDeDato = (datoId: number, archivoId: number) => `${rutaDeDato(datoId)}/soportes/${archivoId}`;
+
+/** La subida y la quitada (`?archivo=`) de los soportes de un periodo de un dato compartido. */
+export const rutaDeSubidaDeDato = (periodoId: number) => `/api/datos-compartidos/${periodoId}/archivos`;
+
 /**
  * El año de `?anio=AAAA` de la impresión, los Excel y la matriz: sin parámetro, el en curso (en la zona de la
  * instalación); otro formato, uno antes de 1900 o uno que no ha llegado, `null` («no encontrado»).

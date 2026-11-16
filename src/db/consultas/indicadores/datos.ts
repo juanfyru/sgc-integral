@@ -14,13 +14,15 @@ import type { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { filtroDatos, type SujetoVisibilidad } from "@/lib/alcance";
+import { filtroDatos, filtroIndicadores, type SujetoVisibilidad } from "@/lib/alcance";
 import { EsquemaDato } from "@/lib/esquemas/indicadores-datos";
 import { comparar, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { ErrorIndicador, type Consolidacion, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { periodoQueSePide, tareasDeDatos } from "./datos-periodos";
+import { obtenerParametros } from "./maestros";
 import { texto, versionesAprobadas } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -179,6 +181,123 @@ export async function datosParaFicha(
     dimension: texto(f.dimension),
     ...(f.activa === true ? {} : { inactivo: true as const }),
   }));
+}
+
+/** Un indicador que usa el dato, como lo muestran «Lo usan» y la ficha del dato. */
+export type IndicadorQueLoUsa = { id: number; codigo: string; nombre: string; periodicidad: Periodicidad };
+
+/**
+ * «Lo usan» (anexo 14C, §4.7): por dato, los indicadores activos cuya ficha vigente (su última versión aprobada) lo cita y
+ * que la persona ve (`filtroIndicadores`), por código. Los que no ve no aparecen ni se cuentan: para ella no existen.
+ */
+export async function indicadoresQueLoUsan(
+  sesion: SujetoVisibilidad,
+  datoIds: readonly number[],
+  opciones?: { sql?: Cliente },
+): Promise<Map<number, IndicadorQueLoUsa[]>> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const salida = new Map<number, IndicadorQueLoUsa[]>();
+  if (datoIds.length === 0) return salida;
+  const filas = await sql`SELECT DISTINCT iv.variable_compartida_id AS dato_id, i.id, i.codigo, v.nombre, v.periodicidad
+    FROM indicadores i
+    JOIN indicador_versiones v ON v.indicador_id = i.id AND v.estado = 'aprobada'
+      AND v.numero = (SELECT max(w.numero) FROM indicador_versiones w WHERE w.indicador_id = i.id AND w.estado = 'aprobada')
+    JOIN indicador_variables iv ON iv.version_id = v.id AND iv.variable_compartida_id IN ${sql([...datoIds])}
+    WHERE i.estado = 'activo' AND ${filtroIndicadores(sql, sesion)}
+    ORDER BY i.codigo`;
+  for (const f of filas) {
+    const datoId = Number(f.dato_id);
+    const indicador = { id: Number(f.id), codigo: f.codigo as string, nombre: f.nombre as string, periodicidad: f.periodicidad as Periodicidad };
+    salida.set(datoId, [...(salida.get(datoId) ?? []), indicador]);
+  }
+  return salida;
+}
+
+/** Lo que la lista de «Datos compartidos» dice de un dato: su último valor y el periodo que se pide con la fecha más próxima. */
+export type ResumenDeDato = {
+  ultimo: { periodo: string; valor: string; categorias: number | null; reporto: string | null; reportadoEn: Date | null } | null;
+  porReportar: { periodo: string; venceEn: Date } | null;
+};
+
+/** El resumen de cada dato de `datoIds` que la persona ve (`filtroDatos`): uno sin periodos no trae ninguno de los dos. */
+export async function resumenDeDatos(
+  sesion: SujetoVisibilidad,
+  datoIds: readonly number[],
+  opciones?: { sql?: Cliente },
+): Promise<Map<number, ResumenDeDato>> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const salida = new Map<number, ResumenDeDato>();
+  if (datoIds.length === 0) return salida;
+  const deLosDatos = sql`vv.variable_id IN ${sql([...datoIds])}
+    AND EXISTS (SELECT 1 FROM variables_compartidas d WHERE d.id = vv.variable_id AND ${filtroDatos(sql, sesion)})`;
+  const [ultimos, pedidos] = await Promise.all([
+    sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, vv.periodo, vv.valor, vv.categorias, vv.reportado_en, u.nombre AS reporto
+      FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
+      WHERE ${deLosDatos} AND vv.valor IS NOT NULL
+      ORDER BY vv.variable_id, vv.desde DESC, vv.id DESC`,
+    sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, vv.periodo, vv.vence_en
+      FROM variable_valores vv
+      WHERE ${deLosDatos} AND ${periodoQueSePide(sql)}
+      ORDER BY vv.variable_id, vv.vence_en, vv.desde, vv.id`,
+  ]);
+  const de = (id: number): ResumenDeDato => {
+    const actual = salida.get(id) ?? { ultimo: null, porReportar: null };
+    salida.set(id, actual);
+    return actual;
+  };
+  for (const f of ultimos) {
+    de(Number(f.variable_id)).ultimo = {
+      periodo: f.periodo as string,
+      valor: String(f.valor),
+      categorias: Array.isArray(f.categorias) ? f.categorias.length : null,
+      reporto: texto(f.reporto),
+      reportadoEn: (f.reportado_en as Date | null) ?? null,
+    };
+  }
+  for (const f of pedidos) de(Number(f.variable_id)).porReportar = { periodo: f.periodo as string, venceEn: f.vence_en as Date };
+  return salida;
+}
+
+/** Lo que ofrecen los formularios del dato, que son de quien administra: procesos, dimensiones, personas y el plazo por omisión. */
+export type OpcionesDeDato = {
+  procesos: { id: number; nombre: string }[];
+  dimensiones: { id: number; nombre: string }[];
+  usuarios: { id: number; nombre: string }[];
+  /** El plazo de reporte de la entidad (los parámetros de indicadores): el que trae puesto un dato nuevo. */
+  plazoReporteDias: number;
+};
+
+/**
+ * Las opciones de los formularios del dato: los procesos y las dimensiones activos y los usuarios activos; con `dato`, también
+ * su proceso, su dimensión y sus responsables aunque ya no lo estén (lo que el dato ya tenía sigue valiendo).
+ */
+export async function opcionesDeDato(
+  dato: Pick<DatoCompartido, "procesoId" | "dimensionId" | "responsables"> | null,
+  opciones?: { sql?: Cliente },
+): Promise<OpcionesDeDato> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const responsables = dato?.responsables.map((r) => r.id) ?? [];
+  const [procesos, dimensiones, usuarios, parametros] = await Promise.all([
+    sql`SELECT id, nombre FROM procesos WHERE activo OR id = ${dato?.procesoId ?? 0} ORDER BY nombre, id`,
+    sql`SELECT id, nombre FROM dimensiones WHERE activo OR id = ${dato?.dimensionId ?? 0} ORDER BY orden, id`,
+    sql`SELECT id, nombre FROM usuarios WHERE activo OR id = ANY(${responsables}) ORDER BY nombre, id`,
+    obtenerParametros({ sql }),
+  ]);
+  const par = (f: Record<string, unknown>) => ({ id: Number(f.id), nombre: f.nombre as string });
+  return { procesos: procesos.map(par), dimensiones: dimensiones.map(par), usuarios: usuarios.map(par), plazoReporteDias: parametros.plazoReporteDias };
+}
+
+/**
+ * La pestaña «Datos compartidos» de Indicadores: la ve quien administra indicadores y quien ve algún dato (`filtroDatos`);
+ * su número son los periodos que la persona tiene por reportar, los mismos de «Mis tareas» (`tareasDeDatos`).
+ */
+export async function pestanaDeDatos(sesion: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<{ visible: boolean; porReportar: number }> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [ve] = puede(sesion, "indicadores.administrar")
+    ? [{ si: true }]
+    : await sql`SELECT EXISTS (SELECT 1 FROM variables_compartidas d WHERE ${filtroDatos(sql, sesion)}) AS si`;
+  if (ve.si !== true) return { visible: false, porReportar: 0 };
+  return { visible: true, porReportar: (await tareasDeDatos(sql, sesion)).length };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

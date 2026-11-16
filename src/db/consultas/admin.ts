@@ -17,6 +17,7 @@ import {
 } from "./codigos";
 import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { bloquearParaSoporteDeConstancia, dejarSoporteDeConstanciaSubido } from "./indicadores/constancias-soporte";
+import { bloquearParaSoporteDeDato, dejarSoporteDeDatoSubido } from "./indicadores/datos-soporte";
 import { bloquearParaSoporte, dejarSoporteSubido } from "./indicadores/soportes";
 import { exigirLoteSinArchivo } from "./indicadores/lote-importacion";
 import { alDejarDeSerVigente } from "./distribucion/version-vigencia";
@@ -786,6 +787,9 @@ export async function registrarArchivo(
         if (datos.contexto === "reporte_externo") await bloquearParaSoporteDeConstancia(tx, datos.contextoId);
         // La plantilla de un lote de importación: una sola, mientras el lote no tenga otra (spec 14A §5.7).
         if (datos.contexto === "importacion_indicadores") await exigirLoteSinArchivo(tx, datos.contextoId);
+        // El de un periodo de un dato compartido: el dato y el periodo, en ese orden, con la persona comprobada otra vez.
+        const periodoDeDato =
+          datos.contexto === "dato_compartido" ? await bloquearParaSoporteDeDato(tx, datos.contextoId, usuarioId) : null;
         // Un dueño de un solo archivo (`CONTEXTOS_UNICOS`): bloqueado, dos subidas a la vez o su borrado se ordenan,
         // y el nuevo reemplaza al anterior en esta misma transacción.
         const tablaDelDueno = CONTEXTOS_UNICOS[datos.contexto as ContextoEvidencia];
@@ -810,6 +814,9 @@ export async function registrarArchivo(
         }
         if (datos.contexto === "reporte_externo") {
           await dejarSoporteDeConstanciaSubido(tx, { reporteId: datos.contextoId, usuarioId, nombre: datos.nombreOriginal, ahora: new Date() });
+        }
+        if (periodoDeDato) {
+          await dejarSoporteDeDatoSubido(tx, periodoDeDato, { usuarioId, archivo: datos.nombreOriginal, ahora: new Date() });
         }
         const reemplazados = unico
           ? await tx`DELETE FROM archivos
@@ -845,7 +852,13 @@ export async function registrarArchivo(
       // Una evidencia solo choca por su ruta (el nombre en la carpeta de su dueño): el mensaje es el de su contexto, y como
       // `ErrorTramite` la subida responde 409 con él (ola final, M8). El de una versión no cambia.
       if (datos.versionId === null) {
-        throw new ErrorTramite(datos.contexto === "medicion" ? "Ya hay un soporte con ese nombre en esta medición" : "Ya hay un archivo con ese nombre");
+        throw new ErrorTramite(
+          datos.contexto === "medicion"
+            ? "Ya hay un soporte con ese nombre en esta medición"
+            : datos.contexto === "dato_compartido"
+              ? "Ya hay un soporte con ese nombre en este periodo"
+              : "Ya hay un archivo con ese nombre",
+        );
       }
       throw new Error("Ya hay un archivo principal en esta versión");
     }

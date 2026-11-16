@@ -21,9 +21,28 @@ const panel = paginas("src/app/(app)/admin/(panel)");
 // regla del portal, más su propia regla de alcance.
 const catalogos = paginas("src/app/(app)/admin/(catalogos)");
 
+// Las guardas de página que llaman ellas mismas `exigirSesion()` antes de su regla de alcance (anexo 14C, §4.7: la página
+// de un dato compartido). Una página que llama una de ellas cumple la regla del portal; la guarda lo prueba abajo.
+const GUARDAS_CON_SESION: Record<string, string> = { exigirDato: "src/app/(app)/indicadores/datos/_comun.ts" };
+const llamaSuGuarda = new RegExp(`exigir(Sesion|Permiso)\\(|(${Object.keys(GUARDAS_CON_SESION).join("|")})\\(`);
+
 describe("cada página comprueba la sesión", () => {
   it.each(portal)("portal: %s", (ruta) => {
-    expect(readFileSync(ruta, "utf8")).toMatch(/exigir(Sesion|Permiso)\(/);
+    expect(readFileSync(ruta, "utf8")).toMatch(llamaSuGuarda);
+  });
+  it.each(Object.entries(GUARDAS_CON_SESION))("la guarda %s llama exigirSesion() y responde «no encontrado»", (guarda, archivo) => {
+    const fuente = readFileSync(path.join(raiz, archivo), "utf8");
+    expect(fuente).toMatch(new RegExp(`export async function ${guarda}\\(`));
+    expect(fuente).toContain("exigirSesion(");
+    expect(fuente).toContain("notFound(");
+  });
+  it("las páginas de «Datos compartidos» llaman su guarda", () => {
+    const lista = readFileSync(path.join(raiz, "src/app/(app)/indicadores/datos/page.tsx"), "utf8");
+    expect(lista).toContain("exigirSesion(");
+    expect(lista).toContain("notFound(");
+    const dato = readFileSync(path.join(raiz, "src/app/(app)/indicadores/datos/[id]/page.tsx"), "utf8");
+    expect(dato).toContain("exigirDato(");
+    expect(dato).not.toContain("exigirPermiso(");
   });
   it.each(paginas("src/app/(cuenta)"))("cuenta: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toContain("exigirSesionConPendientes(");

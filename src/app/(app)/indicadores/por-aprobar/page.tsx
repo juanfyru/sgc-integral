@@ -9,6 +9,7 @@ import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { enlaceDeVersion, fichasEnCurso, fichasPorAprobar, type FichaEnCurso } from "@/db/consultas/indicadores/aprobacion";
+import { pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { exigirSesion } from "@/lib/paginas";
 import { LARGO_CODIGO_INDICADOR, PATRON_CODIGO_INDICADOR } from "@/lib/esquemas/indicadores";
 import { puede } from "@/lib/permisos";
@@ -65,7 +66,7 @@ export default async function PaginaPorAprobar({
   const aprobadas = typeof pedidas === "string" && /^[1-9]\d{0,2}$/.test(pedidas) ? Number(pedidas) : 0;
   const devuelta =
     typeof pedida === "string" && pedida.length <= LARGO_CODIGO_INDICADOR && PATRON_CODIGO_INDICADOR.test(pedida) ? pedida : null;
-  const [fichas, enCurso] = await Promise.all([fichasPorAprobar(sesion), fichasEnCurso(sesion)]);
+  const [fichas, enCurso, datos] = await Promise.all([fichasPorAprobar(sesion), fichasEnCurso(sesion), pestanaDeDatos(sesion)]);
   const filas: FilaPorAprobar[] = fichas.map((f) => ({
     versionId: f.versionId,
     codigo: f.codigo,
@@ -90,7 +91,11 @@ export default async function PaginaPorAprobar({
         descripcion="Las fichas técnicas que esperan aprobación: se aprueban con su clave y se devuelven con una nota."
         tituloEnfocable
       />
-      <PestanasIndicadores activa="por-aprobar" visibles={pestanasVisibles(sesion, { aprueba })} numeros={{ "por-aprobar": fichas.length }} />
+      <PestanasIndicadores
+        activa="por-aprobar"
+        visibles={pestanasVisibles(sesion, { aprueba, veDatos: datos.visible })}
+        numeros={{ "por-aprobar": fichas.length, datos: datos.porReportar }}
+      />
       {aprobadas > 0 ? (
         <p role="status" className="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
           {aprobadas === 1 ? "Se aprobó 1 ficha." : `Se aprobaron ${aprobadas} fichas.`}

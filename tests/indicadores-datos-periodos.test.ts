@@ -9,15 +9,30 @@
  */
 import { existsSync } from "node:fs";
 import type { TransactionSql } from "postgres";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+// Para probar que sin saber qué pide un indicador no se quita nada: `clavesFinas` falla mientras `fallo.activo`; si no, es la
+// de siempre.
+const fallo = vi.hoisted(() => ({ activo: false }));
+vi.mock("@/lib/indicadores/periodos", async (original) => {
+  const real = await original<typeof import("@/lib/indicadores/periodos")>();
+  return {
+    ...real,
+    clavesFinas: (...a: Parameters<typeof real.clavesFinas>) => {
+      if (fallo.activo) throw new Error("Fallo de prueba");
+      return real.clavesFinas(...a);
+    },
+  };
+});
+
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarPeriodosDeDatos, historialDeDato, periodosDeDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import { datosVencidos } from "@/db/consultas/indicadores/datos-vencidos";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { EsquemaReporteDeDato, juntarValoresDeDato } from "@/lib/esquemas/indicadores-datos";
@@ -29,7 +44,7 @@ import { agruparTareas, type Tarea } from "@/lib/tareas";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { parsearFormulario } from "@/lib/validacion";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
+import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba, silenciarIndicadores } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -68,6 +83,19 @@ async function entorno(tx: TransactionSql, o: Partial<Parameters<typeof datoDePr
 }
 
 const asegurar = (tx: TransactionSql, datoId: number, ahora: Date) => asegurarPeriodosDeDatos({ sql: tx, ahora, datoIds: [datoId] });
+
+/**
+ * Un indicador activo, mensual y aprobado en diciembre de 2025, cuya ficha cita el dato en B: sin uno así, un periodo
+ * pendiente no se pide (`periodoQueSePide`) y no es tarea de nadie.
+ */
+const usado = (tx: TransactionSql, procesoId: number, datoId: number) =>
+  indicadorDePrueba(tx, { procesoId, aprobadaEn: DIC_2025, variables: { B: { datoId } } });
+
+/** Un soporte del periodo del dato, como lo deja la subida (solo la fila: el almacén no se toca). */
+const archivoDeDato = (tx: TransactionSql, periodoId: number) =>
+  tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+    VALUES (NULL, 'dato_compartido', ${periodoId}, 'evidencia', ${`datos-compartidos/${periodoId}/soporte.pdf`}, 'soporte.pdf', 'pdf',
+      'application/pdf', 4, ${"e".repeat(64)})`;
 
 type Fila = {
   id: number;
@@ -250,6 +278,45 @@ describe("qué periodos del dato se abren (asegurarPeriodosDeDatos)", () => {
           SELECT id FROM variable_valores WHERE categorias @> jsonb_build_array(jsonb_build_object('id', ${dimension.categorias[0]}::int))
         ) AS si`;
       expect(usada.si).toBe(true);
+    }));
+
+  it("no quita un pendiente que ya nadie pide si tiene un evento o un soporte: solo el que no tiene nada", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, datoId } = await entorno(tx);
+      const conEvento = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-08", ahora: NOV_20 });
+      const conSoporte = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-09", ahora: NOV_20 });
+      await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-10", ahora: NOV_20 });
+      // Un soporte que se subió y se quitó deja sus eventos; otro sigue adjunto.
+      await tx`INSERT INTO variable_eventos (valor_id, tipo, usuario_id, detalle, creado_en)
+        VALUES (${conEvento}, 'soporte', ${responsable.usuarioId}, ${tx.json({ accion: "subido", nombre: "soporte.pdf" })}, ${NOV_20})`;
+      await archivoDeDato(tx, conSoporte);
+
+      // Ningún indicador usa el dato: ninguno de los tres se pide.
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 0, quitados: 1 });
+      expect(await claves(tx, datoId)).toEqual(["2026-08", "2026-09"]);
+    }));
+
+  it("si no se pudo saber qué pide un indicador, no quita nada; la pasada siguiente sí", () =>
+    revertida(sql, async (tx) => {
+      const { procesoId, datoId } = await entorno(tx);
+      await usado(tx, procesoId, datoId);
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 10, quitados: 0 });
+      // Un pendiente de 2025 que el indicador, que mide desde enero de 2026, no pide.
+      await periodoDeDatoDePrueba(tx, { datoId, periodo: "2025-06", ahora: NOV_20 });
+
+      const registro = vi.spyOn(console, "error").mockImplementation(() => {});
+      fallo.activo = true;
+      try {
+        expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 0, quitados: 0 });
+        expect(registro).toHaveBeenCalledTimes(1);
+        expect(String(registro.mock.calls[0][0])).toMatch(/^No se pudo saber qué periodos del dato compartido \d+ pide el indicador \d+:$/);
+      } finally {
+        fallo.activo = false;
+        registro.mockRestore();
+      }
+      expect(await claves(tx, datoId)).toContain("2025-06");
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 0, quitados: 1 });
+      expect(await claves(tx, datoId)).not.toContain("2025-06");
     }));
 });
 
@@ -443,6 +510,7 @@ describe("la tarea de reportar el dato", () => {
     revertida(sql, async (tx) => {
       const zona = zonaHoraria();
       const { procesoId, responsable, datoId } = await entorno(tx);
+      await usado(tx, procesoId, datoId);
       const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-11", ahora: DIC_5 });
       const opciones = { sql: tx, ahora: DIC_5 };
 
@@ -478,6 +546,7 @@ describe("la tarea de reportar el dato", () => {
     revertida(sql, async (tx) => {
       const procesoId = await procesoNuevo(tx);
       const datoId = await datoDePrueba(tx, { procesoId, nombre: NOMBRE });
+      await usado(tx, procesoId, datoId);
       const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-11", ahora: DIC_5 });
       const admin = await sesionAdmin(tx);
       const opciones = { sql: tx, ahora: DIC_5 };
@@ -488,6 +557,34 @@ describe("la tarea de reportar el dato", () => {
       const lider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [procesoId] });
       expect(deDatos(await tareasDeIndicadores(lider, opciones)).map((t) => t.id)).toEqual([`dato:${periodoId}`]);
       expect(deDatos(await tareasDeIndicadores(admin, opciones)).map((t) => t.id)).not.toContain(`dato:${periodoId}`);
+    }));
+
+  it("un dato cuyo único indicador se retira conserva el pendiente con soporte, que deja de pedirse: ni tarea ni aviso", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const { procesoId, responsable, datoId } = await entorno(tx);
+      const ind = await usado(tx, procesoId, datoId);
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 10, quitados: 0 });
+      const octubre = (await periodos(tx, datoId)).find((f) => f.periodo === "2026-10")!;
+      await archivoDeDato(tx, octubre.id);
+      const opciones = { sql: tx, ahora: NOV_20 };
+      expect(deDatos(await tareasDeIndicadores(responsable, opciones)).map((t) => t.id)).toContain(`dato:${octubre.id}`);
+      expect((await periodosDeDato(responsable, datoId, { sql: tx }))!.find((p) => p.id === octubre.id)).toMatchObject({ sePide: true });
+
+      await retirar(tx, ind.id);
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 0, quitados: 9 });
+      expect((await periodos(tx, datoId)).map((f) => [f.periodo, f.estado])).toEqual([["2026-10", "pendiente"]]);
+      expect(deDatos(await tareasDeIndicadores(responsable, opciones))).toEqual([]);
+      // Vence el 30 de noviembre: ni el aviso previo, ni el de vencido, ni el escalamiento.
+      for (const ahora of [new Date("2026-11-28T15:00:00Z"), new Date("2026-12-02T15:00:00Z"), new Date("2027-01-10T15:00:00Z")]) {
+        expect(await datosVencidos({ sql: tx, ahora, escalamientoDias: 3 })).toEqual({ previos: 0, vencidos: 0, escalados: 0 });
+      }
+      const [marcas] = await tx`SELECT aviso_previo_en, aviso_vencido_en, escalado_en FROM variable_valores WHERE id = ${octubre.id}`;
+      expect(Object.values(marcas)).toEqual([null, null, null]);
+      // Sigue en la página del dato, que dice que ya no se pide.
+      expect((await periodosDeDato(responsable, datoId, { sql: tx }))!).toEqual([
+        expect.objectContaining({ id: octubre.id, estado: "pendiente", sePide: false }),
+      ]);
     }));
 
   it("más de cinco se agrupan en «Datos compartidos por reportar», que lleva a la pestaña", () => {

@@ -9,8 +9,9 @@ export const ROLES_ARCHIVO = ["principal", "editable", "anexo"] as const;
 export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
 /**
  * Dónde cuelga una evidencia: una jornada de socialización, un ítem de verificación, una norma (su PDF), una revisión
- * anual, un hallazgo, una medición de indicador (sus soportes), una constancia de envío externo (`reporte_externo`, 14B)
- * o la plantilla de un lote de importación de indicadores (`importacion_indicadores`, 14A).
+ * anual, un hallazgo, una medición de indicador (sus soportes), una constancia de envío externo (`reporte_externo`, 14B),
+ * la plantilla de un lote de importación de indicadores (`importacion_indicadores`, 14A) o un periodo de un dato
+ * compartido (`dato_compartido`, sus soportes: 14C).
  */
 export const CONTEXTOS_EVIDENCIA = [
   "jornada",
@@ -21,8 +22,11 @@ export const CONTEXTOS_EVIDENCIA = [
   "medicion",
   "reporte_externo",
   "importacion_indicadores",
+  "dato_compartido",
 ] as const;
 export type ContextoEvidencia = (typeof CONTEXTOS_EVIDENCIA)[number];
+/** Los soportes que admiten además un Excel `.xlsx` (nunca `.xls`), comprobado sobre el archivo completo: el de una medición y el de un dato compartido. */
+export const CONTEXTOS_CON_EXCEL: readonly ContextoEvidencia[] = ["medicion", "dato_compartido"];
 /** Los roles que las listas y las rutas de archivos de un documento ofrecen: las actas quedan fuera. */
 export const ROLES_ARCHIVO_LISTA: string[] = [...ROLES_ARCHIVO];
 

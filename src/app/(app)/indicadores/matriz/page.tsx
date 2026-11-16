@@ -8,6 +8,7 @@ import { Selector } from "@/componentes/indicadores/Selector";
 import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
+import { pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { consultaDeFiltro, filtroDeConsulta, opcionesDeLista } from "@/db/consultas/indicadores/lista";
 import { matrizDelAnio } from "@/db/consultas/indicadores/matriz";
 import { anioDeConsulta } from "@/lib/indicadores/rutas";
@@ -39,7 +40,11 @@ export default async function PaginaMatriz({ searchParams }: { searchParams: Pro
   const anio = anioDeConsulta(sp.anio, anioEnCurso);
   if (anio === null) notFound();
   const { procesoId, subprocesoId, clasificacionId } = filtroDeConsulta({ proceso: sp.proceso, subproceso: sp.subproceso, clasificacion: sp.clasificacion });
-  const [opciones, matriz] = await Promise.all([opcionesDeLista(sesion), matrizDelAnio(sesion, { anio, procesoId, subprocesoId, clasificacionId })]);
+  const [opciones, matriz, datos] = await Promise.all([
+    opcionesDeLista(sesion),
+    matrizDelAnio(sesion, { anio, procesoId, subprocesoId, clasificacionId }),
+    pestanaDeDatos(sesion),
+  ]);
   const anios = [...new Set([...opciones.anios, anioEnCurso, anio])].sort((a, b) => b - a);
   const filas = matriz.procesos.reduce((n, p) => n + p.filas.length, 0);
   const proceso = procesoId === undefined ? null : (opciones.procesos.find((p) => p.id === procesoId)?.nombre ?? null);
@@ -66,7 +71,11 @@ export default async function PaginaMatriz({ searchParams }: { searchParams: Pro
       />
       {/* Al imprimir solo sale la matriz: ni las pestañas ni los filtros (el cascarón ya no se imprime). */}
       <div className="print:hidden">
-        <PestanasIndicadores activa="matriz" visibles={pestanasVisibles(sesion, { aprueba: apruebaFichas(sesion) })} />
+        <PestanasIndicadores
+          activa="matriz"
+          visibles={pestanasVisibles(sesion, { aprueba: apruebaFichas(sesion), veDatos: datos.visible })}
+          numeros={{ datos: datos.porReportar }}
+        />
       </div>
       <form method="get" action="/indicadores/matriz" role="search" aria-label="Filtrar la matriz" className="flex min-w-0 max-w-full flex-wrap items-end gap-2 print:hidden">
         <Selector className={ANCHO} id="matriz-anio" nombre="anio" etiqueta="Año" valor={String(anio)}>

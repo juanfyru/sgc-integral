@@ -7,6 +7,7 @@ import { claseControl } from "@/componentes/ui/Campo";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { celda, celdaNumerica, TablaDatos } from "@/componentes/ui/TablaDatos";
 import { cierres, mesPorOmision, resumenDeCierre } from "@/db/consultas/indicadores/cierre";
+import { pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { esMesTerminado, etiquetaDeMes, mesesParaCerrar, PATRON_MES } from "@/lib/indicadores/cierre";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { exigirSesion } from "@/lib/paginas";
@@ -52,7 +53,7 @@ export default async function PaginaCierre({ searchParams }: { searchParams: Pro
   const mes = pedido ?? porOmision;
   const opciones = mesesParaCerrar(porOmision, ahora, zona);
   if (mes && !opciones.includes(mes)) opciones.unshift(mes);
-  const [resumen, anteriores] = await Promise.all([mes ? resumenDeCierre(sesion, mes, { ahora }) : null, cierres()]);
+  const [resumen, anteriores, datos] = await Promise.all([mes ? resumenDeCierre(sesion, mes, { ahora }) : null, cierres(), pestanaDeDatos(sesion)]);
   const aviso = avisoDeCierre(sp);
   const periodos = Object.fromEntries((resumen?.sinDato ?? []).map((s) => [s.periodo, periodoDe(s.periodo, zona)?.etiqueta ?? s.periodo]));
 
@@ -63,7 +64,11 @@ export default async function PaginaCierre({ searchParams }: { searchParams: Pro
         descripcion="El cierre del mes deja fijas las mediciones de los periodos que terminaron: después solo se corrigen reabriéndolas, con una justificación."
         tituloEnfocable
       />
-      <PestanasIndicadores activa="cierre" visibles={pestanasVisibles(sesion, { aprueba: apruebaFichas(sesion) })} />
+      <PestanasIndicadores
+        activa="cierre"
+        visibles={pestanasVisibles(sesion, { aprueba: apruebaFichas(sesion), veDatos: datos.visible })}
+        numeros={{ datos: datos.porReportar }}
+      />
       {aviso ? (
         <p role="status" className="rounded-lg border border-border bg-muted p-3 text-sm text-foreground">
           {aviso}

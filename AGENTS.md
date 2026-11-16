@@ -265,14 +265,18 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Toda consulta de los módulos nuevos pasa por `alcanceProcesos()`**
   (`src/lib/alcance.ts`): el líder de proceso solo alcanza sus procesos activos; el
   filtro por rol no se reimplementa en cada módulo. La visibilidad de documentos, de
-  trámites y de indicadores se decide en ese mismo archivo. Hay tres excepciones nombradas a
+  trámites y de indicadores se decide en ese mismo archivo. Hay cuatro excepciones nombradas a
   `alcanceProcesos()`: la participación designada en un trámite y, en los indicadores (spec 14
-  §6.4), la **lectura** de un indicador general, que es de toda sesión, como el normograma, y la
+  §6.4), la **lectura** de un indicador general, que es de toda sesión, como el normograma, la
   **designación** en un indicador (`indicador_designados`: mide, analiza o hace seguimiento), que
-  da alcance sobre él sin liderar su proceso. Las reglas de los indicadores son las funciones de
+  da alcance sobre él sin liderar su proceso, y ser **responsable de un dato compartido**
+  (`variable_responsables`, anexo 14C §4.4 y §4.7: lo ve, lo reporta y lo corrige sin liderar el
+  proceso dueño). Las reglas de los indicadores son las funciones de
   `src/lib/alcance.ts` (`filtroIndicadores` para un `WHERE`, `puedeVerIndicador`,
   `puedeVerSoportes`, `puedeMedir`, `puedeAnalizar`, `puedeRegistrarHistoricos`, `puedeObservar`,
-  `aprobadoresDeFicha`, `puedeAprobarFicha`, `esAprobadorDe`, `responsableDe` y `participaEn`).
+  `aprobadoresDeFicha`, `puedeAprobarFicha`, `esAprobadorDe`, `responsableDe` y `participaEn`), y
+  las de los datos compartidos, las del mismo archivo (`filtroDatos` para un `WHERE`, `puedeVerDato`,
+  `puedeReportarDato`, `responsablesDeDato`, `responsabilidadEnDato` y `sinResponsableDeDato`).
   La sesión de sistema de los automáticos (rol `admin_sgc`, `usuarioId` 0) no es una excepción: vive
   dentro de `tomarCalculo` (`calculos.ts`), no se exporta y nunca sirve filas a una persona, solo
   cuenta (anexo 14B, §5.5).
@@ -297,7 +301,14 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     `app/(app)/indicadores/_comun.ts`), nunca `exigirPermiso`: quien no la ve recibe «no
     encontrado». «Objetivos» (`/indicadores/objetivos`) es de toda sesión (`exigirSesion()`) y solo
     muestra los indicadores que la persona ve, sin decir si hay otros; `objetivos` es un código de
-    indicador reservado (`CODIGOS_RESERVADOS`). La configuración de indicadores (`/admin/indicadores`) va con `exigirPermiso`. Los
+    indicador reservado (`CODIGOS_RESERVADOS`). «Datos compartidos» (`/indicadores/datos`, anexo 14C
+    §4.7) llama `exigirSesion()` y responde `notFound()` a quien no ve ningún dato ni tiene
+    `indicadores.administrar`; la página de un dato (`/indicadores/datos/[id]`) llama `exigirDato`
+    (`app/(app)/indicadores/datos/_comun.ts`), que llama `exigirSesion()` y responde «no encontrado» a
+    quien no ve el dato (`tests/paginas-sesion.test.ts` la admite como guarda de página). Las dos
+    abren antes de leer los periodos que se piden de sus datos (`asegurarPeriodosDeDatos({ datoIds })`),
+    y «Lo usan» muestra solo los indicadores que la persona ve, sin decir si hay más; `datos` también es
+    un código de indicador reservado. La configuración de indicadores (`/admin/indicadores`) va con `exigirPermiso`. Los
     catálogos de puntos de uso y listas de distribución viven en `app/(app)/admin/(catalogos)`,
     fuera del guard del panel: cada página llama `exigirSesion()` y `exigirCatalogo()` (en solo
     lectura sin `distribucion.gestionar`), y las de alta, además, `exigirGestion()`
@@ -330,7 +341,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     (`admin/api/archivos`, `api/tramites/[id]/archivos`, `api/socializaciones/[id]/archivos`,
     `api/verificaciones/[id]/items/[itemId]/archivos`, `api/externos/[versionId]/archivos`,
     `api/normas/[id]/archivos`, `api/hallazgos/[id]/archivos`, `api/mediciones/[id]/archivos`,
-    `api/reportes-externos/[id]/archivos` (el soporte de una constancia de envío al ente) y
+    `api/reportes-externos/[id]/archivos` (el soporte de una constancia de envío al ente),
+    `api/datos-compartidos/[id]/archivos` (el soporte de un periodo de un dato compartido; el mismo
+    handler lo quita con `DELETE` y `?archivo=`) y
     `api/importaciones-indicadores/[id]/archivo` (la plantilla de un lote, solo `.xlsx` y una vez), cada una con su caso en
     `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
     `content-length`: el búfer del proxy truncaba las subidas de más de 10 MB y respondía
@@ -368,10 +381,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   punto» (`exigirSinOtroAdmin` al abrir y al cerrar la verificación del punto del que uno es
   responsable).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
-  `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion`, `reporte_externo` e
-  `importacion_indicadores`, con `contexto_id`; los nueve del `CHECK` `archivos_contexto_valido` de
-  `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts` son los ocho que reciben
-  evidencias, todos menos `version`): el control
+  `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion`, `reporte_externo`,
+  `importacion_indicadores` y `dato_compartido`, con `contexto_id`; los diez del `CHECK`
+  `archivos_contexto_valido` de `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts`
+  son los nueve que reciben evidencias, todos menos `version`): el control
   de acceso de un archivo es el de su
   dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
   lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
@@ -380,6 +393,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   descarga (`src/db/consultas/indicadores/soportes.ts`); el de una constancia de envío al ente
   (`reporte_externo`: PDF o imagen, subido por `api/reportes-externos/[id]/archivos`) sigue la misma regla y se sirve
   por la misma ruta de soportes del indicador (`soporteServible`), y no se quita de una constancia registrada;
+  el de un periodo de un dato compartido (`dato_compartido`, con el periodo de `variable_valores` como dueño: PDF,
+  imagen o `.xlsx`, nunca `.xls`, opcional) lo suben y lo quitan, mientras el periodo no esté cerrado, quienes pueden
+  reportar el dato, cada subida y cada quitada con su evento `soporte` en `variable_eventos`; lo ven quien ve el dato y
+  quien ve los soportes de algún indicador con una ficha aprobada que lo cita (`puedeVerSoporteDeDato`,
+  `src/db/consultas/indicadores/datos-soporte.ts`), y se sirve siempre como descarga
+  (`/indicadores/datos/[id]/soportes/[archivoId]`); los demás reciben 404;
   el informe de una revisión anual (rol `evidencia`, `version_id` nula, uno por año en
   `informes/revision-<año>.pdf`) solo lo descargan Admin SGC, Gerencia y Control Interno
   (`puedeVerInformeAnual`), y los demás reciben 404; la plantilla de un lote de importación de

@@ -5,23 +5,26 @@ const PESTANAS = [
   { clave: "lista", etiqueta: "Lista", href: "/indicadores" },
   { clave: "matriz", etiqueta: "Matriz del año", href: "/indicadores/matriz" },
   { clave: "objetivos", etiqueta: "Objetivos", href: "/indicadores/objetivos" },
+  { clave: "datos", etiqueta: "Datos compartidos", href: "/indicadores/datos" },
   { clave: "por-aprobar", etiqueta: "Por aprobar", href: "/indicadores/por-aprobar" },
   { clave: "cierre", etiqueta: "Cierre del mes", href: "/indicadores/cierre" },
 ] as const;
 
 export type PestanaIndicadores = (typeof PESTANAS)[number]["clave"];
 
-type Regla = (sujeto: SujetoPermiso, opciones: { aprueba: boolean }) => boolean;
+type Opciones = { aprueba: boolean; veDatos: boolean };
+type Regla = (sujeto: SujetoPermiso, opciones: Opciones) => boolean;
 
 /**
  * Quién ve cada pestaña (spec §6.4). La lista, la matriz y los objetivos (anexo 14B, §7), toda sesión: cada una muestra
- * solo lo que la persona ve.
- * `aprueba` es tener `indicadores.aprobar` (`apruebaFichas`).
+ * solo lo que la persona ve. «Datos compartidos» (anexo 14C, §4.7), quien administra y quien ve algún dato.
+ * `aprueba` es tener `indicadores.aprobar` (`apruebaFichas`); `veDatos`, ver algún dato (`pestanaDeDatos`).
  */
 const QUIEN_LA_VE: Record<PestanaIndicadores, Regla> = {
   lista: () => true,
   matriz: () => true,
   objetivos: () => true,
+  datos: (sujeto, { veDatos }) => veDatos || puede(sujeto, "indicadores.administrar"),
   "por-aprobar": (sujeto, { aprueba }) => aprueba || puede(sujeto, "indicadores.administrar"),
   cierre: (sujeto) => puede(sujeto, "indicadores.administrar"),
 };
@@ -30,7 +33,7 @@ const QUIEN_LA_VE: Record<PestanaIndicadores, Regla> = {
 export const apruebaFichas = (sujeto: SujetoPermiso) => puede(sujeto, "indicadores.aprobar");
 
 /** Las pestañas de «Indicadores» que existen para la persona (spec §12.1), en su orden. */
-export function pestanasVisibles(sujeto: SujetoPermiso, opciones: { aprueba: boolean }): PestanaIndicadores[] {
+export function pestanasVisibles(sujeto: SujetoPermiso, opciones: Opciones): PestanaIndicadores[] {
   return PESTANAS.filter((p) => QUIEN_LA_VE[p.clave](sujeto, opciones)).map((p) => p.clave);
 }
 
@@ -41,7 +44,7 @@ export function PestanasIndicadores({
 }: {
   activa: PestanaIndicadores;
   visibles: readonly PestanaIndicadores[];
-  /** El número de una pestaña («Por aprobar · 2»); sin él o en cero, no se pinta. */
+  /** El número de una pestaña («Por aprobar · 2», «Datos compartidos · 3»); sin él o en cero, no se pinta. */
   numeros?: Partial<Record<PestanaIndicadores, number>>;
 }) {
   return (

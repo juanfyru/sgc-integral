@@ -6,6 +6,7 @@ import { Selector } from "@/componentes/indicadores/Selector";
 import { Boton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
+import { pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { objetivosDelPeriodo, periodosDeObjetivos } from "@/db/consultas/indicadores/objetivos";
 import { exigirSesion } from "@/lib/paginas";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -26,7 +27,7 @@ export default async function PaginaObjetivos({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const periodos = periodosDeObjetivos(new Date(), zonaHoraria());
   const periodo = periodos.find((p) => p.clave === sp.periodo) ?? periodos[0];
-  const objetivos = await objetivosDelPeriodo(sesion, periodo.clave);
+  const [objetivos, datos] = await Promise.all([objetivosDelPeriodo(sesion, periodo.clave), pestanaDeDatos(sesion)]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -34,7 +35,11 @@ export default async function PaginaObjetivos({ searchParams }: { searchParams: 
         titulo={`Objetivos · ${periodo.etiqueta}`}
         descripcion="Un objetivo se cumple si todos sus indicadores medidos en el periodo alcanzan la meta."
       />
-      <PestanasIndicadores activa="objetivos" visibles={pestanasVisibles(sesion, { aprueba: apruebaFichas(sesion) })} />
+      <PestanasIndicadores
+        activa="objetivos"
+        visibles={pestanasVisibles(sesion, { aprueba: apruebaFichas(sesion), veDatos: datos.visible })}
+        numeros={{ datos: datos.porReportar }}
+      />
       <form method="get" action="/indicadores/objetivos" aria-label="Elegir el periodo" className="flex min-w-0 max-w-full flex-wrap items-end gap-2">
         <Selector className="w-full sm:w-auto sm:max-w-72" id="objetivos-periodo" nombre="periodo" etiqueta="Periodo" valor={periodo.clave}>
           {periodos.map((p) => (
