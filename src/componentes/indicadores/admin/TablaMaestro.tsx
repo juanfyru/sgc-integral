@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import {
   activarEnMaestroAccion,
   borrarDeMaestroAccion,
@@ -21,7 +21,9 @@ type Accion = (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion
 
 /**
  * Una acción en su propio formulario: el error se dice junto al botón, y los valores escritos no se pierden. `idBoton` y
- * `alEnviar` son para quien deba devolver el foco tras la acción (el botón se deshabilita mientras espera y lo pierde).
+ * `alEnviar` son para quien deba devolver el foco tras la acción (el botón se deshabilita mientras espera y lo pierde). Con
+ * `limpiarAlTerminar`, cuando la acción sale bien los campos vuelven a su valor inicial: el formulario de crear queda listo
+ * para el siguiente (si falla, lo escrito se conserva, como siempre).
  */
 export function FormularioAccion({
   accion,
@@ -31,6 +33,7 @@ export function FormularioAccion({
   variante = "primario",
   idBoton,
   alEnviar,
+  limpiarAlTerminar = false,
   children,
 }: {
   accion: Accion;
@@ -40,12 +43,20 @@ export function FormularioAccion({
   variante?: VarianteBoton;
   idBoton?: string;
   alEnviar?: () => void;
+  limpiarAlTerminar?: boolean;
   children?: React.ReactNode;
 }) {
-  const [estado, enviar, pendiente] = useActionState(accion, null);
+  const formulario = useRef<HTMLFormElement>(null);
+  const [estado, enviar, pendiente] = useActionState(async (previo: EstadoAccion, datos: FormData): Promise<EstadoAccion> => {
+    const resultado = await accion(previo, datos);
+    // Sin error (`null`): lo escrito ya se guardó. El envío va en una transición, que no reinicia el formulario por sí sola.
+    if (resultado === null && limpiarAlTerminar) formulario.current?.reset();
+    return resultado;
+  }, null);
   const enviarAccion = enviarSinReiniciar(enviar);
   return (
     <form
+      ref={formulario}
       action={enviar}
       onSubmit={(e) => {
         alEnviar?.();

@@ -176,7 +176,8 @@ export function TablaDimensiones({ dimensiones }: { dimensiones: Dimension[] }) 
               )}
 
               <Desplegable titulo={`Nueva categoría en ${d.nombre}`}>
-                <FormularioAccion accion={guardarCategoriaDeDimension} campos={{ dimensionId: d.id }} boton="Crear la categoría">
+                {/* Se crean varias de corrido: al crear una, el campo queda vacío para la siguiente. */}
+                <FormularioAccion accion={guardarCategoriaDeDimension} campos={{ dimensionId: d.id }} boton="Crear la categoría" limpiarAlTerminar>
                   <Campo
                     etiqueta="Nombre"
                     nombre="nombre"
