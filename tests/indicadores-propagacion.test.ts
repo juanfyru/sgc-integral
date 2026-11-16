@@ -182,6 +182,8 @@ async function sinPropias(tx: TransactionSql, o: OpcionesIndicadorDePrueba & { i
 describe("el dato llega", () => {
   it("copia el valor sin usuario, calcula, deja el evento del sistema y la alerta; otra vez no escribe nada", () =>
     revertida(sql, async (tx) => {
+      // La última pasada recorre todo: lo que traiga la base no le da trabajo.
+      await silenciarIndicadores(tx);
       const { mide, analiza, responsable, datoId, ind, medicion } = await mixto(tx);
       expect(await reportarLoMio(tx, mide, medicion, { A: "38529000" })).toMatchObject({ ok: true, faltaDato: true });
       await reportarElDato(tx, responsable, datoId, "2026-09", "1284300000");
@@ -342,6 +344,49 @@ describe("la corrección del dato", () => {
       const filasDeB = await tx`SELECT variable_id, valor::text AS valor FROM medicion_valores WHERE medicion_id = ${medicion}
         AND variable_id IN ${tx([ind.variables.B, v2.variables.B])}`;
       expect(filasDeB.map((f) => [Number(f.variable_id), f.valor])).toEqual([[ind.variables.B, "40000000"]]);
+      expect(await propagarA(tx, TARDE, [ind.id])).toEqual(sinCambios);
+    }));
+});
+
+describe("la fuente pierde su valor", () => {
+  /** Deja el periodo del dato como pendiente y sin valor (como podría dejarlo una reapertura del dato). */
+  const sinValor = (tx: TransactionSql, periodoId: number) =>
+    tx`UPDATE variable_valores SET estado = 'pendiente', valor = NULL, reportado_por = NULL, reportado_en = NULL WHERE id = ${periodoId}`;
+
+  it("quita la fila copiada y la medición vuelve a esperar el dato; otra vez no escribe nada", () =>
+    revertida(sql, async (tx) => {
+      const { mide, responsable, datoId, ind, medicion } = await mixto(tx);
+      await reportarLoMio(tx, mide, medicion, { A: "38529000" });
+      const periodoId = await reportarElDato(tx, responsable, datoId, "2026-09", "1284300000");
+      await propagarA(tx, AHORA, [ind.id]);
+      expect((await fila(tx, medicion)).resultado_exacto).toBe("3/1");
+
+      await sinValor(tx, periodoId);
+      expect(await propagarA(tx, TARDE, [ind.id])).toEqual({ escritas: 1, noAplica: 0, fallidas: 0 });
+      expect(await valores(tx, medicion)).not.toHaveProperty("B");
+      expect((await valores(tx, medicion)).A).toMatchObject({ valor: "38529000", por: mide.usuarioId });
+      const m = await fila(tx, medicion);
+      expect([m.resultado_exacto, m.semaforo, m.estado]).toEqual([null, null, "abierta"]);
+      expect(await falta(tx, medicion)).toBe("dato");
+      expect((await eventos(tx, medicion)).at(-1)!.detalle.fuentes).toEqual([
+        { letra: "B", clase: "dato", id: datoId, antes: "1284300000", despues: null },
+      ]);
+      expect(await propagarA(tx, TARDE, [ind.id])).toEqual(sinCambios);
+    }));
+
+  it("en lo que nadie mide, quita también el «No aplica» del sistema", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, datoA, datoB, ind, medicion } = await sinPropias(tx);
+      await reportarElDato(tx, responsable, datoA, "2026-09", "5");
+      const periodoB = await reportarElDato(tx, responsable, datoB, "2026-09", "0");
+      expect(await propagarA(tx, AHORA, [ind.id])).toEqual({ escritas: 0, noAplica: 1, fallidas: 0 });
+
+      await sinValor(tx, periodoB);
+      expect(await propagarA(tx, TARDE, [ind.id])).toEqual({ escritas: 1, noAplica: 0, fallidas: 0 });
+      const m = await fila(tx, medicion);
+      expect([m.no_aplica, m.no_aplica_motivo, m.resultado_exacto, m.estado]).toEqual([false, null, null, "abierta"]);
+      expect(Object.keys(await valores(tx, medicion))).toEqual(["A"]);
+      expect(await falta(tx, medicion)).toBe("dato");
       expect(await propagarA(tx, TARDE, [ind.id])).toEqual(sinCambios);
     }));
 });
@@ -532,6 +577,7 @@ describe("cuándo corre", () => {
 
   it("lo que llama la acción del dato deja al día a los indicadores que lo esperaban, sin esperar a la pasada", () =>
     revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
       const { mide, responsable, datoId, medicion } = await mixto(tx);
       await reportarLoMio(tx, mide, medicion, { A: "38529000" });
       await reportarElDato(tx, responsable, datoId, "2026-09", "1284300000");
