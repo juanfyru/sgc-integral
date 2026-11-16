@@ -32,6 +32,8 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/app/acciones-indicadores", () => ({
   reportarDatoCompartido: vi.fn(),
+  actualizarCategoriasDelDatoCompartido: vi.fn(),
+  actualizarCategoriasDeMedicion: vi.fn(),
   reabrirDatoCompartido: vi.fn(),
   cerrarDeNuevoElDatoCompartido: vi.fn(),
   reabrirMedicionAccion: vi.fn(),
@@ -51,7 +53,7 @@ import { CamposDelDato } from "@/componentes/indicadores/datos/FormularioDato";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { DatoCompartido } from "@/db/consultas/indicadores/datos";
-import { reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import { actualizarCategoriasDelDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import type { SesionValida } from "@/lib/sesion";
 import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -203,6 +205,49 @@ describe("la página de un dato", () => {
       for (const id of dimension.categorias) expect(html).toContain(`name="categoria_${id}"`);
       expect(html).toContain("Sede norte");
       expect(html).not.toContain('name="valor"');
+    }));
+
+  it("un periodo que nació sin categorías lo dice en vez de pintar un formulario sin campos; quien administra las actualiza desde su fila", () =>
+    enTransaccion(async (tx) => {
+      consecutivo += 1;
+      const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}${consecutivo}`, ["Sede norte", "Sede sur"]);
+      // Las sedes se crean hoy: ningún periodo ya terminado las trae en su lista.
+      await tx`UPDATE dimension_categorias SET creado_en = now() WHERE dimension_id = ${dimension.id}`;
+      const procesoId = await procesoNuevo(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const datoId = await datoDePrueba(tx, { procesoId, nombre: NOMBRE, dimensionId: dimension.id, responsables: [responsable.usuarioId] });
+      await indicadorDePrueba(tx, {
+        procesoId,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T4",
+        aprobadaEn: DIC_2025,
+        dimensionId: dimension.id,
+        variables: { B: { datoId } },
+      });
+
+      const html = await pagina(responsable, datoId);
+      expect(html).toContain("Reportar · octubre de 2026");
+      expect(html).toContain("Este periodo no tiene categorías: pida al Administrador del SGC que las actualice");
+      expect(html).not.toContain("Valor de cada categoría");
+      expect(html).not.toContain("Reportar el dato");
+      // Actualizarlas es de quien administra.
+      expect(html).not.toContain("Actualizar categorías");
+
+      const admin = await sesionAdmin(tx);
+      const suya = await pagina(admin, datoId);
+      expect(suya).toMatch(/Actualizar categorías<span class="sr-only"> · octubre de 2026<\/span>/);
+      expect(suya).toContain("Añade a la lista de este periodo las categorías que hoy están activas y no están en ella; ninguna sale.");
+
+      const [p] = await tx`SELECT id FROM variable_valores WHERE variable_id = ${datoId} AND periodo = '2026-10'`;
+      expect(await actualizarCategoriasDelDato(admin, Number(p.id), { sql: tx })).toEqual({ agregadas: 2 });
+      const despues = await pagina(responsable, datoId);
+      expect(despues).toContain("Valor de cada categoría");
+      for (const id of dimension.categorias) expect(despues).toContain(`name="categoria_${id}"`);
+      expect(despues).not.toContain("Este periodo no tiene categorías");
+      // En el historial, con su frase; no es la corrección de un valor: la tabla no dice «lo corrigió».
+      expect(despues).toContain("Se actualizaron las categorías: se añadieron Sede norte, Sede sur");
+      expect(despues).not.toContain("lo corrigió");
+      expect(despues).not.toContain("Corrigió:");
     }));
 
   it("a quien no ve el dato, y a un id que no es un número, «no encontrado»", () =>

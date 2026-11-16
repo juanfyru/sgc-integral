@@ -13,6 +13,7 @@ import { Dialogo } from "@/componentes/ui/Dialogo";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import type { EstadoReporte } from "@/lib/indicadores/reporte";
 import { rutaDeSoporteDeDato, rutaDeSubidaDeDato } from "@/lib/indicadores/rutas";
+import { PERIODO_SIN_CATEGORIAS } from "@/lib/indicadores/tipos";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
@@ -145,7 +146,8 @@ function Mensaje({ estado }: { estado: EstadoReporte }) {
  * dato tiene dimensión, uno por cada categoría del periodo (el dato es su suma); la confirmación cuando el valor se aleja
  * mucho del periodo anterior; y sus soportes. No tiene «no aplica». Con `alReportar`, avisa cuando sale bien (el diálogo de
  * un periodo se cierra); dentro de un diálogo, el título ya lo lleva el diálogo y aquí no se repite para el lector de
- * pantalla. El servidor valida todo otra vez.
+ * pantalla. Un periodo de un dato con dimensión que nació sin categorías no pinta campos: dice que el Administrador del SGC
+ * debe actualizarlas (`PERIODO_SIN_CATEGORIAS`, el mismo texto con que el servidor lo rechaza). El servidor valida todo otra vez.
  */
 export function ReportarDato({
   datoId,
@@ -169,18 +171,30 @@ export function ReportarDato({
   // La pregunta es del periodo en que se hizo: el formulario de otro periodo empieza sin ella.
   const pregunta = estado && !estado.ok && estado.valores?.id === String(periodo.id) ? (estado.confirmar ?? null) : null;
   const titulo = `${periodo.reportado ? "Corregir" : "Reportar"} · ${periodo.etiqueta}`;
+  const encabezado = alReportar ? (
+    <p aria-hidden="true" className="text-sm font-semibold">
+      {titulo}
+    </p>
+  ) : (
+    <h2 id={`${prefijo}-titulo`} className="text-sm font-semibold">
+      {titulo}
+    </h2>
+  );
+
+  // Un periodo que nació sin categorías no tiene qué digitar: en vez de un formulario sin campos, lo que hay que hacer.
+  if (periodo.categorias !== null && periodo.categorias.length === 0) {
+    return (
+      <section aria-labelledby={alReportar ? undefined : `${prefijo}-titulo`} className={CAJA}>
+        {encabezado}
+        <p className={AVISO}>{PERIODO_SIN_CATEGORIAS}</p>
+        <SoportesDelPeriodo datoId={datoId} periodoId={periodo.id} etiqueta={periodo.etiqueta} soportes={soportes} editable />
+      </section>
+    );
+  }
 
   return (
     <section aria-labelledby={alReportar ? undefined : `${prefijo}-titulo`} className={CAJA}>
-      {alReportar ? (
-        <p aria-hidden="true" className="text-sm font-semibold">
-          {titulo}
-        </p>
-      ) : (
-        <h2 id={`${prefijo}-titulo`} className="text-sm font-semibold">
-          {titulo}
-        </h2>
-      )}
+      {encabezado}
       <form
         key={periodo.id}
         action={enviar}

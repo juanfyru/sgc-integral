@@ -32,12 +32,21 @@ vi.mock("@/lib/indicadores/periodos", async (original) => {
 import { obtenerSql } from "@/db/cliente";
 import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { asegurarPeriodosDeDatos, historialDeDato, periodosDeDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import {
+  actualizarCategoriasDelDato,
+  asegurarPeriodosDeDatos,
+  historialDeDato,
+  periodosDeDato,
+  PERIODO_NO_EXISTE,
+  reportarDato,
+} from "@/db/consultas/indicadores/datos-periodos";
 import { pestanaDeDatos, resumenDeDatos } from "@/db/consultas/indicadores/datos";
 import { datosVencidos } from "@/db/consultas/indicadores/datos-vencidos";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
+import { propagar } from "@/db/consultas/indicadores/propagacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
+import { describirEvento, nombreDeAccion } from "@/lib/bitacora-detalle";
 import { EsquemaReporteDeDato, juntarValoresDeDato } from "@/lib/esquemas/indicadores-datos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
@@ -468,6 +477,140 @@ describe("reportar un periodo del dato (reportarDato)", () => {
       expect(Number(p.valor)).toBe(1284.3);
       expect(p.por_categoria).toEqual({ [norte]: "700", [sur]: "584.3" });
       expect((await eventos(tx, periodoId))[0].detalle).toEqual({ valor: "1284.3", porCategoria: { [norte]: "700", [sur]: "584.3" } });
+    }));
+});
+
+describe("un dato con dimensión cuyo periodo nace sin categorías (puesta en marcha)", () => {
+  const NOV_15 = new Date("2026-11-15T15:00:00Z");
+  const NOV_16 = new Date("2026-11-16T15:00:00Z");
+  const SIN_CATEGORIAS = "Este periodo no tiene categorías: pida al Administrador del SGC que las actualice";
+
+  /**
+   * Las sedes se crean el 15 de noviembre y el 16 se aprueba un trimestral desagregado que usa el dato mensual por sede: el 20,
+   * el periodo de octubre del dato (terminó antes de existir las sedes) nace con la lista vacía.
+   */
+  async function puestaEnMarcha(tx: TransactionSql) {
+    const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${unico()}`, ["Sede norte", "Sede sur"]);
+    await tx`UPDATE dimension_categorias SET creado_en = ${NOV_15} WHERE dimension_id = ${dimension.id}`;
+    const { procesoId, responsable, datoId } = await entorno(tx, { dimensionId: dimension.id });
+    const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+    const ind = await indicadorDePrueba(tx, {
+      procesoId,
+      periodicidad: "trimestral",
+      inicioMedicion: "2026-T4",
+      aprobadaEn: NOV_16,
+      dimensionId: dimension.id,
+      mide: [mide.usuarioId],
+      variables: { B: { datoId } },
+    });
+    await asegurar(tx, datoId, NOV_20);
+    const [octubre, ...otros] = await periodos(tx, datoId);
+    expect([octubre.periodo, octubre.estado, octubre.categorias, otros]).toEqual(["2026-10", "pendiente", [], []]);
+    return { dimension, procesoId, responsable, mide, datoId, ind, octubre: octubre.id };
+  }
+
+  it("no se reporta vacío: antes guardaba 0 sin que nadie digitara nada", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, datoId, octubre } = await puestaEnMarcha(tx);
+      await rechaza(reportarCon(tx, responsable, octubre, {}), ErrorIndicador, SIN_CATEGORIAS);
+      await rechaza(reportarCon(tx, responsable, octubre, { confirmado: true }), ErrorIndicador, SIN_CATEGORIAS);
+      const [p] = await periodos(tx, datoId);
+      expect([p.estado, p.valor]).toEqual(["pendiente", null]);
+      expect(await eventos(tx, octubre)).toEqual([]);
+    }));
+
+  it("«Actualizar categorías»: quien administra añade las activas que no estaban, con su evento y su bitácora; otra vez, nada", () =>
+    revertida(sql, async (tx) => {
+      const { dimension, datoId, octubre } = await puestaEnMarcha(tx);
+      const admin = await sesionAdmin(tx);
+      const [norte, sur] = dimension.categorias;
+      expect(await actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 })).toEqual({ agregadas: 2 });
+      const [p] = await periodos(tx, datoId);
+      expect(p.categorias).toEqual([
+        { id: norte, nombre: "Sede norte", orden: 1, noAplica: null },
+        { id: sur, nombre: "Sede sur", orden: 2, noAplica: null },
+      ]);
+      // Sigue pendiente y sin la marca de corregido: no es la corrección de un valor.
+      expect([p.estado, p.valor, p.corregido]).toEqual(["pendiente", null, false]);
+      expect(await eventos(tx, octubre)).toEqual([
+        {
+          tipo: "correccion",
+          usuarioId: admin.usuarioId,
+          detalle: { categorias: { agregadas: [{ id: norte, nombre: "Sede norte" }, { id: sur, nombre: "Sede sur" }] } },
+        },
+      ]);
+      const [b] = await tx`SELECT usuario_id, entidad, entidad_id, detalle FROM auditoria WHERE accion = 'dato_categorias_actualizadas' AND entidad_id = ${datoId}`;
+      expect([Number(b.usuario_id), b.entidad]).toEqual([admin.usuarioId, "dato_compartido"]);
+      expect(b.detalle).toEqual({ nombre: NOMBRE, periodo: "2026-10", periodoId: octubre, agregadas: ["Sede norte", "Sede sur"] });
+      expect(describirEvento({ accion: "dato_categorias_actualizadas", entidad: "dato_compartido", entidadId: datoId, detalle: b.detalle })).toBe(
+        `Actualizó las categorías de el dato compartido «${NOMBRE}», octubre de 2026: añadió Sede norte, Sede sur`,
+      );
+      expect(nombreDeAccion("dato_categorias_actualizadas")).toBe("Actualizó las categorías de un periodo de un dato compartido");
+
+      expect(await actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 })).toEqual({ agregadas: 0 });
+      expect(await eventos(tx, octubre)).toHaveLength(1);
+    }));
+
+  it("añade al final y no quita: la desactivada sigue en la lista y la nueva entra después", () =>
+    revertida(sql, async (tx) => {
+      const { dimension, datoId, octubre } = await puestaEnMarcha(tx);
+      const admin = await sesionAdmin(tx);
+      const [norte, sur] = dimension.categorias;
+      await actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 });
+      await tx`UPDATE dimension_categorias SET activo = false, desactivada_en = ${NOV_20} WHERE id = ${norte}`;
+      const [centro] = await tx`INSERT INTO dimension_categorias (dimension_id, nombre, orden, creado_en)
+        VALUES (${dimension.id}, 'Sede centro', 3, ${NOV_20}) RETURNING id`;
+      expect(await actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 })).toEqual({ agregadas: 1 });
+      const [p] = await periodos(tx, datoId);
+      expect((p.categorias as { id: number }[]).map((c) => c.id)).toEqual([norte, sur, Number(centro.id)]);
+    }));
+
+  it("quien no administra no puede; ni en un periodo reportado o cerrado, ni en un dato sin dimensión, ni en uno que no existe", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, datoId, octubre } = await puestaEnMarcha(tx);
+      const admin = await sesionAdmin(tx);
+      await rechaza(actualizarCategoriasDelDato(responsable, octubre, { sql: tx, ahora: NOV_20 }), ErrorPermiso);
+      expect((await periodos(tx, datoId))[0].categorias).toEqual([]);
+      await rechaza(actualizarCategoriasDelDato(admin, 999_999_999, { sql: tx, ahora: NOV_20 }), ErrorIndicador, PERIODO_NO_EXISTE);
+
+      // Ya con sus categorías, se reporta: reportado, y después cerrado, la lista no se toca.
+      await actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 });
+      const [p] = await periodos(tx, datoId);
+      const valores = Object.fromEntries((p.categorias as { id: number }[]).map((c) => [String(c.id), "10"]));
+      expect(await reportarCon(tx, responsable, octubre, { porCategoria: valores, confirmado: true })).toEqual({ ok: true, corregido: false });
+      const SOLO_PENDIENTE = "Solo se actualizan las categorías de un periodo que aún no se ha reportado";
+      await rechaza(actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 }), ErrorIndicador, SOLO_PENDIENTE);
+      await tx`UPDATE variable_valores SET estado = 'cerrado' WHERE id = ${octubre}`;
+      await rechaza(actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 }), ErrorIndicador, SOLO_PENDIENTE);
+
+      const sinDimension = await entorno(tx, { nombre: `Sin dimensión ${unico()}` });
+      const suPeriodo = await periodoDeDatoDePrueba(tx, { datoId: sinDimension.datoId, periodo: "2026-10", ahora: NOV_20 });
+      await rechaza(actualizarCategoriasDelDato(admin, suPeriodo, { sql: tx, ahora: NOV_20 }), ErrorIndicador, "Este dato no se reporta por categorías");
+    }));
+
+  it("el indicador que lo usa recibe la fila: el trimestre suma octubre, que antes se perdía sin señal", () =>
+    revertida(sql, async (tx) => {
+      const { dimension, responsable, datoId, ind, octubre } = await puestaEnMarcha(tx);
+      const admin = await sesionAdmin(tx);
+      const [norte, sur] = dimension.categorias.map(String);
+      await actualizarCategoriasDelDato(admin, octubre, { sql: tx, ahora: NOV_20 });
+      expect(await reportarCon(tx, responsable, octubre, { porCategoria: { [norte]: "10", [sur]: "20" }, confirmado: true })).toMatchObject({ ok: true });
+
+      // Enero: terminó el trimestre; se abren noviembre y diciembre (ya con sus dos sedes) y la medición del trimestre.
+      const ENERO = new Date("2027-01-05T15:00:00Z");
+      await asegurarMediciones({ sql: tx, ahora: ENERO, indicadorId: ind.id });
+      await asegurar(tx, datoId, ENERO);
+      const abiertos = await periodos(tx, datoId);
+      expect(abiertos.map((x) => [x.periodo, (x.categorias as unknown[]).length])).toEqual([["2026-10", 2], ["2026-11", 2], ["2026-12", 2]]);
+      await reportarCon(tx, responsable, abiertos[1].id, { porCategoria: { [norte]: "1", [sur]: "2" }, confirmado: true }, ENERO);
+      await reportarCon(tx, responsable, abiertos[2].id, { porCategoria: { [norte]: "3", [sur]: "4" }, confirmado: true }, ENERO);
+      expect((await propagar({ sql: tx, ahora: ENERO, indicadorIds: [ind.id] })).fallidas).toBe(0);
+
+      const celdas = await tx`SELECT mv.categoria_id, mv.valor::text AS valor FROM medicion_valores mv
+        JOIN mediciones m ON m.id = mv.medicion_id
+        WHERE m.indicador_id = ${ind.id} AND m.periodo = '2026-T4' AND mv.variable_id = ${ind.variables.B} AND mv.categoria_id IS NOT NULL
+        ORDER BY mv.categoria_id`;
+      expect(celdas.map((c) => [String(c.categoria_id), Number(c.valor)])).toEqual([[norte, 14], [sur, 26]]);
     }));
 });
 

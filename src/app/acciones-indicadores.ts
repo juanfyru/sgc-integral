@@ -11,7 +11,7 @@ import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } fr
 import { actualizarCategorias } from "@/db/consultas/indicadores/categorias";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { corregirConstancia, quitarSoporteDeConstancia, registrarConstancia } from "@/db/consultas/indicadores/constancias";
-import { cerrarDeNuevoElDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import { actualizarCategoriasDelDato, cerrarDeNuevoElDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
@@ -315,6 +315,26 @@ export async function actualizarCategoriasDeMedicion(_prev: EstadoConAviso, form
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     ({ agregadas } = await actualizarCategorias(sesion, idNumerico(formData, "id")));
     // Una categoría nueva toma en seguida lo que un dato compartido por categoría ya trae para ella.
+    if (agregadas > 0) await propagarSinFallar();
+  });
+  if (estado) return estado;
+  return {
+    ok: true,
+    aviso: agregadas === 0 ? "No hay categorías nuevas que añadir." : `Se ${agregadas === 1 ? "añadió 1 categoría" : `añadieron ${agregadas} categorías`}.`,
+  };
+}
+
+/**
+ * `id` es el del periodo pendiente de un dato compartido con dimensión (anexo 14C, §5.7). Añade a su lista las categorías
+ * activas que no estaban; no navega: la página del dato se repinta y el aviso dice cuántas añadió. Que el periodo siga
+ * pendiente y que la persona administre lo vuelve a exigir la consulta.
+ */
+export async function actualizarCategoriasDelDatoCompartido(_prev: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> {
+  let agregadas = 0;
+  const estado = await mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    ({ agregadas } = await actualizarCategoriasDelDato(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoCrudo));
+    // Como la de la medición: lo que cambie para los indicadores que usan el dato no espera a la pasada.
     if (agregadas > 0) await propagarSinFallar();
   });
   if (estado) return estado;

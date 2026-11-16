@@ -17,6 +17,8 @@
  *
  * - **Cerrar** lo hace el cierre del mes (`cierre.ts`); reabrir, la reapertura en cascada (`reapertura.ts`, anexo 14C §3.5);
  *   «Cerrar de nuevo» un periodo reabierto, `cerrarDeNuevoElDato`.
+ * - **Las categorías** de un periodo de un dato con dimensión se fijan al abrirlo; uno pendiente las actualiza quien
+ *   administra (`actualizarCategoriasDelDato`), y uno que nació sin ninguna no se reporta vacío (`PERIODO_SIN_CATEGORIAS`).
  *
  * Candados: el dato `FOR SHARE` y después el periodo `FOR UPDATE` (o, al abrir, las filas del maestro `FOR KEY SHARE`), en
  * una transacción por dato: los indicadores que lo usan se leen sin candado, porque una transacción no bloquea más de un
@@ -46,7 +48,7 @@ import {
 } from "@/lib/indicadores/periodos";
 import { leerValor, valorEnTexto, type VariableDeCaptura } from "@/lib/indicadores/reporte";
 import { numeroExacto } from "@/lib/indicadores/semaforo";
-import { ErrorIndicador, SIN_RESPONSABLE, type Periodicidad } from "@/lib/indicadores/tipos";
+import { ErrorIndicador, PERIODO_SIN_CATEGORIAS, SIN_RESPONSABLE, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { fechaLimite } from "@/lib/tramites/plazos";
@@ -87,6 +89,8 @@ const CERRADO = "El periodo está cerrado: lo reabre el Administrador del SGC";
 const SIN_CAMBIOS = "No hay cambios que corregir";
 const FORMULARIO_CAMBIO = "El formulario no corresponde a este periodo: recargue la página";
 const SOLO_REABIERTO = "Solo se cierra de nuevo un periodo reabierto";
+const SIN_DIMENSION = "Este dato no se reporta por categorías";
+const SOLO_PENDIENTE = "Solo se actualizan las categorías de un periodo que aún no se ha reportado";
 
 /**
  * Lo que se pide de un dato, para un `WHERE` sobre `variable_valores vv` (anexo 14C, §4.3): un periodo pendiente que alguna
@@ -431,8 +435,10 @@ function leerReporte(p: PeriodoBloqueado, d: { valor?: string; porCategoria?: Re
     const total = leer(d.valor ?? "", captura(p.nombre));
     return { total, guardado: { valor: valorEnTexto(total) } };
   }
+  // Un periodo que nació sin categorías (ninguna existía cuando terminó) no se reporta vacío: guardaría 0 sin que nadie digite.
+  if (p.categorias.length === 0) throw new ErrorIndicador(PERIODO_SIN_CATEGORIAS);
   const pedidas = new Set(p.categorias.map((c) => String(c.id)));
-  if ((d.valor ?? "").trim() !== "" || Object.keys(porCategoria).some((id) => !pedidas.has(id))) throw new ErrorIndicador(FORMULARIO_CAMBIO);
+  if ((d.valor ?? "").trim() !== ""|| Object.keys(porCategoria).some((id) => !pedidas.has(id))) throw new ErrorIndicador(FORMULARIO_CAMBIO);
   let total = CERO;
   const guardado: Record<string, string> = {};
   for (const c of p.categorias) {
@@ -517,6 +523,51 @@ export async function reportarDato(
       detalle: antes ? { ...base, antes: antes.valor, despues: guardado.valor, ...marca } : { ...base, valor: guardado.valor, ...marca },
     });
     return { ok: true as const, corregido: antes !== null };
+  });
+}
+
+/**
+ * «Actualizar categorías» de un periodo del dato (anexo 14C, §5.7: «cada periodo del dato guarda su lista de categorías como
+ * una medición», §5.3): en un periodo **pendiente** de un dato con dimensión, quien administra añade al final de su lista las
+ * categorías de la dimensión que hoy están activas y no estaban, en el orden del maestro; nada sale de la lista. Es la salida
+ * del periodo que nació sin categorías (la dimensión se creó después de terminar) y de la sede que se registró tarde. Un
+ * periodo reportado o cerrado no se actualiza. Sin nada que añadir, nada.
+ *
+ * Deja su evento en el historial del periodo: `correccion` (el `CHECK` de `variable_eventos` no tiene otro tipo para esto) con
+ * `detalle.categorias.agregadas` (id y nombre) y sin antes ni después de valor, que es lo que lo distingue de la corrección de
+ * un valor; no marca el periodo como corregido. Y su bitácora, `dato_categorias_actualizadas`.
+ *
+ * Candados, como al reportar: el dato `FOR SHARE`, el periodo `FOR UPDATE` y el maestro `FOR KEY SHARE`.
+ */
+export async function actualizarCategoriasDelDato(sesion: SesionFlujo, periodoId: number, opciones?: Opciones): Promise<{ agregadas: number }> {
+  if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
+  if (!Number.isInteger(periodoId) || periodoId <= 0) throw new ErrorIndicador(PERIODO_NO_EXISTE);
+  const ahora = opciones?.ahora ?? new Date();
+  return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    const [d] = await tx`SELECT id, nombre, dimension_id FROM variables_compartidas
+      WHERE id = (SELECT variable_id FROM variable_valores WHERE id = ${periodoId}) FOR SHARE`;
+    const [p] = await tx`SELECT * FROM variable_valores WHERE id = ${periodoId} FOR UPDATE`;
+    if (!d || !p || Number(p.variable_id) !== Number(d.id)) throw new ErrorIndicador(PERIODO_NO_EXISTE);
+    if (d.dimension_id === null || !Array.isArray(p.categorias)) throw new ErrorIndicador(SIN_DIMENSION);
+    if (p.estado !== "pendiente") throw new ErrorIndicador(SOLO_PENDIENTE);
+    const lista = p.categorias as CategoriaDeMedicion[];
+    const ya = new Set(lista.map((c) => Number(c.id)));
+    const agregadas: CategoriaDeMedicion[] = (await maestroDeCategorias(tx, Number(d.dimension_id), { bloquear: true }))
+      .filter((c) => c.activo && !ya.has(c.id))
+      .map((c) => ({ id: c.id, nombre: c.nombre, orden: c.orden, noAplica: null }));
+    if (agregadas.length === 0) return { agregadas: 0 };
+    await tx`UPDATE variable_valores SET categorias = ${tx.json([...lista, ...agregadas] as never)} WHERE id = ${periodoId}`;
+    const detalle = { categorias: { agregadas: agregadas.map((c) => ({ id: c.id, nombre: c.nombre })) } };
+    await tx`INSERT INTO variable_eventos (valor_id, tipo, usuario_id, detalle, creado_en)
+      VALUES (${periodoId}, 'correccion', ${sesion.usuarioId}, ${tx.json(detalle as never)}, ${ahora})`;
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "dato_categorias_actualizadas",
+      entidad: "dato_compartido",
+      entidadId: Number(d.id),
+      detalle: { nombre: d.nombre as string, periodo: p.periodo as string, periodoId, agregadas: agregadas.map((c) => c.nombre) },
+    });
+    return { agregadas: agregadas.length };
   });
 }
 

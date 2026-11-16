@@ -2,6 +2,7 @@ import { IconoFormato } from "@/componentes/documentos/IconoFormato";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import { CerrarDeNuevoDato, DialogoReabrirDato } from "@/componentes/indicadores/cierre/DialogoReabrir";
+import { ActualizarCategoriasDelDato } from "@/componentes/indicadores/medicion/ActualizarCategorias";
 import type { EventoDeDato, PeriodoDeDato } from "@/db/consultas/indicadores/datos-periodos";
 import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
@@ -19,8 +20,19 @@ type Guardado = { valor?: unknown; porCategoria?: unknown };
 const objeto = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const enTexto = (v: unknown) => (typeof v === "string" && v !== "" ? cifraDeDato(v) : "?");
 
-/** La última corrección del periodo, con su antes: lo que la tabla dice junto al valor y a quien lo reportó. */
-const ultimaCorreccion = (eventos: EventoDeDato[]) => [...eventos].reverse().find((e) => e.tipo === "correccion") ?? null;
+/**
+ * Las categorías que añadió «Actualizar categorías» a la lista del periodo, o `null` si el evento es otra cosa. Ese evento es
+ * un `correccion` sin antes ni después de valor, con `detalle.categorias.agregadas` (`actualizarCategoriasDelDato`).
+ */
+function categoriasAgregadas(e: EventoDeDato): string[] | null {
+  if (e.tipo !== "correccion" || !("categorias" in e.detalle)) return null;
+  const agregadas = objeto(e.detalle.categorias).agregadas;
+  return (Array.isArray(agregadas) ? agregadas : []).map((c) => objeto(c).nombre).filter((n): n is string => typeof n === "string");
+}
+
+/** La última corrección del valor del periodo, con su antes: lo que la tabla dice junto al valor y a quien lo reportó. */
+const ultimaCorreccion = (eventos: EventoDeDato[]) =>
+  [...eventos].reverse().find((e) => e.tipo === "correccion" && categoriasAgregadas(e) === null) ?? null;
 
 /** «Sede norte: 700 → 720»: las categorías que cambian entre lo que había y lo que quedó. */
 function categoriasQueCambian(antes: Guardado, despues: Guardado, nombres: Map<string, string>): string[] {
@@ -41,6 +53,11 @@ function fraseDelEvento(e: EventoDeDato, nombres: Map<string, string>): string {
       return `Reportó ${enTexto(d.valor)}${porCategoria.length > 0 ? ` (${porCategoria.join("; ")})` : ""}${marca}`;
     }
     case "correccion": {
+      const agregadas = categoriasAgregadas(e);
+      if (agregadas !== null) {
+        const cuales = agregadas.length === 0 ? "" : `: ${agregadas.length === 1 ? "se añadió" : "se añadieron"} ${agregadas.join(", ")}`;
+        return `Se actualizaron las categorías${cuales}`;
+      }
       const antes = objeto(d.antes) as Guardado;
       const despues = objeto(d.despues) as Guardado;
       const cambios = categoriasQueCambian(antes, despues, nombres);
@@ -90,8 +107,8 @@ function Soportes({ datoId, soportes }: { datoId: number; soportes: Soporte[] })
  * Los periodos de un dato (anexo 14C, §4.4 y §4.7, maqueta 12), del más reciente al más viejo: su valor y, si se corrigió,
  * el de antes; quién lo reportó y quién lo corrigió; sus soportes y su estado. Con `editable` (quien puede reportar el dato),
  * desde su fila se corrige un periodo reportado sin cerrar y se reporta uno pendiente que se pide. Con `administra`, se
- * reabre un periodo cerrado (con la lista de lo que se reabre en cascada, `reaperturas`, anexo 14C §3.5) y se cierra de
- * nuevo uno reabierto. Debajo, el historial de cada periodo, de solo inserción: qué había, qué quedó, quién y cuándo.
+ * reabre un periodo cerrado (con la lista de lo que se reabre en cascada, `reaperturas`, anexo 14C §3.5), se cierra de
+ * nuevo uno reabierto y se actualizan las categorías de uno pendiente de un dato con dimensión (§5.7). Debajo, el historial de cada periodo, de solo inserción: qué había, qué quedó, quién y cuándo.
  */
 export function HistorialDelDato({
   datoId,
@@ -158,6 +175,9 @@ export function HistorialDelDato({
                   <div className="flex flex-col items-start gap-1">
                     {editable && seReportaDesdeLaFila(p) ? (
                       <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p, ahora)} soportes={soportes.get(p.id) ?? []} />
+                    ) : null}
+                    {administra && p.estado === "pendiente" && p.sePide && p.categorias !== null ? (
+                      <ActualizarCategoriasDelDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo)} />
                     ) : null}
                     {administra && p.estado === "cerrado" && reaperturas.has(p.id) ? (
                       <DialogoReabrirDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo, true)} reapertura={reaperturas.get(p.id)!} />

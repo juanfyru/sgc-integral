@@ -880,6 +880,10 @@ export function describirEvento(e: EventoAuditoria): string {
     }
     case "dato_soporte_quitado":
       return `Quitó el soporte «${texto(d.archivo) ?? "?"}» ${delPeriodoDelDato(nombre, d.periodo)}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
+    case "dato_categorias_actualizadas": {
+      const agregadas = Array.isArray(d.agregadas) ? d.agregadas.filter((n): n is string => typeof n === "string") : [];
+      return `Actualizó las categorías de ${periodoDelDato(nombre, d.periodo)}${agregadas.length > 0 ? `: añadió ${agregadas.join(", ")}` : ""}`;
+    }
     // ── Indicadores (14C): la reapertura en cascada y «Cerrar de nuevo» de un periodo de un dato
     case "dato_reabierto": {
       const reabiertas = numero(d.reabiertas);
@@ -1298,6 +1302,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   dato_reportado: "Reportó un dato compartido",
   dato_corregido: "Corrigió un dato compartido",
   dato_soporte_quitado: "Quitó un soporte de un dato compartido",
+  dato_categorias_actualizadas: "Actualizó las categorías de un periodo de un dato compartido",
   dato_reabierto: "Reabrió un periodo de un dato compartido",
   dato_cerrado_de_nuevo: "Cerró de nuevo un periodo de un dato compartido",
   dimension_guardada: "Guardó una dimensión de indicadores",
