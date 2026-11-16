@@ -85,6 +85,8 @@ export const NADIE_LO_MIDE = "Este indicador no tiene datos propios: nadie lo di
 export const noSeDigitaDesdeAqui = (nombre: string) => `«${nombre}» no se digita desde aquí: llega de otra fuente`;
 /** Un motivo de «no aplica» que es el de uno que pone el sistema (`motivoValido`). */
 export const MOTIVO_RESERVADO = "Ese motivo lo usa el sistema: escriba el suyo con otras palabras";
+/** El «No aplica» que puso el sistema no lo quita una persona: lo quita la propagación cuando deja de ser cierto (`quitarNoAplica`). */
+export const NO_APLICA_DEL_SISTEMA = "Este «No aplica» lo puso el sistema: se quita solo cuando cambie el dato";
 
 /**
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
@@ -1147,7 +1149,8 @@ export async function marcarNoAplica(sesion: SesionFlujo, d: { medicionId: numbe
 
 /**
  * Quita «no aplica» (spec §8.7): es una corrección. La medición vuelve a estar por reportar, con lo que se hubiera
- * digitado. Un histórico no: se corrige en la tabla del año.
+ * digitado. Un histórico no: se corrige en la tabla del año. Uno que puso el sistema (con uno de `MOTIVOS_DEL_SISTEMA`)
+ * tampoco: lo quita la propagación cuando su fuente cambia (`NO_APLICA_DEL_SISTEMA`).
  */
 export async function quitarNoAplica(sesion: SesionFlujo, medicionId: number, opciones?: Opciones): Promise<void> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
@@ -1155,6 +1158,7 @@ export async function quitarNoAplica(sesion: SesionFlujo, medicionId: number, op
   const ahora = opciones?.ahora ?? new Date();
   const sinMarca = (m: Record<string, unknown>) => {
     if (m.no_aplica !== true) throw new ErrorIndicador("La medición no está marcada «No aplica»");
+    if (MOTIVOS_DEL_SISTEMA.includes(m.no_aplica_motivo as string)) throw new ErrorIndicador(NO_APLICA_DEL_SISTEMA);
   };
   sinMarca(noHistorica(await contextoDeMedicion(sql, sesion, medicionId, false)).medicion);
   await enTransaccion(sql, async (tx) => {

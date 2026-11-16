@@ -21,7 +21,14 @@ import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { basesDe, leerPeriodos } from "@/db/consultas/indicadores/lectura";
-import { asegurarMediciones, marcarNoAplica, MOTIVO_RESERVADO, reportar } from "@/db/consultas/indicadores/mediciones";
+import {
+  asegurarMediciones,
+  marcarNoAplica,
+  MOTIVO_RESERVADO,
+  NO_APLICA_DEL_SISTEMA,
+  quitarNoAplica,
+  reportar,
+} from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion } from "@/db/consultas/indicadores/operacion";
 import { propagar, propagarSinFallar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
 import { columnasDePendiente, esPendiente, queFalta, tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
@@ -436,6 +443,8 @@ describe("el «No aplica» en un mixto", () => {
       expect([m.no_aplica, m.no_aplica_motivo, m.estado, m.resultado_exacto]).toEqual([true, MOTIVO_NADA_QUE_MEDIR, "reportada", null]);
       // «Reportada» sigue siendo de quien mide.
       expect(m.reportada_por).toBe(mide.usuarioId);
+      // Y quien mide no lo quita: se va solo cuando cambie el dato.
+      await expect(quitarNoAplica(mide, medicion, { sql: tx, ahora: AHORA })).rejects.toThrow(NO_APLICA_DEL_SISTEMA);
 
       await reportarElDato(tx, responsable, datoId, "2026-09", "1284300000", TARDE);
       expect(await propagarA(tx, TARDE, [ind.id])).toEqual({ escritas: 1, noAplica: 0, fallidas: 0 });

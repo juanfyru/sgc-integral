@@ -123,6 +123,22 @@ describe("acumulado", () => {
     const r = acumulado([], ficha("suma", ["2026-T1"]));
     expect(r).toMatchObject({ resultado: null, semaforo: null, faltan: ["2026-T1"], desde: null });
   });
+  it("con `fijos`, sus letras valen lo que se les da y no se juntan ni se piden a los periodos", () => {
+    // A la toma de otro indicador: vale su acumulado (anexo 14C, §6.4), no el último de los periodos.
+    const sinA: PeriodoMedido = { clave: "2026-T3", versionId: 1, noAplica: false, valores: { B: f("5") } };
+    const r = acumulado(
+      [p("2026-T1", "1", "5"), p("2026-T2", "5", "5"), sinA],
+      { versionId: 1, calculo: porcentaje(), consolidacion: { A: "ultimo", B: "suma" }, esperados: ["2026-T1", "2026-T2", "2026-T3"], regla: asc },
+      { A: f("12") },
+    );
+    expect(comparar(r.resultado!, f("80"))).toBe(0);
+    expect(r.valores).toEqual({ A: f("12"), B: f("15") });
+    expect(r.faltan).toEqual([]);
+  });
+  it("con una letra fija en `null` no hay resultado", () => {
+    const r = acumulado([p("2026-T1", "5", "5")], { versionId: 1, calculo: porcentaje(), consolidacion: { A: "suma", B: "suma" }, esperados: [], regla: asc }, { A: null });
+    expect(r).toMatchObject({ resultado: null, semaforo: null, cumple: null, sinResultado: null, valores: { B: f("5") } });
+  });
   it("una división por cero del acumulado se reporta como motivo", () => {
     const r = acumulado([p("2026-T1", "5", "0")], { versionId: 1, calculo: porcentaje(), consolidacion: { A: "suma", B: "suma" }, esperados: [], regla: asc });
     expect(r).toMatchObject({ resultado: null, sinResultado: "division_por_cero", semaforo: null });

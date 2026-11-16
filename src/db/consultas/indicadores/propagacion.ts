@@ -29,7 +29,8 @@
  *   una persona no se toca.
  * - **El plazo** (§3.4): si la medición pasa de no pedir el análisis a pedirlo y su fecha límite ya pasó (o el plazo es 0),
  *   se cuenta otra vez desde hoy con el mismo plazo (`laFuenteMueveElPlazo`), con las marcas de aviso limpias y `venceEn` en
- *   el evento. Vale igual para un dato y para un componente.
+ *   el evento. Vale igual para un dato y para un componente, y cuando el contagio se quita y un mixto vuelve a pedir el
+ *   reporte de quien mide.
  * - **El evento es del sistema** (`propagacion`, sin usuario): qué cambió de cada fuente (`detalle.fuentes`, con la letra,
  *   la clase, el id del dato o del indicador y el antes y el después) y los valores de todas las letras a los dos lados.
  *
@@ -94,13 +95,13 @@ export type ValorDeDato = { estado: "listo"; valor: Fraccion; periodos: number[]
 
 /**
  * Lo que tiene un componente para el periodo de un compuesto (anexo 14C, §6.3): listo, con las mediciones del componente
- * que entraron al valor y, si es un acumulado que no empieza en el primer periodo del tramo, la clave del primero que entró;
- * falta algo; o no aplicó.
+ * que entraron al valor y, si es un acumulado que no empieza con el periodo del compuesto, la clave del primero que entró;
+ * falta algo; o no aplicó, con las mediciones que lo deciden (las «entradas» del cierre, como las de un valor listo).
  */
 export type ValorDeComponente =
   | { estado: "listo"; valor: Fraccion; mediciones: number[]; desde: string | null }
   | { estado: "falta" }
-  | { estado: "no_aplica" };
+  | { estado: "no_aplica"; mediciones: number[] };
 
 /** Lo que tiene la fuente de una variable ajena para la medición. `no_aplica`, el de un componente, con su id. */
 export type ValorAjeno = { estado: "listo"; valor: Fraccion } | { estado: "falta" } | { estado: "no_aplica"; fuenteId: number };
@@ -153,7 +154,6 @@ const datosDe = (version: VersionDeCalculo): number[] =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FALTA: ValorDeComponente = { estado: "falta" };
-const NO_APLICA: ValorDeComponente = { estado: "no_aplica" };
 
 /** La regla con que se juzgó la medición `m` con la versión `v`: la de la versión con la meta que se le aplicó, si tiene. */
 const reglaAplicada = (m: Row, v: VersionDeCalculo): ReglaEnTexto =>
@@ -177,13 +177,27 @@ const conDato = (m: Row) => m.no_aplica === true || typeof m.resultado_exacto ==
  *   registró se saltan. Si todos los de la versión que rige al final del tramo (su racha, `rachasDe`) son «No aplica»,
  *   `no_aplica`. Si no, su acumulado propio (`acumulado`, como `resumenAcumulado`: se juntan sus variables y se aplica su
  *   fórmula, saltando los «No aplica»), que cubre solo esa racha; su cumplimiento, contra la meta aplicada del último periodo
- *   medido. `desde` es la clave del primer periodo que entró cuando no es el primero del tramo.
- * `mediciones` son las que entraron al valor: la del periodo o las de la racha, también sus «No aplica».
+ *   medido. Si el componente es a su vez compuesto, cada variable que él toma vale el acumulado de su propio componente en
+ *   el mismo tramo (`fijos` de `acumulado`, §6.4), nunca lo copiado mes a mes; si ese da `falta` o `no_aplica`, este también.
+ *   `desde` es la clave del primer periodo que entró cuando no empieza con el periodo del compuesto (un componente que empezó
+ *   a medirse a mitad de él, un histórico sin registrar o un cambio de fórmula), o la del componente interior, la más tardía.
+ * `mediciones` son las que entraron al valor, o las que lo dejaron «No aplica»: la del periodo o las de la racha, también
+ * sus «No aplica».
  */
-export async function valorDeComponente(
+export function valorDeComponente(
   sql: Cliente,
   d: { indicadorId: number; toma: Toma; periodo: string; desde: Date; hasta: Date },
 ): Promise<ValorDeComponente> {
+  return valorDeComponenteSin(sql, d, new Set());
+}
+
+/** `valorDeComponente` sin volver a pasar por los indicadores de `camino` (un ciclo, que la ficha no admite, no se recorre). */
+async function valorDeComponenteSin(
+  sql: Cliente,
+  d: { indicadorId: number; toma: Toma; periodo: string; desde: Date; hasta: Date },
+  camino: ReadonlySet<number>,
+): Promise<ValorDeComponente> {
+  if (camino.has(d.indicadorId)) return FALTA;
   const zona = zonaHoraria();
   const gruesa = periodicidadDe(d.periodo);
   const [indicador] = await sql`SELECT inicio_medicion FROM indicadores WHERE id = ${d.indicadorId}`;
@@ -216,7 +230,7 @@ export async function valorDeComponente(
 
   if (esperados.length === 1 && esperados[0].clave === d.periodo) {
     const { m, rige } = entran[0];
-    if (m.no_aplica === true) return NO_APLICA;
+    if (m.no_aplica === true) return { estado: "no_aplica", mediciones: [Number(m.id)] };
     const calculada = versiones.find((v) => v.id === Number(m.version_id)) ?? rige;
     const cumple = cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null });
     const valor = deLaToma(d.toma, deTexto(m.resultado_exacto as string), cumple, reglaDeTexto(reglaAplicada(m, calculada)));
@@ -228,10 +242,25 @@ export async function valorDeComponente(
   const rachaDe = (v: VersionDeCalculo) => rachas.get(v.id)?.id ?? v.id;
   const racha = rachaDe(rigeAlFinal);
   const deLaRacha = entran.filter((e) => rachaDe(e.rige) === racha);
+  const mediciones = deLaRacha.map((e) => Number(e.m.id));
   const medidos = deLaRacha.filter((e) => e.m.no_aplica !== true);
-  if (deLaRacha.length > 0 && medidos.length === 0) return NO_APLICA;
+  if (deLaRacha.length > 0 && medidos.length === 0) return { estado: "no_aplica", mediciones };
   const ficha = fichaDeCalculo(rigeAlFinal.calculo);
   if (!ficha || medidos.length === 0) return FALTA;
+
+  // Un componente compuesto: lo que él toma vale el acumulado de su componente en el tramo, no lo copiado mes a mes.
+  const fijos: Record<string, Fraccion> = {};
+  const desdes: string[] = [];
+  const conEl = new Set([...camino, d.indicadorId]);
+  for (const v of rigeAlFinal.variables) {
+    if (v.origen !== "indicador") continue;
+    if (v.indicadorOrigenId === null || v.toma === null) return FALTA;
+    const interior = await valorDeComponenteSin(sql, { ...d, indicadorId: v.indicadorOrigenId, toma: v.toma }, conEl);
+    if (interior.estado === "falta") return FALTA;
+    if (interior.estado === "no_aplica") return { estado: "no_aplica", mediciones };
+    fijos[v.letra] = interior.valor;
+    if (interior.desde !== null) desdes.push(interior.desde);
+  }
 
   const guardados = await sql`SELECT mv.medicion_id, ${columnasDeValor(sql)}
     FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
@@ -245,11 +274,17 @@ export async function valorDeComponente(
   const r = acumulado(
     deLaRacha.map((e) => ({ clave: orden(e.periodo), versionId: racha, noAplica: e.m.no_aplica === true, valores: e.m.no_aplica === true ? null : valoresDe(e) })),
     { versionId: racha, calculo: ficha, consolidacion: Object.fromEntries(rigeAlFinal.variables.map((v) => [v.letra, v.consolidacion])), esperados: [], regla },
+    fijos,
   );
   const valor = r.resultado ? deLaToma(d.toma, r.resultado, r.cumple, regla) : null;
   if (!valor) return FALTA;
-  const primera = r.desde === null ? null : r.desde.slice(r.desde.indexOf("#") + 1);
-  return { estado: "listo", valor, mediciones: deLaRacha.map((e) => Number(e.m.id)), desde: primera !== null && primera !== esperados[0].clave ? primera : null };
+  // El primero que entró, si empieza después que el periodo del compuesto; y el más tardío de los interiores.
+  if (r.desde !== null && new Date(r.desde.slice(0, r.desde.indexOf("#"))).getTime() > d.desde.getTime()) {
+    desdes.push(r.desde.slice(r.desde.indexOf("#") + 1));
+  }
+  const inicioDe = (clave: string) => periodoDe(clave, zona)?.desde.getTime() ?? 0;
+  const desde = desdes.reduce<string | null>((tarde, c) => (tarde === null || inicioDe(c) > inicioDe(tarde) ? c : tarde), null);
+  return { estado: "listo", valor, mediciones, desde };
 }
 
 const componentesDe = (version: VersionDeCalculo): number[] =>
@@ -446,17 +481,14 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
       antes: { ...enTexto(version, guardados), ...marca(m.no_aplica === true, m.no_aplica_motivo) },
       despues: { ...enTexto(version, plan.valores), ...marca(noAplica, plan.noAplica?.motivo) },
     },
-    // Un cambio ajeno que la deja pidiendo el análisis con la fecha ya pasada no la deja vencida (anexo 14C, §3.4).
+    // Un cambio ajeno que la deja pidiendo el análisis con la fecha ya pasada no la deja vencida (anexo 14C, §3.4); ni el
+    // contagio que se quita y le devuelve el reporte a quien mide un mixto: nadie amanece vencido por lo que cambió otro.
     conElResultado: async (r) => {
       const pide = pideAnalisis({ semaforo: r.despues, cumple: r.cumple, repetido: r.repetido, noAplica }, m);
-      const vence = laFuenteMueveElPlazo({
-        pedia,
-        pide,
-        venceEn: new Date(m.vence_en as string),
-        ahora,
-        plazoDias: Number(i.plazo_reporte_dias),
-        zona,
-      });
+      const plazo = { venceEn: new Date(m.vence_en as string), ahora, plazoDias: Number(i.plazo_reporte_dias), zona };
+      const vence =
+        laFuenteMueveElPlazo({ pedia, pide, ...plazo }) ??
+        (plan.quitarReporte && mide(version) ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
       if (!vence) return {};
       await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
         WHERE id = ${medicionId}`;

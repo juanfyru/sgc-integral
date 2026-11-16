@@ -20,7 +20,7 @@ import { reportesATiempo, type MedicionParaPlazo } from "@/lib/indicadores/calcu
 import { objetivosCumplidos } from "@/lib/indicadores/objetivos";
 import { alguienMide } from "@/lib/indicadores/origen";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
-import type { OrigenDato, Periodicidad } from "@/lib/indicadores/tipos";
+import { MOTIVO_COMPONENTE_NO_APLICA, type OrigenDato, type Periodicidad } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { esDeOtraPeriodicidad } from "./mediciones";
 import { aportesDelPeriodo, cumplenPorObjetivo } from "./objetivos";
@@ -92,7 +92,10 @@ type VersionQueRige = { rigeDesde: string | null; periodicidad: Periodicidad | n
  * rige su periodo si alguien la mide (manual y con variables propias: un indicador sin ellas queda fuera, como un
  * automático; anexo 14C §3.1, F14C-DC22) y de su periodicidad, sin las que seguían sin reportar cuando el indicador se
  * retiró antes de su fecha límite. El primer reporte es el primer evento `reporte` o `no_aplica`, no `reportada_en`: una
- * corrección puede borrarla. En un mixto es el de quien mide al entregar lo suyo, aunque el dato llegue después.
+ * corrección puede borrarla. En un mixto es el de quien mide al entregar lo suyo, aunque el dato llegue después. Tampoco
+ * cuenta la que quien mide no debía (anexo 14C, §3.1 y §6.3): sin reporte suyo, sigue «No aplica» por el contagio de un
+ * componente (`MOTIVO_COMPONENTE_NO_APLICA`) y el evento que la marcó (`propagacion` con `detalle.componente`; el último, si
+ * hubo varios) llegó en su fecha límite o antes. Si llegó después, la persona ya debía su reporte, y cuenta como tarde.
  */
 async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<ValoresDeCalculo> {
   const delProceso = p.alcance === "proceso" ? sql`i.proceso_id = ${p.procesoId}` : sql`true`;
@@ -106,7 +109,10 @@ async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<V
     CROSS JOIN LATERAL (SELECT min(e.creado_en) AS en FROM medicion_eventos e
       WHERE e.medicion_id = m.id AND e.tipo IN ('reporte', 'no_aplica')) primero
     WHERE m.vence_en >= ${p.periodo.desde} AND m.vence_en <= ${p.periodo.hasta} AND NOT m.historica AND ${delProceso}
-      AND NOT (i.estado = 'retirado' AND i.baja_en < m.vence_en AND (primero.en IS NULL OR primero.en > i.baja_en))`;
+      AND NOT (i.estado = 'retirado' AND i.baja_en < m.vence_en AND (primero.en IS NULL OR primero.en > i.baja_en))
+      AND NOT (primero.en IS NULL AND m.no_aplica AND m.no_aplica_motivo = ${MOTIVO_COMPONENTE_NO_APLICA}
+        AND coalesce((SELECT max(c.creado_en) FROM medicion_eventos c
+          WHERE c.medicion_id = m.id AND c.tipo = 'propagacion' AND c.detalle ? 'componente'), 'infinity'::timestamptz) <= m.vence_en)`;
   const zona = zonaHoraria();
   const medidas: MedicionParaPlazo[] = filas.flatMap((f) => {
     const clave = f.periodo as string;
