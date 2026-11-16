@@ -751,16 +751,20 @@ export async function historialDeCorregidas(
     const f = leidas.get(clave);
     fuentes.set(Number(e.id), `Por un cambio en ${f && (await f.ve(sesion)) ? f.texto : OCULTA[ref.clase]}`);
   }
-  // Lo que quien lee no ve de los componentes (anexo 14C, §6.5), y el nombre de los que sí ve y dejaron un contagio.
+  // Lo que quien lee no ve de los componentes (anexo 14C, §6.5), y el nombre de los que sí ve y aparecen en una propagación
+  // (como fuente o como el que dejó el contagio).
   const ocultos = await componentesOcultos(sql, sesion, versiones);
-  const contagiaron = eventos.flatMap((e) => {
-    const id = (e.detalle as { componente?: unknown } | null)?.componente;
-    return e.tipo === "propagacion" && typeof id === "number" && !ocultos.has(id) ? [id] : [];
+  const nombrados = eventos.flatMap((e) => {
+    if (e.tipo !== "propagacion") return [];
+    const d = (e.detalle ?? {}) as { componente?: unknown; fuentes?: unknown };
+    const fuentes = Array.isArray(d.fuentes) ? (d.fuentes as { clase?: unknown; id?: unknown }[]) : [];
+    const ids = [d.componente, ...fuentes.filter((f) => f?.clase === "indicador").map((f) => f.id)];
+    return ids.filter((x): x is number => typeof x === "number" && !ocultos.has(x));
   });
   const componentes = {
     ocultos,
     letras: letrasOcultasEnAlguna(versiones, ocultos),
-    nombres: await nombresDeComponentes(sql, [...(await componentesVisibles(sql, sesion, contagiaron))]),
+    nombres: await nombresDeComponentes(sql, [...(await componentesVisibles(sql, sesion, nombrados))]),
   };
   for (const c of corregidas) {
     const id = Number(c.id);

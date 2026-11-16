@@ -93,6 +93,12 @@ export const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no 
 export const NADIE_LO_MIDE = "Este indicador no tiene datos propios: nadie lo digita";
 /** El valor de una variable ajena no se digita: lo pone el sistema (anexo 14C, §3.1). */
 export const noSeDigitaDesdeAqui = (nombre: string) => `«${nombre}» no se digita desde aquí: llega de otra fuente`;
+/**
+ * Lo mismo para cualquier variable ajena: la tomada de otro indicador se dice por su letra, porque su nombre puede nombrar a
+ * un componente que quien reporta no ve (anexo 14C, §6.5).
+ */
+const noSeDigita = (v: { letra: string; nombre: string; origen: string }) =>
+  v.origen === "indicador" ? `La variable ${v.letra} no se digita desde aquí: llega de otro indicador` : noSeDigitaDesdeAqui(v.nombre);
 /** Un motivo de «no aplica» que es el de uno que pone el sistema (`motivoValido`). */
 export const MOTIVO_RESERVADO = "Ese motivo lo usa el sistema: escriba el suyo con otras palabras";
 /** El «No aplica» que puso el sistema no lo quita una persona: lo quita la propagación cuando deja de ser cierto (`quitarNoAplica`). */
@@ -1156,7 +1162,7 @@ async function planDeRejilla(
       const digitado = f.valores[v.letra];
       if (digitado === undefined) continue;
       if (v.origen !== "propia") {
-        if (digitado.trim() !== "") throw new ErrorIndicador(noSeDigitaDesdeAqui(v.nombre));
+        if (digitado.trim() !== "") throw new ErrorIndicador(noSeDigita(v));
         continue;
       }
       const leido = leerValor(digitado, v);
@@ -1246,7 +1252,7 @@ export async function planDeReporte(
   const digita = variablesQueDigita(version, m.historica === true);
   for (const v of version.variables) {
     const digitado = d.valores[v.letra];
-    if (!digita.includes(v) && typeof digitado === "string" && digitado.trim() !== "") throw new ErrorIndicador(noSeDigitaDesdeAqui(v.nombre));
+    if (!digita.includes(v) && typeof digitado === "string" && digitado.trim() !== "") throw new ErrorIndicador(noSeDigita(v));
   }
   const { valores, errores } = leerValores(digita, d.valores);
   const primerError = digita.map((v) => errores[v.letra]).find((e) => e !== undefined);

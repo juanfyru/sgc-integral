@@ -96,6 +96,9 @@ async function celdasDelExcel(libro: Buffer): Promise<string> {
   return salida.join("\n");
 }
 
+/** La descripción y la fuente de una variable tomada de `r`, que lo nombran: para Ana no deben salir. */
+const delaVariableDe = (r: IndicadorDePrueba) => ({ descripcion: `El cumplimiento de ${r.codigo}`, fuente: `Tablero de ${r.codigo}` });
+
 /** P1, P2, R, G y C, con quienes los miden; Ana, la gerente y alguien de P2. Con `reportados`, los datos de marzo de R y G. */
 async function escenario(tx: TransactionSql, o: { reportados?: boolean } = {}) {
   const p1 = await procesoNuevo(tx);
@@ -116,8 +119,11 @@ async function escenario(tx: TransactionSql, o: { reportados?: boolean } = {}) {
     nivelAcceso: "restringido",
     analiza: [ana.usuarioId, gerente.usuarioId],
     formula: "(A + B) / 2",
-    // La variable tomada lleva el nombre de R, como la escribiría quien elabora la ficha.
-    variables: { A: { indicadorOrigenId: r.id, toma: "valor", nombre: nombreDeR }, B: { indicadorOrigenId: g.id, toma: "valor", nombre: "Casos atendidos" } },
+    // La variable tomada lleva el nombre, la descripción y la fuente que la nombran, como las escribiría quien elabora la ficha.
+    variables: {
+      A: { indicadorOrigenId: r.id, toma: "valor", nombre: nombreDeR, ...delaVariableDe(r) },
+      B: { indicadorOrigenId: g.id, toma: "valor", nombre: "Casos atendidos" },
+    },
   });
   for (const i of [r, g, c]) await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: i.id });
   const m = { r: await medicionDe(tx, r.id, MARZO), g: await medicionDe(tx, g.id, MARZO), c: await medicionDe(tx, c.id, MARZO) };
@@ -210,6 +216,49 @@ describe("las lecturas de un periodo", () => {
       expect(html).toContain("Falta un dato de un componente.");
       expect(rastros(html, e.r)).toEqual([]);
     }));
+
+  it("un mixto que mide Ana (A de R, B propia): su pantalla no trae nada de R; reporta lo suyo, el resultado sale, y un valor para A se rechaza sin nombrarla", () =>
+    revertida(sql, async (tx) => {
+      const e = await escenario(tx);
+      const mixto = await indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: MARZO,
+        aprobadaEn: APROBADA,
+        procesoId: e.p1,
+        nivelAcceso: "restringido",
+        mide: [e.ana.usuarioId],
+        formula: "A + B",
+        variables: { A: { indicadorOrigenId: e.r.id, toma: "valor", nombre: e.nombreDeR, ...delaVariableDe(e.r) }, B: { nombre: "Casos propios" } },
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: mixto.id });
+      await propagar(opc(tx));
+      const deMixto = await medicionDe(tx, mixto.id, MARZO);
+
+      const reporte = (await medicionParaReportar(e.ana, mixto.codigo, MARZO, opc(tx)))!;
+      expect(reporte.mide).toBe(true);
+      expect(reporte.variables[0]).toMatchObject({ nombre: COMPONENTE_OCULTO, oculta: true, valor: null, descripcion: null, fuente: null });
+      expect(reporte.variables[0].ajena).toMatchObject({ oculta: true, llego: true, valor: null, codigo: null, fuenteId: null });
+      expect(reporte.variables[1]).toMatchObject({ nombre: "Casos propios", valor: null, ajena: null });
+      expect(rastros(reporte, e.r)).toEqual([]);
+
+      // Un valor para A, que el formulario no manda, se rechaza por su letra: el nombre de la variable puede nombrar a R.
+      const err = await reportar(e.ana, { medicionId: deMixto, valores: { A: "50", B: "10" }, parcial: false, confirmado: true }, opc(tx)).then(
+        () => null,
+        (x: unknown) => x,
+      );
+      expect((err as Error).message).toBe("La variable A no se digita desde aquí: llega de otro indicador");
+      await reportar(e.ana, { medicionId: deMixto, valores: { B: "10" }, parcial: false, confirmado: true }, opc(tx));
+
+      // 37,5 de R más 10 propios.
+      const fila = (await tablaDelAnio(e.ana, mixto.id, 2003, opc(tx))).find((f) => f.periodo === MARZO)!;
+      expect(fila.resultado).toBe("47,5 %");
+      expect(fila.valores).toEqual([
+        { letra: "A", nombre: COMPONENTE_OCULTO, valor: VALOR_OCULTO, numero: null, oculta: true },
+        { letra: "B", nombre: "Casos propios", valor: "10", numero: 10 },
+      ]);
+      expect(rastros(fila, e.r)).toEqual([]);
+      expect(rastros(await medicionParaReportar(e.ana, mixto.codigo, MARZO, opc(tx)), e.r)).toEqual([]);
+    }));
 });
 
 describe("el Excel, el impreso y la ficha", () => {
@@ -280,7 +329,7 @@ describe("los eventos y los avisos", () => {
       const deGerente = (await historialDeCorregidas(e.gerente, e.c.id, [e.m.c], { sql: tx })).get(e.m.c)!;
       expect(deGerente.find((x) => x.que === "Reabrió")?.fuente).toBe(`Por un cambio en ${e.r.codigo} ${e.nombreDeR}, marzo de 2003`);
       const suya = deGerente.find((x) => x.que.startsWith("El sistema actualizó"))!;
-      expect(suya.que).toBe(`El sistema actualizó «${e.nombreDeR}»: de 37,5 a 62,5`);
+      expect(suya.que).toBe(`El sistema actualizó «${e.nombreDeR}» (sale de ${e.r.codigo} ${e.nombreDeR}): de 37,5 a 62,5`);
       expect(suya.cambios).toContain(`${e.nombreDeR}: 37,5 → 62,5`);
 
       // El aviso de la reapertura en cascada, por destinatario.

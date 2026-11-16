@@ -22,7 +22,7 @@ export type EntradaDeHistorial = { id: number; que: string; quien: string; cuand
 /**
  * Lo que quien lee no ve de los componentes de la medición (anexo 14C, §6.5), ya resuelto con `componentesVisibles`: los
  * ids de los que no ve, las letras que salen de ellos (su antes y su después no se pintan) y cómo se nombra cada uno que sí
- * ve («CEX-ID-002 Oportunidad de la cita», para el motivo del contagio).
+ * ve («CEX-ID-002 Oportunidad de la cita», en la propagación y en el motivo del contagio).
  */
 export type ComponentesDelHistorial = { ocultos: ReadonlySet<number>; letras: ReadonlySet<string>; nombres: ReadonlyMap<number, string> };
 
@@ -67,7 +67,8 @@ const MOTIVO_DE_RECALCULO: Readonly<Record<string, string>> = {
  * sistema quitó «No aplica»»: su motivo y los valores van en los cambios. Sin fuentes, «El sistema actualizó los valores por
  * categoría» si cambiaron celdas de un desagregado (anexo 14C, §5.7: van en los cambios), y si no, «El sistema actualizó un
  * valor». Lo de un componente que quien lee no ve (§6.5) se dice «un componente», sin su nombre ni sus cifras: «El sistema
- * actualizó un componente».
+ * actualizó un componente»; el que sí ve, con su código y su nombre («El sistema actualizó «Cumplimiento» (sale de
+ * SGC-IND-01 Programa de Auditorías Internas): de 60 a 75»), si `componentes.nombres` lo trae.
  */
 function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>, componentes: ComponentesDelHistorial): string {
   const antes = objeto(e.detalle.antes);
@@ -83,7 +84,9 @@ function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, stri
     .filter((f) => !oculta(f))
     .map((f) => {
       const letra = String(f.letra);
-      return `«${nombres[letra] ?? letra}»: de ${numero(f.antes, null) ?? "—"} a ${numero(f.despues, null) ?? "—"}`;
+      // El componente que quien lee sí ve, con su código y su nombre de hoy (si quien llama los trae).
+      const componente = f.clase === "indicador" ? componentes.nombres.get(Number(f.id)) : undefined;
+      return `«${nombres[letra] ?? letra}»${componente ? ` (sale de ${componente})` : ""}: de ${numero(f.antes, null) ?? "—"} a ${numero(f.despues, null) ?? "—"}`;
     });
   if (ocultos.size > 0) cada.push(ocultos.size === 1 ? "un componente" : `${ocultos.size} componentes`);
   return `El sistema actualizó ${cada.join("; ")}`;
