@@ -1,5 +1,21 @@
 import { Insignia } from "@/componentes/ui/Insignia";
 import { ETIQUETA_SEMAFORO, NO_ALCANZA_LA_META, sinAlcanzarLaMeta, type Semaforo } from "@/lib/indicadores/tipos";
+import { cuenta } from "@/lib/plural";
+
+/**
+ * Cuántas categorías de un desagregado quedaron en Crítico (anexo 14C, §5.6), junto al estado del total: «1 en Crítico», y
+ * para los lectores de pantalla con el nombre de la dimensión («1 categoría de Sede en Crítico»). Sin ninguna, nada: la marca
+ * no exige análisis ni cambia el color del total.
+ */
+export function InsigniaEnCritico({ n, dimension }: { n: number | null; dimension: string | null }) {
+  if (n === null || n <= 0) return null;
+  const categorias = cuenta(n, "categoría", "categorías");
+  return (
+    <span role="img" aria-label={dimension ? `${categorias} de ${dimension} en Crítico` : `${categorias} en Crítico`} className="inline-flex">
+      <Insignia variante="critico">{`${n} en Crítico`}</Insignia>
+    </span>
+  );
+}
 
 /**
  * El estado de un resultado (spec §7.5 y §11) con su nombre escrito, nunca solo el color: «Bien», «Atención» o «Crítico»;

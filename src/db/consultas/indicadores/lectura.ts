@@ -1,9 +1,10 @@
 /**
  * Las lecturas del módulo de indicadores (spec 14 §8, §11 y §12): la pantalla de reporte y la medición por reportar, la
  * tabla del año y los resultados de un indicador (acumulado y series de las gráficas) y el indicador con lo que la persona
- * puede hacer. Lo que comparten la lista (`lista.ts`) y la matriz (`matriz.ts`) vive aquí: los periodos en lote
- * (`leerPeriodos`), el acumulado (`resumenAcumulado`) y la comparación (`comparacionDe`). Solo leen: la escritura vive en
- * `mediciones.ts`. Las importaciones van en un solo sentido: `lista`/`matriz` → `lectura` → `mediciones`.
+ * puede hacer, y el desglose por categoría de los periodos de un año (`desgloseDelAnio`). Lo que comparten la lista
+ * (`lista.ts`) y la matriz (`matriz.ts`) vive aquí: los periodos en lote (`leerPeriodos`), el acumulado (`resumenAcumulado`)
+ * y la comparación (`comparacionDe`). Solo leen: la escritura vive en `mediciones.ts`. Las importaciones van en un solo
+ * sentido: `lista`/`matriz` → `lectura` → `categorias` → `mediciones`.
  */
 import type { Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -31,6 +32,8 @@ import { comparacion, fraseDeResultado, textoMeta, textoValor, type Unidad } fro
 import {
   ErrorIndicador,
   ETIQUETA_SEMAFORO,
+  MOTIVO_TODAS_NO_APLICAN,
+  MOTIVOS_DEL_SISTEMA,
   nombreDeEstado,
   sinAlcanzarLaMeta,
   type EstadoIndicador,
@@ -43,17 +46,20 @@ import { ErrorPermiso, puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { fichaDeVersion, operacionDeIndicador, versionVigente, type FichaLeida, type OperacionLeida } from "./aprobacion";
+import { desgloseDe, type Desglose } from "./categorias";
 import { indicadorPorCodigo } from "./fichas";
 import { obtenerParametros } from "./maestros";
 import {
   analisisDe,
   anteriorConResultado,
+  celdasPorCategoria,
   columnasDeValor,
   conMayuscula,
   contarSoportes,
   contextoDeMedicion,
   elegirValores,
   esDeOtraPeriodicidad,
+  listaDe,
   mide,
   reglaDelPeriodo,
   texto,
@@ -111,6 +117,13 @@ export type VariableDeReporte = {
   ajena: VariableAjena | null;
 };
 
+/**
+ * Una fila de la rejilla de un desagregado (anexo 14C, §5.4): la categoría de la lista de la medición, con el nombre de
+ * entonces; su «No aplica» (el motivo, o `null`) y si lo puso el sistema (`MOTIVOS_DEL_SISTEMA`: la persona no lo cambia);
+ * y lo guardado en cada celda, por letra de la versión que rige (también lo ajeno), con punto decimal o `null`.
+ */
+export type CategoriaDeReporte = { id: number; nombre: string; noAplica: string | null; delSistema: boolean; valores: Record<string, string | null> };
+
 /** Lo que la pantalla de reporte necesita (spec §8.2 y §12.5), todo en texto para el navegador. */
 export type DatosDeReporte = {
   medicionId: number;
@@ -162,6 +175,13 @@ export type DatosDeReporte = {
   /** La medición anterior con resultado, para la confirmación por variación; la etiqueta, en minúscula. */
   anterior: { clave: string; etiqueta: string; resultado: string } | null;
   variacionPct: number;
+  /**
+   * La lista de categorías de una medición desagregada, con sus celdas (la rejilla, anexo 14C §5.4); `null` si no se desagrega
+   * (tampoco un histórico, que se registra con el total). `variables` trae entonces el total.
+   */
+  categorias: CategoriaDeReporte[] | null;
+  /** El nombre con que se firmó la dimensión de la versión que rige; `null` sin lista. */
+  dimension: string | null;
 };
 
 /**
@@ -212,6 +232,8 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
   const ajenas = await ajenasDeReporte(sql, m.periodo as string, version, guardados);
   const zona = zonaHoraria();
   const foto = laFoto(m, ctx.periodo, version, ahora);
+  const lista = listaDe(m);
+  const celdas = lista ? await celdasPorCategoria(sql, m.id, version) : null;
   return {
     medicionId: m.id,
     indicadorId: indicador.id,
@@ -255,6 +277,20 @@ async function datosDeReporte(sql: Cliente, ctx: Contexto, ahora: Date): Promise
     cumple: m.resultado_exacto && m.semaforo ? cumpleDeMedicion(m) : null,
     anterior: anterior ? { clave: anterior.clave, etiqueta: anterior.etiqueta, resultado: aTexto(anterior.valor) } : null,
     variacionPct: variacionConfirmarPct,
+    categorias:
+      lista && celdas
+        ? lista.map((c) => {
+            const deLaFila = celdas.get(c.id) ?? {};
+            return {
+              id: c.id,
+              nombre: c.nombre,
+              noAplica: c.noAplica,
+              delSistema: c.noAplica !== null && MOTIVOS_DEL_SISTEMA.includes(c.noAplica),
+              valores: Object.fromEntries(version.calculo.letras.map((l) => [l, deLaFila[l] ? valorEnTexto(deLaFila[l]) : null])),
+            };
+          })
+        : null,
+    dimension: lista ? version.dimensionNombre : null,
   };
 }
 
@@ -436,6 +472,13 @@ export type FilaDelAnio = {
   seCalcula: Date | null;
   /** Su foto se puede volver a calcular (`sePuedeVolverACalcular`): de flujo, sin cerrar ni reabrir. */
   recalculable: boolean;
+  /**
+   * Cuántas categorías de una medición desagregada quedaron en Crítico (`categorias_en_critico`, anexo 14C §5.6); `null` si no
+   * se desagrega o no tiene resultado.
+   */
+  enCritico: number | null;
+  /** El nombre con que se firmó la dimensión de la versión con que se calculó; `null` sin `enCritico`. */
+  dimension: string | null;
 };
 
 export const anioValido = (anio: number) => Number.isInteger(anio) && anio >= 1900 && anio <= 9999;
@@ -551,14 +594,16 @@ export async function leerPeriodos(
       const exactos = m ? elegirValores((valoresDe.get(Number(m.id)) ?? []) as unknown as ValorGuardado[], version) : {};
       const fila = m ? filaDeMedicion(m, p, version, regla, exactos, b.soporteObligatorio, ahora) : filaSinMedicion(p, version, regla, ahora);
       const conDato = m !== null && (m.no_aplica === true || typeof m.resultado_exacto === "string");
-      const calculada = conDato ? (b.versiones.find((v) => v.id === Number(m.version_id))?.numero ?? version.numero) : version.numero;
+      const deLaMedicion = (conDato ? b.versiones.find((v) => v.id === Number(m.version_id)) : undefined) ?? version;
+      // La dimensión de la marca «n en Crítico» es la de la versión con que se calculó: la que firmó esas categorías.
+      const dimension = fila.enCritico === null ? null : (deLaMedicion.dimensionNombre ?? version.dimensionNombre);
       return {
         periodo: p,
         version,
         regla,
         resultado: m && typeof m.resultado_exacto === "string" ? deTexto(m.resultado_exacto) : null,
         valores: exactos,
-        fila: { ...fila, version: calculada, ...(otra ? { deOtraPeriodicidad: true } : {}) },
+        fila: { ...fila, version: deLaMedicion.numero, dimension, ...(otra ? { deOtraPeriodicidad: true } : {}) },
       };
     };
     const leidos = periodos.map((p) => leer(p, versionQueRigeEntre(b.versiones, p, zona)!, porClave.get(p.clave) ?? null, false));
@@ -591,6 +636,26 @@ export async function tablaDelAnio(sesion: SujetoVisibilidad, indicadorId: numbe
   if (!anioValido(anio) || !(await puedeVerIndicador(indicadorId, sesion, { sql }))) return [];
   const leidos = await leerPeriodos(sql, await basesDe(sql, [indicadorId]), { desde: anio, hasta: anio }, ahora);
   return (leidos.get(indicadorId) ?? []).map((l) => l.fila);
+}
+
+/**
+ * El desglose por categoría (`desgloseDe`, anexo 14C §5.6) de cada periodo medido de `anio` del indicador, en el orden del
+ * calendario: las mediciones desagregadas con resultado o que quedaron «No aplica» porque ninguna categoría aplicó. No las que
+ * se guardaron sin reportar, ni una «No aplica» de toda la medición puesta por una persona, ni un histórico (sin lista). No
+ * comprueba la visibilidad: quien llama ya sabe que la persona ve el indicador.
+ */
+export async function desgloseDelAnio(sql: Cliente, indicadorId: number, anio: number): Promise<Desglose[]> {
+  if (!anioValido(anio)) return [];
+  const filas = await sql`SELECT id FROM mediciones
+    WHERE indicador_id = ${indicadorId} AND left(periodo, 4) = ${String(anio)} AND categorias IS NOT NULL
+      AND (resultado_exacto IS NOT NULL OR (no_aplica AND no_aplica_motivo = ${MOTIVO_TODAS_NO_APLICAN}))
+    ORDER BY desde, id`;
+  const salida: Desglose[] = [];
+  for (const f of filas) {
+    const d = await desgloseDe(sql, Number(f.id));
+    if (d) salida.push(d);
+  }
+  return salida;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -989,6 +1054,8 @@ function filaSinMedicion(p: Periodo, version: VersionDeCalculo, regla: Regla, ah
     fotoEn: null,
     seCalcula: null,
     recalculable: false,
+    enCritico: null,
+    dimension: null,
   };
 }
 
@@ -1087,5 +1154,8 @@ function filaDeMedicion(
     automatica,
     ...(!automatica && !alguienMide ? { nadieLoMide: true as const } : {}),
     ...laFoto(m, p, version, ahora),
+    enCritico: m.categorias_en_critico === null || m.categorias_en_critico === undefined ? null : Number(m.categorias_en_critico),
+    // Quien la lee la pone con la versión con que se calculó (`leerPeriodos`).
+    dimension: null,
   };
 }

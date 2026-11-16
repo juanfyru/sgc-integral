@@ -130,6 +130,8 @@ const FILA: FilaDeLista = {
   mejora: false,
   reporte: { texto: "Reportado", vencida: false },
   envio: null,
+  enCritico: null,
+  dimension: null,
 };
 
 const ULTIMO: UltimoResultado = {
@@ -343,6 +345,8 @@ describe("los componentes", () => {
       fotoEn: null,
       seCalcula: null,
       recalculable: false,
+      enCritico: null,
+      dimension: null,
     };
     const tabla = renderToStaticMarkup(<TablaDelAnio filas={[fila]} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir={false} />);
     expect(tabla).toContain("Bien · no alcanza la meta");
@@ -420,6 +424,8 @@ describe("los componentes", () => {
       fotoEn: null,
       seCalcula: null,
       recalculable: false,
+      enCritico: null,
+      dimension: null,
     });
     const filas = [
       fila("2026-05", [
@@ -479,6 +485,8 @@ describe("los componentes", () => {
       fotoEn: null,
       seCalcula: null,
       recalculable: false,
+      enCritico: null,
+      dimension: null,
       ...o,
     });
     // Manual el primero; desde el segundo lo calcula el sistema: uno sin dato y otro ya calculado.

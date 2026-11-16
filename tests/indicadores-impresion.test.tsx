@@ -49,7 +49,15 @@ import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
 import { camposDeFicha, camposDeOperacion, fechaYHora } from "@/lib/indicadores/ficha-en-texto";
 import { avisoDeDeduccion, NADIE_MIDE_AJENO, ORIGEN_AJENO } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
-import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba } from "./utiles/indicadores";
+import {
+  datoDePrueba,
+  desagregadoDePrueba,
+  dimensionDePrueba,
+  indicadorDePrueba,
+  loteImportado,
+  versionTrimestral,
+  type IndicadorDePrueba,
+} from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -668,6 +676,31 @@ describe("FichaImpresa", () => {
       const html = await impreso(tx, await sesionAdmin(tx), ind);
       expect(html).toMatch(new RegExp(`<th[^>]*>Desagregación</th><td[^>]*>Por ${sede.nombre}<`));
       expect(sede.nombre.toLowerCase()).toBe("sede");
+    }));
+
+  it("la ficha impresa de un desagregado trae el desglose del último periodo medido, con su total (14C, Tarea 15)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien, dimension } = await desagregadoDePrueba(tx, {
+        procesoId: p.id,
+        ahora: AHORA,
+        aprobadaEn: APROBADA,
+        reportados: { "2026-T2": "150", "2026-T3": "182" },
+      });
+      const html = await impreso(tx, quien, ind);
+      enOrden(html, ["Seguimiento y medición", `Por ${dimension.nombre} · Tercer trimestre de 2026`, "Representación gráfica"]);
+      const desde = html.indexOf(`Por ${dimension.nombre} · Tercer trimestre de 2026`);
+      const bloque = html.slice(desde, html.indexOf("Representación gráfica", desde));
+      for (const t of ["Sede principal", "91 %", "Puesto de salud 3", "55 %", "Crítico", "Sin casos", "No aplica", "Total", "85,9 %", "275", "320"]) {
+        expect(bloque, t).toContain(t);
+      }
+      expect(bloque).toMatch(new RegExp(`<th[^>]*>${dimension.nombre}</th>`));
+      expect(bloque).toContain(">Pacientes con manejo adherente<");
+      // Es el del último periodo medido, no el del segundo trimestre (la sede principal en 75 %).
+      expect(bloque).not.toContain("75 %");
+      // Sin desagregar, no hay bloque.
+      const { ind: otro } = await trimestralMedido(tx);
+      expect(await impreso(tx, await sesionAdmin(tx), otro)).not.toMatch(/Por [^<]* · Tercer trimestre/);
     }));
 
   it("el impreso y el Excel de una ficha sin variables propias dicen que el dato llega de otras fuentes; un mixto, que lo digita una persona (ronda 1)", () =>

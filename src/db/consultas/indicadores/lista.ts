@@ -140,6 +140,12 @@ export type FilaDeLista = {
    * desde las tareas ni los avisos): se termina desde la página del indicador.
    */
   envio: "pendiente" | "vencido" | null;
+  /**
+   * Cuántas categorías del último periodo de un desagregado quedaron en Crítico (anexo 14C, §5.6); `null` si no se desagrega o
+   * no tiene resultado. `dimension` es el nombre con que la firmó la versión con que se calculó.
+   */
+  enCritico: number | null;
+  dimension: string | null;
 };
 
 /** `noAplica` va aparte de `sinDato`: «No aplica» no es «Sin dato» (spec §8.5; Tarea 19, D-11). */
@@ -259,7 +265,7 @@ export async function listarIndicadores(
           // con margen para las de otra periodicidad, que se saltan.
           sql`SELECT x.* FROM unnest(${sql.array(ids)}::bigint[]) AS u(id) CROSS JOIN LATERAL (
               SELECT m.id, m.indicador_id, m.periodo, m.hasta, m.estado, m.historica, m.no_aplica, m.reportada_en, m.resultado_exacto, m.semaforo, m.cumple,
-                m.meta_aplicada, m.meta_max_aplicada, m.requiere_accion,
+                m.meta_aplicada, m.meta_max_aplicada, m.requiere_accion, m.categorias_en_critico, m.version_id,
                 (SELECT json_build_object('meta', im.meta::text, 'metaMax', im.meta_max::text) FROM indicador_metas im
                   WHERE im.indicador_id = m.indicador_id AND im.periodo = m.periodo) AS programada
               FROM mediciones m WHERE m.indicador_id = u.id ORDER BY m.hasta DESC LIMIT 13
@@ -302,7 +308,7 @@ export async function listarIndicadores(
     );
     const ultima = lista[0];
     const pend = pendientesDe.get(id);
-    let datos: Pick<FilaDeLista, "resultado" | "meta" | "semaforo" | "cumple" | "noAplica" | "flecha" | "mejora"> = {
+    let datos: Pick<FilaDeLista, "resultado" | "meta" | "semaforo" | "cumple" | "noAplica" | "flecha" | "mejora" | "enCritico" | "dimension"> = {
       resultado: null,
       meta: conFicha && vs[0] ? textoMeta(reglaDeTexto(vs[0].regla), vs[0].unidad) : null,
       semaforo: null,
@@ -310,12 +316,17 @@ export async function listarIndicadores(
       noAplica: false,
       flecha: null,
       mejora: null,
+      enCritico: null,
+      dimension: null,
     };
     if (ultima) {
       const { m, v } = ultima;
       const regla = reglaMostrada(m, v);
       const exacto = typeof m.resultado_exacto === "string" ? deTexto(m.resultado_exacto) : null;
       const c = comparacionDe(lista, regla.tendencia, v.unidad);
+      const enCritico = m.categorias_en_critico === null || m.categorias_en_critico === undefined ? null : Number(m.categorias_en_critico);
+      // La dimensión, la de la versión con que se calculó (la que firmó esas categorías), como en la tabla del año.
+      const calculada = vs.find((x) => x.id === Number(m.version_id)) ?? v;
       datos = {
         resultado: exacto ? textoValor(exacto, v.unidad, regla) : null,
         meta: textoMeta(regla, v.unidad),
@@ -324,6 +335,8 @@ export async function listarIndicadores(
         noAplica: m.no_aplica === true,
         flecha: c?.flecha ?? null,
         mejora: c?.mejora ?? null,
+        enCritico,
+        dimension: enCritico === null ? null : (calculada.dimensionNombre ?? v.dimensionNombre),
       };
     }
     const fila: FilaDeLista = {

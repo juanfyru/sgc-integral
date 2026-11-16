@@ -58,7 +58,8 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
  * soportes; dice cuándo se tomaron o se tomarán, con los datos del sistema muestra sus valores y, si el resultado lo pide, el
  * análisis; a quien además administra, «Volver a calcular» una foto de flujo (§5.4). La de un indicador sin variables
  * propias (anexo 14C, §3.1) también: muestra lo que llegó de sus datos y de sus componentes, y lo que falta. En un mixto,
- * quien mide digita lo suyo y lo ajeno aparece fijo (maqueta 14).
+ * quien mide digita lo suyo y lo ajeno aparece fijo (maqueta 14). Un desagregado se reporta por su rejilla por categoría
+ * (anexo 14C, §5.4, maquetas 9 y 10), y quien administra puede actualizar su lista de categorías.
  */
 export default async function PaginaReportar({ params }: Params) {
   const { codigo: segmento, periodo } = await params;
@@ -111,7 +112,7 @@ export default async function PaginaReportar({ params }: Params) {
           </Link>
         </p>
       ) : (
-        <FormularioReporte datos={datos} volver={volver} />
+        <FormularioReporte datos={datos} volver={volver} administra={puede(sesion, "indicadores.administrar")} />
       )}
       {/* Lo que nadie mide no lleva soportes: la sección sale solo si quedó alguno, y sin subir ni quitar. */}
       {!datos.mide && soportes.length === 0 ? null : (

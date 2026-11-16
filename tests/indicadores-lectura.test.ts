@@ -13,13 +13,14 @@ import { analizar } from "@/db/consultas/indicadores/analisis";
 import { asegurarConstancias, registrarConstancia } from "@/db/consultas/indicadores/constancias";
 import { abrirCambio } from "@/db/consultas/indicadores/fichas";
 import { resolverImpactoNoAfecta } from "@/db/consultas/indicadores/impactos";
-import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
+import { desgloseDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { consultaDeFiltro, filtroDeConsulta, listarIndicadores, type FiltroDeLista } from "@/db/consultas/indicadores/lista";
 import { matrizDelAnio, type CeldaDeMatriz } from "@/db/consultas/indicadores/matriz";
 import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { retirar } from "@/db/consultas/indicadores/operacion";
 import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import {
+  desagregadoDePrueba,
   indicadorDePrueba,
   versionAutomatica,
   versionTrimestral,
@@ -816,5 +817,57 @@ describe("la matriz del año", () => {
         (await matrizDelAnio(admin, { anio: 2026, procesoId: p.id, ...f }, opc(tx))).procesos.flatMap((x) => x.filas.map((r) => r.codigo)).sort();
       expect(await codigosDe({ subprocesoId: Number(sub.id) })).toEqual([con.codigo]);
       expect(await codigosDe({})).toEqual([con.codigo, sin.codigo].sort());
+    }));
+});
+
+describe("lo que se ve de un desagregado (14C, Tarea 15; anexo 14C §5.6)", () => {
+  it("desgloseDelAnio trae el desglose de cada periodo medido del año, en orden y con los números de las barras", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien, dimension, mediciones } = await desagregadoDePrueba(tx, {
+        procesoId: p.id,
+        ahora: AHORA,
+        aprobadaEn: APROBADA,
+        reportados: { "2026-T3": "182", "2026-T2": "150" },
+      });
+      // El primer trimestre, guardado sin reportar: no está medido.
+      const [t1] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      await reportar(
+        quien,
+        { medicionId: Number(t1.id), valores: {}, filas: [{ categoriaId: dimension.categorias[0], valores: { A: "1", B: "2" } }], parcial: true, confirmado: true },
+        opc(tx),
+      );
+
+      const desgloses = await desgloseDelAnio(tx, ind.id, 2026);
+      expect(desgloses.map((d) => d.periodo)).toEqual(["2026-T2", "2026-T3"]);
+      expect(desgloses.map((d) => d.medicionId)).toEqual([mediciones["2026-T2"], mediciones["2026-T3"]]);
+      const t3 = desgloses[1];
+      expect(t3.dimension).toBe(dimension.nombre);
+      expect(t3.filas.map((f) => f.numero)).toEqual([91, 86, 78, 55, null, null]);
+      expect(t3.filas[0].numeros).toEqual({ A: 182, B: 200 });
+      expect(t3.filas[5].numeros).toEqual({ A: null, B: null });
+      expect(t3.total!.numero).toBeCloseTo(85.9375, 4);
+      expect(t3.total!.numeros).toEqual({ A: 275, B: 320 });
+      expect(t3.metaNumero).toBe(85);
+      expect(desgloses[0].filas[0]).toMatchObject({ resultado: "75 %", numero: 75, semaforo: "atencion" });
+      expect(await desgloseDelAnio(tx, ind.id, 2025)).toEqual([]);
+    }));
+
+  it("la lista y la tabla del año marcan las categorías en Crítico con el nombre de la dimensión", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien, dimension } = await desagregadoDePrueba(tx, { procesoId: p.id, ahora: AHORA, aprobadaEn: APROBADA, reportados: { "2026-T3": "182" } });
+      const sinDesagregar = await trimestral(tx, p.id, { mide: [quien.usuarioId] });
+      await medir(tx, quien, sinDesagregar, { "2026-T3": { A: "9", B: "10" } });
+
+      const filas = (await lista(tx, quien, { procesoId: p.id })).filas;
+      expect(filas.find((f) => f.id === ind.id)).toMatchObject({ periodo: "2026-T3", enCritico: 1, dimension: dimension.nombre });
+      expect(filas.find((f) => f.id === sinDesagregar.id)).toMatchObject({ enCritico: null, dimension: null });
+
+      const anio = (await resultadosDelAnio(quien, ind.id, 2026, opc(tx))).filas;
+      expect(anio.find((f) => f.periodo === "2026-T3")).toMatchObject({ enCritico: 1, dimension: dimension.nombre });
+      // Un periodo abierto sin reportar y uno que no ha terminado no tienen marca.
+      expect(anio.find((f) => f.periodo === "2026-T2")).toMatchObject({ enCritico: null, dimension: null });
+      expect(anio.find((f) => f.periodo === "2026-T4")).toMatchObject({ enCritico: null, dimension: null });
     }));
 });

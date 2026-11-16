@@ -212,7 +212,14 @@ describe("reportar la rejilla", () => {
       ]);
       expect(d!.filas[0].valores).toEqual({ A: "182", B: "200" });
       expect(d!.enCritico).toEqual(["Puesto de salud 3"]);
-      expect(d!.total).toEqual({ valores: { A: "275", B: "320" }, resultado: "85,9 %", semaforo: "bien", cumple: true });
+      expect(d!.total).toEqual({
+        valores: { A: "275", B: "320" },
+        resultado: "85,9 %",
+        semaforo: "bien",
+        cumple: true,
+        numero: 85.9375,
+        numeros: { A: 275, B: 320 },
+      });
       expect(d).toMatchObject({ medicionId: e.octubre, periodo: OCTUBRE, dimension: e.sede.nombre, meta: "85 %" });
 
       // El evento del reporte lleva cada celda que cambió; lo mismo otra vez no deja nada.

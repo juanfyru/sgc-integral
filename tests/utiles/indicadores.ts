@@ -5,7 +5,8 @@
 import type { TransactionSql } from "postgres";
 import { maestroDeCategorias } from "@/db/consultas/indicadores/dimensiones";
 import { escribirFoto } from "@/db/consultas/indicadores/fotos";
-import { versionDelPeriodo } from "@/db/consultas/indicadores/mediciones";
+import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { asegurarMediciones, reportar, versionDelPeriodo, type FilaDeReporte } from "@/db/consultas/indicadores/mediciones";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { CALCULOS, CLAVES_DE_CALCULO, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
 import { listaDelPeriodo } from "@/lib/indicadores/categorias";
@@ -549,4 +550,68 @@ export async function dimensionDePrueba(
     ids.push(Number(c.id));
   }
   return { id: Number(dimension.id), categorias: ids };
+}
+
+/** Las seis sedes de la maqueta 9 de la 14C y el motivo de la que no aplica. */
+export const SEDES_DE_MAQUETA = ["Sede principal", "Puesto de salud 1", "Puesto de salud 2", "Puesto de salud 3", "Puesto de salud 4", "Puesto de salud 5"];
+export const OBRAS = "Cerrado por obras todo octubre.";
+
+/**
+ * Las filas de la rejilla de la maqueta 9 de la 14C para las categorías `ids`, en ese orden: 182/200, 43/50, 39/50, 11/20
+ * (Crítico), 0/0 («Sin casos») y la sexta «No aplica» con `OBRAS`. `principal` cambia el numerador de la primera.
+ */
+export function filasDeMaqueta(ids: readonly number[], principal = "182"): FilaDeReporte[] {
+  return [
+    { categoriaId: ids[0], valores: { A: principal, B: "200" } },
+    { categoriaId: ids[1], valores: { A: "43", B: "50" } },
+    { categoriaId: ids[2], valores: { A: "39", B: "50" } },
+    { categoriaId: ids[3], valores: { A: "11", B: "20" } },
+    { categoriaId: ids[4], valores: { A: "0", B: "0" } },
+    { categoriaId: ids[5], valores: {}, noAplica: OBRAS },
+  ];
+}
+
+/**
+ * Un trimestral de 2026 desagregado por una dimensión nueva con las seis sedes de la maqueta 9 de la 14C (`categorias` cambia
+ * sus nombres), meta 85 y Crítico por debajo de 70, con quien lo mide; abre sus periodos a `ahora` y reporta por la rejilla
+ * los de `reportados` (periodo → numerador de la primera sede, `filasDeMaqueta`). Solo dentro de `revertida`.
+ */
+export async function desagregadoDePrueba(
+  tx: TransactionSql,
+  d: { procesoId: number; ahora: Date; aprobadaEn: Date; reportados: Record<string, string>; categorias?: string[] },
+): Promise<{
+  ind: IndicadorDePrueba;
+  quien: SesionFlujo;
+  dimension: { id: number; nombre: string; categorias: number[] };
+  mediciones: Record<string, number>;
+}> {
+  consecutivo += 1;
+  const nombre = `Sede ${Date.now() % 100_000_000}-${consecutivo}`;
+  const dimension = await dimensionDePrueba(tx, nombre, d.categorias ?? SEDES_DE_MAQUETA);
+  const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+  const ind = await indicadorDePrueba(tx, {
+    procesoId: d.procesoId,
+    periodicidad: "trimestral",
+    inicioMedicion: "2026-T1",
+    aprobadaEn: d.aprobadaEn,
+    meta: "85",
+    modo: "fijo",
+    limite: "70",
+    dimensionId: dimension.id,
+    mide: [quien.usuarioId],
+    analiza: [quien.usuarioId],
+    variables: { A: { nombre: "Pacientes con manejo adherente" }, B: { nombre: "Pacientes auditados" } },
+  });
+  await asegurarMediciones({ sql: tx, ahora: d.ahora, indicadorId: ind.id });
+  const mediciones: Record<string, number> = {};
+  for (const [periodo, principal] of Object.entries(d.reportados)) {
+    const [m] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = ${periodo}`;
+    mediciones[periodo] = Number(m.id);
+    await reportar(
+      quien,
+      { medicionId: Number(m.id), valores: {}, filas: filasDeMaqueta(dimension.categorias, principal), parcial: false, confirmado: true },
+      { sql: tx, ahora: d.ahora },
+    );
+  }
+  return { ind, quien, dimension: { ...dimension, nombre }, mediciones };
 }

@@ -1,8 +1,8 @@
 /**
  * Lo que la ficha impresa y el Excel de un indicador leen de él (spec §7.8 y §13): la ficha de la versión que regía el
- * año elegido con sus firmas, su control de cambios hasta ella, los datos de operación y los resultados del año. Solo lee,
- * salvo abrir los periodos terminados con lo que sus fuentes ya tienen (`asegurarMedicionesConFuentes`), como la página del
- * indicador.
+ * año elegido con sus firmas, su control de cambios hasta ella, los datos de operación, los resultados del año y, en un
+ * desagregado, su desglose por categoría. Solo lee, salvo abrir los periodos terminados con lo que sus fuentes ya tienen
+ * (`asegurarMedicionesConFuentes`), como la página del indicador.
  */
 import { obtenerSql } from "@/db/cliente";
 import type { SujetoVisibilidad } from "@/lib/alcance";
@@ -10,7 +10,8 @@ import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { fichaDeVersion, versionesDe, type FichaLeida, type OperacionLeida, type VersionResumen } from "./aprobacion";
-import { anioValido, obtenerIndicador, periodosDelAnio, resultadosDelAnio, type Opciones, type ResultadosDelAnio } from "./lectura";
+import type { Desglose } from "./categorias";
+import { anioValido, desgloseDelAnio, obtenerIndicador, periodosDelAnio, resultadosDelAnio, type Opciones, type ResultadosDelAnio } from "./lectura";
 import { obtenerParametros } from "./maestros";
 import { versionesAprobadas, type VersionDeCalculo } from "./mediciones";
 import { asegurarMedicionesConFuentes } from "./propagacion";
@@ -32,6 +33,11 @@ export type ImpresionDelAnio = {
   resultados: ResultadosDelAnio;
   /** El parámetro de «N periodos sin cumplir», para la marca. */
   periodosSinCumplir: number;
+  /**
+   * El desglose por categoría de cada periodo medido del año (`desgloseDelAnio`, anexo 14C §5.6), en orden: el impreso trae el
+   * del último y el Excel, todos. Vacío si el indicador no se desagrega.
+   */
+  desgloses: Desglose[];
 };
 
 /** La versión que rige el último periodo de `anio` que ya empezó; `null` si ninguno ha empezado. */
@@ -63,11 +69,13 @@ export async function impresionDelAnio(
   if (!anioValido(anio) || anio < primerAnio || anio > enCurso) return null;
 
   await asegurarMedicionesConFuentes({ sql, ahora, indicadorId: vista.id });
-  const [versiones, resultados, resumen, parametros] = await Promise.all([
+  const [versiones, resultados, resumen, parametros, desgloses] = await Promise.all([
     versionesAprobadas(sql, vista.id),
     resultadosDelAnio(sesion, vista.id, anio, { sql, ahora }),
     versionesDe(vista.id, { sql }),
     obtenerParametros({ sql }),
+    // Quien no ve el indicador ya recibió `null` (`obtenerIndicador`).
+    desgloseDelAnio(sql, vista.id, anio),
   ]);
   const rige = versionDelAnio(versiones, vista.operacion.inicioMedicion, anio, ahora, zona);
   const ficha = rige && rige.id !== vista.ficha.versionId ? await fichaDeVersion(sesion, rige.id, { sql }) : vista.ficha;
@@ -81,5 +89,6 @@ export async function impresionDelAnio(
     versiones: resumen.filter((v) => v.numero <= ficha.numero),
     resultados,
     periodosSinCumplir: parametros.incumplimientoPeriodos,
+    desgloses,
   };
 }

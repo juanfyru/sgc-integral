@@ -4,8 +4,10 @@
 import { analizar, type Nodo } from "./formula/analizar";
 import { sumar, CERO, type Fraccion } from "./formula/fraccion";
 import { calcular, type FichaDeCalculo } from "./calculo";
+import { fichaDeCalculo, leerValores, reglaDeTexto, type CalculoEnTexto, type ReglaEnTexto, type VariableDeCaptura } from "./reporte";
 import type { Regla } from "./semaforo";
-import type { Forma, Semaforo } from "./tipos";
+import { textoValor, type Unidad } from "./textos";
+import { ETIQUETA_SEMAFORO, NO_ALCANZA_LA_META, sinAlcanzarLaMeta, type EstadoDePunto, type Forma, type Semaforo } from "./tipos";
 
 export type CategoriaDeMedicion = { id: number; nombre: string; orden: number; noAplica: string | null };
 
@@ -67,6 +69,84 @@ export function resultadoDeCategoria(
 ): { resultado: Fraccion | null; semaforo: Semaforo | null; cumple: boolean | null } {
   const r = calcular(calculo, valores, regla);
   return { resultado: r.resultado, semaforo: r.semaforo, cumple: r.cumple };
+}
+
+/**
+ * El estado de una categoría en texto y como punto de una gráfica (anexo 14C, §5.6): su semáforo, con «Bien · no alcanza la
+ * meta» como el total; «Sin meta» si tiene cifra y no hay meta; «Sin casos» (0 ÷ 0), «No aplica», o «Sin dato» si le faltan
+ * valores o su cifra no se pudo calcular.
+ */
+export function estadoDeCategoria(f: { estado: EstadoDeFila; semaforo: Semaforo | null; cumple: boolean | null; conResultado: boolean }): {
+  punto: EstadoDePunto;
+  texto: string;
+} {
+  if (f.estado === "no_aplica") return { punto: "no-aplica", texto: "No aplica" };
+  if (f.estado === "sin_casos") return { punto: "sin-dato", texto: "Sin casos" };
+  if (f.semaforo) {
+    return { punto: f.semaforo, texto: sinAlcanzarLaMeta(f.semaforo, f.cumple) ? `${ETIQUETA_SEMAFORO[f.semaforo]} · ${NO_ALCANZA_LA_META}` : ETIQUETA_SEMAFORO[f.semaforo] };
+  }
+  return f.conResultado ? { punto: "sin-meta", texto: "Sin meta" } : { punto: "sin-dato", texto: "Sin dato" };
+}
+
+/** Una fila de la rejilla mientras se digita (`rejillaEnVivo`). */
+export type FilaEnVivo = {
+  id: number;
+  nombre: string;
+  estado: EstadoDeFila;
+  /** El error de cada celda que no sirve, por letra. */
+  errores: Record<string, string>;
+  /** Tiene todo lo propio y le falta solo lo ajeno: el dato por categoría que aún no llega (anexo 14C, §5.7). */
+  esperaDato: boolean;
+  resultado: Fraccion | null;
+  /** «55 %», sin contradecir el color. */
+  texto: string | null;
+  semaforo: Semaforo | null;
+  cumple: boolean | null;
+};
+
+/** Lo que da el total mientras se digita: la suma, qué categorías faltan, «ninguna aplica» o la espera de un dato ajeno. */
+export type TotalEnVivo =
+  | { clase: "total"; valores: Record<string, Fraccion> }
+  | { clase: "faltan"; categorias: string[] }
+  | { clase: "ninguna_aplica" }
+  | { clase: "espera" };
+
+/**
+ * La rejilla de un desagregado mientras se digita (anexo 14C, §5.4 y §5.5), con las mismas funciones puras que deciden en el
+ * servidor, que es quien manda: cada fila con sus valores leídos con los límites de captura de su celda (`variables`; a lo
+ * ajeno no lo limitan las reglas de quien mide), su estado y, completa, su cifra y su color con la regla de la medición; el
+ * total, que suma las filas que aplican (`totalDeCategorias`) cuando todas están completas, «Sin casos» o «No aplica», o qué
+ * categorías faltan (las que no tienen todo lo propio), o la espera si a alguna solo le falta lo ajeno; y las categorías
+ * completas en Crítico, en el orden de la lista.
+ */
+export function rejillaEnVivo(
+  d: { calculo: CalculoEnTexto; regla: ReglaEnTexto; unidad: Unidad; variables: readonly (VariableDeCaptura & { ajena: boolean })[] },
+  filas: readonly { id: number; nombre: string; noAplica: boolean; textos: Readonly<Record<string, string | undefined>> }[],
+): { filas: FilaEnVivo[]; total: TotalEnVivo; enCritico: FilaEnVivo[] } {
+  const ficha = fichaDeCalculo(d.calculo);
+  const regla = reglaDeTexto(d.regla);
+  const propias = d.variables.filter((v) => !v.ajena).map((v) => v.letra);
+  const leidas = filas.map((f) => {
+    const categoria: CategoriaDeMedicion = { id: f.id, nombre: f.nombre, orden: 0, noAplica: f.noAplica ? f.nombre : null };
+    const base: FilaEnVivo = { id: f.id, nombre: f.nombre, estado: "no_aplica", errores: {}, esperaDato: false, resultado: null, texto: null, semaforo: null, cumple: null };
+    if (f.noAplica) return { categoria, valores: {}, fila: base };
+    const { valores: todos, errores } = leerValores(d.variables, f.textos);
+    const valores: Record<string, Fraccion> = {};
+    for (const [letra, v] of Object.entries(todos)) if (v !== null) valores[letra] = v;
+    const estado = ficha ? estadoDeFila(categoria, valores, ficha) : "incompleta";
+    const esperaDato = estado === "incompleta" && Object.keys(errores).length === 0 && propias.every((l) => valores[l] !== undefined);
+    if (estado !== "completa" || !ficha) return { categoria, valores, fila: { ...base, estado, errores, esperaDato } };
+    const r = resultadoDeCategoria(valores, ficha, regla);
+    const texto = r.resultado ? textoValor(r.resultado, d.unidad, regla) : null;
+    return { categoria, valores, fila: { ...base, estado, errores, resultado: r.resultado, texto, semaforo: r.semaforo, cumple: r.cumple } };
+  });
+  const enVivo = leidas.map((x) => x.fila);
+  const faltan = enVivo.filter((f) => f.estado === "incompleta" && !f.esperaDato).map((f) => f.nombre);
+  let total: TotalEnVivo;
+  if (faltan.length > 0 || !ficha) total = { clase: "faltan", categorias: faltan };
+  else if (enVivo.some((f) => f.esperaDato)) total = { clase: "espera" };
+  else total = totalDeCategorias(leidas, ficha);
+  return { filas: enVivo, total, enCritico: enVivo.filter((f) => f.estado === "completa" && f.semaforo === "critico") };
 }
 
 function usaFuncion(n: Nodo): boolean {

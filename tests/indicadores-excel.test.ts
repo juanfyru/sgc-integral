@@ -36,7 +36,16 @@ import { retirar } from "@/db/consultas/indicadores/operacion";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeIndicador, construirExcelDeResultados, detalleDeFiltros } from "@/lib/indicadores/excel";
 import { crearSesion } from "@/lib/sesion";
-import { indicadorDePrueba, loteImportado, versionTrimestral, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import {
+  desagregadoDePrueba,
+  indicadorDePrueba,
+  loteImportado,
+  OBRAS,
+  SEDES_DE_MAQUETA,
+  versionTrimestral,
+  type IndicadorDePrueba,
+  type OpcionesIndicadorDePrueba,
+} from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -379,6 +388,46 @@ describe("el Excel de un indicador", () => {
       expect(manual).toContain("Datos de operación | Plazo de reporte | ");
       expect(manual).toContain("Datos de operación | Soporte obligatorio | Sí: cada reporte lleva su soporte");
       expect(manual).not.toContain("Nadie: lo calcula el sistema");
+    }));
+
+  it("un desagregado trae la hoja «Por categoría 2026»: una fila por periodo medido y categoría, con los nombres neutralizados (14C, Tarea 15)", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const categorias = ["=SUMA(A1)", ...SEDES_DE_MAQUETA.slice(1)];
+      const { ind, quien } = await desagregadoDePrueba(tx, {
+        procesoId: p.id,
+        ahora: AHORA,
+        aprobadaEn: APROBADA,
+        reportados: { "2026-T2": "150", "2026-T3": "182" },
+        categorias,
+      });
+      const datos = await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META);
+      const libro = await leerLibro(datos);
+      expect(Object.keys(libro)).toEqual(["Ficha", "Resultados 2026", "Por categoría 2026"]);
+      const hoja = libro["Por categoría 2026"];
+      expect(cabecera(hoja, "Periodo")).toEqual(["Periodo", "Categoría", "Pacientes con manejo adherente", "Pacientes auditados", "Resultado", "Estado"]);
+      const datosDe = (periodo: string) => hoja.filas.filter((f) => f[0] === periodo);
+      // Solo los periodos medidos (el primero no se reportó), una fila por categoría de su lista.
+      expect(hoja.filas.filter((f) => /trimestre de 2026$/.test(f[0]))).toHaveLength(12);
+      expect(datosDe("Primer trimestre de 2026")).toEqual([]);
+      const t3 = datosDe("Tercer trimestre de 2026");
+      expect(t3.map((f) => f[1])).toEqual(["'=SUMA(A1)", ...SEDES_DE_MAQUETA.slice(1)]);
+      expect(t3[0]).toEqual(["Tercer trimestre de 2026", "'=SUMA(A1)", "182", "200", "91 %", "Bien"]);
+      expect(t3[3]).toEqual(["Tercer trimestre de 2026", "Puesto de salud 3", "11", "20", "55 %", "Crítico"]);
+      expect(t3[4]).toEqual(["Tercer trimestre de 2026", "Puesto de salud 4", "0", "0", "", "Sin casos"]);
+      expect(t3[5]).toEqual(["Tercer trimestre de 2026", "Puesto de salud 5", "", "", "", `No aplica: ${OBRAS}`]);
+      expect(datosDe("Segundo trimestre de 2026")[0].slice(2)).toEqual(["150", "200", "75 %", "Atención"]);
+      // Las variables son celdas numéricas, como en la hoja de resultados.
+      const crudas = await celdasCrudas(datos, "Por categoría 2026");
+      expect(crudas.find((c) => c[0] === "Tercer trimestre de 2026")!.slice(2, 5)).toEqual([182, 200, "91 %"]);
+    }));
+
+  it("un indicador sin desagregar no trae la hoja por categoría", () =>
+    revertida(sql, async (tx) => {
+      const p = await proceso(tx);
+      const { ind, quien } = await trimestralMedido(tx, p.id);
+      const libro = await leerLibro(await construirExcelDeIndicador((await impresionDelAnio(quien, ind.codigo, 2026, opc(tx)))!, META));
+      expect(Object.keys(libro)).toEqual(["Ficha", "Resultados 2026"]);
     }));
 });
 

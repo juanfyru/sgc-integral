@@ -7,9 +7,10 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosDeReporte } from "@/db/consultas/indicadores/lectura";
 import { calcularEnVivo, type EstadoReporte } from "@/lib/indicadores/reporte";
-import { MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
+import { MOTIVO_TODAS_NO_APLICAN, MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import { AvisosDeFalta, VariableFija } from "./DatosDelSistema";
+import { ActualizarCategorias, RejillaDeCategorias } from "./RejillaDeCategorias";
 import { ResultadoEnVivo } from "./ResultadoEnVivo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -125,14 +126,41 @@ function QuitarNoAplica({ medicionId, motivo }: { medicionId: number; motivo: st
  * fuente; cada variable ajena, fija, con su valor o el aviso de que aún no llega (anexo 14C, §3.1, maqueta 14); el
  * resultado, el color y la frase mientras se digita, con lo ajeno que ya llegó; la confirmación de un salto grande;
  * «Guardar sin reportar», «Reportar» («Reportar lo mío» mientras falte un valor ajeno; ya reportada, «Guardar la
- * corrección») y «No aplica en este periodo». Sirve a 390 px y con teclado.
+ * corrección») y «No aplica en este periodo». Sirve a 390 px y con teclado. Un desagregado manda, en este mismo formulario y
+ * a la misma acción, su rejilla por categoría (`RejillaDeCategorias`; ya reportada, solo «Reportar») y, a quien administra,
+ * «Actualizar categorías» mientras la medición siga abierta sin reportar.
  */
-export function FormularioReporte({ datos, volver }: { datos: DatosDeReporte; volver: string }) {
+export function FormularioReporte({ datos, volver, administra = false }: { datos: DatosDeReporte; volver: string; administra?: boolean }) {
   const [valores, setValores] = useState<Record<string, string>>(() =>
     Object.fromEntries(datos.variables.map((v) => [v.letra, v.valor === null ? "" : v.valor.replace(".", ",")])),
   );
   const [confirmado, setConfirmado] = useState(false);
   const [estado, enviar, pendiente] = useActionState(reportarAccion, null);
+
+  // Un desagregado se reporta por su rejilla (anexo 14C, §5.4), también cuando quedó entero «No aplica» porque ninguna
+  // categoría aplicó: se corrige reportando alguna fila. El «No aplica» de toda la medición que puso una persona, como siempre.
+  const categorias = datos.categorias;
+  if (categorias && (!datos.noAplica || datos.motivo === MOTIVO_TODAS_NO_APLICAN)) {
+    const abiertaSinReportar = datos.estado === "abierta" && !datos.reportada && !datos.noAplica;
+    return (
+      <div className="flex min-w-0 flex-col gap-4">
+        <form action={enviar} onSubmit={enviarConBoton(enviar)} className={CAJA}>
+          <input type="hidden" name="id" value={datos.medicionId} />
+          <input type="hidden" name="volver" value={volver} />
+          <input type="hidden" name="periodo" value={datos.periodo} />
+          <RejillaDeCategorias
+            datos={{ ...datos, categorias }}
+            estado={estado}
+            pendiente={pendiente}
+            alPulsar={anotarBoton}
+            mensaje={estado && !(estado.ok === false && estado.confirmar) ? <Mensaje estado={estado} /> : null}
+          />
+        </form>
+        {datos.noAplica ? null : <NoAplica medicionId={datos.medicionId} volver={volver} abierto={false} />}
+        {administra && abiertaSinReportar ? <ActualizarCategorias medicionId={datos.medicionId} /> : null}
+      </div>
+    );
+  }
 
   if (datos.noAplica) return <QuitarNoAplica medicionId={datos.medicionId} motivo={datos.motivo} />;
 

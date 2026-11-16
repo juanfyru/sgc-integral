@@ -9,12 +9,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LeyendaDeGrafica } from "@/componentes/indicadores/LeyendaDeGrafica";
 import { BarraEstados } from "@/componentes/ui/BarraEstados";
+import { BarrasAcostadas } from "@/componentes/ui/BarrasAcostadas";
 import { llevarALaColumnaInicial } from "@/componentes/ui/DesplazableDeTubos";
 import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
 import { MiniTubos } from "@/componentes/ui/MiniTubos";
 import { Tendencia } from "@/componentes/ui/Tendencia";
 import { TuboAcumulado } from "@/componentes/ui/TuboAcumulado";
 import { desplazamientoInicial, type PuntoDeSerie } from "@/componentes/ui/geometria-tubos";
+import { barrasAcostadas } from "@/lib/indicadores/geometria-barras";
 import { doce } from "./utiles/tubos";
 
 const raiz = path.resolve(import.meta.dirname, "..");
@@ -519,6 +521,67 @@ describe("las piezas pequeñas", () => {
   });
 });
 
+describe("las barras acostadas de un desagregado (14C, Tarea 15; maqueta 8)", () => {
+  /** Las sedes de la maqueta: cuatro con resultado, una «Sin casos», una «No aplica» y el total. */
+  const SEDES = [
+    { etiqueta: "Sede principal", valor: 91 },
+    { etiqueta: "Puesto de salud 1", valor: 86 },
+    { etiqueta: "Puesto de salud 2", valor: 78 },
+    { etiqueta: "Puesto de salud 3", valor: 55 },
+    { etiqueta: "Puesto de salud 4", valor: null },
+    { etiqueta: "Puesto de salud 5", valor: null },
+    { etiqueta: "Total", valor: 85.9375 },
+  ];
+
+  it("la geometría: el mayor llena el ancho, la meta queda en su proporción y un valor nulo no tiene barra", () => {
+    const g = barrasAcostadas(SEDES, 85);
+    expect(g.filas.map((f) => f.etiqueta)).toEqual(SEDES.map((s) => s.etiqueta));
+    expect(g.filas[0].ancho).toBe(100);
+    expect(g.meta).toBeCloseTo((85 / 91) * 100, 2);
+    expect(g.filas[3].ancho).toBeCloseTo((55 / 91) * 100, 2);
+    expect(g.filas[4].ancho).toBe(0);
+    expect(g.filas[5].ancho).toBe(0);
+    // Con la meta por encima de todos, la meta es el ancho; sin meta ni valores, nada que dibujar.
+    expect(barrasAcostadas([{ etiqueta: "A", valor: 40 }], 80)).toEqual({ filas: [{ etiqueta: "A", ancho: 50 }], meta: 100 });
+    expect(barrasAcostadas([{ etiqueta: "A", valor: null }], null)).toEqual({ filas: [{ etiqueta: "A", ancho: 0 }], meta: null });
+    expect(barrasAcostadas([{ etiqueta: "A", valor: 0 }], 0)).toEqual({ filas: [{ etiqueta: "A", ancho: 0 }], meta: 0 });
+  });
+
+  it("BarrasAcostadas: una fila por categoría, la del total destacada, la meta como línea y una tabla con los mismos datos", () => {
+    const g = barrasAcostadas(SEDES, 85);
+    const estados = ["bien", "bien", "atencion", "critico", "sin-dato", "no-aplica", "bien"] as const;
+    const textos = ["Bien", "Bien", "Atención", "Crítico", "Sin casos", "No aplica", "Bien"];
+    const valores = ["91 %", "86 %", "78 %", "55 %", "—", "—", "85,9 %"];
+    const html = renderToStaticMarkup(
+      <BarrasAcostadas
+        titulo="Por Sede, octubre de 2026"
+        filas={g.filas.map((f, i) => ({ ...f, valor: valores[i], estado: estados[i], textoEstado: textos[i], destacada: i === 6 }))}
+        meta={{ posicion: g.meta!, texto: "Meta 85 %" }}
+      />,
+    );
+    // Una barra por fila con valor, del color de su estado; la «Sin casos» y la «No aplica» sin relleno.
+    expect(cuenta(html, /class="tubo-relleno tubo-acostado tubo-bien/g)).toBe(3);
+    expect(cuenta(html, /class="tubo-relleno tubo-acostado tubo-atencion/g)).toBe(1);
+    expect(cuenta(html, /class="tubo-relleno tubo-acostado tubo-critico/g)).toBe(1);
+    expect(html).toContain('style="width:100%"');
+    // La meta: una marca por fila a la misma altura del ancho, y su texto una vez.
+    expect(cuenta(html, new RegExp(`left:${g.meta}%`, "g"))).toBe(8);
+    expect(cuenta(html, />Meta 85 %</g)).toBe(1);
+    // El estado siempre escrito.
+    for (const t of ["Atención", "Crítico", "Sin casos", "No aplica"]) expect(html).toContain(`>${t}<`);
+    // El total, destacado.
+    expect(html).toMatch(/data-destacada="true"[^>]*>[\s\S]*?Total/);
+    // La tabla equivalente: las mismas filas, con su valor y su estado.
+    expect(html).toContain("<caption>Por Sede, octubre de 2026 · Meta 85 %</caption>");
+    expect(html).toContain('<tr><th scope="row">Puesto de salud 3</th><td>55 %</td><td>Crítico</td></tr>');
+    expect(html).toContain('<tr><th scope="row">Puesto de salud 4</th><td>—</td><td>Sin casos</td></tr>');
+    expect(html).toContain('<tr><th scope="row">Total</th><td>85,9 %</td><td>Bien</td></tr>');
+    expect(cuenta(html, /<th scope="row">/g)).toBe(7);
+    expect(html).not.toContain("NaN");
+    expect(html).toMatch(/^<figure class="tubo-color-exacto /);
+  });
+});
+
 describe("hoja de estilos y colores", () => {
   const css = readFileSync(path.join(raiz, "src/app/globals.css"), "utf8");
 
@@ -584,7 +647,7 @@ describe("hoja de estilos y colores", () => {
   it("ningún componente de gráfica usa un color fijo", () => {
     const FIJO =
       /#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(|\b(?:bg|text|fill|stroke|border|from|via|to)-(?:white|black|gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)(?:-\d+)?\b/i;
-    const archivos = ["geometria-tubos.ts", "GraficoTubos.tsx", "TuboSvg.tsx", "TarjetaDeTubo.tsx", "TuboAcumulado.tsx", "MiniTubos.tsx", "Tendencia.tsx", "BarraEstados.tsx"];
+    const archivos = ["geometria-tubos.ts", "GraficoTubos.tsx", "TuboSvg.tsx", "TarjetaDeTubo.tsx", "TuboAcumulado.tsx", "MiniTubos.tsx", "Tendencia.tsx", "BarraEstados.tsx", "BarrasAcostadas.tsx"];
     for (const a of archivos) {
       const malas = readFileSync(path.join(raiz, "src/componentes/ui", a), "utf8")
         .split("\n")

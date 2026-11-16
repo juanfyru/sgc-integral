@@ -15,7 +15,7 @@ import { puedeVerIndicador } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { estadoDeFila, resultadoDeCategoria, type CategoriaDeMedicion, type EstadoDeFila } from "@/lib/indicadores/categorias";
 import { cumpleDeFila } from "@/lib/indicadores/estados";
-import { deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
+import { aDecimal, deTexto, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { fichaDeCalculo, valorEnTexto } from "@/lib/indicadores/reporte";
 import { numeroExacto } from "@/lib/indicadores/semaforo";
@@ -43,7 +43,11 @@ type Opciones = { sql?: Cliente; ahora?: Date };
 const SOLO_ABIERTA = "Solo se actualizan las categorías de una medición abierta sin reportar";
 const SIN_DESAGREGAR = "Esta medición no se mide por categorías";
 
-/** Una fila del desglose: su categoría (de la lista de la medición), su estado, sus valores y lo que da, calculado al leer. */
+/**
+ * Una fila del desglose: su categoría (de la lista de la medición), su estado, sus valores y lo que da, calculado al leer. Los
+ * números salen de la fracción exacta y solo dibujan: `numero`, la cifra (el ancho de la barra); `numeros`, cada valor (las
+ * celdas del Excel). El color y el estado son siempre los del semáforo.
+ */
 export type FilaDeDesglose = {
   categoria: CategoriaDeMedicion;
   estado: EstadoDeFila;
@@ -51,25 +55,40 @@ export type FilaDeDesglose = {
   resultado: string | null;
   semaforo: Semaforo | null;
   cumple: boolean | null;
+  numero: number | null;
+  numeros: Record<string, number | null>;
 };
 
 /**
  * El desglose de una medición por categoría (anexo 14C, §5.6). `periodo` es su clave; `dimension`, el nombre con que se firmó
- * la versión; `meta`, la que se le aplica, en texto («85 %»; `null` sin meta); `enCritico`, las categorías completas que
- * quedan en Crítico, en el orden de la lista.
+ * la versión; `meta`, la que se le aplica, en texto («85 %»; `null` sin meta), y `metaNumero`, la misma como número para la
+ * línea de las barras; `enCritico`, las categorías completas que quedan en Crítico, en el orden de la lista.
  */
 export type Desglose = {
   medicionId: number;
   periodo: string;
   dimension: string;
   filas: FilaDeDesglose[];
-  total: { valores: Record<string, string | null>; resultado: string | null; semaforo: Semaforo | null; cumple: boolean | null } | null;
+  total: {
+    valores: Record<string, string | null>;
+    resultado: string | null;
+    semaforo: Semaforo | null;
+    cumple: boolean | null;
+    numero: number | null;
+    numeros: Record<string, number | null>;
+  } | null;
   meta: string | null;
+  metaNumero: number | null;
   enCritico: string[];
 };
 
 const enTexto = (v: VersionDeCalculo, valores: Readonly<Record<string, Fraccion>>): Record<string, string | null> =>
   Object.fromEntries(v.calculo.letras.map((l) => [l, valores[l] ? valorEnTexto(valores[l]) : null]));
+
+/** Una fracción como número para dibujar (como `aNumero` de las lecturas); la de una celda del Excel, con diez decimales. */
+const aNumero = (f: Fraccion) => Number(aDecimal(f, 6, "redondear"));
+const enNumeros = (v: VersionDeCalculo, valores: Readonly<Record<string, Fraccion>>): Record<string, number | null> =>
+  Object.fromEntries(v.calculo.letras.map((l) => [l, valores[l] ? Number(aDecimal(valores[l], 10, "redondear")) : null]));
 
 /**
  * El desglose de la medición por categoría, o `null` si no es desagregada (no tiene lista; tampoco una histórica). La
@@ -106,18 +125,23 @@ export async function desgloseDe(sql: Cliente, medicionId: number): Promise<Desg
       resultado: r.resultado ? textoValor(r.resultado, version.unidad, regla) : null,
       semaforo: r.semaforo,
       cumple: r.cumple,
+      numero: r.resultado ? aNumero(r.resultado) : null,
+      numeros: enNumeros(version, valores),
     };
   });
   const guardado = await valoresPorLetra(sql, medicionId, version);
   const semaforo = (m.semaforo as Semaforo | null) ?? null;
+  const exacto = typeof m.resultado_exacto === "string" ? deTexto(m.resultado_exacto) : null;
   const total =
     Object.keys(guardado).length === 0
       ? null
       : {
           valores: enTexto(version, guardado),
-          resultado: typeof m.resultado_exacto === "string" ? textoValor(deTexto(m.resultado_exacto), version.unidad, regla) : null,
+          resultado: exacto ? textoValor(exacto, version.unidad, regla) : null,
           semaforo,
           cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo }),
+          numero: exacto ? aNumero(exacto) : null,
+          numeros: enNumeros(version, guardado),
         };
   return {
     medicionId,
@@ -126,6 +150,7 @@ export async function desgloseDe(sql: Cliente, medicionId: number): Promise<Desg
     filas,
     total,
     meta: regla.meta ? `${numeroExacto(regla.meta, version.unidad.decimales)}${version.unidad.sufijo}` : null,
+    metaNumero: regla.meta ? aNumero(regla.meta) : null,
     enCritico: filas.filter((f) => f.semaforo === "critico").map((f) => f.categoria.nombre),
   };
 }

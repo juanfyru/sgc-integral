@@ -33,7 +33,7 @@ import {
   type EnteDeLaFicha,
   type ResultadoExterno,
 } from "@/db/consultas/indicadores/constancias";
-import { obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
+import { desgloseDelAnio, obtenerIndicador, resultadosDelAnio } from "@/db/consultas/indicadores/lectura";
 import { obtenerParametros } from "@/db/consultas/indicadores/maestros";
 import { observacionesDe, type ResumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { asegurarMedicionesConFuentes } from "@/db/consultas/indicadores/propagacion";
@@ -42,7 +42,7 @@ import { puedeAnalizar, puedeObservar, puedeRegistrarHistoricos } from "@/lib/al
 import type { EstadoIndicador, Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
 import type { SesionValida } from "@/lib/sesion";
-import { fechaYHora } from "@/lib/indicadores/ficha-en-texto";
+import { fechaYHora, periodoEnPalabras } from "@/lib/indicadores/ficha-en-texto";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { fechaHoraLarga, zonaHoraria } from "@/lib/zona-horaria";
 
@@ -90,7 +90,8 @@ function avisoDeHistoricos(r: Parametros["registrados"]): { texto: string; exito
 /**
  * «Resultados»: antes de leer se abren los periodos que hayan terminado (F14-DC12) y las constancias de envío al ente (anexo
  * 14B, §8). El rango de la gráfica (`?rango=dos`, `?rango=todo`), el análisis pedido (`?analizar=`) y el modo edición de
- * históricos (`?historicos=editar`) existen solo cuando la persona puede usarlos; si no, «no encontrada».
+ * históricos (`?historicos=editar`) existen solo cuando la persona puede usarlos; si no, «no encontrada». El periodo del
+ * desglose por categoría (`?desglose=`) que no es uno medido del año cae al último medido, sin decir nada.
  */
 export async function datosDeResultados(
   c: ContextoDeVista,
@@ -147,6 +148,12 @@ export async function datosDeResultados(
   if (editando && (sp.historicos !== "editar" || !registra || !editables.some((f) => !f.cerrada))) notFound();
   const vigentes = vista.ficha.contenido.variables.map((v) => ({ letra: v.letra, nombre: v.nombre ?? v.letra }));
 
+  // «Por {dimensión}» (anexo 14C, §5.6), a quien ve el indicador (ya lo decidió `obtenerIndicador`): el periodo de
+  // `?desglose=` si es uno medido del año; si no, sin decir nada, el último medido.
+  const desgloses = await desgloseDelAnio(obtenerSql(), indicador.id, a.anio);
+  const elegido = (typeof sp.desglose === "string" ? desgloses.find((x) => x.periodo === sp.desglose) : undefined) ?? desgloses.at(-1) ?? null;
+  const dimension = elegido?.dimension || vista.ficha.contenido.dimensionNombre;
+
   return {
     codigo: indicador.codigo,
     indicadorId: indicador.id,
@@ -166,6 +173,7 @@ export async function datosDeResultados(
     aviso: avisoDeHistoricos(sp.registrados),
     soportes,
     cierre: { reabre: c.administra && activo, cierraDeNuevo: c.administra, recalcula: c.administra && activo, historial },
+    desglose: dimension ? { dimension, periodos: desgloses.map((x) => ({ periodo: x.periodo, etiqueta: periodoEnPalabras(x.periodo) })), elegido } : null,
   };
 }
 

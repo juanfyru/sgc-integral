@@ -57,6 +57,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
   cerrarDeNuevoAccion: vi.fn(),
   volverACalcularAccion: vi.fn(),
   resolverImpactoNoAfectaAccion: vi.fn(),
+  actualizarCategoriasDeMedicion: vi.fn(),
 }));
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
@@ -90,7 +91,7 @@ import { destinoTrasReportar } from "@/lib/indicadores/reporte";
 import { MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import type { SesionValida } from "@/lib/sesion";
 import { parsearFormulario } from "@/lib/validacion";
-import { datoDePrueba, fotoDePrueba, indicadorDePrueba, versionAutomatica } from "./utiles/indicadores";
+import { datoDePrueba, desagregadoDePrueba, fotoDePrueba, indicadorDePrueba, versionAutomatica } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -163,6 +164,8 @@ const DATOS: DatosDeReporte = {
   cumple: null,
   anterior: { clave: "2026-T2", etiqueta: "segundo trimestre de 2026", resultado: "250/3" },
   variacionPct: 30,
+  categorias: null,
+  dimension: null,
 };
 
 const enVivo = (valores: Record<string, string>) =>
@@ -1132,6 +1135,8 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
       fotoEn: null,
       seCalcula: null,
       recalculable: false,
+      enCritico: null,
+      dimension: null,
       ...o,
     });
     const tabla = (filas: FilaDelAnio[]) =>
@@ -1190,5 +1195,64 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
       expect(soloLectura).not.toContain("Reportar:");
       expect(soloLectura).not.toContain(">Soportes</h2>");
       expect(soloLectura).not.toContain("(vencido)");
+    }));
+});
+
+describe("las páginas de un desagregado (14C, Tarea 15)", () => {
+  it("/indicadores/[codigo]/reportar/[periodo]: la rejilla por categoría; quien administra, «Actualizar categorías»", () =>
+    enTransaccion(async (tx) => {
+      const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
+      const sigla = `R${Date.now() % 100_000_000}`;
+      const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+        VALUES (${macro.id}, ${`Proceso ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
+      const { ind, quien, dimension } = await desagregadoDePrueba(tx, { procesoId: Number(p.id), ahora: new Date(), aprobadaEn: APROBADA, reportados: { "2026-T2": "150", "2026-T3": "182" } });
+      contexto.sesion = valida(quien);
+      const html = await reporte(ind.codigo, "2026-T1");
+      for (const id of dimension.categorias) expect(html).toContain(`name="c_${id}_A"`);
+      expect(html).toContain(`aria-label="Sede principal: Pacientes con manejo adherente"`);
+      expect(html).not.toContain('name="valor_A"');
+      expect(html).toContain(">Guardar sin reportar</button>");
+      expect(html).not.toContain("Actualizar categorías");
+      // Ya reportada, solo «Reportar», con los valores guardados de cada sede.
+      const t3 = await reporte(ind.codigo, "2026-T3");
+      expect(t3).not.toContain("Guardar sin reportar");
+      expect(t3).toMatch(new RegExp(`<input[^>]*name="c_${dimension.categorias[0]}_A"[^>]*value="182"`));
+      expect(t3).toContain("1 en Crítico: Puesto de salud 3");
+
+      // Quien administra y también mide (con alguien que mide, la pantalla no es suya si no).
+      const admin = await sesionAdmin(tx);
+      await tx`INSERT INTO indicador_designados (indicador_id, usuario_id, funcion, creado_por) VALUES (${ind.id}, ${admin.usuarioId}, 'mide', ${admin.usuarioId})`;
+      contexto.sesion = valida(admin);
+      expect(await reporte(ind.codigo, "2026-T1")).toMatch(/>Actualizar categorías<\/button>/);
+      expect(await reporte(ind.codigo, "2026-T3")).not.toContain("Actualizar categorías");
+    }));
+
+  it("/indicadores/[codigo]: «Por {dimensión}» con las barras del periodo elegido; un periodo que no se midió cae al último", () =>
+    enTransaccion(async (tx) => {
+      const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
+      const sigla = `Q${Date.now() % 100_000_000}`;
+      const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
+        VALUES (${macro.id}, ${`Proceso ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
+      const { ind, dimension } = await desagregadoDePrueba(tx, { procesoId: Number(p.id), ahora: new Date(), aprobadaEn: APROBADA, reportados: { "2026-T2": "150", "2026-T3": "182" } });
+      contexto.sesion = valida(await usuarioDePrueba(tx, { rol: "consulta" }));
+      const porOmision = await pagina(ind.codigo, { vista: "resultados", anio: "2026" });
+      expect(porOmision).toContain(`>Por ${dimension.nombre}</h2>`);
+      expect(porOmision).toContain(`<caption>Por ${dimension.nombre}, tercer trimestre de 2026 · Meta 85 %</caption>`);
+      expect(porOmision).toContain('<tr><th scope="row">Sede principal</th><td>91 %</td><td>Bien</td></tr>');
+      expect(porOmision).toMatch(/<select[^>]*name="desglose"/);
+      expect(porOmision).toMatch(/<option value="2026-T3" selected="">/);
+      const segundo = await pagina(ind.codigo, { vista: "resultados", anio: "2026", desglose: "2026-T2" });
+      expect(segundo).toContain('<tr><th scope="row">Sede principal</th><td>75 %</td><td>Atención</td></tr>');
+      // Un periodo sin medir, o que no es un periodo, cae al de por omisión sin decir nada.
+      for (const desglose of ["2026-T1", "2025-T3", "otra"]) {
+        expect(await pagina(ind.codigo, { vista: "resultados", anio: "2026", desglose })).toContain(
+          '<tr><th scope="row">Sede principal</th><td>91 %</td><td>Bien</td></tr>',
+        );
+      }
+      // La tabla del año marca la sede en Crítico.
+      expect(porOmision).toContain(`aria-label="1 categoría de ${dimension.nombre} en Crítico"`);
+      // Sin desagregar, no hay sección.
+      const otro = await indicadorDePrueba(tx, { periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA });
+      expect(await pagina(otro.codigo, { vista: "resultados", anio: "2026" })).not.toMatch(/<h2[^>]*>Por /);
     }));
 });

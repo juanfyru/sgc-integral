@@ -9,7 +9,7 @@ import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { FLECHA_DE_CAMBIO } from "@/lib/indicadores/textos";
 import { ETIQUETA_PERIODICIDAD } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
-import { InsigniaSemaforo } from "./InsigniaSemaforo";
+import { InsigniaEnCritico, InsigniaSemaforo } from "./InsigniaSemaforo";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
@@ -139,7 +139,16 @@ export function ListaIndicadores({ filas, resumen }: { filas: FilaDeLista[]; res
             </td>
             <td className={`${celdaNumerica} whitespace-nowrap`}>{f.meta ?? "—"}</td>
             <td className={celda}>
-              {sinFicha(f) ? <span className="text-muted-foreground">—</span> : <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />}
+              {sinFicha(f) ? (
+                <span className="text-muted-foreground">—</span>
+              ) : f.enCritico ? (
+                <span className="flex flex-wrap items-center gap-1">
+                  <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />
+                  <InsigniaEnCritico n={f.enCritico} dimension={f.dimension} />
+                </span>
+              ) : (
+                <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />
+              )}
             </td>
             <td className={celda}>
               <TendenciaDeFila f={f} />

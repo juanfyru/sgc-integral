@@ -11,7 +11,7 @@ import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { InsigniaSemaforo } from "../InsigniaSemaforo";
+import { InsigniaEnCritico, InsigniaSemaforo } from "../InsigniaSemaforo";
 import { VolverACalcular } from "./VolverACalcular";
 
 /** Las columnas de las variables viven con los textos de la ficha: la impresa y el Excel las usan también. */
@@ -61,6 +61,7 @@ function Estado({ f, historial, periodosSinCumplir }: { f: FilaDelAnio; historia
   return (
     <div className="flex flex-col items-start gap-1">
       <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />
+      <InsigniaEnCritico n={f.enCritico} dimension={f.dimension} />
       {estado ? <span className="text-xs text-muted-foreground">{estado}</span> : null}
       {marcas.map((m) => (
         <Insignia key={m} variante="neutra">
@@ -135,7 +136,8 @@ function ListaDeSoportes({ codigo, soportes }: { codigo: string; soportes: Sopor
  * quien puede analizar tiene además el de escribir o editar el análisis de lo que tiene resultado. Quien administra reabre una cerrada (`puedeReabrir`) y
  * cierra de nuevo una reabierta (`puedeCerrarDeNuevo`, spec §8.7); una corregida lleva su historial (`historial`). Las
  * marcas acompañan al estado (spec §8.5): «Histórico», «Corregida», «Requiere acción de mejora», «Meta ajustada después del
- * periodo», «N periodos sin cumplir» y «Periodicidad anterior», que no se toca (la dejó un cambio mayor). Una fila que
+ * periodo», «N periodos sin cumplir» y «Periodicidad anterior», que no se toca (la dejó un cambio mayor); en un desagregado,
+ * cuántas categorías quedaron en Crítico («1 en Crítico», anexo 14C §5.6), que no cambia el estado del total. Una fila que
  * calcula el sistema dice cuándo se tomaron sus datos («Calculado por el sistema · foto del …») o cuándo se tomarán («Se
  * calcula el …»), y quien administra (`puedeVolverACalcular`) vuelve a calcular la foto de un cálculo de flujo sin cerrar ni
  * reabrir (anexo 14B, §5.4). Cada fila lleva

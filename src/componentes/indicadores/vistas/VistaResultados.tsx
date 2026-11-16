@@ -17,6 +17,7 @@ import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import type { Periodicidad } from "@/lib/indicadores/tipos";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { ENLACE, FOCO } from "./comun";
+import { DesglosePorCategoria, type DatosDeDesglose } from "./DesglosePorCategoria";
 
 /** El rango de la gráfica principal (spec §11): el año de la tabla, ese y el anterior, o todo desde el inicio de medición. */
 export type RangoDeGrafica = "anio" | "dos" | "todo";
@@ -48,6 +49,8 @@ export type DatosDeResultados = {
    * de cada medición corregida (spec §8.7).
    */
   cierre: { reabre: boolean; cierraDeNuevo: boolean; recalcula: boolean; historial: Map<number, EntradaDeHistorial[]> };
+  /** «Por {dimensión}» de un desagregado (anexo 14C, §5.6), con el periodo elegido (`?desglose=`); `null` si no se desagrega. */
+  desglose: DatosDeDesglose | null;
 };
 
 const CAJA = "flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3";
@@ -59,8 +62,9 @@ const rutaDeResultados = (codigo: string, anio: number, rango: RangoDeGrafica = 
 /**
  * «Resultados» (spec §12.3, maqueta 2): el último resultado en grande con su estado, su frase y su comparación; la gráfica
  * principal con su rango (el año, dos años o todo); el acumulado del año con su rótulo; una gráfica pequeña por variable;
- * el análisis que falta (o el pedido con `?analizar=`) y la tabla del año con su selector de año y, para quien registra
- * históricos, el modo edición (`?historicos=editar`, spec §8.8). En el modo edición solo va la tabla.
+ * en un desagregado, «Por {dimensión}» con las barras del periodo elegido (`?desglose=`, anexo 14C §5.6); el análisis que
+ * falta (o el pedido con `?analizar=`) y la tabla del año con su selector de año y, para quien registra históricos, el modo
+ * edición (`?historicos=editar`, spec §8.8). En el modo edición solo va la tabla.
  */
 export function VistaResultados(d: DatosDeResultados) {
   const { resultados: r, codigo, anio } = d;
@@ -164,6 +168,7 @@ export function VistaResultados(d: DatosDeResultados) {
           </div>
         </div>
       )}
+      {d.desglose && !editando ? <DesglosePorCategoria codigo={codigo} anio={anio} rango={d.rango} desglose={d.desglose} /> : null}
       {d.analisis && !editando ? (
         <SeccionDeAnalisis datos={d.analisis} volver={rutaDeResultados(codigo, anio, d.rango)} enfocar={d.enfocarAnalisis} />
       ) : null}

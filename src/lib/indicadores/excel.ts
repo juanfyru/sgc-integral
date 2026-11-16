@@ -1,10 +1,11 @@
 /**
- * Los Excel de indicadores (spec §13): el de un indicador (hojas «Ficha» y «Resultados <año>») y el de resultados de la
- * lista (una fila por indicador, los doce meses y el año). Con el encabezado institucional y toda celda de texto pasada
- * por `neutralizarFormula` (`agregarHoja`). Ni soportes ni observaciones. Funciones puras: los datos y los metadatos ya
- * leídos, sin BD ni reloj.
+ * Los Excel de indicadores (spec §13): el de un indicador (hojas «Ficha», «Resultados <año>» y, en un desagregado, «Por
+ * categoría <año>») y el de resultados de la lista (una fila por indicador, los doce meses y el año). Con el encabezado
+ * institucional y toda celda de texto pasada por `neutralizarFormula` (`agregarHoja`). Ni soportes ni observaciones.
+ * Funciones puras: los datos y los metadatos ya leídos, sin BD ni reloj.
  */
 import ExcelJS from "exceljs";
+import type { Desglose } from "@/db/consultas/indicadores/categorias";
 import type { ImpresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import type { FiltroDeLista, OpcionesDeLista } from "@/db/consultas/indicadores/lista";
 import type { FilaDeResultados } from "@/db/consultas/indicadores/matriz";
@@ -24,11 +25,13 @@ import {
   firmasDeFicha,
   fraseDeImportada,
   marcasDeFila,
+  periodoEnPalabras,
   rigeDesdeEnTexto,
   semaforoDeResultado,
   semaforoEnTexto,
   type CampoDeTexto,
 } from "./ficha-en-texto";
+import { estadoDeCategoria } from "./categorias";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "./filtros";
 
 const MES_CORTO = MESES.map((m) => m.charAt(0).toUpperCase() + m.slice(1, 3));
@@ -78,10 +81,42 @@ function columnasDeResultados(variables: { letra: string; nombre: string }[]): A
   ];
 }
 
+/** Una fila de la hoja por categoría: un periodo medido y una categoría de su lista, ya en texto salvo las variables. */
+type FilaDeCategoria = { periodo: string; categoria: string; valores: Record<string, number | null>; resultado: string | null; estado: string };
+
+function columnasPorCategoria(variables: { letra: string; nombre: string }[]): Array<Columna<FilaDeCategoria>> {
+  return [
+    { cab: "Periodo", ancho: 28, valor: (f) => f.periodo },
+    // El nombre de la categoría es texto del administrador: `agregarHoja` lo sanea en cada fila.
+    { cab: "Categoría", ancho: 30, valor: (f) => f.categoria },
+    ...variables.map((v): Columna<FilaDeCategoria> => ({ cab: neutralizarFormula(v.nombre), ancho: 16, valor: (f) => f.valores[v.letra] ?? null })),
+    { cab: "Resultado", ancho: 12, valor: (f) => f.resultado },
+    { cab: "Estado", ancho: 36, valor: (f) => f.estado || null },
+  ];
+}
+
+/** Las filas de la hoja por categoría (anexo 14C, §5.6): una por periodo medido y categoría, en el orden de su lista. */
+function filasPorCategoria(desgloses: readonly Desglose[]): FilaDeCategoria[] {
+  return desgloses.flatMap((d) =>
+    d.filas.map((f) => {
+      const e = estadoDeCategoria({ estado: f.estado, semaforo: f.semaforo, cumple: f.cumple, conResultado: f.resultado !== null });
+      return {
+        periodo: periodoEnPalabras(d.periodo),
+        categoria: f.categoria.nombre,
+        valores: f.numeros,
+        resultado: f.resultado,
+        estado: f.estado === "no_aplica" && f.categoria.noAplica ? `${e.texto}: ${f.categoria.noAplica}` : e.texto,
+      };
+    }),
+  );
+}
+
 /**
  * El Excel de un indicador (spec §13): la hoja «Ficha», con el contenido firmado de la versión que regía el año (§7.2),
  * sus firmas y los datos de operación, y la hoja «Resultados <año>», con una fila por periodo (periodo, versión con que se
- * calculó, cada variable, resultado, meta, «Cumple», semáforo, estado, análisis y marcas) y la del «Acumulado del año».
+ * calculó, cada variable, resultado, meta, «Cumple», semáforo, estado, análisis y marcas) y la del «Acumulado del año». Un
+ * desagregado trae además la hoja «Por categoría <año>» (anexo 14C, §5.6): una fila por periodo medido y categoría, con cada
+ * variable, el resultado y el estado de la categoría.
  */
 export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaHoja): Promise<Buffer> {
   const zona = zonaHoraria();
@@ -136,6 +171,9 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
     marcas: a.rotulo ?? "",
   });
   agregarHoja(wb, `Resultados ${d.anio}`, `Seguimiento y medición · ${d.anio}`, columnasDeResultados(variables), filas, meta);
+  if (d.desgloses.length > 0 || ficha.contenido.dimensionNombre) {
+    agregarHoja(wb, `Por categoría ${d.anio}`, `Por categoría · ${d.anio}`, columnasPorCategoria(variables), filasPorCategoria(d.desgloses), meta);
+  }
   return Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }
 

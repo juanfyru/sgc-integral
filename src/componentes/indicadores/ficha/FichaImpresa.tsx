@@ -1,7 +1,11 @@
 import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
 import { LeyendaDeGrafica, metaDeGrafica } from "@/componentes/indicadores/LeyendaDeGrafica";
 import { GraficoTubos } from "@/componentes/ui/GraficoTubos";
+import type { FilaDeDesglose } from "@/db/consultas/indicadores/categorias";
 import type { ImpresionDelAnio } from "@/db/consultas/indicadores/impresion";
+import { estadoDeCategoria } from "@/lib/indicadores/categorias";
+import { fraccion } from "@/lib/indicadores/formula/fraccion";
+import { numeroEs } from "@/lib/indicadores/semaforo";
 import {
   analisisEnTexto,
   camposDeFicha,
@@ -26,6 +30,24 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 const BORDE = "border border-border";
 const TH = `${BORDE} bg-muted px-2 py-1 text-left align-top font-semibold`;
 const TD = `${BORDE} px-2 py-1 align-top break-words`;
+
+/** Un valor guardado de una categoría (punto decimal) como lo escribe la tabla del año: coma y hasta cuatro decimales. */
+const enPantalla = (valor: string | null | undefined) => {
+  const f = valor ? fraccion(valor) : null;
+  return f ? numeroEs(f, 4, "truncar") : "—";
+};
+
+/** El estado de una categoría, con su color si lo tiene: «Bien», «Crítico», «Sin casos» o «No aplica» con su motivo. */
+function estadoEnFila(f: FilaDeDesglose) {
+  if (f.semaforo) return <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} />;
+  const e = estadoDeCategoria({ estado: f.estado, semaforo: f.semaforo, cumple: f.cumple, conResultado: f.resultado !== null });
+  return (
+    <>
+      {e.texto}
+      {f.estado === "no_aplica" && f.categoria.noAplica ? <span className="block text-muted-foreground">{f.categoria.noAplica}</span> : null}
+    </>
+  );
+}
 
 /** El título de un bloque de la hoja: una banda con el color de la marca, que se imprime en color. */
 function Banda({ id, children }: { id: string; children: React.ReactNode }) {
@@ -105,9 +127,10 @@ export type DatosDeFichaImpresa = ImpresionDelAnio & {
  * entidad, «Ficha técnica de indicador», código, versión y fechas), la identificación y la estructura de medición de la
  * versión que regía el año (la fórmula y los rangos en palabras), las firmas tomadas de `firmas`, el control de cambios
  * hasta esa versión, los datos de operación rotulados como tales, el seguimiento del año (una fila por periodo de la
- * periodicidad, en el orden del calendario y en tramos por la versión con que se calculó, y el acumulado del año) y la
- * gráfica, que al imprimir escribe el valor y el estado sobre cada columna con valor. Sin soportes ni observaciones. La
- * hoja titula sus bloques con `h2`: el `h1` es el de la página.
+ * periodicidad, en el orden del calendario y en tramos por la versión con que se calculó, y el acumulado del año), en un
+ * desagregado el desglose por categoría del último periodo medido con su total (anexo 14C, §5.6), y la gráfica, que al
+ * imprimir escribe el valor y el estado sobre cada columna con valor. Sin soportes ni observaciones. La hoja titula sus
+ * bloques con `h2`: el `h1` es el de la página.
  */
 export function FichaImpresa(d: DatosDeFichaImpresa) {
   const { ficha, resultados: r, anio } = d;
@@ -118,6 +141,9 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
   const columnas = 1 + variables.length + 5;
   const a = r.acumulado;
   const id = (bloque: string) => `ficha-impresa-${bloque}`;
+  // El desglose del último periodo medido del año (anexo 14C, §5.6), con el nombre con que se firmó su dimensión.
+  const desglose = d.desgloses.at(-1) ?? null;
+  const dimension = desglose?.dimension || "Categoría";
 
   return (
     <article aria-labelledby={id("titulo")} className="ficha-impresa flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-card p-4 text-sm text-foreground print:rounded-none print:border-0 print:p-0">
@@ -289,6 +315,64 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
           </tbody>
         </Tabla>
       </Bloque>
+
+      {desglose ? (
+        <Bloque id={id("desglose")} titulo={`Por ${dimension} · ${periodoEnPalabras(desglose.periodo)}`}>
+          <Tabla nombre={`Por ${dimension}, ${periodoEnPalabras(desglose.periodo).toLowerCase()}`}>
+            <thead>
+              <tr>
+                <th scope="col" className={TH}>
+                  {dimension}
+                </th>
+                {variables.map((v) => (
+                  <th key={v.letra} scope="col" className={TH}>
+                    {v.nombre}
+                  </th>
+                ))}
+                {["Resultado", "Estado"].map((c) => (
+                  <th key={c} scope="col" className={TH}>
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {desglose.filas.map((f) => (
+                <tr key={f.categoria.id}>
+                  <th scope="row" className={`${TD} text-left font-normal`}>
+                    {f.categoria.nombre}
+                  </th>
+                  {variables.map((v) => (
+                    <td key={v.letra} className={`${TD} text-right tabular-nums`}>
+                      {enPantalla(f.valores[v.letra])}
+                    </td>
+                  ))}
+                  <td className={`${TD} whitespace-nowrap text-right font-semibold tabular-nums`}>{f.resultado ?? "—"}</td>
+                  <td className={`${TD} ficha-color-exacto`}>{estadoEnFila(f)}</td>
+                </tr>
+              ))}
+              <tr>
+                <th scope="row" className={`${TD} bg-muted text-left font-bold`}>
+                  Total
+                </th>
+                {variables.map((v) => (
+                  <td key={v.letra} className={`${TD} bg-muted text-right font-semibold tabular-nums`}>
+                    {enPantalla(desglose.total?.valores[v.letra])}
+                  </td>
+                ))}
+                <td className={`${TD} bg-muted whitespace-nowrap text-right font-bold tabular-nums`}>{desglose.total?.resultado ?? "—"}</td>
+                <td className={`${TD} ficha-color-exacto bg-muted`}>
+                  {desglose.total ? (
+                    <InsigniaSemaforo semaforo={desglose.total.semaforo} cumple={desglose.total.cumple} conResultado={desglose.total.resultado !== null} />
+                  ) : (
+                    <InsigniaSemaforo semaforo={null} noAplica />
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </Tabla>
+        </Bloque>
+      ) : null}
 
       <Bloque id={id("grafica")} titulo="Representación gráfica">
         <div className="ficha-grafica flex min-w-0 flex-col gap-2 pt-2">
