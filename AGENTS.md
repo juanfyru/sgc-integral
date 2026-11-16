@@ -644,38 +644,56 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   id; y **3.** las mediciones `FOR UPDATE`, por `indicador_id, desde, id` (la cascada, de cada indicador todas
   desde la más temprana que reabre: `recalcularSiguientes` bloquea las siguientes). Un `40P01` llega legible
   a la persona (`sinInterbloqueoDelCierre`).
-- **Lo que se ve de un compuesto** (anexo 14C, §6.4 y §6.5). **Quién ve un componente** lo decide solo
+- **Lo que se ve de un compuesto** (anexo 14C, §6.3 a §6.5). **Quién ve un componente** lo decide solo
   `componentesVisibles` (`src/lib/alcance.ts`: los de una lista que pasan `filtroIndicadores`, en una
   consulta); `componentesOcultos` y `letrasOcultas` (`componentes.ts`) la aplican a las variables de una
   versión. A quien ve el compuesto y no un componente, la variable tomada de él le llega oculta **desde la
   lectura**, nunca solo en el componente de React: `COMPONENTE_OCULTO` como nombre, `VALOR_OCULTO` como
-  valor, sin número, sin id, sin código ni nombre del componente, y `oculta: true`, en la tabla del año y el
-  motivo del contagio (`paraQuienLee`, `lectura.ts`), las series de «Sus variables», los valores del acumulado
-  (`acumuladoParaQuienLee`), la pantalla de reportar (`datosDeReporte`: la ajena trae solo si `llego`; su aviso
-  es «Falta un dato de un componente.» y el resultado en vivo no se calcula en el navegador), la ficha en
-  todas sus formas (`fichaDeVersion` la entrega sin nada del componente y con `componentesVisibles`; la ficha
-  en texto dice `RESULTADO_OCULTO`, `origenDeVariableEnTexto`; así la vista, las versiones anteriores, el
-  impreso y la hoja «Ficha» del Excel), el Excel y el impreso (salen de esas lecturas) y el historial de
-  «Corregida» (`historialDeCorregidas`: el antes y el después de esas letras no se pintan, conservador por
-  letra en cualquier versión, y su propagación se lee «El sistema actualizó un componente»). El resultado
-  del compuesto, su color, su análisis y sus demás variables no se tocan. El motivo
-  `MOTIVO_COMPONENTE_NO_APLICA` se guarda sin nombrar y se pinta «{código} {nombre} no aplicó en el periodo»
-  a quien ve el componente (su id va en `detalle.componente` del evento, `contagiosParaQuienLee`), y tal cual
-  a quien no. El aviso de deducción (`restringidosQueToma`) y el aviso y el historial de la cascada lo
-  nombran por la misma regla; «Lo toman» de la página de un indicador (`loToman`) muestra solo los
-  compuestos que la persona ve y, sin ninguno, no existe; los históricos de un compuesto no los registra quien
-  no ve alguno de sus componentes (`HISTORICOS_DE_UN_COMPONENTE_OCULTO`, `historicos.ts`). La matriz, la
-  lista, sus Excel, «Objetivos» y las alertas no muestran variables; un desagregado no toma componentes; la
-  bitácora la leen Admin SGC y Control Interno, que ven todo; las superficies de quien administra (la lista
-  de la reapertura, el resumen del cierre) ven todo. Una superficie nueva que pinte una variable tomada de
-  otro indicador pasa por esta regla. **El acumulado de un compuesto**: cada variable tomada vale el
+  valor, sin número, sin id, sin código ni nombre del componente, y `oculta: true`, en la tabla del año
+  (`paraQuienLee`, `lectura.ts`), las series de «Sus variables», los valores del acumulado
+  (`acumuladoParaQuienLee`, con las letras que toma de un oculto **la versión que manda** el acumulado: con la
+  firma de la racha, una letra tiene un solo origen en ella), la pantalla de reportar (`datosDeReporte`: la ajena
+  trae solo si `llego`; su aviso es «Falta un dato de un componente.» y el resultado en vivo no se calcula en el
+  navegador), la ficha en todas sus formas (`fichaDeVersion` la entrega sin nada del componente y con
+  `componentesVisibles`; la ficha en texto dice `RESULTADO_OCULTO`, `origenDeVariableEnTexto`; así la vista, las
+  versiones anteriores, el impreso y la hoja «Ficha» del Excel), el Excel y el impreso (salen de esas lecturas)
+  y el historial de «Corregida» (`historialDeCorregidas`: el antes y el después de esas letras no se pintan,
+  **conservador por letra en cualquier versión**, porque un evento no dice con qué versión se escribió; su
+  propagación se lee «El sistema actualizó un componente», y la de uno que se ve, «… (sale de CÓDIGO
+  Nombre) …»). El resultado del compuesto, su color, su análisis y sus demás variables no se tocan. **El motivo
+  del contagio** (`MOTIVO_COMPONENTE_NO_APLICA`) se guarda sin nombrar; el **vigente** (la fila, `ultimo.frase`,
+  la pantalla de reportar) se resuelve al leer (`contagiosParaQuienLee`, `lectura.ts`): el primer componente de
+  la versión, en el orden de sus variables, que hoy no aplica en ese periodo, «{código} {nombre} no aplicó en el
+  periodo» a quien lo ve y tal cual a quien no (ni si ya ninguno lo causa); la línea del historial de un evento
+  pasado nombra el componente de **ese** evento (`detalle.componente`). «(sale de …)» y el motivo usan el código
+  y el nombre **de hoy** del componente (`nombresDeComponentes`), no los que firmó la ficha. **El «desde cuándo»**
+  (§6.3): junto a la variable tomada de un componente más fino cuyo acumulado empieza después que el periodo,
+  «acumulado de junio a diciembre» (`textoAcumulaDesde`), en la tabla del año, el impreso y la nota de origen de
+  la pantalla de reportar (no en el Excel); se calcula al leer (`acumulanDesde`, con `valorDeComponente`; nunca
+  se guarda), solo a quien ve el componente, solo si su valor ya llegó y es la misma fracción que la copiada, y
+  nunca en un periodo mensual (sin consulta). El aviso de deducción (`restringidosQueToma`) y el aviso y el
+  historial de la cascada nombran por la misma regla; «Lo toman» de la página de un indicador (`loToman`, en la
+  pestaña de la ficha) muestra solo los compuestos que la persona ve y, sin ninguno, no existe; los históricos de
+  un compuesto no los registra quien no ve alguno de sus componentes (`HISTORICOS_DE_UN_COMPONENTE_OCULTO`,
+  `historicos.ts`), y un valor forzado para una variable tomada se rechaza por su letra. La matriz, la lista,
+  sus Excel, «Objetivos» y las alertas no muestran variables; un desagregado no toma componentes; la bitácora la
+  leen Admin SGC y Control Interno, que ven todo; las superficies de quien administra (la lista de la
+  reapertura, el resumen del cierre) ven todo. Una superficie nueva que pinte una variable tomada de otro
+  indicador pasa por esta regla. **El acumulado de un compuesto** se pide solo por `acumuladoDe` (`lectura.ts`:
+  la página, la matriz, el impreso, el Excel y `resultadoDelPeriodoExterno`): cada variable tomada vale el
   acumulado propio de su componente sobre los periodos que entran al acumulado del compuesto (su valor, o su
   cumplimiento contra la meta del último periodo medido del componente), nunca la suma ni el promedio de lo
-  copiado mes a mes (`fijosDelAcumulado`, `lectura.ts`, con `valorDeComponenteSobre` de `propagacion.ts`: el
-  mismo cálculo de la propagación); si el de algún componente empieza después del tramo, el del compuesto es
-  parcial y lo dice sin nombrarlo (`componenteParcial`). Es el mismo en la página, la matriz, el impreso, el
-  Excel y el resultado del periodo externo de una constancia (`resultadoDelPeriodoExterno`); `resumenAcumulado`
-  sin `fijos` es el de siempre.
+  copiado mes a mes (`fijosDelAcumulado`, con `valorDeComponenteSobre` en su modo `acumulado`). En ese modo, y
+  solo en él, un periodo ordinario del componente sin dato se salta, como en su acumulado propio, y deja el del
+  compuesto parcial; en el valor de un periodo (la propagación, el cierre, `valorDeComponente`) sigue siendo
+  `falta`. Si el componente empieza después o le falta un periodo, «Acumulado parcial: un componente no cubre
+  todos los periodos» (`componenteParcial`); si no tiene resultado en ninguno de los periodos medidos del
+  compuesto, no hay acumulado y el rótulo lo dice, «Sin acumulado: un componente no tiene resultado en estos
+  periodos» (`sinComponente`; la página y el impreso lo pintan en lugar de «Aún no hay periodos medidos»; la
+  constancia queda parcial). **La racha** (`rachasDe`, `firmaDeVersion` en `resultados.ts`) firma, de una
+  variable tomada, también su `indicadorOrigenId` y su `toma`: cambiar el componente, o el valor por el
+  cumplimiento, parte el acumulado (en la página y en la propagación a la vez, así el «coincide» del cierre sigue
+  de acuerdo); las demás variables firman como siempre.
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`

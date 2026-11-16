@@ -9,6 +9,7 @@ import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { analisisDeFila, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
 import { textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
+import { textoAcumulaDesde } from "@/lib/indicadores/resultados";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { enlaceDeSoporte } from "@/lib/indicadores/soportes";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -103,13 +104,24 @@ function Analisis({ f }: { f: FilaDelAnio }) {
  * El valor de una variable en un periodo. Si la ficha que rige ese periodo nombra la letra distinto que el encabezado de
  * la columna (el de la versión más reciente), lo dice debajo, en texto: se lee sin cursor y lo leen los lectores de
  * pantalla. La de un componente que la persona no ve llega «No disponible» (anexo 14C, §6.5), en el gris del texto
- * secundario.
+ * secundario; la de uno más fino que acumula desde después dice desde cuándo, debajo y en texto (§6.3).
  */
-function ValorDeVariable({ columna, valor }: { columna: { letra: string; nombre: string }; valor: FilaDelAnio["valores"][number] | undefined }) {
+function ValorDeVariable({
+  columna,
+  valor,
+  periodo,
+}: {
+  columna: { letra: string; nombre: string };
+  valor: FilaDelAnio["valores"][number] | undefined;
+  periodo: string;
+}) {
   if (!valor) return <>—</>;
   return (
     <>
       {valor.oculta ? <span className="font-normal text-muted-foreground">{valor.valor}</span> : (valor.valor ?? "—")}
+      {valor.acumulaDesde ? (
+        <span className="block text-xs font-normal text-muted-foreground">{`(${textoAcumulaDesde(valor.acumulaDesde, periodo)})`}</span>
+      ) : null}
       {valor.nombre !== columna.nombre ? <span className="block text-xs font-normal text-muted-foreground">{`(${valor.nombre})`}</span> : null}
     </>
   );
@@ -244,7 +256,7 @@ export function TablaDelAnio({
             {cabecera}
             {variables.map((v) => (
               <td key={v.letra} className={celdaNumerica}>
-                <ValorDeVariable columna={v} valor={f.valores.find((x) => x.letra === v.letra)} />
+                <ValorDeVariable columna={v} valor={f.valores.find((x) => x.letra === v.letra)} periodo={f.periodo} />
               </td>
             ))}
             <td className={`${celdaNumerica} whitespace-nowrap`}>{f.resultado ?? (f.noAplica ? "n. a." : "—")}</td>

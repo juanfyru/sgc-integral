@@ -66,7 +66,7 @@ import { DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSist
 import { destinoDelFoco, DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
-import { SeccionDeAnalisis } from "@/componentes/indicadores/vistas/VistaResultados";
+import { AcumuladoDelAnio, SeccionDeAnalisis } from "@/componentes/indicadores/vistas/VistaResultados";
 import { cerrarTrasGuardar } from "@/componentes/indicadores/medicion/cerrar-tras-guardar";
 import { Observaciones } from "@/componentes/indicadores/medicion/Observaciones";
 import { ResultadoEnVivo } from "@/componentes/indicadores/medicion/ResultadoEnVivo";
@@ -75,7 +75,7 @@ import { obtenerSql } from "@/db/cliente";
 import type { DatosDeAnalisis } from "@/db/consultas/indicadores/analisis";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
-import type { DatosDeReporte, FilaDelAnio, VariableAjena } from "@/db/consultas/indicadores/lectura";
+import type { DatosDeReporte, FilaDelAnio, ResumenAcumulado, VariableAjena } from "@/db/consultas/indicadores/lectura";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import type { MetaDelPeriodo } from "@/db/consultas/indicadores/metas";
 import { observar } from "@/db/consultas/indicadores/observaciones";
@@ -1092,7 +1092,7 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     expect(llego).not.toContain("Falta un dato");
     expect(llego).toMatch(/<button(?=[^>]*value="reportar")[^>]*>Reportar<\/button>/);
     // Sin la cifra, el resultado no se calcula en el navegador: lo dice en su lugar.
-    expect(llego).toContain("El resultado lo calcula el sistema al guardar: incluye un indicador que usted no puede ver.");
+    expect(llego).toContain("El resultado lo calcula el sistema: incluye un indicador que usted no puede ver.");
     const falta = formulario(oculta(false));
     expect(falta).toContain(">Aún no tiene resultado</p>");
     expect(falta).toContain(">Falta un dato de un componente.</p>");
@@ -1126,6 +1126,25 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     expect(html).toContain(">Aún no tiene resultado</p>");
     expect(html).toContain(">Falta un dato. Sale de SGC-IND-01 Programa de Auditorías Internas, que aún no tiene resultado.</p>");
     expect(html).not.toContain('name="valor_B"');
+  });
+
+  it("de otro indicador más fino que acumula desde después (anexo 14C, §6.3): la nota de origen dice desde cuándo", () => {
+    const ajena: VariableAjena = {
+      ...AJENA_DATO,
+      clase: "indicador",
+      fuenteId: 3,
+      nombre: "Programa de Auditorías Internas",
+      proceso: null,
+      codigo: "SGC-IND-01",
+      valor: "60",
+      venceEn: null,
+      venceEl: null,
+      acumulaDesde: "2026-08",
+    };
+    const html = formulario({ ...DATOS, variables: [DATOS.variables[0], { ...DATOS.variables[1], valor: "60", ajena }] });
+    expect(html).toContain(">Sale de SGC-IND-01 Programa de Auditorías Internas (acumulado de agosto a septiembre). No se cambia desde aquí.</p>");
+    const sinDesde = formulario({ ...DATOS, variables: [DATOS.variables[0], { ...DATOS.variables[1], valor: "60", ajena: { ...ajena, acumulaDesde: undefined } }] });
+    expect(sinDesde).toContain(">Sale de SGC-IND-01 Programa de Auditorías Internas. No se cambia desde aquí.</p>");
   });
 
   it("sin variables propias: de solo lectura, sin «lo calcula el sistema» y sin pedirle a nadie que reporte lo suyo", () => {
@@ -1191,6 +1210,68 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     expect(html).not.toContain('>Ver<span class="sr-only"> Junio de 2026</span>');
     // Sin la marca, quien mide reporta la misma fila.
     expect(tabla([fila({ estado: "por_reportar" })])).toContain('>Reportar<span class="sr-only"> Septiembre de 2026</span>');
+  });
+
+  it("la tabla del año: junto a la cifra de una variable tomada que acumula desde después, desde cuándo (anexo 14C, §6.3)", () => {
+    const html = renderToStaticMarkup(
+      <TablaDelAnio
+        filas={[
+          {
+            ...({} as FilaDelAnio),
+            periodo: "2026-T3",
+            etiqueta: "Tercer trimestre de 2026",
+            version: 1,
+            medicionId: 41,
+            estado: "reportada",
+            vence: "10 de octubre de 2026",
+            valores: [{ letra: "A", nombre: "Auditorías", valor: "60", numero: 60, acumulaDesde: "2026-08" }],
+            resultado: "60 %",
+            meta: "≥ 90 %",
+            automatica: false,
+            fotoEn: null,
+            seCalcula: null,
+          } as FilaDelAnio,
+        ]}
+        variables={[{ letra: "A", nombre: "Auditorías" }]}
+        anio={2026}
+        codigo="ZZ-1"
+        puedeMedir={false}
+        puedeAnalizar={false}
+      />,
+    );
+    expect(html).toContain("60");
+    expect(html).toContain("(acumulado de agosto a septiembre)");
+  });
+
+  it("el acumulado del año de un compuesto sin resultado por un componente lo dice, en lugar de «Aún no hay periodos medidos» (anexo 14C, §6.4)", () => {
+    const vacio: ResumenAcumulado = {
+      texto: null,
+      semaforo: null,
+      cumple: null,
+      valores: {},
+      numeros: {},
+      rotulo: null,
+      valor: null,
+      meta: null,
+      metaEnTexto: null,
+      exacto: null,
+      faltan: [],
+      desde: null,
+    };
+    const unidad = { sufijo: " %", decimales: 1 };
+    const sinComponente = renderToStaticMarkup(
+      <AcumuladoDelAnio
+        acumulado={{ ...vacio, rotulo: "Sin acumulado: un componente no tiene resultado en estos periodos", sinComponente: true }}
+        anio={2026}
+        nombreDe={(l) => l}
+        unidad={unidad}
+      />,
+    );
+    expect(sinComponente).toContain("Sin acumulado: un componente no tiene resultado en estos periodos");
+    expect(sinComponente).not.toContain("Aún no hay periodos medidos");
+    expect(renderToStaticMarkup(<AcumuladoDelAnio acumulado={vacio} anio={2026} nombreDe={(l) => l} unidad={unidad} />)).toContain(
+      "Aún no hay periodos medidos en 2026.",
+    );
   });
 
   it("las páginas: el mixto se reporta con el dato fijo; el que nadie mide lo abre quien analiza, de solo lectura y sin «Reportar»", () =>

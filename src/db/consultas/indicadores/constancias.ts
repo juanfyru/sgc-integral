@@ -44,7 +44,7 @@ import type { Tarea } from "@/lib/tareas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { CONSTANCIA_NO_EXISTE as NO_EXISTE, constanciaQueSePide, puedeRegistrarConstancia } from "./constancias-soporte";
-import { basesDe, fijosDelAcumulado, leerPeriodos, resumenAcumulado } from "./lectura";
+import { acumuladoDe, basesDe, leerPeriodos } from "./lectura";
 import { conMayuscula } from "./mediciones";
 import type { Soporte } from "./soportes";
 
@@ -174,17 +174,20 @@ export type ResultadoExterno = {
    * medición (la ficha cambió de fórmula o de variables dentro de él: «agosto de 2026»); `null` en lo demás.
    */
   desde: string | null;
-  /** En un compuesto, el acumulado de algún componente no cubre todo el periodo (anexo 14C, §6.4); sin nombrarlo. */
+  /**
+   * En un compuesto, el acumulado de algún componente no cubre todos los periodos, o un componente no tiene resultado en ellos
+   * y no hay acumulado (anexo 14C, §6.4); sin nombrarlo.
+   */
   componenteParcial?: true;
 };
 
 /**
- * El resultado del periodo externo (anexo §8): el acumulado de §8.10 de la página del indicador (`resumenAcumulado`, el
+ * El resultado del periodo externo (anexo §8): el acumulado de §8.10 de la página del indicador (`acumuladoDe`, el
  * mismo cálculo y la misma racha) sobre los periodos de medición que el periodo externo contiene, de la periodicidad que
  * rige (`leerPeriodos`). Es parcial si falta el dato de alguno, alguno no está cerrado o acumula desde una racha que empezó
  * dentro del periodo (`desde`): lo que se le dijo al ente cubre solo una parte; se puede registrar igual. El de un compuesto
- * toma de cada componente su acumulado en el tramo (`fijosDelAcumulado`, anexo 14C §6.4), y si el de alguno es parcial,
- * también lo es (`componenteParcial`).
+ * toma de cada componente su acumulado en el tramo (`acumuladoDe`, anexo 14C §6.4), y si el de alguno es parcial, o alguno
+ * no tiene resultado en esos periodos (sin acumulado), también lo es (`componenteParcial`).
  */
 export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: number, periodo: string, ahora: Date): Promise<ResultadoExterno> {
   const zona = zonaHoraria();
@@ -199,18 +202,20 @@ export async function resultadoDelPeriodoExterno(sql: Cliente, indicadorId: numb
       l.periodo.hasta.getTime() <= externo.hasta.getTime(),
   );
   const sinCerrar = dentro.filter((l) => l.fila.estado !== "cerrada").map((l) => l.periodo.etiqueta);
-  const a = resumenAcumulado(dentro, base.versiones, ahora, await fijosDelAcumulado(sql, dentro, base.versiones, ahora));
+  const a = await acumuladoDe(sql, dentro, base.versiones, ahora);
   const etiqueta = (clave: string) => periodoDe(clave, zona)?.etiqueta ?? clave;
   const faltan = a.faltan.map(etiqueta);
   const desde = a.desde === null ? null : etiqueta(a.desde);
+  // Parcial por un componente: no cubre todos los periodos, o no tiene resultado en ellos y no hay acumulado.
+  const porComponente = a.componenteParcial === true || a.sinComponente === true;
   return {
     texto: a.texto,
     exacto: a.exacto,
-    parcial: faltan.length > 0 || sinCerrar.length > 0 || desde !== null || a.componenteParcial === true,
+    parcial: faltan.length > 0 || sinCerrar.length > 0 || desde !== null || porComponente,
     faltan,
     sinCerrar,
     desde,
-    ...(a.componenteParcial ? { componenteParcial: true as const } : {}),
+    ...(porComponente ? { componenteParcial: true as const } : {}),
   };
 }
 

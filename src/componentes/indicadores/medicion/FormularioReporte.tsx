@@ -202,7 +202,7 @@ export function FormularioReporte({ datos, volver, administra = false }: { datos
             <legend className="sr-only">Datos del periodo</legend>
             {datos.variables.map((v) => {
               const id = `reporte-${v.letra}`;
-              if (v.ajena) return <VariableFija key={v.letra} variable={v} id={id} />;
+              if (v.ajena) return <VariableFija key={v.letra} variable={v} id={id} periodo={datos.periodo} />;
               const error = vivo.errores[v.letra];
               const descritoPor = [v.descripcion || v.fuente ? `${id}-ayuda` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
               return (

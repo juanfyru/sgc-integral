@@ -111,6 +111,8 @@ export type VariableDePrueba = {
    */
   indicadorOrigenId?: number;
   toma?: Toma;
+  /** «Cómo se junta» una variable propia; sin valor, «se suma». */
+  consolidacion?: Consolidacion;
 };
 
 /**
@@ -219,7 +221,7 @@ export async function indicadorDePrueba(
       descripcion: x.descripcion ?? d.descripcion,
       fuente: x.fuente ?? (calculo ? "La calcula el sistema" : null),
       unidad: null as string | null,
-      consolidacion: d.consolidacion as string,
+      consolidacion: (x.consolidacion ?? d.consolidacion) as string,
       captura_min: x.capturaMin ?? null,
       captura_max: x.capturaMax ?? null,
       admite_negativos: false,

@@ -2,20 +2,22 @@
  * Las lecturas del módulo de indicadores (spec 14 §8, §11 y §12): la pantalla de reporte y la medición por reportar, la
  * tabla del año y los resultados de un indicador (acumulado y series de las gráficas) y el indicador con lo que la persona
  * puede hacer, y el desglose por categoría de los periodos de un año (`desgloseDelAnio`). Lo que comparten la lista
- * (`lista.ts`) y la matriz (`matriz.ts`) vive aquí: los periodos en lote (`leerPeriodos`), el acumulado (`resumenAcumulado`)
+ * (`lista.ts`) y la matriz (`matriz.ts`) vive aquí: los periodos en lote (`leerPeriodos`), el acumulado (`acumuladoDe`)
  * y la comparación (`comparacionDe`). Solo leen: la escritura vive en `mediciones.ts`. Las importaciones van en un solo
  * sentido: `lista`/`matriz` → `lectura` → `categorias` → `mediciones`; y `lectura` → `componentes` y `propagacion`, livianos.
  *
  * **Lo que se ve de un compuesto** (anexo 14C, §6.4 y §6.5): el acumulado de un compuesto toma, de cada componente, su
- * acumulado propio en el tramo (`fijosDelAcumulado`); y lo que se entrega a una persona oculta lo que viene de un componente
+ * acumulado propio en el tramo (`acumuladoDe`); y lo que se entrega a una persona oculta lo que viene de un componente
  * que ella no ve (`componentesOcultos`, con la regla única `componentesVisibles`): la tabla del año y el motivo del contagio
  * (`paraQuienLee`), las series de «Sus variables», los valores del acumulado (`acumuladoParaQuienLee`) y la pantalla de
- * reportar. Se calcula con todo y se oculta al entregar: lo que no debe verse no llega al navegador. `leerPeriodos` y
- * `resumenAcumulado` no miran quién lee (los usan también la matriz y las constancias, que no muestran variables).
+ * reportar; y, de un componente que sí ve y más fino, desde cuándo acumula (`acumulanDesde`). Se calcula con todo y se oculta
+ * al entregar: lo que no debe verse no llega al navegador. `leerPeriodos` y `acumuladoDe` no miran quién lee (los usan
+ * también la matriz y las constancias, que no muestran variables).
  */
 import type { Row } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import {
+  componentesVisibles,
   puedeAnalizar,
   puedeMedir,
   puedeObservar,
@@ -33,7 +35,15 @@ import { aDecimal, aTexto, comparar, deTexto, type Fraccion } from "@/lib/indica
 import { esperaUnDato as esperaUnDatoSegunOrigen, letrasAjenas } from "@/lib/indicadores/origen";
 import { clavesDelAnio, clavesFinas, contiene, mismoDelAnioAnterior, periodicidadDe, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { fichaDeCalculo, reglaDeTexto, valorEnTexto, type CalculoEnTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
-import { anioDeClave, etiquetaDeComparacion, limiteDeLaGrafica, rachasDe, rotuloDelAcumulado, textoDelLimite } from "@/lib/indicadores/resultados";
+import {
+  anioDeClave,
+  etiquetaDeComparacion,
+  limiteDeLaGrafica,
+  rachasDe,
+  rotuloDelAcumulado,
+  SIN_ACUMULADO_POR_COMPONENTE,
+  textoDelLimite,
+} from "@/lib/indicadores/resultados";
 import { limiteDeCritico, numeroEs, numeroExacto, rangosEnPalabras, type Regla } from "@/lib/indicadores/semaforo";
 import { comparacion, fraseDeResultado, textoMeta, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
@@ -44,6 +54,7 @@ import {
   MOTIVO_NADA_QUE_MEDIR,
   MOTIVO_TODAS_NO_APLICAN,
   MOTIVOS_DEL_SISTEMA,
+  motivoParaQuienLee,
   nombreDeEstado,
   sinAlcanzarLaMeta,
   type EstadoIndicador,
@@ -58,7 +69,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { fichaDeVersion, operacionDeIndicador, versionVigente, type FichaLeida, type OperacionLeida } from "./aprobacion";
 import { desgloseDe, type Desglose } from "./categorias";
-import { componentesOcultos, contagiosParaQuienLee, letrasOcultas, letrasOcultasEnAlguna } from "./componentes";
+import { componentesOcultos, letrasOcultas, nombresDeComponentes } from "./componentes";
 import { indicadorPorCodigo } from "./fichas";
 import { obtenerParametros } from "./maestros";
 import {
@@ -85,7 +96,7 @@ import {
   type ValorGuardado,
   type VersionDeCalculo,
 } from "./mediciones";
-import { valorDeComponenteSobre } from "./propagacion";
+import { valorDeComponente, valorDeComponenteSobre } from "./propagacion";
 
 export type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -103,7 +114,8 @@ function diaEnPalabras(d: Date): string {
  * en palabras, en la zona de la instalación.
  *
  * La de un componente que la persona no ve (anexo 14C, §6.5) llega `oculta`: sin su id, su código ni su valor, con el nombre
- * `COMPONENTE_OCULTO`; `llego` dice solo si el valor ya llegó (la pantalla dice «Falta un dato de un componente.» si no).
+ * `COMPONENTE_OCULTO`; `llego` dice solo si el valor ya llegó (la pantalla dice «Falta un dato de un componente.» si no). La
+ * de uno que sí ve, más fino, cuyo acumulado empieza después que el periodo (§6.3), trae `acumulaDesde` (`acumulanDesde`).
  */
 export type VariableAjena = {
   clase: "dato" | "indicador";
@@ -119,6 +131,8 @@ export type VariableAjena = {
   venceEl: string | null;
   oculta?: true;
   llego?: boolean;
+  /** La clave del primer periodo que entró al acumulado de un componente más fino, si empieza después (`acumulanDesde`). */
+  acumulaDesde?: string;
 };
 
 export type VariableDeReporte = {
@@ -255,9 +269,12 @@ async function datosDeReporte(sql: Cliente, sesion: SujetoVisibilidad, ctx: Cont
   const alguienMide = mide(version);
   // Mientras falta el dato que calcula el sistema o uno ajeno, nadie está atrasado (anexo 14B, §4; anexo 14C, §3.1).
   const faltaDato = esperaUnDato(m, version, guardados);
-  const ajenas = await ajenasDeReporte(sql, m.periodo as string, version, guardados, ocultas);
+  const ajenas = await ajenasDeReporte(sql, ctx.periodo, version, guardados, ocultas);
   const motivo = (m.no_aplica_motivo as string | null) ?? null;
-  const contagio = motivo === MOTIVO_COMPONENTE_NO_APLICA ? (await contagiosParaQuienLee(sql, sesion, [m.id])).get(m.id) : undefined;
+  const contagio =
+    motivo === MOTIVO_COMPONENTE_NO_APLICA
+      ? (await contagiosParaQuienLee(sql, sesion, [{ medicionId: m.id, version, periodo: ctx.periodo }])).get(m.id)
+      : undefined;
   const zona = zonaHoraria();
   const foto = laFoto(m, ctx.periodo, version, ahora);
   const lista = listaDe(m);
@@ -356,14 +373,16 @@ function esperaUnDato(m: Record<string, unknown>, version: VersionDeCalculo, val
  */
 async function ajenasDeReporte(
   sql: Cliente,
-  periodo: string,
+  delPeriodo: Periodo,
   version: VersionDeCalculo,
   guardados: Readonly<Record<string, Fraccion>>,
   ocultas: ReadonlySet<string>,
 ): Promise<Map<string, VariableAjena>> {
   const salida = new Map<string, VariableAjena>();
+  const periodo = delPeriodo.clave;
   const ajenas = version.variables.filter((v) => v.origen === "compartida" || v.origen === "indicador");
   if (ajenas.length === 0) return salida;
+  const desdes = await acumulanDesde(sql, delPeriodo, version, guardados, ocultas);
   const filas = await sql`SELECT iv.letra, iv.origen_codigo, iv.origen_nombre, p.nombre AS proceso
     FROM indicador_variables iv
     LEFT JOIN variables_compartidas vc ON vc.id = iv.variable_compartida_id
@@ -388,6 +407,7 @@ async function ajenasDeReporte(
         codigo: texto(f?.origen_codigo),
         valor,
         ...sinFuente,
+        ...(desdes.has(v.letra) ? { acumulaDesde: desdes.get(v.letra)! } : {}),
       });
       continue;
     }
@@ -484,9 +504,10 @@ export type FilaDelAnio = {
   motivo: string | null;
   /**
    * Por letra de la versión que rige el periodo, con el nombre que tiene en ella y coma decimal; `null` si no hay. La tomada de
-   * un componente que la persona no ve (anexo 14C, §6.5), `oculta`: `COMPONENTE_OCULTO`, `VALOR_OCULTO` y sin número.
+   * un componente que la persona no ve (anexo 14C, §6.5), `oculta`: `COMPONENTE_OCULTO`, `VALOR_OCULTO` y sin número. La de
+   * uno que sí ve, más fino, cuyo acumulado empieza después que el periodo (§6.3), `acumulaDesde` (`acumulanDesde`).
    */
-  valores: { letra: string; nombre: string; valor: string | null; numero: number | null; oculta?: true }[];
+  valores: { letra: string; nombre: string; valor: string | null; numero: number | null; oculta?: true; acumulaDesde?: string }[];
   /** «60 %»: nunca contradice el color. */
   resultado: string | null;
   semaforo: Semaforo | null;
@@ -706,42 +727,117 @@ export async function tablaDelAnio(sesion: SujetoVisibilidad, indicadorId: numbe
 // Lo que se oculta de un compuesto (anexo 14C, §6.5)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Una variable tomada de un componente que la persona no ve, en una fila del año. */
-const VARIABLE_OCULTA = { nombre: COMPONENTE_OCULTO, valor: VALOR_OCULTO, numero: null, oculta: true } as const;
+/** Una variable tomada de un componente que la persona no ve, en una fila del año (`FilaDelAnio.valores`). */
+const FILA_DE_VARIABLE_OCULTA = { nombre: COMPONENTE_OCULTO, valor: VALOR_OCULTO, numero: null, oculta: true } as const;
+
+/**
+ * El motivo vigente del contagio de cada medición «No aplica» por un componente (anexo 14C, §6.3), para quien lee, resuelto al
+ * leer como la fuente de una reapertura: el primer componente de la versión que la rige (en el orden de sus variables, el de
+ * la propagación) que hoy no aplica en ese periodo, con su código y su nombre de hoy, solo si la persona lo ve. Si ninguno
+ * (la propagación aún no quitó el contagio) o no lo ve, la medición no sale: su motivo se lee tal cual se guardó. Solo se
+ * consulta para las que tienen el contagio.
+ */
+async function contagiosParaQuienLee(
+  sql: Cliente,
+  sesion: SujetoVisibilidad,
+  mediciones: readonly { medicionId: number; version: VersionDeCalculo; periodo: Periodo }[],
+): Promise<Map<number, string>> {
+  const causas = new Map<number, number>();
+  for (const x of mediciones) {
+    for (const v of x.version.variables) {
+      if (v.origen !== "indicador" || v.indicadorOrigenId === null || v.toma === null) continue;
+      const p = x.periodo;
+      const r = await valorDeComponente(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, periodo: p.clave, desde: p.desde, hasta: p.hasta });
+      if (r.estado === "no_aplica") {
+        causas.set(x.medicionId, v.indicadorOrigenId);
+        break;
+      }
+    }
+  }
+  if (causas.size === 0) return new Map();
+  const nombres = await nombresDeComponentes(sql, [...(await componentesVisibles(sql, sesion, [...causas.values()]))]);
+  const salida = new Map<number, string>();
+  for (const [medicionId, componente] of causas) {
+    const nombre = nombres.get(componente);
+    if (nombre) salida.set(medicionId, motivoParaQuienLee(MOTIVO_COMPONENTE_NO_APLICA, nombre)!);
+  }
+  return salida;
+}
+
+/**
+ * Desde cuándo acumula cada variable tomada de la versión en el periodo (anexo 14C, §6.3), por letra: la clave del primer
+ * periodo que entró al acumulado de su componente, cuando es más fino y no cubre el periodo desde su inicio
+ * (`valorDeComponente`, calculado al leer, nunca guardado). Solo de un componente que la persona ve (fuera de `ocultas`), cuyo
+ * valor ya llegó y es la misma fracción que da el cálculo de ahora: si la fuente cambió y la propagación aún no pasó, la frase
+ * no acompañaría a la cifra copiada. Nunca en un periodo mensual (no hay nada más fino): sin consulta.
+ */
+async function acumulanDesde(
+  sql: Cliente,
+  periodo: Periodo,
+  version: VersionDeCalculo,
+  valores: Readonly<Record<string, Fraccion>>,
+  ocultas: ReadonlySet<string>,
+): Promise<Map<string, string>> {
+  const salida = new Map<string, string>();
+  if (periodicidadDe(periodo.clave) === "mensual") return salida;
+  for (const v of version.variables) {
+    const copiado = valores[v.letra];
+    if (v.origen !== "indicador" || v.indicadorOrigenId === null || v.toma === null || ocultas.has(v.letra) || !copiado) continue;
+    const r = await valorDeComponente(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, periodo: periodo.clave, desde: periodo.desde, hasta: periodo.hasta });
+    if (r.estado === "listo" && r.desde !== null && comparar(r.valor, copiado) === 0) salida.set(v.letra, r.desde);
+  }
+  return salida;
+}
 
 /**
  * Los periodos leídos tal como los ve la persona: en la fila de cada uno, la variable tomada de un componente de `ocultos`
- * (los que no ve, `componentesOcultos`) sale oculta (`VARIABLE_OCULTA`), y el motivo del contagio nombra al componente solo a
- * quien lo ve (`contagiosParaQuienLee`), también en la frase. El resultado, el color, el análisis y las demás variables no se
- * tocan, ni lo que se calcula con ellos (`valores`, `resultado`): el acumulado y las gráficas los ocultan aparte.
+ * (los que no ve, `componentesOcultos`) sale oculta (`FILA_DE_VARIABLE_OCULTA`); la de uno que ve, más fino, desde cuándo
+ * acumula (`acumulanDesde`); y el motivo del contagio nombra al componente que hoy lo causa solo a quien lo ve
+ * (`contagiosParaQuienLee`), también en la frase. El resultado, el color, el análisis y las demás variables no se tocan, ni lo
+ * que se calcula con ellos (`valores`, `resultado`): el acumulado y las gráficas los ocultan aparte.
  */
 async function paraQuienLee(sql: Cliente, sesion: SujetoVisibilidad, leidos: readonly PeriodoLeido[], ocultos: ReadonlySet<number>): Promise<PeriodoLeido[]> {
-  const conContagio = leidos.flatMap((l) => (l.fila.medicionId !== null && l.fila.motivo === MOTIVO_COMPONENTE_NO_APLICA ? [l.fila.medicionId] : []));
+  const conContagio = leidos.flatMap((l) =>
+    l.fila.medicionId !== null && l.fila.motivo === MOTIVO_COMPONENTE_NO_APLICA ? [{ medicionId: l.fila.medicionId, version: l.version, periodo: l.periodo }] : [],
+  );
   const motivos = await contagiosParaQuienLee(sql, sesion, conContagio);
-  if (ocultos.size === 0 && motivos.size === 0) return [...leidos];
+  const desdes = new Map<PeriodoLeido, Map<string, string>>();
+  for (const l of leidos) {
+    if (l.fila.medicionId === null || l.resultado === null) continue;
+    const suyos = await acumulanDesde(sql, l.periodo, l.version, l.valores, letrasOcultas(l.version, ocultos));
+    if (suyos.size > 0) desdes.set(l, suyos);
+  }
+  if (ocultos.size === 0 && motivos.size === 0 && desdes.size === 0) return [...leidos];
   return leidos.map((l) => {
     const ocultas = letrasOcultas(l.version, ocultos);
     const motivo = l.fila.medicionId !== null ? motivos.get(l.fila.medicionId) : undefined;
-    if (ocultas.size === 0 && motivo === undefined) return l;
+    const desde = desdes.get(l);
+    if (ocultas.size === 0 && motivo === undefined && desde === undefined) return l;
     const f = l.fila;
     const pintado =
       motivo === undefined
         ? {}
         : { motivo, frase: fraseDeResultado({ resultado: l.resultado, semaforo: f.semaforo, cumple: f.cumple, noAplica: f.noAplica, motivo }, l.regla, l.version.unidad) };
-    return { ...l, fila: { ...f, valores: f.valores.map((v) => (ocultas.has(v.letra) ? { letra: v.letra, ...VARIABLE_OCULTA } : v)), ...pintado } };
+    const valores = f.valores.map((v) =>
+      ocultas.has(v.letra) ? { letra: v.letra, ...FILA_DE_VARIABLE_OCULTA } : desde?.has(v.letra) ? { ...v, acumulaDesde: desde.get(v.letra)! } : v,
+    );
+    return { ...l, fila: { ...f, valores, ...pintado } };
   });
 }
 
 /**
- * El acumulado tal como lo ve la persona: el valor reunido de cada letra de `ocultas` en `VALOR_OCULTO`, sin número. El
- * resultado, su estado y el rótulo no se tocan.
+ * El acumulado tal como lo ve la persona: el valor reunido de cada letra de `ocultas` (las que la versión que manda toma de
+ * un componente que no ve) en `VALOR_OCULTO`, sin número, y la lista de esas letras. El resultado, su estado y el rótulo no
+ * se tocan.
  */
 function acumuladoParaQuienLee(a: ResumenAcumulado, ocultas: ReadonlySet<string>): ResumenAcumulado {
-  if (!Object.keys(a.valores).some((l) => ocultas.has(l))) return a;
+  const suyas = Object.keys(a.valores).filter((l) => ocultas.has(l));
+  if (suyas.length === 0) return a;
   return {
     ...a,
     valores: Object.fromEntries(Object.entries(a.valores).map(([l, v]) => [l, ocultas.has(l) ? VALOR_OCULTO : v])),
     numeros: Object.fromEntries(Object.entries(a.numeros).map(([l, n]) => [l, ocultas.has(l) ? null : n])),
+    ocultas: suyas.sort(),
   };
 }
 
@@ -827,10 +923,17 @@ export type ResumenAcumulado = {
    */
   desde: string | null;
   /**
-   * En un compuesto, el acumulado de algún componente no cubre todo el tramo (anexo 14C, §6.4: empezó a medirse después o
-   * cambió de fórmula en él): el del compuesto es parcial y el rótulo lo dice, sin nombrar al componente.
+   * En un compuesto, el acumulado de algún componente no cubre todos los periodos del tramo (anexo 14C, §6.4: empezó a medirse
+   * después, cambió de fórmula en él o le falta un periodo): el del compuesto es parcial y el rótulo lo dice, sin nombrarlo.
    */
   componenteParcial?: true;
+  /**
+   * En un compuesto con periodos medidos, un componente no tiene resultado en ninguno de ellos (anexo 14C, §6.4): no hay
+   * acumulado y el rótulo es `SIN_ACUMULADO_POR_COMPONENTE`, en lugar de «Aún no hay periodos medidos».
+   */
+  sinComponente?: true;
+  /** Las letras cuyo valor reunido no ve la persona (`acumuladoParaQuienLee`): «No disponible» y sin número. */
+  ocultas?: string[];
 };
 
 const SIN_ACUMULADO: ResumenAcumulado = {
@@ -862,19 +965,23 @@ function tramoDelAcumulado(leidos: readonly PeriodoLeido[], versiones: readonly 
   return { terminados, ultimo, ficha, rachas, rachaDe, racha: rachaDe(ultimo) };
 }
 
-/** Lo que vale cada variable tomada en el acumulado de un compuesto (`fijosDelAcumulado`), y si alguno es parcial. */
-export type FijosDelAcumulado = { valores: Record<string, Fraccion | null>; parcial: boolean };
+/**
+ * Lo que vale cada variable tomada en el acumulado de un compuesto (`fijosDelAcumulado`); `parcial`, si el de algún componente
+ * no cubre todos los periodos; `sinComponente`, si alguno no tiene resultado en los periodos medidos del compuesto.
+ */
+type FijosDelAcumulado = { valores: Record<string, Fraccion | null>; parcial: boolean; sinComponente: boolean };
 
 /**
  * Las variables tomadas de otro indicador en el acumulado de `leidos` (anexo 14C, §6.4): cada una vale el acumulado propio
  * de su componente sobre los periodos que entran al acumulado del compuesto (los de la racha que manda con resultado, sin los
  * «No aplica»), su valor o su cumplimiento contra la meta del último periodo medido del componente (`valorDeComponenteSobre`,
- * el mismo cálculo de la propagación): nunca la suma ni el promedio de lo copiado mes a mes. Un componente sin valor en el
- * tramo deja la letra en `null` (sin acumulado); uno cuyo acumulado empieza después que el tramo, `parcial`. `undefined` si la
- * versión que manda no toma nada de otro indicador: el acumulado de siempre, sin una consulta más. Lo usan la página, la
- * matriz, el impreso, el Excel y el resultado del periodo externo de una constancia.
+ * el mismo cálculo de la propagación, en su modo del acumulado): nunca la suma ni el promedio de lo copiado mes a mes. Como
+ * el acumulado propio del componente, salta un periodo ordinario suyo sin dato y queda `parcial`, también si empieza después
+ * que el tramo; un componente sin resultado en ninguno de esos periodos deja la letra en `null` y el acumulado sin resultado
+ * (`sinComponente`). `undefined` si la versión que manda no toma nada de otro indicador: el acumulado de siempre, sin una
+ * consulta más.
  */
-export async function fijosDelAcumulado(
+async function fijosDelAcumulado(
   sql: Cliente,
   leidos: readonly PeriodoLeido[],
   versiones: readonly VersionDeCalculo[],
@@ -892,11 +999,26 @@ export async function fijosDelAcumulado(
     const r =
       v.indicadorOrigenId === null || v.toma === null || sobre.length === 0
         ? null
-        : await valorDeComponenteSobre(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, sobre });
+        : await valorDeComponenteSobre(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, sobre, acumulado: true });
     valores[v.letra] = r?.estado === "listo" ? r.valor : null;
-    if (r?.estado === "listo" && r.desde !== null) parcial = true;
+    if (r?.estado === "listo" && (r.desde !== null || r.incompleto === true)) parcial = true;
   }
-  return { valores, parcial };
+  const sinComponente = sobre.length > 0 && Object.values(valores).some((x) => x === null);
+  return { valores, parcial, sinComponente };
+}
+
+/**
+ * El acumulado de un año (o del periodo externo de una constancia) con los periodos que rigen en él: el de siempre y, en un
+ * compuesto, con lo que vale cada variable tomada (`fijosDelAcumulado`). Es la única entrada: la página, la matriz, el
+ * impreso, el Excel y `resultadoDelPeriodoExterno` lo piden aquí, y nadie puede olvidar los componentes de un compuesto.
+ */
+export async function acumuladoDe(
+  sql: Cliente,
+  leidos: readonly PeriodoLeido[],
+  versiones: readonly VersionDeCalculo[],
+  ahora: Date,
+): Promise<ResumenAcumulado> {
+  return resumenAcumulado(leidos, versiones, ahora, await fijosDelAcumulado(sql, leidos, versiones, ahora));
 }
 
 /**
@@ -905,13 +1027,15 @@ export async function fijosDelAcumulado(
  * suya. Se juzga contra la meta del último periodo medido de esa racha. Es el mismo cálculo en la página, en la columna
  * «Año» de la matriz y en el resultado del periodo externo de una constancia de envío al ente (`resultadoDelPeriodoExterno`,
  * sobre los periodos que el periodo externo contiene). En un compuesto, `fijos` (`fijosDelAcumulado`) da lo que vale cada
- * variable tomada; si el de algún componente es parcial, el acumulado también (`componenteParcial`, y el rótulo lo dice).
+ * variable tomada; si el de algún componente es parcial, el acumulado también (`componenteParcial`, y el rótulo lo dice), y si
+ * alguno no tiene resultado en los periodos medidos, no hay acumulado y el rótulo lo dice (`sinComponente`,
+ * `SIN_ACUMULADO_POR_COMPONENTE`). Se pide por `acumuladoDe`.
  */
-export function resumenAcumulado(
+function resumenAcumulado(
   leidos: readonly PeriodoLeido[],
   versiones: readonly VersionDeCalculo[],
   ahora: Date,
-  fijos?: FijosDelAcumulado,
+  fijos: FijosDelAcumulado | undefined,
 ): ResumenAcumulado {
   const t = tramoDelAcumulado(leidos, versiones, ahora);
   if (!t) return SIN_ACUMULADO;
@@ -939,17 +1063,20 @@ export function resumenAcumulado(
   const desdeOtraRacha = terminados.some((l) => rachaDe(l) !== racha) && r.desde !== null;
   const faltan = r.faltan.map(clave);
   const componenteParcial = fijos?.parcial === true && r.resultado !== null;
+  const sinComponente = fijos?.sinComponente === true && r.resultado === null;
   return {
     texto: r.resultado ? textoValor(r.resultado, unidad, regla) : null,
     semaforo: r.semaforo,
     cumple: r.resultado ? r.cumple : null,
     valores: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, numeroEs(v, 4, "truncar")])),
     numeros: Object.fromEntries(Object.entries(r.valores).map(([letra, v]) => [letra, aCelda(v)])),
-    rotulo: rotuloDelAcumulado(
-      faltan,
-      desdeOtraRacha ? { clave: clave(r.desde!), numero: rachas.get(ultimo.version.id)?.numero ?? ultimo.version.numero } : null,
-      componenteParcial,
-    ),
+    rotulo: sinComponente
+      ? SIN_ACUMULADO_POR_COMPONENTE
+      : rotuloDelAcumulado(
+          faltan,
+          desdeOtraRacha ? { clave: clave(r.desde!), numero: rachas.get(ultimo.version.id)?.numero ?? ultimo.version.numero } : null,
+          componenteParcial,
+        ),
     valor: r.resultado ? aNumero(r.resultado) : null,
     meta: regla.meta ? { valor: aNumero(regla.meta), texto: `Meta ${numeroExacto(regla.meta, unidad.decimales)}${unidad.sufijo}` } : null,
     metaEnTexto: textoMeta(regla, unidad),
@@ -957,6 +1084,7 @@ export function resumenAcumulado(
     faltan,
     desde: desdeOtraRacha ? clave(r.desde!) : null,
     ...(componenteParcial ? { componenteParcial: true as const } : {}),
+    ...(sinComponente ? { sinComponente: true as const } : {}),
   };
 }
 
@@ -1101,10 +1229,12 @@ export async function resultadosDelAnio(
   const rigenDelAnio = rigen.filter((l) => anioDeClave(l.periodo.clave) === anio);
   // Lo que la persona no ve de un compuesto (anexo 14C, §6.5): se calcula con todo y se oculta al entregar.
   const ocultos = await componentesOcultos(sql, sesion, base.versiones);
-  const acumulado = resumenAcumulado(rigenDelAnio, base.versiones, ahora, await fijosDelAcumulado(sql, rigenDelAnio, base.versiones, ahora));
+  const acumulado = await acumuladoDe(sql, rigenDelAnio, base.versiones, ahora);
+  // Con una racha, una letra tiene un solo origen: se ocultan las de la versión que manda el acumulado, no las de otras.
+  const manda = tramoDelAcumulado(rigenDelAnio, base.versiones, ahora)?.ultimo.version;
   return {
     filas: (await paraQuienLee(sql, sesion, todos.filter((l) => anioDeClave(l.periodo.clave) === anio), ocultos)).map((l) => l.fila),
-    acumulado: acumuladoParaQuienLee(acumulado, letrasOcultasEnAlguna(base.versiones, ocultos)),
+    acumulado: acumuladoParaQuienLee(acumulado, manda ? letrasOcultas(manda, ocultos) : new Set()),
     serie: rigen.map(puntoDe),
     variables: seriesDeVariables(rigen, ocultos),
     anios: anios.map((f) => Number(f.anio)),
@@ -1194,7 +1324,10 @@ async function ultimoResultado(
   const semaforo = (m.semaforo as Semaforo | null) ?? null;
   const noAplica = m.no_aplica === true;
   const guardado = texto(m.no_aplica_motivo);
-  const motivo = guardado === MOTIVO_COMPONENTE_NO_APLICA ? ((await contagiosParaQuienLee(sql, sesion, [Number(m.id)])).get(Number(m.id)) ?? guardado) : guardado;
+  const motivo =
+    guardado === MOTIVO_COMPONENTE_NO_APLICA
+      ? ((await contagiosParaQuienLee(sql, sesion, [{ medicionId: Number(m.id), version: ultimo.v, periodo: p }])).get(Number(m.id)) ?? guardado)
+      : guardado;
   return {
     periodo: m.periodo as string,
     etiqueta: conMayuscula(p.etiqueta),

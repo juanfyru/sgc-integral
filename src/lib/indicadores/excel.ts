@@ -170,7 +170,7 @@ export async function construirExcelDeIndicador(d: ImpresionDelAnio, meta: MetaH
   filas.push({
     periodo: "Acumulado del año",
     version: null,
-    valores: Object.fromEntries(Object.entries(a.numeros).map(([letra, n]) => [letra, a.valores[letra] === VALOR_OCULTO ? VALOR_OCULTO : n])),
+    valores: Object.fromEntries(Object.entries(a.numeros).map(([letra, n]) => [letra, a.ocultas?.includes(letra) ? VALOR_OCULTO : n])),
     resultado: a.texto,
     meta: a.metaEnTexto,
     cumple: a.texto ? cumpleEnTexto(a.cumple) : "",

@@ -7,8 +7,7 @@
  * (`cambieAntes`), que lleva el código del otro indicador solo a quien puede verlo. Y si cambiar la clase de un objetivo en
  * el maestro cerraría un ciclo oculto de «Objetivos cumplidos» (`cambiarClaseCierraCiclo`). Y, para quien lee un compuesto
  * (§6.5), «Lo toman» de la página de un componente (`loToman`), qué componentes no ve (`componentesOcultos`, con la regla
- * única `componentesVisibles`), las letras que salen de ellos y el motivo del contagio que nombra al componente solo a quien
- * lo ve (`contagiosParaQuienLee`).
+ * única `componentesVisibles`), las letras que salen de ellos y cómo se nombra hoy un componente (`nombresDeComponentes`).
  *
  * Módulo liviano: lo importan `fichas`, la aprobación, la operación y los maestros, así que no importa `lectura`, `fichas`, `aprobacion`
  * ni `operacion`, ni `datos`, `dimensiones` o `mediciones` (arrastran la bitácora): lee el dato, el componente, la dimensión,
@@ -29,8 +28,6 @@ import { contiene, versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import {
   ErrorIndicador,
   MAXIMO_NIVELES,
-  MOTIVO_COMPONENTE_NO_APLICA,
-  motivoParaQuienLee,
   type Consolidacion,
   type Forma,
   type OrigenVariable,
@@ -619,33 +616,10 @@ export function letrasOcultas(version: ConVariables, ocultos: ReadonlySet<number
 
 /**
  * Las letras que alguna de las versiones toma de un componente de `ocultos`: la regla conservadora de lo que no dice con qué
- * versión se escribió (el acumulado del año, los eventos de una medición).
+ * versión se escribió (los eventos de una medición, en su historial). El acumulado oculta por la versión que lo manda.
  */
 export function letrasOcultasEnAlguna(versiones: readonly ConVariables[], ocultos: ReadonlySet<number>): Set<string> {
   return new Set(versiones.flatMap((v) => [...letrasOcultas(v, ocultos)]));
-}
-
-/**
- * El motivo del contagio de cada medición de `medicionIds` para quien lee (anexo 14C, §6.3): con el código y el nombre del
- * componente que no aplicó, el del último evento `propagacion` que lo dejó (`detalle.componente`, su id), solo si la persona lo
- * ve. Las demás no salen: su motivo se lee tal cual se guardó («Un componente no aplicó en el periodo»).
- */
-export async function contagiosParaQuienLee(sql: Cliente, sujeto: SujetoVisibilidad, medicionIds: readonly number[]): Promise<Map<number, string>> {
-  const ids = unicos(medicionIds);
-  if (ids.length === 0) return new Map();
-  const filas = await sql`SELECT DISTINCT ON (e.medicion_id) e.medicion_id, (e.detalle ->> 'componente')::bigint AS componente
-    FROM medicion_eventos e
-    WHERE e.medicion_id IN ${sql(ids)} AND e.tipo = 'propagacion' AND e.detalle ? 'componente'
-    ORDER BY e.medicion_id, e.id DESC`;
-  const componentes = filas.map((f) => Number(f.componente));
-  const visibles = await componentesVisibles(sql, sujeto, componentes);
-  const nombres = await nombresDeComponentes(sql, [...visibles]);
-  const salida = new Map<number, string>();
-  for (const f of filas) {
-    const nombre = nombres.get(Number(f.componente));
-    if (nombre) salida.set(Number(f.medicion_id), motivoParaQuienLee(MOTIVO_COMPONENTE_NO_APLICA, nombre)!);
-  }
-  return salida;
 }
 
 /**

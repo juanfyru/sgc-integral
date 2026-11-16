@@ -1186,7 +1186,7 @@ const firmaDe = (f: Record<string, unknown> | undefined): FirmaDeFicha | null =>
  * La variable tomada de un componente que la persona no ve, para leer (anexo 14C, §6.5): sin su nombre (el de quien elaboró
  * puede nombrar al componente), su descripción, su fuente, su unidad ni nada del componente.
  */
-const VARIABLE_OCULTA = {
+const VARIABLE_DE_FICHA_OCULTA = {
   nombre: COMPONENTE_OCULTO,
   descripcion: null,
   fuente: null,
@@ -1198,7 +1198,7 @@ const VARIABLE_OCULTA = {
 
 /**
  * Una versión de la ficha para leerla, si la persona puede abrirla (`versionesVisibles`); si no, `null`. La variable tomada de
- * un componente que no ve sale oculta (`VARIABLE_OCULTA`); `componentesVisibles` dice cuáles ve. Así la leen la vista, las
+ * un componente que no ve sale oculta (`VARIABLE_DE_FICHA_OCULTA`); `componentesVisibles` dice cuáles ve. Así la leen la vista, las
  * versiones anteriores, el impreso y la hoja «Ficha» del Excel.
  */
 export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: number, opciones?: { sql?: Cliente }): Promise<FichaLeida | null> {
@@ -1214,7 +1214,7 @@ export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: numbe
   const tomados = contenido.variables.flatMap((x) => (x.origen === "indicador" && x.indicadorOrigenId !== null ? [x.indicadorOrigenId] : []));
   const visibles = await componentesVisibles(sql, sesion, tomados);
   const variables = contenido.variables.map((x) =>
-    x.origen === "indicador" && x.indicadorOrigenId !== null && !visibles.has(x.indicadorOrigenId) ? { ...x, ...VARIABLE_OCULTA } : x,
+    x.origen === "indicador" && x.indicadorOrigenId !== null && !visibles.has(x.indicadorOrigenId) ? { ...x, ...VARIABLE_DE_FICHA_OCULTA } : x,
   );
   let procedimiento: FichaLeida["procedimiento"] = null;
   if (contenido.procedimientoDocumentoId !== null) {

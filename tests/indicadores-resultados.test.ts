@@ -3,14 +3,30 @@
  * acumulado, el rótulo del acumulado y el reparto de los doce meses de una fila de la matriz.
  */
 import { describe, expect, it } from "vitest";
-import { etiquetaDeComparacion, rachasDe, repartirMeses, rotuloDelAcumulado, type FirmaDeVersion } from "@/lib/indicadores/resultados";
-import type { Consolidacion } from "@/lib/indicadores/tipos";
+import {
+  COMPONENTE_PARCIAL,
+  etiquetaDeComparacion,
+  firmaDeVersion,
+  rachasDe,
+  repartirMeses,
+  rotuloDelAcumulado,
+  SIN_ACUMULADO_POR_COMPONENTE,
+  textoAcumulaDesde,
+  type FirmaDeVersion,
+} from "@/lib/indicadores/resultados";
+import type { Consolidacion, Toma } from "@/lib/indicadores/tipos";
 
 const version = (id: number, numero: number, formula: string, consolidacion: Consolidacion = "suma", letras = ["A", "B"]): FirmaDeVersion => ({
   id,
   numero,
   calculo: { formula },
-  variables: letras.map((letra) => ({ letra, consolidacion })),
+  variables: letras.map((letra) => ({ letra, consolidacion, origen: "propia", indicadorOrigenId: null, toma: null })),
+});
+
+/** La versión `version(...)` con la letra A tomada del indicador `origen` (anexo 14C, §6.1): «cómo se junta» en «último». */
+const conTomada = (v: FirmaDeVersion, origen: number, toma: Toma = "valor"): FirmaDeVersion => ({
+  ...v,
+  variables: v.variables.map((x) => (x.letra === "A" ? { ...x, consolidacion: "ultimo", origen: "indicador", indicadorOrigenId: origen, toma } : x)),
 });
 
 describe("rachasDe", () => {
@@ -31,6 +47,37 @@ describe("rachasDe", () => {
     const aba = rachasDe([version(1, 1, "A / B * 100"), version(2, 2, "(A + C) / B * 100", "suma", ["A", "B", "C"]), version(3, 3, "A / B * 100")]);
     expect([aba.get(1)?.id, aba.get(2)?.id, aba.get(3)?.id]).toEqual([1, 2, 3]);
   });
+
+  it("la firma de una ficha sin variables tomadas es la de siempre (propias, compartidas y automáticas)", () => {
+    expect(firmaDeVersion(version(1, 1, "A / B * 100"))).toBe("A/B*100|A:suma,B:suma");
+    const otras = {
+      ...version(1, 1, "A / B * 100"),
+      variables: [
+        { letra: "A", consolidacion: "ultimo" as const, origen: "compartida", indicadorOrigenId: null, toma: null },
+        { letra: "B", consolidacion: "promedio" as const, origen: "automatica", indicadorOrigenId: null, toma: null },
+      ],
+    };
+    expect(firmaDeVersion(otras)).toBe("A/B*100|A:ultimo,B:promedio");
+  });
+
+  it("una variable tomada de otro indicador firma de cuál y qué toma (anexo 14C, §6.4): cambiar el origen parte la racha", () => {
+    expect(firmaDeVersion(conTomada(version(1, 1, "A / B * 100"), 7))).toBe("A/B*100|A:ultimo:i7:valor,B:suma");
+    // Una propia «último» que pasa a tomada, con la misma fórmula y la misma consolidación.
+    const propiaUltimo: FirmaDeVersion = {
+      ...version(1, 1, "A / B * 100"),
+      variables: version(1, 1, "").variables.map((x) => (x.letra === "A" ? { ...x, consolidacion: "ultimo" } : x)),
+    };
+    const aTomada = rachasDe([propiaUltimo, conTomada(version(2, 2, "A / B * 100"), 7)]);
+    expect(aTomada.get(2)).toEqual({ id: 2, numero: 2 });
+    // R1 por R2, y «valor» por «cumplimiento».
+    const deOtro = rachasDe([conTomada(version(1, 1, "A / B * 100"), 7), conTomada(version(2, 2, "A / B * 100"), 8)]);
+    expect(deOtro.get(2)).toEqual({ id: 2, numero: 2 });
+    const otraToma = rachasDe([conTomada(version(1, 1, "A / B * 100"), 7), conTomada(version(2, 2, "A / B * 100"), 7, "cumplimiento")]);
+    expect(otraToma.get(2)).toEqual({ id: 2, numero: 2 });
+    // El mismo componente y lo mismo: una sola racha.
+    const igual = rachasDe([conTomada(version(1, 1, "A / B * 100"), 7), conTomada(version(2, 2, "A/B*100"), 7)]);
+    expect(igual.get(2)).toEqual({ id: 1, numero: 1 });
+  });
 });
 
 describe("rotuloDelAcumulado", () => {
@@ -44,11 +91,27 @@ describe("rotuloDelAcumulado", () => {
     expect(rotuloDelAcumulado(["2026-09"], { clave: "2026-07", numero: 2 })).toBe("Acumulado desde julio, versión 2; parcial: falta septiembre");
   });
 
+  it("en un compuesto (anexo 14C, §6.4): el componente que no cubre todos los periodos lo deja parcial, sin nombrarlo", () => {
+    expect(COMPONENTE_PARCIAL).toBe("un componente no cubre todos los periodos");
+    expect(rotuloDelAcumulado([], null, true)).toBe("Acumulado parcial: un componente no cubre todos los periodos");
+    expect(rotuloDelAcumulado(["2026-07"], null, true)).toBe("Acumulado parcial: falta julio; un componente no cubre todos los periodos");
+    expect(SIN_ACUMULADO_POR_COMPONENTE).toBe("Sin acumulado: un componente no tiene resultado en estos periodos");
+  });
+
   it("la comparación nombra el periodo con su artículo y, si es de otro año, con el año", () => {
     expect(etiquetaDeComparacion("2026-T2", 2026)).toBe("el segundo trimestre");
     expect(etiquetaDeComparacion("2026-03", 2026)).toBe("marzo");
     expect(etiquetaDeComparacion("2025-04", 2026)).toBe("abril de 2025");
     expect(etiquetaDeComparacion("2025", 2026)).toBe("2025");
+  });
+});
+
+describe("textoAcumulaDesde (anexo 14C, §6.3)", () => {
+  it("dice desde qué mes acumula el componente hasta el último del periodo del compuesto, sin año", () => {
+    expect(textoAcumulaDesde("2026-06", "2026-S2")).toBe("acumulado de junio a diciembre");
+    expect(textoAcumulaDesde("2026-03", "2026-T1")).toBe("acumulado solo de marzo");
+    expect(textoAcumulaDesde("2026-T3", "2026")).toBe("acumulado de julio a diciembre");
+    expect(textoAcumulaDesde("2026-02", "2026-T1")).toBe("acumulado de febrero a marzo");
   });
 });
 

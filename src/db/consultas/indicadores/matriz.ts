@@ -12,9 +12,8 @@ import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { nombreDeEstado, type EstadoDePunto } from "@/lib/indicadores/tipos";
 import {
   anioValido,
-  fijosDelAcumulado,
+  acumuladoDe,
   leerPeriodos,
-  resumenAcumulado,
   type Base,
   type Opciones,
   type PeriodoLeido,
@@ -81,7 +80,7 @@ function celdaDelAnio(a: ResumenAcumulado, anio: number, ruta: string): CeldaDeM
  * Las celdas de un indicador en el año: cada periodo en sus meses (`mesesDe`), lo que no se mide en una celda vacía y la
  * del acumulado. `null` si no se mide ese año: ni un activo con periodos en él, ni uno con mediciones de ese año. De un
  * retirado solo cuentan los periodos con medición: lo posterior al retiro (y lo vacío que el retiro quitó) no se mide, no
- * está «por venir» (Tarea 19, D-9). El acumulado de un compuesto toma el de cada componente en el tramo (`fijosDelAcumulado`,
+ * está «por venir» (Tarea 19, D-9). El acumulado de un compuesto toma el de cada componente en el tramo (`acumuladoDe`,
  * anexo 14C §6.4), como la página. La matriz no muestra variables: no hay nada de un componente que ocultar.
  */
 async function celdasDelAnio(
@@ -102,7 +101,7 @@ async function celdasDelAnio(
     propios.map((l) => ({ celda: celdaDe(l, ruta), prioridad: (l.fila.deOtraPeriodicidad ? 0 : 10_000) + l.version.numero })),
     (desdeMes, hastaMes): CeldaDeMatriz => ({ desdeMes, hastaMes, texto: "", estado: "vacia", nombre: `${mesesEnPalabras(desdeMes, hastaMes)}: no se mide`, enlace: null, cumple: null }),
   );
-  const acumulado = resumenAcumulado(rigen, versiones, ahora, await fijosDelAcumulado(sql, rigen, versiones, ahora));
+  const acumulado = await acumuladoDe(sql, rigen, versiones, ahora);
   return { celdas, anio: celdaDelAnio(acumulado, anio, ruta), acumulado, rigen };
 }
 
@@ -111,7 +110,8 @@ async function celdasDelAnio(
  * en él, o cualquiera con mediciones de ese año), agrupadas por proceso (filtros: año, proceso, subproceso y clasificación de la versión aprobada vigente, como la lista); cada periodo ocupa sus meses (`mesesDe`), lo que
  * no se mide queda en una celda vacía y la columna «Año» es el acumulado, el mismo de la página. Antes de leer sus
  * mediciones abre los periodos terminados de los indicadores activos que lee, uno por uno (`indicadorIds`: el que falla se
- * registra y la matriz se pinta). Seis lecturas además de abrir periodos, sin importar cuántos indicadores haya.
+ * registra y la matriz se pinta). Seis lecturas además de abrir periodos, sin importar cuántos indicadores haya, más, por cada
+ * compuesto, las de sus componentes para su acumulado (`acumuladoDe`: unas por variable tomada, que crecen con ellas).
  */
 export async function matrizDelAnio(
   sesion: SujetoVisibilidad,

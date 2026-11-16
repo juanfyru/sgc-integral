@@ -21,9 +21,9 @@ export const ANALISIS_EN_CRITICO =
 export const ANALISIS_SI_NO_CUMPLE = "No cumple: después de reportar, el análisis es obligatorio.";
 /**
  * En lugar del resultado en vivo, cuando una variable sale de un componente que la persona no ve (anexo 14C, §6.5): su cifra
- * no llega al navegador, así que el resultado lo calcula solo el servidor.
+ * no llega al navegador, así que el resultado lo calcula solo el servidor, cuando el componente lo tenga.
  */
-export const CON_COMPONENTE_OCULTO = "El resultado lo calcula el sistema al guardar: incluye un indicador que usted no puede ver.";
+export const CON_COMPONENTE_OCULTO = "El resultado lo calcula el sistema: incluye un indicador que usted no puede ver.";
 
 // El acento de la tarjeta sigue al resultado; sin resultado o sin meta, el borde neutro. Clases literales para Tailwind.
 const ACENTO: Record<Semaforo | "ninguno", string> = {

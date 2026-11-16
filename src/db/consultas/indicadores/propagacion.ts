@@ -120,9 +120,11 @@ export type ValorDeDato =
  * Lo que tiene un componente para el periodo de un compuesto (anexo 14C, §6.3): listo, con las mediciones del componente
  * que entraron al valor y, si es un acumulado que no empieza con el periodo del compuesto, la clave del primero que entró;
  * falta algo; o no aplicó, con las mediciones que lo deciden (las «entradas» del cierre, como las de un valor listo).
+ * `incompleto` solo lo pone el modo del acumulado del año (`valorDeComponenteSobre` con `acumulado`): se saltó un periodo
+ * ordinario sin dato.
  */
 export type ValorDeComponente =
-  | { estado: "listo"; valor: Fraccion; mediciones: number[]; desde: string | null }
+  | { estado: "listo"; valor: Fraccion; mediciones: number[]; desde: string | null; incompleto?: true }
   | { estado: "falta" }
   | { estado: "no_aplica"; mediciones: number[] };
 
@@ -234,16 +236,22 @@ export function valorDeComponente(
   sql: Cliente,
   d: { indicadorId: number; toma: Toma; periodo: string; desde: Date; hasta: Date },
 ): Promise<ValorDeComponente> {
-  return valorSobre(sql, { indicadorId: d.indicadorId, toma: d.toma, sobre: [{ clave: d.periodo, desde: d.desde, hasta: d.hasta }] }, new Set());
+  return valorSobre(sql, { indicadorId: d.indicadorId, toma: d.toma, sobre: [{ clave: d.periodo, desde: d.desde, hasta: d.hasta }] }, new Set(), false);
 }
 
 /**
  * Lo mismo sobre varios periodos del compuesto, en orden de calendario: el acumulado propio del componente en ese tramo (anexo
  * 14C, §6.4), el que usa el acumulado del año de un compuesto (`fijosDelAcumulado`, `lectura.ts`) con los periodos que entran
- * a él. Es el mismo cálculo que hace la propagación para el componente interior de un compuesto de compuestos.
+ * a él. Es el mismo cálculo que hace la propagación para el componente interior de un compuesto de compuestos. Con
+ * `acumulado` (solo el acumulado del año), un periodo ordinario sin dato no deja el valor en `falta`: se salta, como el
+ * acumulado propio del componente, y el resultado sale `incompleto`; baja así también a los componentes de un componente
+ * compuesto. Sin él, la regla del valor del periodo (§6.3): un ordinario sin dato, `falta`.
  */
-export function valorDeComponenteSobre(sql: Cliente, d: { indicadorId: number; toma: Toma; sobre: readonly Cubierto[] }): Promise<ValorDeComponente> {
-  return valorSobre(sql, d, new Set());
+export function valorDeComponenteSobre(
+  sql: Cliente,
+  d: { indicadorId: number; toma: Toma; sobre: readonly Cubierto[]; acumulado?: boolean },
+): Promise<ValorDeComponente> {
+  return valorSobre(sql, { indicadorId: d.indicadorId, toma: d.toma, sobre: d.sobre }, new Set(), d.acumulado === true);
 }
 
 /** Un periodo de quien toma al componente: el del compuesto o, para un componente interior, uno que usa el intermedio. */
@@ -252,12 +260,14 @@ export type Cubierto = { clave: string; desde: Date; hasta: Date };
 /**
  * `valorDeComponente` sobre los periodos `sobre` de quien lo toma, en orden de calendario: el del compuesto o, dentro del
  * acumulado de un componente compuesto, los suyos que entran a ese acumulado. Sin volver a pasar por los indicadores de
- * `camino` (un ciclo, que la ficha no admite, no se recorre).
+ * `camino` (un ciclo, que la ficha no admite, no se recorre). Con `delAcumulado`, un ordinario sin dato se salta y, si es de
+ * la racha que manda, el resultado sale `incompleto` (`valorDeComponenteSobre`).
  */
 async function valorSobre(
   sql: Cliente,
   d: { indicadorId: number; toma: Toma; sobre: readonly Cubierto[] },
   camino: ReadonlySet<number>,
+  delAcumulado: boolean,
 ): Promise<ValorDeComponente> {
   if (camino.has(d.indicadorId) || d.sobre.length === 0) return FALTA;
   const zona = zonaHoraria();
@@ -296,13 +306,17 @@ async function valorSobre(
   const porClave = new Map(filas.map((m) => [m.periodo as string, m]));
   const aprobada = primeraAprobada(versiones)?.aprobadaEn ?? null;
   const entran: { periodo: Periodo; m: Row; rige: VersionDeCalculo }[] = [];
+  const saltados: VersionDeCalculo[] = [];
   for (const p of esperados) {
     const m = porClave.get(p.clave);
     if (!m || !conDato(m)) {
-      // Un histórico que nadie registró no lo debe nadie: se salta. Un ordinario sin dato, se espera.
+      // Un histórico que nadie registró no lo debe nadie: se salta. Un ordinario sin dato, se espera; en el acumulado del año,
+      // se salta como en el del componente, y lo deja incompleto.
       const historico = m ? m.historica === true : aprobada !== null && p.hasta.getTime() < aprobada.getTime();
       if (historico) continue;
-      return FALTA;
+      if (!delAcumulado) return FALTA;
+      saltados.push(versionQueRigeEntre(versiones, p, zona)!);
+      continue;
     }
     entran.push({ periodo: p, m, rige: versionQueRigeEntre(versiones, p, zona)! });
   }
@@ -321,6 +335,7 @@ async function valorSobre(
   const rachas = rachasDe(versiones);
   const rachaDe = (v: VersionDeCalculo) => rachas.get(v.id)?.id ?? v.id;
   const racha = rachaDe(rigeAlFinal);
+  let incompleto = saltados.some((v) => rachaDe(v) === racha);
   const deLaRacha = entran.filter((e) => rachaDe(e.rige) === racha);
   const mediciones = deLaRacha.map((e) => Number(e.m.id));
   const medidos = deLaRacha.filter((e) => e.m.no_aplica !== true);
@@ -337,11 +352,12 @@ async function valorSobre(
   for (const v of rigeAlFinal.variables) {
     if (v.origen !== "indicador") continue;
     if (v.indicadorOrigenId === null || v.toma === null) return FALTA;
-    const interior = await valorSobre(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, sobre: suyos }, conEl);
+    const interior = await valorSobre(sql, { indicadorId: v.indicadorOrigenId, toma: v.toma, sobre: suyos }, conEl, delAcumulado);
     if (interior.estado === "falta") return FALTA;
     if (interior.estado === "no_aplica") return { estado: "no_aplica", mediciones };
     fijos[v.letra] = interior.valor;
     if (interior.desde !== null) desdes.push(interior.desde);
+    if (interior.incompleto) incompleto = true;
   }
 
   const guardados = await sql`SELECT mv.medicion_id, ${columnasDeValor(sql)}
@@ -366,7 +382,7 @@ async function valorSobre(
   }
   const inicioDe = (clave: string) => periodoDe(clave, zona)?.desde.getTime() ?? 0;
   const desde = desdes.reduce<string | null>((tarde, c) => (tarde === null || inicioDe(c) > inicioDe(tarde) ? c : tarde), null);
-  return { estado: "listo", valor, mediciones, desde };
+  return { estado: "listo", valor, mediciones, desde, ...(incompleto ? { incompleto: true as const } : {}) };
 }
 
 const componentesDe = (version: VersionDeCalculo): number[] =>

@@ -5,6 +5,7 @@ import type { FilaDeDesglose } from "@/db/consultas/indicadores/categorias";
 import type { ImpresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import { estadoDeCategoria } from "@/lib/indicadores/categorias";
 import { fraccion } from "@/lib/indicadores/formula/fraccion";
+import { textoAcumulaDesde } from "@/lib/indicadores/resultados";
 import { numeroEs } from "@/lib/indicadores/semaforo";
 import {
   analisisEnTexto,
@@ -267,7 +268,7 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
               </tr>
               {b.filas.map((f) => {
                 const marcas = marcasDeFila(f, d.periodosSinCumplir);
-                const valores = new Map(f.valores.map((v) => [v.letra, v.valor]));
+                const valores = new Map(f.valores.map((v) => [v.letra, v]));
                 return (
                   <tr key={`${f.periodo}-${f.deOtraPeriodicidad ? "otra" : "rige"}`}>
                     <th scope="row" className={`${TD} text-left font-normal`}>
@@ -276,7 +277,11 @@ export function FichaImpresa(d: DatosDeFichaImpresa) {
                     </th>
                     {variables.map((v) => (
                       <td key={v.letra} className={`${TD} text-right tabular-nums`}>
-                        {valores.get(v.letra) ?? "—"}
+                        {valores.get(v.letra)?.valor ?? "—"}
+                        {/* Un componente más fino que acumula desde después (anexo 14C, §6.3), a quien lo ve. */}
+                        {valores.get(v.letra)?.acumulaDesde ? (
+                          <span className="block text-xs font-normal text-muted-foreground">{`(${textoAcumulaDesde(valores.get(v.letra)!.acumulaDesde!, f.periodo)})`}</span>
+                        ) : null}
                       </td>
                     ))}
                     <td className={`${TD} whitespace-nowrap text-right font-semibold tabular-nums`}>{f.resultado ?? "—"}</td>

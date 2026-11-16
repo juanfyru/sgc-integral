@@ -19,31 +19,56 @@ import ExcelJS from "exceljs";
 import type { TransactionSql } from "postgres";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
+
+// La página lee con `obtenerSql()`: dentro de un caso, la transacción; cuántas veces se pide el valor de un componente
+// para el «desde cuándo» (anexo 14C, §6.3), para fijar que un compuesto mensual no lo pide.
+const contexto = vi.hoisted(() => ({ sql: null as unknown, valorDeComponente: 0 }));
+vi.mock("@/db/cliente", async (original) => {
+  const real = await original<typeof import("@/db/cliente")>();
+  return { ...real, obtenerSql: () => (contexto.sql ?? real.obtenerSql()) as ReturnType<typeof real.obtenerSql> };
+});
+vi.mock("@/db/consultas/indicadores/propagacion", async (original) => {
+  const real = await original<typeof import("@/db/consultas/indicadores/propagacion")>();
+  return {
+    ...real,
+    valorDeComponente: (...args: Parameters<typeof real.valorDeComponente>) => {
+      contexto.valorDeComponente += 1;
+      return real.valorDeComponente(...args);
+    },
+  };
+});
+vi.mock("next/navigation", () => ({
+  notFound: () => {
+    throw new Error("NO_ENCONTRADA");
+  },
+}));
 
 import { FichaImpresa } from "@/componentes/indicadores/ficha/FichaImpresa";
 import { FichaTecnica } from "@/componentes/indicadores/ficha/FichaTecnica";
 import { avisoDeFalta, DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { fichaDeVersion, restringidosQueToma } from "@/db/consultas/indicadores/aprobacion";
+import { datosDeFicha } from "@/app/(app)/indicadores/[codigo]/_vistas";
+import { fichaDeVersion, restringidosQueToma, versionesVisibles } from "@/db/consultas/indicadores/aprobacion";
 import { cerrarMes, historialDeCorregidas, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { loToman } from "@/db/consultas/indicadores/componentes";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { impresionDelAnio } from "@/db/consultas/indicadores/impresion";
 import { medicionParaReportar, obtenerIndicador, resultadosDelAnio, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
-import { asegurarMediciones, marcarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { propagar } from "@/db/consultas/indicadores/propagacion";
 import { componentesVisibles, type SujetoVisibilidad } from "@/lib/alcance";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeIndicador } from "@/lib/indicadores/excel";
 import { camposDeFicha } from "@/lib/indicadores/ficha-en-texto";
 import { COMPONENTE_OCULTO, ErrorIndicador, MOTIVO_COMPONENTE_NO_APLICA, RESULTADO_OCULTO, VALOR_OCULTO } from "@/lib/indicadores/tipos";
-import { indicadorDePrueba, type IndicadorDePrueba } from "./utiles/indicadores";
+import type { SesionValida } from "@/lib/sesion";
+import { indicadorDePrueba, versionNueva, type IndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -92,7 +117,8 @@ async function celdasDelExcel(libro: Buffer): Promise<string> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(libro as unknown as ArrayBuffer);
   const salida: string[] = [];
-  wb.eachSheet((hoja) => hoja.eachRow({ includeEmpty: false }, (fila) => fila.eachCell((c) => salida.push(String(c.value)))));
+  // `text`, no `value`: una celda de texto enriquecido o con hipervínculo da su texto, no «[object Object]».
+  wb.eachSheet((hoja) => hoja.eachRow({ includeEmpty: false }, (fila) => fila.eachCell((c) => salida.push(c.text))));
   return salida.join("\n");
 }
 
@@ -286,6 +312,9 @@ describe("el Excel, el impreso y la ficha", () => {
       // La ficha en texto, la vista (la misma de «Versiones anteriores») y lo que viaja de ella.
       const ficha = (await fichaDeVersion(e.ana, e.c.versionId, { sql: tx }))!;
       expect(rastros(ficha, e.r)).toEqual([]);
+      // Sin id: la variable oculta no dice de qué indicador sale.
+      expect(ficha.contenido.variables[0]).toMatchObject({ nombre: COMPONENTE_OCULTO, indicadorOrigenId: null, origenCodigo: null, origenNombre: null });
+      expect(ficha.componentesVisibles).toEqual([e.g.id]);
       const variableA = camposDeFicha(ficha).estructura.find((x) => x.termino === "Variable A")!;
       expect(variableA).toMatchObject({ valor: COMPONENTE_OCULTO });
       expect(variableA.detalle).toContain(RESULTADO_OCULTO);
@@ -395,5 +424,196 @@ describe("en sentido contrario y los históricos", () => {
       expect(err).toBeInstanceOf(ErrorIndicador);
       expect((err as Error).message).toBe(HISTORICOS_DE_OTRO);
       expect(await registrarHistoricos(e.admin, { indicadorId: c2.id, filas }, opc(tx))).toEqual({ registrados: 1 });
+    }));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ronda 1: el «desde cuándo» (I2), el motivo vigente del contagio (M1), lo que se oculta en el acumulado (M2) y «Lo
+// toman» por la lectura de la página (M6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const valida = (s: SesionFlujo): SesionValida => ({
+  ...s,
+  sesionId: "prueba",
+  usuario: `zz_${s.usuarioId}`,
+  totpActivo: false,
+  factorPendiente: false,
+  debeCambiarClave: false,
+  aceptoDatos: true,
+  tema: "sistema",
+});
+
+describe("el «desde cuándo» junto a la variable (anexo 14C, §6.3)", () => {
+  /** Rh mensual desde enero, aprobado el 1 de marzo (enero y febrero son históricos), y K, trimestral, su espejo. */
+  async function trimestral(tx: TransactionSql) {
+    const e = await escenario(tx, { reportados: false });
+    const rh = await indicadorDePrueba(tx, {
+      periodicidad: "mensual",
+      inicioMedicion: "2003-01",
+      aprobadaEn: new Date("2003-03-01T15:00:00Z"),
+      procesoId: e.p2,
+      nivelAcceso: "restringido",
+      mide: [e.mideR.usuarioId],
+    });
+    const k = await indicadorDePrueba(tx, {
+      periodicidad: "trimestral",
+      inicioMedicion: "2003-T1",
+      aprobadaEn: APROBADA,
+      procesoId: e.p1,
+      nivelAcceso: "restringido",
+      analiza: [e.ana.usuarioId, e.gerente.usuarioId],
+      formula: "A",
+      variables: { A: { indicadorOrigenId: rh.id, toma: "valor" }, B: { indicadorOrigenId: rh.id, toma: "cumplimiento" } },
+    });
+    for (const i of [rh, k]) await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: i.id });
+    await e.reportarAB(e.mideR, await medicionDe(tx, rh.id, MARZO), "6", "8");
+    await propagar(opc(tx));
+    return { ...e, rh, k };
+  }
+
+  it("la gerente lee «acumulado solo de marzo» en la fila y en la pantalla de reportar; Ana, que no ve el componente, no recibe nada", () =>
+    revertida(sql, async (tx) => {
+      const e = await trimestral(tx);
+      const T1 = "2003-T1";
+      contexto.valorDeComponente = 0;
+      const fila = (await tablaDelAnio(e.gerente, e.k.id, 2003, opc(tx))).find((f) => f.periodo === T1)!;
+      // La cuenta del caso mensual ve las llamadas de la lectura: aquí, una por variable tomada.
+      expect(contexto.valorDeComponente).toBe(2);
+      expect(fila.valores.map((v) => v.acumulaDesde)).toEqual(["2003-03", "2003-03"]);
+      const reporte = (await medicionParaReportar(e.gerente, e.k.codigo, T1, opc(tx)))!;
+      expect(reporte.variables[0].ajena).toMatchObject({ acumulaDesde: "2003-03" });
+      expect(renderToStaticMarkup(createElement(DatosDelSistema, { datos: reporte }))).toContain("(acumulado solo de marzo)");
+      const impreso = (await impresionDelAnio(e.gerente, e.k.codigo, 2003, opc(tx)))!;
+      expect(renderToStaticMarkup(createElement(FichaImpresa, { entidad: "Entidad Zeta de Prueba", logo: null, ...impreso }))).toContain(
+        "acumulado solo de marzo",
+      );
+
+      // Ana: el campo no viaja, ni la frase.
+      const suyas = [
+        await tablaDelAnio(e.ana, e.k.id, 2003, opc(tx)),
+        await resultadosDelAnio(e.ana, e.k.id, 2003, opc(tx)),
+        await medicionParaReportar(e.ana, e.k.codigo, T1, opc(tx)),
+      ];
+      for (const s of suyas) {
+        expect(JSON.stringify(s)).not.toContain("acumulaDesde");
+        expect(rastros(s, e.rh, [])).toEqual([]);
+      }
+    }));
+
+  it("con enero registrado, el componente cubre el trimestre desde su inicio: nada que decir", () =>
+    revertida(sql, async (tx) => {
+      const e = await trimestral(tx);
+      await registrarHistoricos(e.admin, { indicadorId: e.rh.id, filas: [{ periodo: "2003-01", valores: { A: "5", B: "8" } }] }, opc(tx));
+      await propagar(opc(tx));
+      const fila = (await tablaDelAnio(e.gerente, e.k.id, 2003, opc(tx))).find((f) => f.periodo === "2003-T1")!;
+      expect(fila.resultado).toBe("68,8 %");
+      expect(JSON.stringify(fila)).not.toContain("acumulaDesde");
+    }));
+
+  it("si la fuente cambió y la propagación aún no pasó, la frase no acompaña a la cifra copiada", () =>
+    revertida(sql, async (tx) => {
+      const e = await trimestral(tx);
+      // R corrige marzo: la cifra de K sigue siendo la de antes hasta la propagación.
+      await e.reportarAB(e.mideR, await medicionDe(tx, e.rh.id, MARZO), "7", "8");
+      const fila = (await tablaDelAnio(e.gerente, e.k.id, 2003, opc(tx))).find((f) => f.periodo === "2003-T1")!;
+      expect(fila.valores[0].valor).toBe("75");
+      expect(JSON.stringify(fila)).not.toContain("acumulaDesde");
+    }));
+
+  it("un compuesto mensual no pide el valor de su componente para leer su tabla ni su pantalla de reportar", () =>
+    revertida(sql, async (tx) => {
+      const e = await escenario(tx);
+      contexto.valorDeComponente = 0;
+      await tablaDelAnio(e.gerente, e.c.id, 2003, opc(tx));
+      await resultadosDelAnio(e.gerente, e.c.id, 2003, opc(tx));
+      await medicionParaReportar(e.gerente, e.c.codigo, MARZO, opc(tx));
+      expect(contexto.valorDeComponente).toBe(0);
+    }));
+});
+
+describe("el motivo vigente del contagio (anexo 14C, §6.3)", () => {
+  it("con G y R «No aplica» y después G aplica: el motivo nombra a R a quien lo ve, el genérico a Ana, y nadie lee G", () =>
+    revertida(sql, async (tx) => {
+      const e = await escenario(tx, { reportados: false });
+      // A sale de G (general) y B de R (restringido): el evento del contagio guarda G, el primero.
+      const c2 = await indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: MARZO,
+        aprobadaEn: APROBADA,
+        procesoId: e.p1,
+        nivelAcceso: "restringido",
+        analiza: [e.ana.usuarioId, e.gerente.usuarioId],
+        formula: "(A + B) / 2",
+        variables: { A: { indicadorOrigenId: e.g.id, toma: "valor" }, B: { indicadorOrigenId: e.r.id, toma: "valor" } },
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: c2.id });
+      const deC2 = await medicionDe(tx, c2.id, MARZO);
+      await marcarNoAplica(e.mideG, { medicionId: e.m.g, motivo: "Sin casos en el mes" }, opc(tx));
+      await marcarNoAplica(e.mideR, { medicionId: e.m.r, motivo: "Sin casos en el mes" }, opc(tx));
+      await propagar(opc(tx));
+      const contagio = await tx`SELECT detalle FROM medicion_eventos WHERE medicion_id = ${deC2} AND tipo = 'propagacion' AND detalle ? 'componente'`;
+      expect(contagio.map((x) => (x.detalle as { componente: number }).componente)).toEqual([e.g.id]);
+      // G vuelve a aplicar; R sigue «No aplica»: C2 también, ahora por R.
+      await quitarNoAplica(e.mideG, e.m.g, opc(tx));
+      await e.reportarAB(e.mideG, e.m.g, "9", "10");
+      await propagar(opc(tx));
+      expect((await tx`SELECT no_aplica_motivo FROM mediciones WHERE id = ${deC2}`)[0].no_aplica_motivo).toBe(MOTIVO_COMPONENTE_NO_APLICA);
+
+      const porR = `${e.r.codigo} ${e.nombreDeR} no aplicó en el periodo`;
+      const fila = async (quien: SesionFlujo) => (await tablaDelAnio(quien, c2.id, 2003, opc(tx))).find((f) => f.periodo === MARZO)!;
+      expect((await fila(e.gerente)).motivo).toBe(porR);
+      expect((await fila(e.ana)).motivo).toBe(MOTIVO_COMPONENTE_NO_APLICA);
+      expect((await obtenerIndicador(e.gerente, c2.codigo, opc(tx)))!.ultimo?.frase).toBe(`No aplica: ${porR}.`);
+      expect((await obtenerIndicador(e.ana, c2.codigo, opc(tx)))!.ultimo?.frase).toBe(`No aplica: ${MOTIVO_COMPONENTE_NO_APLICA}.`);
+      expect((await medicionParaReportar(e.gerente, c2.codigo, MARZO, opc(tx)))!.motivo).toBe(porR);
+      expect((await medicionParaReportar(e.ana, c2.codigo, MARZO, opc(tx)))!.motivo).toBe(MOTIVO_COMPONENTE_NO_APLICA);
+      for (const quien of [e.gerente, e.ana]) {
+        expect(JSON.stringify(await fila(quien))).not.toContain(e.g.codigo);
+      }
+    }));
+});
+
+describe("lo que se oculta en el acumulado sigue a la versión que manda (M2)", () => {
+  it("una letra tomada de R en 2003 y propia desde 2004: el acumulado de 2004 de Ana muestra su valor", () =>
+    revertida(sql, async (tx) => {
+      const e = await escenario(tx, { reportados: false });
+      const FEBRERO_2004 = new Date("2004-02-20T15:00:00Z");
+      const c3 = await indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: "2003-11",
+        aprobadaEn: new Date("2003-10-15T15:00:00Z"),
+        procesoId: e.p1,
+        nivelAcceso: "restringido",
+        mide: [e.ana.usuarioId],
+        variables: { A: { indicadorOrigenId: e.r.id, toma: "valor" }, B: { nombre: "Casos evaluados" } },
+      });
+      await versionNueva(tx, { indicadorId: c3.id, usuarioId: e.admin.usuarioId, tipoCambio: "mayor", rigeDesde: "2004-01", aprobadaEn: new Date("2003-12-10T15:00:00Z") });
+      await asegurarMediciones({ sql: tx, ahora: FEBRERO_2004, indicadorId: c3.id });
+      await reportar(e.ana, { medicionId: await medicionDe(tx, c3.id, "2004-01"), valores: { A: "4", B: "10" }, parcial: false, confirmado: true }, opc(tx, FEBRERO_2004));
+      const r = await resultadosDelAnio(e.ana, c3.id, 2004, opc(tx, FEBRERO_2004));
+      expect(r.filas[0].valores[0]).toMatchObject({ letra: "A", valor: "4" });
+      expect(r.acumulado).toMatchObject({ texto: "40 %", valores: { A: "4", B: "10" }, numeros: { A: 4, B: 10 } });
+      expect(r.acumulado).not.toHaveProperty("ocultas");
+    }));
+});
+
+describe("«Lo toman» por la lectura de la página (M6)", () => {
+  it("datosDeFicha de R: la gerente recibe C; alguien de P2, que ve R y no C, no recibe la sección", () =>
+    revertida(sql, async (tx) => {
+      const e = await escenario(tx, { reportados: false });
+      contexto.sql = tx;
+      try {
+        const de = async (quien: SesionFlujo) => {
+          const sesion = valida(quien);
+          const { ve, versiones } = await versionesVisibles(sesion, e.r.id, { sql: tx });
+          const ficha = (await fichaDeVersion(sesion, e.r.versionId, { sql: tx }))!;
+          const vigente = versiones.find((v) => v.estado === "aprobada") ?? null;
+          return datosDeFicha({ sesion, indicador: { id: e.r.id, codigo: e.r.codigo, estado: "activo" }, ve, versiones, vigente, ficha, administra: false, ahora: AHORA });
+        };
+        expect((await de(e.gerente)).loToman).toEqual([{ codigo: e.c.codigo, nombre: `Indicador de prueba ${e.c.codigo}` }]);
+        expect((await de(e.deP2)).loToman).toEqual([]);
+      } finally {
+        contexto.sql = null;
+      }
     }));
 });

@@ -5,14 +5,34 @@
  */
 import { MESES, periodoDe } from "@/lib/indicadores-documentales/periodo";
 import type { Fraccion } from "./formula/fraccion";
-import { periodicidadDe } from "./periodos";
+import { mesesDe, periodicidadDe } from "./periodos";
 import { limiteDeRangosCerrado } from "./rangos";
 import { numeroExacto, type Regla } from "./semaforo";
 import type { Unidad } from "./textos";
 import type { Consolidacion, LimiteDeGrafica } from "./tipos";
 
-/** Por qué es parcial el acumulado de un compuesto cuyo componente acumula desde después del tramo (anexo 14C, §6.4). */
-export const COMPONENTE_PARCIAL = "un componente se acumula desde un periodo posterior";
+/**
+ * Por qué es parcial el acumulado de un compuesto (anexo 14C, §6.4): el de un componente no cubre todos sus periodos (empezó
+ * a medirse después, cambió de fórmula o le falta un periodo). Sin nombrarlo.
+ */
+export const COMPONENTE_PARCIAL = "un componente no cubre todos los periodos";
+
+/**
+ * El rótulo de un compuesto con periodos medidos que se queda sin acumulado porque un componente no tiene resultado en
+ * ninguno de ellos (anexo 14C, §6.4): no hay con qué juntarlo. Sin nombrarlo.
+ */
+export const SIN_ACUMULADO_POR_COMPONENTE = "Sin acumulado: un componente no tiene resultado en estos periodos";
+
+/**
+ * «acumulado de junio a diciembre»: desde el mes en que empieza el periodo `desde` (el primero que entró al acumulado de un
+ * componente más fino) hasta el mes en que termina el periodo `periodo` del compuesto, sin año (anexo 14C, §6.3). Si son el
+ * mismo mes, «acumulado solo de marzo».
+ */
+export function textoAcumulaDesde(desde: string, periodo: string): string {
+  const inicio = MESES[mesesDe(desde)[0] - 1];
+  const fin = MESES[mesesDe(periodo)[1] - 1];
+  return inicio === fin ? `acumulado solo de ${inicio}` : `acumulado de ${inicio} a ${fin}`;
+}
 
 /** El año de una clave de periodo (`2026-T3` → 2026). */
 export const anioDeClave = (clave: string): number => Number(clave.slice(0, 4));
@@ -43,30 +63,39 @@ export function etiquetaDeComparacion(clave: string, anio: number): string {
   return anioDeClave(clave) === anio ? nombre : `${nombre} de ${clave.slice(0, 4)}`;
 }
 
-/** Lo que distingue una versión para el acumulado: la fórmula y las variables, con su consolidación (spec §8.10). */
+/**
+ * Lo que distingue una versión para el acumulado: la fórmula y las variables, con su consolidación (spec §8.10) y, la que sale
+ * de otro indicador, de cuál y qué toma (anexo 14C, §6.4). Los tres campos de origen son obligatorios: un cargador que no los
+ * traiga no compila, en lugar de firmar como antes en silencio.
+ */
 export type FirmaDeVersion = {
   id: number;
   numero: number;
   calculo: { formula: string };
-  variables: readonly { letra: string; consolidacion: Consolidacion }[];
+  variables: readonly { letra: string; consolidacion: Consolidacion; origen: string; indicadorOrigenId: number | null; toma: string | null }[];
 };
 
-const firma = (v: FirmaDeVersion) =>
+/**
+ * La firma de la versión: «A/B*100|A:suma,B:suma». Una variable tomada de otro indicador añade su id y lo que toma
+ * («A:ultimo:i7:valor»): cambiar el componente, o el valor por el cumplimiento, parte la racha. Las demás (propias, de un dato
+ * compartido o del cálculo del sistema) firman como siempre: ninguna ficha de la 14A ni de la 14B cambia de racha.
+ */
+export const firmaDeVersion = (v: FirmaDeVersion): string =>
   `${v.calculo.formula.replace(/\s+/g, "")}|${[...v.variables]
-    .map((x) => `${x.letra}:${x.consolidacion}`)
+    .map((x) => (x.origen === "indicador" ? `${x.letra}:${x.consolidacion}:i${x.indicadorOrigenId}:${x.toma}` : `${x.letra}:${x.consolidacion}`))
     .sort()
     .join(",")}`;
 
 /**
  * La racha de cada versión: las versiones seguidas (por número) con la misma fórmula y las mismas variables forman una
- * sola, que se nombra por la primera. El acumulado se parte solo cuando cambian (spec §8.10): un cambio menor o
- * de periodicidad no lo parte.
+ * sola, que se nombra por la primera. El acumulado se parte solo cuando cambian (spec §8.10; `firmaDeVersion`): un cambio
+ * menor o de periodicidad no lo parte; cambiar de dónde sale una variable tomada, sí.
  */
 export function rachasDe(versiones: readonly FirmaDeVersion[]): Map<number, { id: number; numero: number }> {
   const salida = new Map<number, { id: number; numero: number }>();
   let actual: { id: number; numero: number; firma: string } | null = null;
   for (const v of [...versiones].sort((a, b) => a.numero - b.numero)) {
-    const f = firma(v);
+    const f = firmaDeVersion(v);
     if (actual === null || actual.firma !== f) actual = { id: v.id, numero: v.numero, firma: f };
     salida.set(v.id, { id: actual.id, numero: actual.numero });
   }
@@ -84,8 +113,8 @@ function enumerar(claves: readonly string[]): string {
 /**
  * El rótulo del acumulado (spec §8.10): «Acumulado parcial: falta julio» si falta un periodo ya terminado; «Acumulado
  * desde julio, versión 2» si en el año rigieron fórmulas o variables distintas; los dos, juntos. `null` si no hace falta. En un
- * compuesto cuyo componente acumula desde después del tramo (`componenteParcial`, anexo 14C §6.4), «Acumulado parcial: un
- * componente se acumula desde un periodo posterior», sin nombrarlo ni decir desde cuándo.
+ * compuesto cuyo componente no cubre todos los periodos del tramo (`componenteParcial`, anexo 14C §6.4), «Acumulado parcial:
+ * un componente no cubre todos los periodos», sin nombrarlo ni decir desde cuándo.
  */
 export function rotuloDelAcumulado(faltan: readonly string[], desde: { clave: string; numero: number } | null, componenteParcial = false): string | null {
   const partes = [faltan.length > 0 ? enumerar(faltan) : null, componenteParcial ? COMPONENTE_PARCIAL : null].filter((p): p is string => p !== null);

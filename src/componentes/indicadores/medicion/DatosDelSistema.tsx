@@ -3,6 +3,7 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import type { DatosDeReporte, VariableAjena, VariableDeReporte } from "@/db/consultas/indicadores/lectura";
 import { deTexto, fraccion } from "@/lib/indicadores/formula/fraccion";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
+import { textoAcumulaDesde } from "@/lib/indicadores/resultados";
 import { numeroEs } from "@/lib/indicadores/semaforo";
 import { textoValor } from "@/lib/indicadores/textos";
 import { VALOR_OCULTO } from "@/lib/indicadores/tipos";
@@ -65,9 +66,10 @@ export function AvisosDeFalta({ variables, mide }: { variables: VariableDeReport
  * Una variable que no digita quien mide (anexo 14C, §3.1, maqueta 14): fija, con su nombre, de dónde llega («Dato
  * compartido» o «De otro indicador»), su valor o que aún no llega y, de un dato, quién lo reportó y cuándo. No se cambia
  * desde aquí: no hay campo, y el servidor rechaza un valor para ella. La de un componente que la persona no ve (anexo 14C,
- * §6.5) llega sin nombre ni cifra: «Indicador restringido», con «No disponible» si ya llegó.
+ * §6.5) llega sin nombre ni cifra: «Indicador restringido», con «No disponible» si ya llegó; la de uno más fino que acumula
+ * desde después del inicio del periodo dice desde cuándo en su nota de origen (§6.3).
  */
-export function VariableFija({ variable: v, id }: { variable: VariableDeReporte; id: string }) {
+export function VariableFija({ variable: v, id, periodo }: { variable: VariableDeReporte; id: string; periodo: string }) {
   const a = v.ajena;
   if (!a) return null;
   const nota =
@@ -77,7 +79,7 @@ export function VariableFija({ variable: v, id }: { variable: VariableDeReporte;
         ? a.reporto && a.reportadoEl
           ? `Lo reportó ${a.reporto} el ${a.reportadoEl}. No se cambia desde aquí.`
           : "No se cambia desde aquí."
-        : `Sale de ${deIndicador(a)}. No se cambia desde aquí.`;
+        : `Sale de ${deIndicador(a)}${a.acumulaDesde ? ` (${textoAcumulaDesde(a.acumulaDesde, periodo)})` : ""}. No se cambia desde aquí.`;
   const valor = a.oculta
     ? a.llego
       ? VALOR_OCULTO
@@ -134,7 +136,7 @@ export function DatosDelSistema({ datos, administra = false }: { datos: DatosDeR
         <>
           <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
             {datos.variables.map((v) => (
-              <VariableFija key={v.letra} variable={v} id={`reporte-${v.letra}`} />
+              <VariableFija key={v.letra} variable={v} id={`reporte-${v.letra}`} periodo={datos.periodo} />
             ))}
           </div>
           <AvisosDeFalta variables={datos.variables} mide={false} />

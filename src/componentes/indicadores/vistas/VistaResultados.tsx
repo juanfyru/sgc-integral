@@ -69,6 +69,40 @@ const rutaDeResultados = (codigo: string, anio: number, rango: RangoDeGrafica = 
   `${rutaDeIndicador(codigo)}?vista=resultados&anio=${anio}${rango === "anio" ? "" : `&rango=${rango}`}`;
 
 /**
+ * «Acumulado del año» (spec §8.10): el tubo con su resultado, el rótulo y el valor reunido de cada variable. Sin resultado,
+ * «Aún no hay periodos medidos»; salvo en un compuesto con periodos medidos cuyo componente no tiene resultado en ellos
+ * (anexo 14C, §6.4, `sinComponente`): entonces solo su rótulo, que lo dice.
+ */
+export function AcumuladoDelAnio({
+  acumulado: a,
+  anio,
+  nombreDe,
+  unidad,
+}: {
+  acumulado: ResultadosDelAnio["acumulado"];
+  anio: number;
+  nombreDe: (letra: string) => string;
+  unidad: ResultadosDelAnio["grafica"]["unidad"];
+}) {
+  const valores = Object.entries(a.valores);
+  return (
+    <section aria-labelledby="indicador-acumulado" className={CAJA}>
+      <h2 id="indicador-acumulado" className="text-base font-semibold">
+        Acumulado del año
+      </h2>
+      {a.texto ? (
+        <TuboAcumulado valor={a.valor} texto={a.texto} estado={a.semaforo ?? "sin-meta"} cumple={a.cumple} meta={a.meta ?? undefined} unidad={unidad} />
+      ) : a.sinComponente ? null : (
+        <p className="text-sm text-muted-foreground">{`Aún no hay periodos medidos en ${anio}.`}</p>
+      )}
+      {a.rotulo ? <p className="text-sm">{a.rotulo}</p> : null}
+      {valores.length > 0 ? <p className="text-sm text-muted-foreground">{valores.map(([letra, valor]) => `${nombreDe(letra)}: ${valor}`).join(" · ")}</p> : null}
+      <p className="text-xs text-muted-foreground">Se calcula juntando las variables de los periodos del año, nunca promediando los resultados.</p>
+    </section>
+  );
+}
+
+/**
  * «Resultados» (spec §12.3, maqueta 2): el último resultado en grande con su estado, su frase y su comparación; la gráfica
  * principal con su rango (el año, dos años o todo); el acumulado del año con su rótulo; una gráfica pequeña por variable;
  * en un desagregado, «Por {dimensión}» con las barras del periodo elegido (`?desglose=`, anexo 14C §5.6); el análisis que
@@ -90,7 +124,6 @@ export function VistaResultados(d: DatosDeResultados) {
     { clave: "dos", etiqueta: "2 años" },
     { clave: "todo", etiqueta: "Todo" },
   ];
-  const valores = Object.entries(r.acumulado.valores);
   const nombreDe = (letra: string) => r.variables.find((v) => v.letra === letra)?.nombre ?? letra;
 
   return (
@@ -136,28 +169,7 @@ export function VistaResultados(d: DatosDeResultados) {
             </section>
           </div>
           <div className="flex min-w-0 flex-col gap-4">
-            <section aria-labelledby="indicador-acumulado" className={CAJA}>
-              <h2 id="indicador-acumulado" className="text-base font-semibold">
-                Acumulado del año
-              </h2>
-              {r.acumulado.texto ? (
-                <TuboAcumulado
-                  valor={r.acumulado.valor}
-                  texto={r.acumulado.texto}
-                  estado={r.acumulado.semaforo ?? "sin-meta"}
-                  cumple={r.acumulado.cumple}
-                  meta={r.acumulado.meta ?? undefined}
-                  unidad={r.grafica.unidad}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">{`Aún no hay periodos medidos en ${anio}.`}</p>
-              )}
-              {r.acumulado.rotulo ? <p className="text-sm">{r.acumulado.rotulo}</p> : null}
-              {valores.length > 0 ? (
-                <p className="text-sm text-muted-foreground">{valores.map(([letra, valor]) => `${nombreDe(letra)}: ${valor}`).join(" · ")}</p>
-              ) : null}
-              <p className="text-xs text-muted-foreground">Se calcula juntando las variables de los periodos del año, nunca promediando los resultados.</p>
-            </section>
+            <AcumuladoDelAnio acumulado={r.acumulado} anio={anio} nombreDe={nombreDe} unidad={r.grafica.unidad} />
             {r.variables.length > 0 ? (
               <section aria-labelledby="indicador-variables" className={CAJA}>
                 <h2 id="indicador-variables" className="text-base font-semibold">
