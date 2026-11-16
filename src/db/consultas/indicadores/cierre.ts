@@ -744,7 +744,9 @@ export async function cerrarDeNuevo(sesion: SesionFlujo, medicionId: number, opc
  * leer con la visibilidad de quien lee (`fuenteEnTexto`): «Por un cambio en …» con su nombre a quien la ve, y a quien no,
  * «Por un cambio en un componente» o «Por un cambio en una de sus fuentes» (un dato). De un componente que quien lee no ve
  * (§6.5, `componentesOcultos`), el antes y el después de sus letras no se pintan (las que alguna versión toma de él) y su
- * propagación se lee «El sistema actualizó un componente»; el motivo del contagio lo nombra solo a quien lo ve.
+ * propagación se lee «El sistema actualizó un componente»; el motivo del contagio lo nombra solo a quien ve
+ * todos los componentes del indicador (`motivoDelEvento`, `historial.ts`: a quien tiene alguno oculto, nombrar el del evento le
+ * dejaría deducir si ese aplicó).
  */
 export async function historialDeCorregidas(
   sesion: SujetoVisibilidad,
