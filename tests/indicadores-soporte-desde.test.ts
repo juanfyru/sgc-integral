@@ -173,6 +173,27 @@ describe("los escritores de la fecha", () => {
       expect(await desdeDe(tx, c.indicadorId)).toEqual({ soporte_obligatorio: false, soporte_obligatorio_desde: null });
     }));
 
+  it("guardar sin cambiar el soporte no reescribe la fecha: conserva los microsegundos de una que puso el relleno", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      // `now()` y `auditoria.creado_en` guardan microsegundos; un `Date` de JavaScript solo milisegundos. La fecha va como texto
+      // y se convierte en SQL: un parámetro `timestamptz` pasaría por un `Date` y perdería los microsegundos.
+      const FECHA = "2026-10-12 15:00:00.123456+00";
+      const igual = async (indicadorId: number) =>
+        (await tx`SELECT soporte_obligatorio_desde = ${FECHA}::text::timestamptz AS igual FROM indicadores WHERE id = ${indicadorId}`)[0].igual;
+
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, soporteObligatorio: true });
+      await tx`UPDATE indicadores SET soporte_obligatorio_desde = ${FECHA}::text::timestamptz WHERE id = ${ind.id}`;
+      expect(await igual(ind.id)).toBe(true);
+      await cambiarOperacion(b.admin, operacion(ind.id, { plazoReporteDias: 15, soporteObligatorio: true }), { sql: tx, ahora: dia("2026-11-01") });
+      expect(await igual(ind.id)).toBe(true);
+
+      const c = await crearIndicador(b.admin, datos(b, { soporteObligatorio: true }), { sql: tx, ahora: dia("2026-09-01") });
+      await tx`UPDATE indicadores SET soporte_obligatorio_desde = ${FECHA}::text::timestamptz WHERE id = ${c.indicadorId}`;
+      await guardarBorrador(b.admin, c.versionId, datos(b, { soporteObligatorio: true, plazoReporteDias: 15 }), { sql: tx, ahora: dia("2026-11-01") });
+      expect(await igual(c.indicadorId)).toBe(true);
+    }));
+
   it("duplicar uno que lo exige pone la hora de la duplicación, no la del original", () =>
     revertida(sql, async (tx) => {
       const b = await base(tx);

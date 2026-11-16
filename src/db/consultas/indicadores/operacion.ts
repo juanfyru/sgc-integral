@@ -273,8 +273,7 @@ export async function cambiarOperacion(
     if (rige && periodicidadDe(d.inicioMedicion) !== rige) {
       throw new ErrorIndicador(`El inicio de medición debe ser un periodo ${ADJETIVO[rige]}`);
     }
-    const [actual] = await tx`SELECT plazo_reporte_dias, inicio_medicion, soporte_obligatorio, soporte_obligatorio_desde, nivel_acceso
-      FROM indicadores WHERE id = ${i.id}`;
+    const [actual] = await tx`SELECT plazo_reporte_dias, inicio_medicion, soporte_obligatorio, nivel_acceso FROM indicadores WHERE id = ${i.id}`;
     // Un cálculo que no se llena hacia atrás empieza donde rige (anexo 14B, §5.3): un inicio más temprano no abre periodos que
     // regiría una versión de ese cálculo antes de su «rige desde», porque nadie los fotografía ni los mide. Decide la versión
     // que rige el inicio nuevo (antes de todas, la más antigua), no la vigente: cambiar el inicio no mueve ningún «rige desde».
@@ -324,10 +323,11 @@ export async function cambiarOperacion(
       WHERE m.indicador_id = ${i.id} AND m.desde < ${nuevo.desde} AND NOT ${conDatos(tx)} RETURNING m.id`;
 
     // Antes que las mediciones: `recalcularMedicion` lee «soporte obligatorio» del indicador. Activarlo pone la hora,
-    // desactivarlo la borra y dejarlo como estaba no la toca.
-    const desde = !despues.soporteObligatorio ? null : antes.soporteObligatorio ? (actual.soporte_obligatorio_desde as Date) : ahora;
+    // desactivarlo la borra y dejarlo como estaba no la toca: sin soporte la fecha es nula (`indicadores_soporte_desde`), así
+    // que `coalesce` deja la que tenía o pone la hora. En SQL, para no pasarla por un `Date` y perder sus microsegundos.
     await tx`UPDATE indicadores SET plazo_reporte_dias = ${despues.plazoReporteDias}, inicio_medicion = ${despues.inicioMedicion},
-        soporte_obligatorio = ${despues.soporteObligatorio}, soporte_obligatorio_desde = ${desde}, nivel_acceso = ${despues.nivelAcceso}
+        soporte_obligatorio = ${despues.soporteObligatorio}, nivel_acceso = ${despues.nivelAcceso},
+        soporte_obligatorio_desde = CASE WHEN ${despues.soporteObligatorio}::boolean THEN coalesce(soporte_obligatorio_desde, ${ahora}::timestamptz) END
       WHERE id = ${i.id}`;
     // Restringido, una ficha que lo toma la aprueba Gerencia (anexo 14C, §6.1): quien pasa a aprobarla recibe el aviso de enviar.
     for (const f of porAprobar) {

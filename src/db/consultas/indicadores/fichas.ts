@@ -843,8 +843,7 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
     await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       const [ref] = await tx`SELECT indicador_id FROM indicador_versiones WHERE id = ${versionId}`;
       if (!ref) throw new ErrorIndicador(FICHA_NO_EXISTE);
-      const [ind] = await tx`SELECT id, codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio,
-          soporte_obligatorio_desde
+      const [ind] = await tx`SELECT id, codigo, proceso_id, estado, nivel_acceso, plazo_reporte_dias, inicio_medicion, soporte_obligatorio
         FROM indicadores WHERE id = ${ref.indicador_id} FOR UPDATE`;
       const [v] = await tx`SELECT id, indicador_id, numero, estado, subproceso_id, tipo_id, clasificacion_id, unidad_id, objetivo_id,
           procedimiento_documento_id
@@ -907,11 +906,12 @@ export async function guardarBorrador(sesion: SesionFlujo, versionId: number, d:
           nivelAcceso: ind.nivel_acceso as DatosOperacion["nivelAcceso"],
         };
         const despues = operacionDe(f.d);
-        // Como en «Datos de operación»: activarlo pone la hora, desactivarlo la borra y dejarlo como estaba no la toca.
-        const desde = !despues.soporteObligatorio ? null : antes.soporteObligatorio ? (ind.soporte_obligatorio_desde as Date) : ahora;
+        // Como en «Datos de operación» (`cambiarOperacion`): activarlo pone la hora, desactivarlo la borra y dejarlo como estaba
+        // no la toca.
         await tx`UPDATE indicadores SET codigo = ${codigo}, proceso_id = ${f.d.procesoId}, nivel_acceso = ${despues.nivelAcceso},
             plazo_reporte_dias = ${despues.plazoReporteDias}, inicio_medicion = ${despues.inicioMedicion},
-            soporte_obligatorio = ${despues.soporteObligatorio}, soporte_obligatorio_desde = ${desde}
+            soporte_obligatorio = ${despues.soporteObligatorio},
+            soporte_obligatorio_desde = CASE WHEN ${despues.soporteObligatorio}::boolean THEN coalesce(soporte_obligatorio_desde, ${ahora}::timestamptz) END
           WHERE id = ${indicadorId}`;
         const designadosAntes = await designadosDe(tx, indicadorId);
         await escribirDesignados(tx, indicadorId, f.d, sesion.usuarioId, ahora);
