@@ -193,16 +193,17 @@ async function esDeLaDimension(tx: TransactionSql, lista: readonly CategoriaDeMe
  *   con `MOTIVO_DATO_SIN_CATEGORIA`: la propagación ya no vuelve a esa medición y la persona no podría medir esas filas. Deja
  *   el evento `categorias` del sistema con las filas que cambiaron. Si la versión sigue trayendo un dato por categoría, la
  *   propagación sigue a cargo.
- * Un cambio mayor que no cambia la dimensión ni deja de traer el dato no toca nada; si ni la versión nueva ni la anterior se
- * desagregan, ni siquiera lee las mediciones. Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas listas cambió.
+ * Un cambio mayor que no cambia la dimensión ni deja de traer el dato no toca nada; si ninguna versión aprobada se
+ * desagrega, ni siquiera lee las mediciones (mirar solo las dos más nuevas no basta: nada ordena el «rige desde» entre
+ * versiones, y una que rige antes que la anterior alcanza mediciones con la lista de una más vieja). Quien llama tiene el indicador `FOR UPDATE`. Devuelve cuántas listas cambió.
  */
 export async function rehacerCategorias(tx: TransactionSql, indicadorId: number, rigeDesde: string, ahora: Date = new Date()): Promise<number> {
   const zona = zonaHoraria();
   const desde = periodoDe(rigeDesde, zona);
   if (!desde) return 0;
   const versiones = await versionesAprobadas(tx, indicadorId);
-  // De mayor a menor número: la que se acaba de aprobar y la anterior. Sin dimensión en ninguna, no hay listas que tocar.
-  if ((versiones[0]?.dimensionId ?? null) === null && (versiones[1]?.dimensionId ?? null) === null) return 0;
+  // Sin dimensión en ninguna versión aprobada, ninguna medición tiene lista que tocar.
+  if (versiones.every((v) => v.dimensionId === null)) return 0;
   const filas = await tx`SELECT * FROM mediciones
     WHERE indicador_id = ${indicadorId} AND desde >= ${desde.desde} AND estado = 'abierta' AND reportada_en IS NULL
       AND NOT no_aplica AND NOT historica

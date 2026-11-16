@@ -609,9 +609,9 @@ async function contagioATiempo(tx: TransactionSql, medicionId: number, venceEn: 
 }
 
 /**
- * ¿El «No aplica» del sistema de alguna de las filas `categorias` (el último evento `propagacion` que se lo puso) llegó en la
- * fecha límite o antes? La regla de `contagioATiempo` para la fila de un desagregado: si llegó después, quien mide ya debía
- * su reporte.
+ * ¿El «No aplica» del sistema de las filas `categorias` llegó en la fecha límite o antes? Mira el último evento `propagacion`
+ * que se lo puso a cualquiera de ellas: solo si ese llegó a tiempo (y con él todos los anteriores) la respuesta es sí. La
+ * regla de `contagioATiempo` para las filas de un desagregado: si alguno llegó después, quien mide ya debía su reporte.
  */
 async function sinCategoriaATiempo(tx: TransactionSql, medicionId: number, categorias: readonly number[], venceEn: Date): Promise<boolean> {
   const [c] = await tx`SELECT max(e.creado_en) AS en FROM medicion_eventos e

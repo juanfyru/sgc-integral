@@ -322,6 +322,10 @@ describe("reportar la rejilla", () => {
       expect((await valoresDe(tx, e.octubre)).total).toEqual([]);
       await rejilla(tx, e.mide, e.octubre, []);
       const reportado = await valoresDe(tx, e.octubre);
+      const filaDeB = async () =>
+        Number((await tx`SELECT mv.id FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
+          WHERE mv.medicion_id = ${e.octubre} AND mv.categoria_id IS NULL AND iv.letra = 'B'`)[0].id);
+      const totalDeB = await filaDeB();
 
       // Ya reportada, «Guardar sin reportar» se rechaza como en cualquier medición y no escribe nada.
       await rechaza(
@@ -337,6 +341,8 @@ describe("reportar la rejilla", () => {
         ["A", 243, null],
         ["B", 320, null],
       ]);
+      // La fila del total de B (cuya suma no cambió) es la misma: nadie la borró y la volvió a crear.
+      expect(await filaDeB()).toBe(totalDeB);
       expect(v.celdas.find((c) => c.categoria === ids[0] && c.letra === "A")).toMatchObject({ valor: 150, por: e.otro.usuarioId });
       expect((await fila(tx, e.octubre)).semaforo).toBe("atencion");
       const correccion = (await eventos(tx, e.octubre)).at(-1)!;
@@ -526,6 +532,25 @@ describe("«Actualizar categorías» y el cambio de dimensión", () => {
       // Ya en la dimensión nueva, otro cambio mayor que no la cambia no rehace nada.
       expect(await rehacerCategorias(tx, e.ind.id, OCTUBRE, AHORA)).toBe(0);
     }));
+
+  it("sin dimensión en las dos versiones más nuevas, una que rige antes que la anterior rehace lo que quedó de la primera", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const septiembre = await medicionDe(tx, e.ind.id, "2026-09");
+      await rejilla(tx, e.mide, septiembre, maqueta(e.sede.categorias).slice(0, 2), true);
+      await rejilla(tx, e.mide, e.octubre, maqueta(e.sede.categorias).slice(0, 2), true);
+      const nueva = (rigeDesde: string) =>
+        versionNueva(tx, { indicadorId: e.ind.id, usuarioId: e.admin.usuarioId, tipoCambio: "mayor", rigeDesde, aprobadaEn: AHORA, meta: "85", limite: "70" });
+      // La v2, sin dimensión, rige desde noviembre (aún sin medición); la v3, sin dimensión, desde septiembre.
+      await nueva("2026-11");
+      expect(await rehacerCategorias(tx, e.ind.id, "2026-11", AHORA)).toBe(0);
+      await nueva("2026-09");
+      expect(await rehacerCategorias(tx, e.ind.id, "2026-09", AHORA)).toBe(2);
+      for (const id of [septiembre, e.octubre]) {
+        expect((await fila(tx, id)).categorias).toBeNull();
+        expect(await valoresDe(tx, id)).toEqual({ celdas: [], total: [] });
+      }
+    }));
 });
 
 describe("un dato compartido por categoría (anexo §5.7)", () => {
@@ -610,6 +635,35 @@ describe("un dato compartido por categoría (anexo §5.7)", () => {
       await rejilla(tx, p.mide, p.medicion, [{ categoriaId: p.S4, valores: { A: "4" } }], false, AHORA_T);
       expect((await valoresDe(tx, p.medicion)).total.map((t) => t.valor)).toEqual([99, 198]);
       expect((await fila(tx, p.medicion)).reportada_por).toBe(p.mide.usuarioId);
+    }));
+
+  it("si el «No aplica» del sistema llegó tarde, devolver el reporte no mueve la fecha límite ni borra las marcas de vencido", () =>
+    revertida(sql, async (tx) => {
+      const p = await porSede(tx, true);
+      const meses = await mesesDeB(p);
+      // El «No aplica» de S4 llega el 20 de abril, después de la fecha límite.
+      await propagar({ sql: tx, ahora: AHORA_T, indicadorIds: [p.ind.id] });
+      const propias = [
+        { categoriaId: p.s1, valores: { A: "30" } },
+        { categoriaId: p.s2, valores: { A: "60" } },
+        { categoriaId: p.S3, valores: { A: "5" } },
+      ];
+      await rejilla(tx, p.mide, p.medicion, propias, false, AHORA_T);
+      const marcas = new Date("2026-04-21T15:00:00Z");
+      await tx`UPDATE mediciones SET aviso_previo_en = ${marcas}, aviso_vencido_en = ${marcas}, escalado_en = ${marcas} WHERE id = ${p.medicion}`;
+      const antes = await fila(tx, p.medicion);
+      expect(new Date(antes.vence_en as string).getTime()).toBeLessThan(AHORA_T.getTime());
+
+      await tx`UPDATE variable_valores SET categorias = categorias || ${tx.json([{ id: p.S4, nombre: "S4", orden: 4, noAplica: null }])},
+          por_categoria = por_categoria || ${tx.json({ [p.S4]: "8" })}
+        WHERE id = ${meses[2]}`;
+      await propagar({ sql: tx, ahora: new Date("2026-04-25T15:00:00Z"), indicadorIds: [p.ind.id] });
+      const despues = await fila(tx, p.medicion);
+      expect(despues).toMatchObject({ reportada_en: null, estado: "abierta" });
+      expect(await pendienteDe(tx, p.medicion)).toBe("reporte");
+      for (const columna of ["vence_en", "aviso_previo_en", "aviso_vencido_en", "escalado_en"]) {
+        expect(new Date(despues[columna] as string).getTime(), columna).toBe(new Date(antes[columna] as string).getTime());
+      }
     }));
 
   it("un cambio mayor que conserva la dimensión y deja de traer el dato quita el «No aplica» que el sistema puso en una fila", () =>
