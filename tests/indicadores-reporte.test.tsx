@@ -62,7 +62,7 @@ vi.mock("@/app/acciones-indicadores", () => ({
 
 import PaginaIndicador from "@/app/(app)/indicadores/[codigo]/page";
 import PaginaReportar, { generateMetadata as tituloDeReportar } from "@/app/(app)/indicadores/[codigo]/reportar/[periodo]/page";
-import { avisoDeFalta, DatosDelSistema } from "@/componentes/indicadores/medicion/DatosDelSistema";
+import { avisoDeFalta, DatosDelSistema, SoportesDeLosDatos } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { destinoDelFoco, DialogoMetas } from "@/componentes/indicadores/medicion/DialogoMetas";
 import { FormularioAnalisis } from "@/componentes/indicadores/medicion/FormularioAnalisis";
 import { FormularioReporte } from "@/componentes/indicadores/medicion/FormularioReporte";
@@ -487,8 +487,9 @@ describe("las páginas", () => {
       expect(html).toContain("Este indicador no tiene datos propios");
       expect(html).toContain(">Soportes</h2>");
       expect(html).toContain("La evidencia de este indicador son los soportes de sus datos compartidos.");
-      // Junto a la variable y en «Soportes»; el dato sin soportes lo dice; nadie sube nada aquí.
-      expect(html.split(enlace)).toHaveLength(3);
+      // Solo en «Soportes», una vez (no también junto a la variable); el dato sin soportes lo dice; nadie sube nada aquí.
+      expect(html.split(enlace)).toHaveLength(2);
+      expect(html).not.toContain("Soportes del dato");
       expect(html).toContain(">Cierre de glosas.pdf</a>");
       expect(html).toContain("Sin soportes adjuntos.");
       expect(html).not.toContain("Arrastre los archivos aquí");
@@ -1234,11 +1235,12 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     // Sin soportes que mostrar (la persona no los ve, o no hay): ni el rótulo.
     expect(formulario(datos)).not.toContain("Soportes del dato");
     expect(renderToStaticMarkup(<FormularioReporte datos={datos} volver="/x" soportesDeDatos={{ B: [] }} />)).not.toContain("Soportes del dato");
-    // En lo que nadie mide, también junto a la variable.
-    const sinPropias = renderToStaticMarkup(
-      <DatosDelSistema datos={{ ...datos, mide: false, variables: [datos.variables[1]] }} soportesDeDatos={{ B: soportes }} />,
-    );
-    expect(sinPropias).toContain('href="/indicadores/datos/9/soportes/71"');
+    // En lo que nadie mide no salen junto a la variable: su lugar es la sección «Soportes» de la página, una sola vez (R3).
+    const sinPropias = renderToStaticMarkup(<DatosDelSistema datos={{ ...datos, mide: false, variables: [datos.variables[1]] }} />);
+    expect(sinPropias).not.toContain("Soportes del dato");
+    expect(sinPropias).not.toContain("/soportes/");
+    const seccion = renderToStaticMarkup(<SoportesDeLosDatos variables={[datos.variables[1]]} soportes={{ B: soportes }} sinPropias />);
+    expect(seccion.match(/href="\/indicadores\/datos\/9\/soportes\/71"/g)).toHaveLength(1);
   });
 
   it("la tabla del año: lo que nadie mide no ofrece «Reportar» ni «Corregir»; quien analiza lo abre con «Ver», salvo un histórico", () => {

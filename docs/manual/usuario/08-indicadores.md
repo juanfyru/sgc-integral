@@ -1189,11 +1189,13 @@ llega el aviso **Dato compartido reabierto: …** para que lo corrija o lo repor
 ### 11.3 Un indicador que usa un dato
 
 En la ficha, la variable dice de qué dato sale. En la pantalla **Reportar**, esa variable aparece ya
-puesta, con quién la reportó y cuándo, y no se cambia desde ahí. Debajo, **Soportes del dato** trae
-los archivos que adjuntó quien lo reportó, para descargarlos (con el periodo del dato, si el dato es
-mensual y el indicador trimestral): los ve quien ve el dato y quien ve los soportes de este
-indicador, aunque la página del dato no exista para él. También salen en la columna **Soportes** de
-la tabla del año, con «Dato compartido». Si el indicador tiene también
+puesta, con quién la reportó y cuándo, y no se cambia desde ahí. En un indicador **mixto** (con
+variables suyas), debajo de esa variable, **Soportes del dato** trae los archivos que adjuntó quien lo
+reportó, para descargarlos (con el periodo del dato, si el dato es mensual y el indicador
+trimestral): los ve quien ve el dato y quien ve los soportes de este indicador, aunque la página del
+dato no exista para él. También salen en la columna **Soportes** de la tabla del año, con «Dato
+compartido». En un indicador sin variables propias, esos archivos salen una sola vez, en la sección
+**Soportes** de la pantalla (ver más abajo). Si el indicador tiene también
 variables suyas (un indicador **mixto**):
 
 - reporte lo suyo aunque el dato no haya llegado: el botón dice **Reportar lo mío**. Cuenta como

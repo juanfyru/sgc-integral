@@ -187,16 +187,14 @@ export function VariableFija({
  * los tomará («Se calcula el …») y, si ya los tomó, muestra los valores de cada variable y el resultado con su estado, o el
  * motivo de «No aplica» que dejó; a quien administra (`administra`), en un cálculo de flujo sin cerrar ni reabrir, «Volver a
  * calcular». La de un indicador sin variables propias (anexo 14C, §3.1) muestra cada variable fija, con lo que ya llegó, el
- * aviso de lo que falta y, reportada, el resultado; junto a la que sale de un dato, sus soportes (`soportesDeDatos`).
+ * aviso de lo que falta y, reportada, el resultado. Sus soportes no salen aquí: están en la sección «Soportes» de la página (`SoportesDeLosDatos`).
  */
 export function DatosDelSistema({
   datos,
   administra = false,
-  soportesDeDatos = {},
 }: {
   datos: DatosDeReporte;
   administra?: boolean;
-  soportesDeDatos?: SoportesDeDatosPorLetra;
 }) {
   const resultado = datos.resultado ? textoValor(deTexto(datos.resultado), datos.unidad, reglaDeTexto(datos.regla)) : null;
   const cuando = datos.foto ? `Calculado por el sistema · ${datos.foto}` : datos.seCalcula;
@@ -219,7 +217,7 @@ export function DatosDelSistema({
         <>
           <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
             {datos.variables.map((v) => (
-              <VariableFija key={v.letra} variable={v} id={`reporte-${v.letra}`} periodo={datos.periodo} soportes={soportesDeDatos[v.letra]} />
+              <VariableFija key={v.letra} variable={v} id={`reporte-${v.letra}`} periodo={datos.periodo} />
             ))}
           </div>
           <AvisosDeFalta variables={datos.variables} mide={false} />

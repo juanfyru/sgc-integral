@@ -114,7 +114,7 @@ export default async function PaginaReportar({ params }: Params) {
       {deSoloLectura ? (
         <>
           {datos.estado === "cerrada" ? cerrada : null}
-          <DatosDelSistema datos={datos} administra={puede(sesion, "indicadores.administrar")} soportesDeDatos={soportesDeDatos} />
+          <DatosDelSistema datos={datos} administra={puede(sesion, "indicadores.administrar")} />
         </>
       ) : datos.estado === "cerrada" ? (
         cerrada
