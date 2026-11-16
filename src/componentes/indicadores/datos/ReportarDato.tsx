@@ -26,6 +26,8 @@ export type PeriodoParaReportar = {
   etiqueta: string;
   /** «10 de noviembre». */
   vence: string;
+  /** La fecha límite ya pasó: «Venció el …». */
+  vencido: boolean;
   /** Ya reportado: lo que se envía es una corrección. */
   reportado: boolean;
   /** Lo guardado, con punto decimal. */
@@ -162,6 +164,8 @@ export function ReportarDato({
     return resultado;
   }, null);
   const prefijo = `dato${useId().replace(/[^\w-]/g, "")}`;
+  // «Sí, el valor es correcto» vale para el valor que se preguntó: cambiar cualquier valor la desmarca.
+  const [confirmado, setConfirmado] = useState(false);
   // La pregunta es del periodo en que se hizo: el formulario de otro periodo empieza sin ella.
   const pregunta = estado && !estado.ok && estado.valores?.id === String(periodo.id) ? (estado.confirmar ?? null) : null;
   const titulo = `${periodo.reportado ? "Corregir" : "Reportar"} · ${periodo.etiqueta}`;
@@ -177,7 +181,15 @@ export function ReportarDato({
           {titulo}
         </h2>
       )}
-      <form key={periodo.id} action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-3">
+      <form
+        key={periodo.id}
+        action={enviar}
+        onSubmit={enviarSinReiniciar(enviar)}
+        onChange={(e) => {
+          if (!(e.target instanceof HTMLInputElement) || e.target.name !== "confirmado") setConfirmado(false);
+        }}
+        className="flex min-w-0 flex-col gap-3"
+      >
         <input type="hidden" name="id" value={periodo.id} />
         {periodo.categorias === null ? (
           <Campo etiqueta="Valor" nombre="valor" id={`${prefijo}-valor`}>
@@ -207,7 +219,13 @@ export function ReportarDato({
           <div className={AVISO}>
             <p>{pregunta}</p>
             <label className="flex items-start gap-2">
-              <input type="checkbox" name="confirmado" className={`mt-0.5 size-4 ${FOCO}`} />
+              <input
+                type="checkbox"
+                name="confirmado"
+                checked={confirmado}
+                onChange={(e) => setConfirmado(e.target.checked)}
+                className={`mt-0.5 size-4 ${FOCO}`}
+              />
               <span>Sí, el valor es correcto</span>
             </label>
           </div>
@@ -224,7 +242,7 @@ export function ReportarDato({
         <p className="text-xs text-muted-foreground">
           {periodo.reportado
             ? "Se corrige sin justificación hasta el cierre; el historial guarda lo que había. Los indicadores que lo usan se recalculan."
-            : `Vence el ${periodo.vence}. Al reportarlo se calculan los indicadores que lo esperaban.`}
+            : `${periodo.vencido ? "Venció" : "Vence"} el ${periodo.vence}. Al reportarlo se calculan los indicadores que lo esperaban.`}
         </p>
       </form>
     </section>

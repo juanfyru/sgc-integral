@@ -64,7 +64,7 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
       />
       <div className={`grid min-w-0 grid-cols-1 gap-6 ${reporta && pedido ? "lg:grid-cols-2" : ""}`}>
         {reporta && pedido ? (
-          <ReportarDato datoId={dato.id} periodo={paraReportar(pedido)} soportes={soportes?.get(pedido.id) ?? []} />
+          <ReportarDato datoId={dato.id} periodo={paraReportar(pedido, ahora)} soportes={soportes?.get(pedido.id) ?? []} />
         ) : null}
         <section aria-labelledby="ficha-del-dato" className="flex min-w-0 flex-col gap-3">
           <h2 id="ficha-del-dato" className="text-base font-semibold">

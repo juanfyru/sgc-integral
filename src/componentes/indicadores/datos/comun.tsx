@@ -12,11 +12,12 @@ import type { PeriodoParaReportar } from "./ReportarDato";
 /** Lo que comparten la lista de «Datos compartidos» y la página de un dato (anexo 14C, §4.7). Solo en el servidor. */
 
 /** Lo que el formulario de reportar necesita de un periodo, ya en texto en la zona de la instalación. */
-export function paraReportar(p: PeriodoDeDato): PeriodoParaReportar {
+export function paraReportar(p: PeriodoDeDato, ahora: Date): PeriodoParaReportar {
   return {
     id: p.id,
     etiqueta: etiquetaDePeriodo(p.periodo),
     vence: diaYMes(p.venceEn, zonaHoraria()),
+    vencido: p.venceEn.getTime() < ahora.getTime(),
     reportado: p.estado === "reportado",
     valor: p.valor,
     porCategoria: p.porCategoria,

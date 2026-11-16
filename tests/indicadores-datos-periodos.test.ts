@@ -32,6 +32,7 @@ vi.mock("@/lib/indicadores/periodos", async (original) => {
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarPeriodosDeDatos, historialDeDato, periodosDeDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import { pestanaDeDatos, resumenDeDatos } from "@/db/consultas/indicadores/datos";
 import { datosVencidos } from "@/db/consultas/indicadores/datos-vencidos";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
@@ -570,6 +571,8 @@ describe("la tarea de reportar el dato", () => {
       const opciones = { sql: tx, ahora: NOV_20 };
       expect(deDatos(await tareasDeIndicadores(responsable, opciones)).map((t) => t.id)).toContain(`dato:${octubre.id}`);
       expect((await periodosDeDato(responsable, datoId, { sql: tx }))!.find((p) => p.id === octubre.id)).toMatchObject({ sePide: true });
+      expect((await resumenDeDatos(responsable, [datoId], { sql: tx })).get(datoId)?.porReportar).not.toBeNull();
+      expect((await pestanaDeDatos(responsable, { sql: tx })).porReportar).toBe(10);
 
       await retirar(tx, ind.id);
       expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 0, quitados: 9 });
@@ -581,10 +584,12 @@ describe("la tarea de reportar el dato", () => {
       }
       const [marcas] = await tx`SELECT aviso_previo_en, aviso_vencido_en, escalado_en FROM variable_valores WHERE id = ${octubre.id}`;
       expect(Object.values(marcas)).toEqual([null, null, null]);
-      // Sigue en la página del dato, que dice que ya no se pide.
+      // Sigue en la página del dato, que dice que ya no se pide; la lista no lo da por reportar y la pestaña no lo cuenta.
       expect((await periodosDeDato(responsable, datoId, { sql: tx }))!).toEqual([
         expect.objectContaining({ id: octubre.id, estado: "pendiente", sePide: false }),
       ]);
+      expect((await resumenDeDatos(responsable, [datoId], { sql: tx })).get(datoId)?.porReportar ?? null).toBeNull();
+      expect(await pestanaDeDatos(responsable, { sql: tx })).toEqual({ visible: true, porReportar: 0 });
     }));
 
   it("más de cinco se agrupan en «Datos compartidos por reportar», que lleva a la pestaña", () => {

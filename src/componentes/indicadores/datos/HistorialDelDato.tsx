@@ -141,7 +141,7 @@ export function HistorialDelDato({
               </td>
               {editable ? (
                 <td className={celda}>
-                  {p.estado === "cerrado" ? null : <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p)} soportes={soportes.get(p.id) ?? []} />}
+                  {p.estado === "cerrado" ? null : <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p, ahora)} soportes={soportes.get(p.id) ?? []} />}
                 </td>
               ) : null}
             </tr>

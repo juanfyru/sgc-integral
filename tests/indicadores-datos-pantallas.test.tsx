@@ -39,7 +39,7 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import type { SesionValida } from "@/lib/sesion";
-import { datoDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
+import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -165,6 +165,25 @@ describe("la página de un dato", () => {
       // «Lo usan», solo lo que la persona ve.
       expect(html).toContain(general.codigo);
       expect(html).not.toContain(restringido.codigo);
+      // Lo cita una ficha aprobada: lo congelado lo dice.
+      expect(html).toContain("(no cambia mientras una ficha aprobada lo use)");
+      expect(html).toContain("(un trimestre es la suma de sus tres meses)");
+    }));
+
+  it("con dimensión, el formulario pide un valor por categoría del periodo y no uno solo", () =>
+    enTransaccion(async (tx) => {
+      consecutivo += 1;
+      const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}${consecutivo}`, ["Sede norte", "Sede sur"]);
+      const procesoId = await procesoNuevo(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const datoId = await datoDePrueba(tx, { procesoId, nombre: NOMBRE, dimensionId: dimension.id, responsables: [responsable.usuarioId] });
+      await indicadorDePrueba(tx, { procesoId, aprobadaEn: DIC_2025, dimensionId: dimension.id, variables: { B: { datoId } } });
+
+      const html = await pagina(responsable, datoId);
+      expect(html).toContain("Valor de cada categoría");
+      for (const id of dimension.categorias) expect(html).toContain(`name="categoria_${id}"`);
+      expect(html).toContain("Sede norte");
+      expect(html).not.toContain('name="valor"');
     }));
 
   it("a quien no ve el dato, y a un id que no es un número, «no encontrado»", () =>
