@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alguienMide, faltaSegunOrigen, letrasAjenas, letrasPropias } from "@/lib/indicadores/origen";
+import { alguienMide, esAjena, faltaSegunOrigen, letrasAjenas, letrasPropias } from "@/lib/indicadores/origen";
 
 const v = (letra: string, origen: "propia" | "compartida" | "automatica" | "indicador") => ({ letra, origen });
 
@@ -8,6 +8,7 @@ describe("origen de las variables", () => {
     const vs = [v("A", "propia"), v("B", "compartida"), v("C", "indicador"), v("D", "automatica")];
     expect(letrasPropias(vs)).toEqual(["A"]);
     expect(letrasAjenas(vs)).toEqual(["B", "C"]);
+    expect(["propia", "compartida", "indicador", "automatica", null, undefined].map(esAjena)).toEqual([false, true, true, false, false, false]);
   });
   it("alguien mide solo una ficha manual con alguna variable propia", () => {
     expect(alguienMide({ origenDato: "automatico", variables: [v("A", "propia")] })).toBe(false);

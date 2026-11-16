@@ -40,6 +40,7 @@ import { calcular } from "@/lib/indicadores/calculo";
 import { analisisCompleto, analisisExigido, cumpleDeFila } from "@/lib/indicadores/estados";
 import { aTexto, comparar, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { clavesFinas } from "@/lib/indicadores/periodos";
+import { esAjena } from "@/lib/indicadores/origen";
 import { laFuenteMueveElPlazo } from "@/lib/indicadores/propagacion";
 import { fichaDeCalculo, reglaDeTexto, valorEnTexto } from "@/lib/indicadores/reporte";
 import { MOTIVO_NADA_QUE_MEDIR, type Consolidacion, type Periodicidad, type Semaforo } from "@/lib/indicadores/tipos";
@@ -71,8 +72,6 @@ export type ValorAjeno = { estado: "listo"; valor: Fraccion } | { estado: "falta
 type Variable = VersionDeCalculo["variables"][number];
 
 type DatoDelPeriodo = { datoId: number; consolidacion: Consolidacion; datoPeriodicidad: Periodicidad; periodo: string; categoriaId?: number };
-
-const esAjena = (v: Variable) => v.origen === "compartida" || v.origen === "indicador";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // La fuente
@@ -114,7 +113,7 @@ export async function valorDeDato(sql: Cliente, d: DatoDelPeriodo): Promise<Valo
 function ajenosDe(version: VersionDeCalculo, periodo: string, filas: readonly Row[]): Map<string, ValorAjeno> {
   const salida = new Map<string, ValorAjeno>();
   for (const v of version.variables) {
-    if (!esAjena(v)) continue;
+    if (!esAjena(v.origen)) continue;
     if (v.origen !== "compartida" || v.datoId === null || v.datoPeriodicidad === null) {
       salida.set(v.letra, { estado: "falta" });
       continue;
@@ -139,7 +138,7 @@ const datosDe = (version: VersionDeCalculo): number[] =>
 function versionQuePropaga(m: Row, versiones: readonly VersionDeCalculo[], zona: string): VersionDeCalculo | null {
   const { rige, version } = versionesDeCalculo(versiones, m, "fuente", zona);
   if (!rige || !version || esDeOtraPeriodicidad(m.periodo as string, rige) || version.origenDato !== "manual") return null;
-  return version.variables.some(esAjena) ? version : null;
+  return version.variables.some((v) => esAjena(v.origen)) ? version : null;
 }
 
 type Cambio = { variable: Variable; antes: Fraccion | null; despues: Fraccion | null };
@@ -164,7 +163,7 @@ function planear(m: Row, version: VersionDeCalculo, guardados: Readonly<Record<s
   const valores: Record<string, Fraccion> = { ...guardados };
   const cambios: Cambio[] = [];
   for (const v of version.variables) {
-    if (!esAjena(v)) continue;
+    if (!esAjena(v.origen)) continue;
     const a = ajenos.get(v.letra);
     const despues = a?.estado === "listo" ? a.valor : null;
     const antes = guardados[v.letra] ?? null;

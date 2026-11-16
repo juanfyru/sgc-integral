@@ -25,7 +25,7 @@ import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo"
 import { calcular, variacionExcesiva } from "@/lib/indicadores/calculo";
 import { analisisCompleto, analisisExigido, cumpleDeFila, esRepetido } from "@/lib/indicadores/estados";
 import { aDecimal, aTexto, comparar, deTexto, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
-import { alguienMide, letrasAjenas } from "@/lib/indicadores/origen";
+import { alguienMide, esAjena, letrasAjenas } from "@/lib/indicadores/origen";
 import {
   fechaLimiteDeReporte,
   periodicidadDe,
@@ -50,6 +50,7 @@ import { limiteDeCritico, type Regla } from "@/lib/indicadores/semaforo";
 import { fraseDeVariacion, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
   ErrorIndicador,
+  MOTIVOS_DEL_SISTEMA,
   type Consolidacion,
   type EstadoMedicion,
   type ModoSemaforo,
@@ -82,6 +83,8 @@ export const NO_SE_DIGITA = "Este indicador lo calcula el sistema: sus datos no 
 export const NADIE_LO_MIDE = "Este indicador no tiene datos propios: nadie lo digita";
 /** El valor de una variable ajena no se digita: lo pone el sistema (anexo 14C, §3.1). */
 export const noSeDigitaDesdeAqui = (nombre: string) => `«${nombre}» no se digita desde aquí: llega de otra fuente`;
+/** Un motivo de «no aplica» que es el de uno que pone el sistema (`motivoValido`). */
+export const MOTIVO_RESERVADO = "Ese motivo lo usa el sistema: escriba el suyo con otras palabras";
 
 /**
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
@@ -457,8 +460,6 @@ export type ValorGuardado = {
   reportado_en: unknown;
   id: unknown;
 };
-
-const esAjena = (origen: unknown) => origen === "compartida" || origen === "indicador";
 
 /**
  * Los valores de una medición por letra de la versión dada, de sus filas guardadas: primero los de las variables de esa
@@ -1078,11 +1079,16 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
   });
 }
 
-/** El motivo de «no aplica»: de 5 a 500 caracteres. */
+/**
+ * El motivo de «no aplica» de una persona: de 5 a 500 caracteres y ninguno de los que usa el sistema (`MOTIVOS_DEL_SISTEMA`,
+ * sin distinguir mayúsculas), que reconoce por su motivo el «No aplica» que puso y lo quita cuando deja de ser cierto.
+ */
 export function motivoValido(motivo: string): string {
   const m = typeof motivo === "string" ? motivo.trim() : "";
   if (m.length < 5) throw new ErrorIndicador("El motivo debe tener al menos 5 caracteres");
   if (m.length > 500) throw new ErrorIndicador("El motivo no puede pasar de 500 caracteres");
+  const comparable = m.toLocaleLowerCase("es");
+  if (MOTIVOS_DEL_SISTEMA.some((r) => r.toLocaleLowerCase("es") === comparable)) throw new ErrorIndicador(MOTIVO_RESERVADO);
   return m;
 }
 

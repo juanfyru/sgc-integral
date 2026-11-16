@@ -311,8 +311,8 @@ async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Dat
 /**
  * El resumen previo del cierre de `mes` (spec §9.2): cuántas mediciones se cerrarán y cómo, las que quedarán sin dato
  * con quién debía medirlas («El sistema», en una automática), las observaciones sin respuesta y los dos grupos que no se
- * cierran. Abre antes los periodos que hayan terminado y toma las fotos pendientes (F14-DC12 y anexo 14B §4,
- * `abrirPeriodosDelCierre`). No escribe nada más.
+ * cierran. Abre antes los periodos que hayan terminado, toma las fotos pendientes y propaga lo que nadie propagó (F14-DC12,
+ * anexo 14B §4 y anexo 14C §3.3, `abrirPeriodosDelCierre`). No escribe nada más.
  */
 export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opciones?: Opciones): Promise<ResumenDeCierre> {
   exigirAdministrar(sesion);

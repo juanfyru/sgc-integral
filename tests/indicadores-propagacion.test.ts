@@ -21,7 +21,7 @@ import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { basesDe, leerPeriodos } from "@/db/consultas/indicadores/lectura";
-import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, marcarNoAplica, MOTIVO_RESERVADO, reportar } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion } from "@/db/consultas/indicadores/operacion";
 import { propagar, propagarSinFallar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
 import { columnasDePendiente, esPendiente, queFalta, tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
@@ -30,7 +30,7 @@ import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { aTexto } from "@/lib/indicadores/formula/fraccion";
 import { historialDeCorreccion } from "@/lib/indicadores/historial";
 import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
-import { MOTIVO_NADA_QUE_MEDIR } from "@/lib/indicadores/tipos";
+import { ErrorIndicador, MOTIVO_NADA_QUE_MEDIR, MOTIVOS_DEL_SISTEMA } from "@/lib/indicadores/tipos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
@@ -421,16 +421,72 @@ describe("un indicador sin variables propias: nadie lo mide", () => {
       expect(await falta(tx, medicion)).toBe("analisis");
     }));
 
-  it("un «No aplica» que puso quien mide un mixto no se quita aunque el dato llegue", () =>
+});
+
+describe("el «No aplica» en un mixto", () => {
+  const RESERVADO = "Ese motivo lo usa el sistema: escriba el suyo con otras palabras";
+
+  it("cuando el dato que llega en cero completa la medición, la marca el sistema; al corregirlo, se quita y se calcula", () =>
     revertida(sql, async (tx) => {
       const { mide, responsable, datoId, ind, medicion } = await mixto(tx);
-      await tx`UPDATE mediciones SET no_aplica = true, no_aplica_motivo = 'Sin glosas en el mes', reportada_en = ${AHORA},
-          reportada_por = ${mide.usuarioId}
-        WHERE id = ${medicion}`;
+      await reportarLoMio(tx, mide, medicion, { A: "38529000" });
       await reportarElDato(tx, responsable, datoId, "2026-09", "0");
-      await propagarA(tx, AHORA, [ind.id]);
-      const m = await fila(tx, medicion);
-      expect([m.no_aplica, m.no_aplica_motivo]).toEqual([true, "Sin glosas en el mes"]);
+      expect(await propagarA(tx, AHORA, [ind.id])).toEqual({ escritas: 0, noAplica: 1, fallidas: 0 });
+      let m = await fila(tx, medicion);
+      expect([m.no_aplica, m.no_aplica_motivo, m.estado, m.resultado_exacto]).toEqual([true, MOTIVO_NADA_QUE_MEDIR, "reportada", null]);
+      // «Reportada» sigue siendo de quien mide.
+      expect(m.reportada_por).toBe(mide.usuarioId);
+
+      await reportarElDato(tx, responsable, datoId, "2026-09", "1284300000", TARDE);
+      expect(await propagarA(tx, TARDE, [ind.id])).toEqual({ escritas: 1, noAplica: 0, fallidas: 0 });
+      m = await fila(tx, medicion);
+      expect([m.no_aplica, m.no_aplica_motivo, m.resultado_exacto, m.semaforo]).toEqual([false, null, "3/1", "critico"]);
+    }));
+
+  it("una persona no puede marcarlo con un motivo que usa el sistema, con otras mayúsculas ni con espacios alrededor", () =>
+    revertida(sql, async (tx) => {
+      const { mide, medicion } = await mixto(tx);
+      await reportarLoMio(tx, mide, medicion, { A: "38529000" });
+      expect(MOTIVOS_DEL_SISTEMA).toHaveLength(4);
+      for (const reservado of MOTIVOS_DEL_SISTEMA) {
+        for (const escrito of [reservado, `  ${reservado.toUpperCase()}  `, reservado.toLowerCase()]) {
+          const err = await marcarNoAplica(mide, { medicionId: medicion, motivo: escrito }, { sql: tx, ahora: AHORA }).then(
+            () => null,
+            (e: unknown) => e,
+          );
+          expect(err, escrito).toBeInstanceOf(ErrorIndicador);
+          expect((err as Error).message).toBe(RESERVADO);
+        }
+      }
+      expect((await fila(tx, medicion)).no_aplica).toBe(false);
+      expect(MOTIVO_RESERVADO).toBe(RESERVADO);
+    }));
+
+  it("el que puso quien mide con su motivo no lo toca la propagación: con el dato pendiente, en cero o distinto de cero", () =>
+    revertida(sql, async (tx) => {
+      const { mide, responsable, datoId, ind, medicion } = await mixto(tx);
+      const MOTIVO = "Sin glosas en el mes";
+      await reportarLoMio(tx, mide, medicion, { A: "38529000" });
+      await marcarNoAplica(mide, { medicionId: medicion, motivo: MOTIVO }, { sql: tx, ahora: AHORA });
+      const marca = async () => {
+        const m = await fila(tx, medicion);
+        return [m.no_aplica, m.no_aplica_motivo, m.reportada_por];
+      };
+      const sigue = [true, MOTIVO, mide.usuarioId];
+
+      // El dato pendiente (abierto, sin reportar).
+      await asegurarPeriodosDeDatos({ sql: tx, ahora: AHORA, datoIds: [datoId] });
+      expect(await propagarA(tx, AHORA, [ind.id])).toEqual(sinCambios);
+      expect(await marca()).toEqual(sigue);
+      // En cero: completa la medición y la fórmula divide por cero.
+      await reportarElDato(tx, responsable, datoId, "2026-09", "0");
+      expect(await propagarA(tx, AHORA, [ind.id])).toEqual({ escritas: 1, noAplica: 0, fallidas: 0 });
+      expect(await marca()).toEqual(sigue);
+      // Distinto de cero.
+      await reportarElDato(tx, responsable, datoId, "2026-09", "1284300000", TARDE);
+      expect(await propagarA(tx, TARDE, [ind.id])).toEqual({ escritas: 1, noAplica: 0, fallidas: 0 });
+      expect(await marca()).toEqual(sigue);
+      expect((await valores(tx, medicion)).B).toMatchObject({ valor: "1284300000", por: null });
     }));
 });
 

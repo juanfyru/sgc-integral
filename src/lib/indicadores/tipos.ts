@@ -254,6 +254,16 @@ export const MOTIVO_COMPONENTE_NO_APLICA = "Un componente no aplicó en el perio
 export const MOTIVO_NADA_QUE_MEDIR = "No hubo nada que medir en el periodo";
 export const MOTIVO_DATO_SIN_CATEGORIA = "El dato no trae esta categoría";
 export const MOTIVO_TODAS_NO_APLICAN = "Ninguna categoría aplicó en el periodo";
+/**
+ * Los cuatro, reservados: una persona no los escribe como su motivo (`motivoValido`), porque el sistema reconoce por su
+ * motivo el «No aplica» que puso y lo quita cuando deja de ser cierto.
+ */
+export const MOTIVOS_DEL_SISTEMA: readonly string[] = [
+  MOTIVO_COMPONENTE_NO_APLICA,
+  MOTIVO_NADA_QUE_MEDIR,
+  MOTIVO_DATO_SIN_CATEGORIA,
+  MOTIVO_TODAS_NO_APLICAN,
+];
 
 /** Lo que ve quien no puede ver un indicador restringido del que otro depende. */
 export const COMPONENTE_OCULTO = "Indicador restringido";

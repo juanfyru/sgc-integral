@@ -8,9 +8,11 @@ export type VariableConOrigen = { letra: string; origen: OrigenVariable };
 /** Las letras que digita quien mide este indicador. */
 export const letrasPropias = (vs: readonly VariableConOrigen[]): string[] => vs.filter((v) => v.origen === "propia").map((v) => v.letra);
 
+/** ¿Ese origen es ajeno, de otro lado (un dato compartido o un indicador)? Acepta lo que traiga una fila de la base. */
+export const esAjena = (origen: unknown): boolean => origen === "compartida" || origen === "indicador";
+
 /** Las letras que llegan de otro lado: un dato compartido o un indicador. */
-export const letrasAjenas = (vs: readonly VariableConOrigen[]): string[] =>
-  vs.filter((v) => v.origen === "compartida" || v.origen === "indicador").map((v) => v.letra);
+export const letrasAjenas = (vs: readonly VariableConOrigen[]): string[] => vs.filter((v) => esAjena(v.origen)).map((v) => v.letra);
 
 /** ¿Alguien digita algo en este indicador? Una ficha manual con alguna variable propia. */
 export function alguienMide(v: { origenDato: OrigenDato; variables: readonly VariableConOrigen[] }): boolean {
