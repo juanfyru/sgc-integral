@@ -2,8 +2,8 @@
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-16**, al terminar de construir la **Fase 14C — Datos
 > compartidos, desagregación y compuestos** (rama `fase-14c-datos-desagregacion-compuestos`, sobre `main` en `44d8b9f`, en el
-> worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **sin fusionar**: esperan su verificación de cierre,
-> el visto bueno del usuario a las decisiones de la ejecución y su decisión de fusionar; ver su sección, arriba de la de la
+> worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **sin fusionar**: con su verificación de cierre hecha,
+> espera el visto bueno del usuario a las decisiones de la ejecución y su decisión de fusionar; ver su sección, arriba de la de la
 > 14B). Con ella se cierra la Fase 14 del diseño maestro. Antes, la **Fase 14B — Lo que el sistema ya
 > sabe y lo regulatorio** (rama `fase-14b-automaticos-regulatorios`, 45 confirmaciones al cerrar la Tarea 13 más las de la tanda final de corrección, sobre `main` en `f04b70b`; se trabajó en el
 > worktree `F:\sgc-integral-f14b` y contra la base aparte `sgc_f14b`; **fusionada en `main` el 2026-11-15 por decisión del
@@ -34,9 +34,10 @@
    se oculta a quien no ve un componente restringido; el cierre del mes espera a las fuentes y la reapertura va en
    cascada. **Sin dependencias npm nuevas.** Dos migraciones, la `0015` y la `0016`; diecisiete en total (`drizzle/0000`
    a `drizzle/0016`). Detalle en «Hecho (Fase 14C)»; el recorrido, en «Qué probar y cómo (Fase 14C)»; las decisiones, en
-   «Decisiones adicionales (Fase 14C)»; el manual, en el capítulo 8 (secciones 11 a 13 y 6.6). **Falta:** la
-   verificación de cierre (la escribe el controlador en «Fase 14C»), el visto bueno del usuario a las 42 decisiones
-   pendientes (las 39 de la ejecución y las 3 de la Tarea 18) y su decisión de fusionar. **`F:\sgc-integral` no se tocó,
+   «Decisiones adicionales (Fase 14C)»; el manual, en el capítulo 8 (secciones 11 a 13 y 6.6). La **verificación de
+   cierre está hecha** (en «Fase 14C», con sus cifras), con la revisión final de toda la rama, su ola de corrección y sus
+   residuos. **Falta:** el visto bueno del usuario a las 57 decisiones pendientes (las 39 de la ejecución, las 3 de la
+   Tarea 18 y las 15 de la revisión final), sus cuatro preguntas y su decisión de fusionar. **`F:\sgc-integral` no se tocó,
    y la base `sgc` del usuario solo se lee.**
    **Antes, la Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada y **fusionada en `main`**
    (rama `fase-14b-automaticos-regulatorios`: 45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección,
@@ -163,8 +164,8 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) la verificación de cierre de la **14C** (el controlador), el visto bueno del usuario a sus 42
-   decisiones pendientes (las 39 de la ejecución y las 3 de la Tarea 18, en «Decisiones adicionales (Fase 14C)»), su
+2. **Lo que sigue:** (a) el visto bueno del usuario a las 57 decisiones pendientes de la **14C** y sus cuatro preguntas
+   (las 39 de la ejecución, las 3 de la Tarea 18 y las 15 de la revisión final, en «Decisiones adicionales (Fase 14C)»), su
    recorrido («Qué probar y cómo (Fase 14C)», que empieza por resembrar en `sgc_f14c`) y su decisión de fusionar;
    después de fusionar, aplicar la `0015` y la `0016` a la base `sgc` («Avisos para el usuario (Fase 14C)»). La Fase
    14 del diseño maestro se cierra al fusionar la 14C. (b) el
@@ -302,7 +303,8 @@
    avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
    de `.env.local` y cambio obligatorio.
-5. **Tests:** las cifras de la 14C las escribe el controlador en su verificación de cierre («Fase 14C»). Al cierre de la
+5. **Tests:** al cierre de la 14C, 6987 pruebas en verde en 276 archivos, más 1 saltada (la de la línea base); el detalle,
+   en su verificación de cierre («Fase 14C»). Al cierre de la
    14B, antes de la tanda final, 6304 en 249 archivos, más 1 saltado (el de la línea base);
    después de la tanda final: 6318 pruebas en verde en 249 archivos, más 1 saltada. La entrega complementaria de la 14A cerró con 5997 en 240 archivos, más 1 saltado (la 14A, con 5696 en 235; la 13C, con 4722 en 197). En serie (`fileParallelism: false`), contra la BD de
    desarrollo sembrada y **conectados como `sgc_app`**, igual que la app; el test de
@@ -348,10 +350,11 @@ la Fase 14, su entrega complementaria y el anexo de la 14B, y manda sobre los tr
 del 2026-11-15 están en su §2, las de Claude F14C-DC1 a DC42 en su §13; **el usuario aprobó el anexo el 2026-11-15**
 («acept»), con sus maquetas 9 a 15 y las decisiones 5.1 y 8.1). Plan:
 `docs/superpowers/plans/2026-11-15-fase14c-datos-desagregacion-compuestos.md` (dieciocho tareas, con subagentes). La rama
-`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 53 confirmaciones al cerrar la Tarea 18 y su
-ronda de corrección 1, antes de la verificación de cierre) se trabaja en el worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no
-está fusionada:** espera la verificación de cierre, el visto bueno del usuario a las decisiones de la ejecución
-(«Decisiones adicionales (Fase 14C)») y su decisión de fusionar. Con ella se cierra la Fase 14 del diseño maestro. **Sin
+`fase-14c-datos-desagregacion-compuestos` (sale de `main` en `44d8b9f`; 82 confirmaciones antes de la de esta verificación
+de cierre: 53 al cerrar la Tarea 18 y su ronda de corrección, 23 de la ola final y 6 de sus residuos) se trabaja en el
+worktree `F:\sgc-integral-f14c` contra la base aparte `sgc_f14c`. **La rama no está fusionada:** con la verificación de
+cierre hecha, espera el visto bueno del usuario a las decisiones de la ejecución («Decisiones adicionales (Fase 14C)») y
+su decisión de fusionar. Con ella se cierra la Fase 14 del diseño maestro. **Sin
 dependencias npm nuevas.** Dos migraciones: la `0015` (altera en su sitio las cinco tablas vacías de la 14C:
 `variables_compartidas`, `variable_responsables`, `variable_valores`, `dimensiones` y `dimension_categorias`, y añade a
 las de la 14A y la 14B solo columnas, índices y `CHECK` nuevos: el origen de cada variable, la fracción exacta, la lista
@@ -359,14 +362,49 @@ de categorías de la medición, `variable_eventos` de solo inserción, el contex
 `0016` (`variable_valores.se_pide`: el periodo de un dato que alguna medición necesita). Diecisiete en total
 (`drizzle/0000` a `drizzle/0016`).
 
-**Verificación de cierre: pendiente.** La hace el controlador después de la Tarea 18 y la escribe aquí con sus cifras:
-`SEMILLA_RECIEN=1 npm test` con la demo recién sembrada, comparado con la línea base del Paso 0; `npm run lint`;
-`npm run build` sin `DATABASE_URL`; la `0015` y la `0016` sobre una copia de la base `sgc` de `main` (conteos y huellas
-de indicadores, versiones, mediciones y valores); el recorrido de §10 del anexo en el navegador (claro, oscuro y 390 px),
-por los pasos de «Qué probar y cómo (Fase 14C)»; y la revisión final de toda la rama, con su ola de corrección. Lo que
-corrió la Tarea 18 (no es la verificación de cierre): los siete archivos `tests/semilla-*.test.ts` con
-`SEMILLA_RECIEN=1` sobre la demo recién sembrada, los archivos `tests/indicadores-*.test.ts` y los que leen las cuentas
-de la demo, `npm run lint` y `npm run build`.
+**Verificación de cierre (2026-11-16; la hizo quien coordinó la ejecución).** La cabeza del código es `a47b122`; lo
+confirmado después son solo documentos.
+
+- **Pruebas:** `SEMILLA_RECIEN=1 npm test`, con la demo recién sembrada, sobre `a47b122`: **276 archivos, 6987 pruebas en
+  verde y 1 saltada** (la de `tests/ratificaciones.test.ts`, la misma de la línea base), salida 0, unos 570 s. Al cierre de
+  la 14B eran 6318 en 249 archivos. Antes de la ola final, sobre `bbefc8b`: 275 archivos y 6935; después de la ola, sobre
+  `feab954`: 275 y 6982. Dos corridas no salieron limpias y se dicen: sobre `d9d966e`, un caso de
+  `tests/indicadores-vencimientos.test.ts` agotó sus 5 s sin ninguna aserción fallida (la ola le dio 20 s); y la primera
+  corrida sobre `a47b122` terminó con error porque un proceso de Vitest se cayó a mitad de
+  `tests/externos-pantallas.test.tsx` (de la 13C, que la rama no toca: «Worker exited unexpectedly», 22 pruebas sin
+  correr y ninguna fallida); ese archivo pasó solo tres veces seguidas y la suite completa, repetida, es la de arriba.
+- **`npm run lint`** limpio y **`npm run build`** sin `DATABASE_URL` en verde, sobre `a47b122` (con el aviso de Turbopack
+  de `src/lib/almacen.ts` de siempre).
+- **Las migraciones `0015` y `0016` sobre una copia de la base `sgc`** (leída una sola vez con `pg_dump`, restaurada en
+  `sgc_f14c_copia` y borrada al terminar; sobre `bbefc8b`, y después no hubo ninguna migración ni cambio en
+  `src/db/esquema.ts`): de 15 a 17 migraciones; las 83 tablas conservan sus filas y la huella de cada fila (14
+  indicadores, 16 versiones, 32 variables, 35 mediciones, 64 valores, 64 eventos y 44 firmas); una tabla nueva
+  (`variable_eventos`) y 26 columnas nuevas; las tablas de la 14C, vacías; y la huella firmada, recalculada con el código
+  de la rama, coincide en las 15 versiones firmadas (queda un borrador sin firma).
+- **El recorrido de §10 del anexo en el navegador,** completo, por los diez pasos de «Qué probar y cómo (Fase 14C)», en
+  claro, oscuro y 390 px, sobre `d9d966e` (antes de la ola final), con las cuentas `consulta`, `lider.cex`,
+  `coordinadora.sgc` y `gerente`. **Visto de nuevo después de la ola, sobre `feab954`:** el formulario del dato («1.600»
+  rechazado, la pregunta de la variación que se va al cambiar el valor, el aviso que queda al reportar el último
+  pendiente); los soportes del dato desde el indicador, para una persona designada que no ve el dato (los descarga) y
+  para una que no ve soportes (ni la columna, ni el nombre del archivo, y 404 en la descarga); el cierre de septiembre (16
+  mediciones; el periodo del dato, reportado y en plazo, no se cierra; «Cierres anteriores» con 16 y 0, y 26 y 5);
+  «Borrar el dato» que no se ofrece; el diálogo de reabrir cuando la lista cambia por debajo (queda abierto, con el error,
+  la justificación y la lista de ahora); «Crear la categoría»; y `SGC-ID-004` y su Excel como `lider.cex`, sin rastro del
+  componente. **Después de los residuos, sobre `a47b122`:** los soportes del dato una sola vez en un indicador sin
+  variables propias, junto a la variable en el mixto, y las etiquetas en minúscula. La consola, sin errores ni avisos.
+  **Solo por pruebas, sin verlo en el navegador:** «Actualizar categorías» de un dato y la ayuda por categoría (la demo no
+  trae un dato con dimensión), «venció el…» (el dato pendiente de la demo no ha vencido), el soporte obligatorio de la
+  medición que esperaba un dato, los interbloqueos, «acumulado de … a …», desactivar una categoría y un dato o un
+  indicador creados de cero (su primer periodo termina con el mes).
+- **La revisión final de toda la rama** (cuatro revisores, de solo lectura, sobre `bbefc8b`): ningún hallazgo Crítico y
+  ninguna vía por la que alguien lea un componente que no puede ver; ocho Importantes, de los que siete se corrigieron en
+  la ola final (23 confirmaciones, con la prueba en rojo antes del arreglo donde el defecto se podía reproducir) y uno
+  quedó como deuda con nombre (la página de un dato lee toda su historia). **La re-revisión de la ola** (tres frentes):
+  todos los hallazgos atendidos, nada Crítico ni Importante; sus menores, en los residuos (6 confirmaciones, revisadas
+  por quien coordinó) o en «Deuda técnica (Fase 14C)». Dos casos del soporte obligatorio que la re-revisión dejó como
+  hipótesis se corrieron con una sonda temporal, sin confirmarla (decisión 49).
+- **Lo que no se tocó:** el código de `F:\sgc-integral`, su `next dev` del 3002 y la base `sgc`, que solo se leyó esa
+  vez. La base `sgc_f14c` quedó con la demo recién sembrada.
 
 ### Hecho (Fase 14C)
 
@@ -414,7 +452,8 @@ de la demo, `npm run lint` y `npm run build`.
   el capítulo 8 del manual con las secciones 11 a 13 nuevas («Datos compartidos», «Indicadores por sede o por servicio»
   e «Indicadores compuestos»), el ajuste de 6.6 («Cerrar el mes y reabrir») y las secciones de siempre renumeradas (14 a
   16); y `AGENTS.md`, este archivo y `PLAN.md`.
-- **La ola final de corrección** (tras la revisión de toda la rama y el recorrido en el navegador; un commit por arreglo):
+- **La ola final de corrección** (23 confirmaciones, de `181094e` a `feab954`, tras la revisión de toda la rama y el
+  recorrido en el navegador; un commit por arreglo):
   - «Reportes a tiempo» juzga y enventana contra la fecha límite **del reporte**: el evento que mueve la fecha por el
     análisis guarda la que tenía (`venceAntes`) y el cálculo usa la del primero.
   - La racha que dispara una propagación recuenta el plazo de la siguiente que pasa a pedir análisis con la fecha vencida
@@ -436,6 +475,14 @@ de la demo, `npm run lint` y `npm run build`.
     dato.» se queda al reportar el último pendiente; «Crear la categoría» limpia el campo; el histórico de un compuesto
     admite un componente negativo; el propósito del compuesto restringido de la demo no nombra el área del componente
     oculto, y el formulario lo advierte; «Reabrir septiembre de 2026», en minúscula.
+- **Residuos de la ola final** (seis confirmaciones, de `db41318` a `a47b122`, tras su re-revisión; ninguno cambia una
+  regla): las acciones de un periodo de un dato responden a un interbloqueo con su propio mensaje («Otra persona estaba
+  reportando, cerrando o reabriendo ese periodo del dato al mismo tiempo: inténtelo de nuevo»), y «Actualizar categorías» y
+  «Cerrar de nuevo» de una medición, con el del cierre; el periodo va en minúscula a mitad de frase en las etiquetas de la
+  tabla del año y del dato («Ver septiembre de 2026»); los soportes del dato de un indicador sin variables propias salen
+  una sola vez, en «Soportes»; la ayuda «Sin puntos de miles…» de un dato por categorías queda asociada a cada campo
+  (`Campo` admite `tambienDescritoPor`); `soportesDeDatosDeMediciones` exige ella misma ver los soportes del indicador; y
+  cada soporte del dato sale una vez por medición en la tabla del año (`soportesDeDatosDeLaMedicion`).
 
 ### Qué probar y cómo (Fase 14C)
 
@@ -551,12 +598,22 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
   la `0016` a la base `sgc`:** `npm run db:preparar` en `F:\sgc-integral` y reiniciar `next dev` (en desarrollo no
   migran solas; la imagen sí, al arrancar). Hasta entonces las páginas de indicadores fallan. Para ver la demo de la 14C
   en `sgc` hace falta además `npm run db:seed` (vacía la base y el almacén) y `npm run admin:asegurar`.
-- **Las 42 decisiones pendientes esperan su visto bueno** («Decisiones adicionales (Fase 14C)»): las 39 de la ejecución
-  y las 3 de la Tarea 18; ninguna la tomó usted. Las que más pesan: el aviso a los responsables al reabrir un dato sin
-  mover su fecha límite (6); que un resultado fuera de límites no bloquee «Reportar lo mío» (8); que el sistema reponga
-  el plazo cuando quita su propio «No aplica» (10); los textos que dicen desde cuándo acumula un componente (27) y el
-  acumulado «parcial» de un compuesto (28); el motivo de «No aplica» que nombra solo a un componente que usted ve (30);
-  y que cierres y reaperturas vayan de a uno (34).
+- **Las 57 decisiones pendientes esperan su visto bueno** («Decisiones adicionales (Fase 14C)»): las 39 de la ejecución,
+  las 3 de la Tarea 18 y las 15 de la revisión final y su ola de corrección; ninguna la tomó usted. Hay además cuatro
+  preguntas para que decida aparte. Las que más pesan: el aviso a los responsables al reabrir un dato sin mover su fecha
+  límite (6); que un resultado fuera de límites no bloquee «Reportar lo mío» (8); que el sistema reponga el plazo cuando
+  quita su propio «No aplica» (10); los textos que dicen desde cuándo acumula un componente (27) y el acumulado «parcial»
+  de un compuesto (28); el motivo de «No aplica» que nombra solo a un componente que usted ve (30); que cierres y
+  reaperturas vayan de a uno (34); que el cierre espere al dato reportado que sigue en plazo (43); el periodo sin
+  categorías (44); el rechazo del punto de miles en los datos (45); contra qué fecha juzga «Reportes a tiempo» (47); y el
+  soporte obligatorio cuando el dato llega tarde (49).
+- **Lo que conviene que sepa de esas decisiones:** los formularios de los **indicadores** siguen leyendo «1.731» como
+  1,731 (solo los de los datos lo rechazan); un periodo de un dato que nace sin categorías le queda de tarea a su
+  responsable, que no puede reportarlo hasta que usted pulse «Actualizar categorías», y a usted nadie le avisa; un
+  periodo «Sin dato» que se reabre escala a su jefe en la pasada siguiente, porque reabrir no mueve su fecha (decisión
+  6); el plazo que el sistema recuenta cuando un valor ajeno deja una medición pidiendo análisis puede recontarse más de
+  una vez si el dato se corrige de ida y vuelta (queda en el historial); y una medición reportada antes de volverse
+  obligatorio el soporte vuelve a pedirlo, ya vencida, si alguien le escribe un análisis (viene de la 14A).
 - **La demo nueva cambia lo que ven algunas cuentas:** `consulta` responde por el dato compartido (su **Mis tareas** trae
   el de septiembre), `lider.cex` hace seguimiento de `SGC-ID-004` y `coordinadora.sgc` de `CEX-ID-003`. «Reportes a tiempo»
   del SGC no cuenta los dos compuestos del SGC: nadie los mide.
@@ -696,12 +753,87 @@ de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
     sistema no la filtra; el diálogo lo advierte. Si quien administra nombra en ella un indicador restringido, lo nombra.
     Base: ISO 7.5.3 (la reapertura deja quién, cuándo y por qué).
 
-**Decisiones de la Tarea 18** (de quien la implementó, también pendientes del visto bueno; van en su informe):
-`SGC-ID-004` es del proceso SGC con `lider.cex` en seguimiento, y no de Consulta Externa, para que `consulta` (asignada a
-Consulta Externa) no lo vea; el mes pendiente del dato es el último que cierra un trimestre después del mes cerrado y
-empieza a pedirse la víspera de la siembra, para que no nazca vencido y, al reportarlo, se vea puesto en los dos
-indicadores; y `coordinadora.sgc` hace seguimiento de `CEX-ID-003` para que la demo deje el aviso de la sede en Crítico
-(quien reporta no recibe el aviso de su propio reporte). Base: Práctica.
+**F. La demo (Tarea 18)** (de quien la implementó, también pendientes del visto bueno)
+
+40. **`SGC-ID-004` es del proceso SGC, con `lider.cex` en seguimiento**, y no de Consulta Externa. Porque `consulta` está
+    asignada a Consulta Externa y lo vería. Base: Práctica.
+41. **El mes pendiente del dato de la demo es el último que cierra un trimestre después del mes cerrado**, y empieza a
+    pedirse la víspera de la siembra. Porque así no nace vencido y, al reportarlo, se ve puesto en los dos indicadores.
+    Base: Práctica.
+42. **`coordinadora.sgc` hace seguimiento de `CEX-ID-003`.** Porque quien reporta no recibe el aviso de su propio reporte
+    y la demo debía dejar a la vista el aviso de la sede en Crítico. Base: Práctica.
+
+**G. De la revisión final de toda la rama y su ola de corrección** (las tomó quien coordinó; también pendientes del visto
+bueno)
+
+43. **El cierre del mes no cierra el periodo de un dato ya reportado que sigue dentro de su plazo;** las mediciones que lo
+    usan esperan al cierre siguiente. Porque el anexo lo dice así (§3.5) y el plan lo había reducido a los periodos sin
+    reportar: se cerraba un dato que su responsable todavía podía corregir sin justificar. Cuesta que una medición
+    completa cuyo dato tiene un plazo más largo espera un cierre más. Base: Anexo §3.5.
+44. **Un periodo de un dato por categorías que nace sin categorías no se reporta**, y quien administra tiene «Actualizar
+    categorías» en un periodo pendiente del dato. Porque antes se guardaba un 0 que nadie escribió. El rastro usa el tipo
+    «corrección» del historial del dato (`variable_eventos`), con su propia frase, para no hacer una migración más.
+    **Consecuencia:** ese periodo sigue siendo tarea de su responsable, que no puede reportarlo hasta que quien administra
+    actualice; le recuerda, vence y escala, y a quien administra nadie le avisa. Base: ISO 9.1.1 y anexo §5.7.
+45. **El formulario de un dato rechaza un valor escrito con punto de miles** («1.600»); la pantalla lo sigue mostrando con
+    punto de miles (decisión 3). Porque «1.731» se guardaba como 1,731 sin avisar. Cuesta que un decimal de tres cifras
+    exactas se escribe con coma («2,375»). **Los formularios de los indicadores no cambiaron** (pregunta 1, abajo). Base:
+    ISO 9.1.1 (resultados válidos).
+46. **La confirmación «¿Es correcto?» de una variación grande vale solo para el valor por el que se preguntó.** Base:
+    Decisión del usuario 2.1 (se confirma lo que se ve), por analogía.
+47. **«Reportes a tiempo» juzga cada reporte contra la fecha límite que tenía el reporte**, no contra la que el sistema
+    recontó después para el análisis; y juzga el primer reporte contra la primera fecha, también si después el sistema
+    devolvió el reporte a quien mide. La fecha anterior queda en el historial de la medición (`venceAntes`), sin columna
+    nueva. Porque un reporte tardío pasaba a «a tiempo» cuando llegaba el dato. Base: ISO 9.1.1.
+48. **Cuando un valor que llega de una fuente cambia la racha de incumplimiento y una medición siguiente pasa a pedir
+    análisis, su plazo se cuenta de nuevo**, y un cambio posterior del plazo del indicador respeta esa fecha. Porque nacía
+    vencida y escalaba al jefe por algo que nadie pudo hacer antes. Base: Anexo aprobado (F14C-DC42), derivada.
+49. **El soporte obligatorio de una medición que esperaba su dato:** mientras espera y sigue en plazo, quien mide tiene la
+    tarea «Falta el soporte obligatorio»; pasado el plazo sin dato, deja de pedirse; si el dato llega con el plazo ya
+    vencido y el resultado cumple, la medición queda reportada sin pedir el soporte; si llega en plazo, se debe como
+    siempre. Porque el sistema no guarda desde cuándo es obligatorio el soporte y no distingue «se activó cuando ya estaba
+    vencida» (no se debe: rige hacia adelante) de «se activó a tiempo y no se adjuntó»: se resolvió a favor de la persona.
+    **Lo que deja** (los dos primeros, comprobados con una corrida): si el dato tardío no cumple, la medición pide análisis
+    con plazo nuevo y con él el soporte, sin nacer vencida; si después alguien le escribe un análisis opcional a la que
+    quedó reportada, vuelve a pedir el soporte y aparece vencida, que es como la 14A trata a toda medición reportada antes
+    de volverse obligatorio el soporte (`analizar` recalcula igual en `main`); y un soporte que sí se debía se perdona si
+    el dato llega tarde y cumple. Base: la regla de la 14A «el soporte obligatorio rige hacia adelante» (F14A-R52).
+50. **Los soportes de un dato se ven desde el indicador que lo usa:** junto a la variable en la pantalla de reportar de un
+    mixto, en «Soportes» de un indicador sin variables propias y en la columna «Soportes» de la tabla del año. Solo para
+    quien ve los soportes de ese indicador y solo de los datos que el indicador toma directamente, nunca los de un
+    componente. Base: Decisión del usuario 1.2 (anexo §4.6).
+51. **Al cambiar la fuente de una variable entre versiones, lo copiado de la fuente vieja deja de leerse y el sistema lo
+    quita de la medición abierta, sin evento.** Porque se leía como el valor de la letra en la versión nueva y podía verlo
+    quien tenía esa letra oculta. Sin evento porque, para la versión nueva, esa letra nunca tuvo valor. Base: Decisión del
+    usuario 5.1.
+52. **El resumen guardado del cierre, «Cierres anteriores» y la bitácora cuentan los periodos de datos que se cerraron;**
+    un cierre anterior a este cambio muestra «—». Base: ISO 7.5.3 (trazabilidad).
+53. **«Borrar el dato» solo se ofrece cuando el dato no tiene historia** (nadie lo cita, ni un borrador, y no tiene
+    periodos). Base: Práctica.
+54. **El histórico de un compuesto admite un componente negativo** y no le aplica los límites de captura. Porque esas
+    reglas son de lo que se digita en una variable propia. Base: Práctica.
+55. **El formulario de la ficha advierte que no se nombre el indicador restringido en el propósito ni en el motivo del
+    cambio**, y la demo ya no lo nombra. El sistema no filtra el texto libre. Base: Decisión del usuario 5.1.
+56. **Textos nuevos de pantalla:** «Se reportó el dato. No queda ningún periodo por reportar.»; «…venció el {fecha}»;
+    «Soportes del dato»; «La evidencia de este indicador son los soportes de sus datos compartidos. Los adjunta quien
+    reporta cada dato.»; la columna «Periodos de datos cerrados»; «Se cerró {mes}: n mediciones cerradas y m periodos de
+    datos compartidos.»; el mensaje de interbloqueo de un periodo de un dato; y el periodo en minúscula a mitad de frase.
+    Base: Práctica.
+57. **Lo que queda como deuda técnica con nombre, sin arreglar** («Deuda técnica (Fase 14C)»): nada de ello da un dato
+    incorrecto ni una fuga. Base: Práctica.
+
+**Para que el usuario decida aparte** (con la recomendación de quien coordinó):
+
+1. **¿El mismo rechazo del punto de miles en los formularios de los indicadores?** Hoy «1.731» se lee ahí como 1,731,
+   desde la 14A. Recomendación: sí, en una entrega pequeña aparte, porque toca el lector de números que comparte todo el
+   módulo. Base: ISO 9.1.1.
+2. **¿Guardar desde cuándo es obligatorio el soporte de un indicador?** Con esa fecha la decisión 49 sería exacta y se
+   cerraría el caso heredado de la 14A. Es una columna y una migración. Recomendación: sí, en la fase siguiente. Base:
+   Práctica.
+3. **¿Un aviso a quien administra cuando un periodo de un dato nace sin categorías?** Recomendación: sí, es pequeño. Base:
+   ISO 5.3 (responsabilidades comunicadas).
+4. **Cambiar el dato de una variable no parte el acumulado del año** (sí lo parte cambiar de componente, decisión 29).
+   Recomendación: dejarlo, porque el dato nuevo mide lo mismo con otra fuente. Base: Práctica.
 
 ### Deuda técnica (Fase 14C)
 
@@ -750,6 +882,38 @@ Lo que la revisión final de toda la rama dejó con nombre y la ola final no arr
   periodo ya reportado sigue dejando su fila del indicador «No aplica: El dato no trae esta categoría».
 - No queda guardado cuándo se activó «soporte obligatorio»: para una medición que esperaba un dato se decide con su plazo
   (si el dato llega con el plazo vencido, no se le pide el soporte; ver `recalcularMedicion` y `debeElSoporte`).
+
+Lo que dejó la re-revisión de la ola final (tres frentes; nada Crítico ni Importante):
+
+- **El soporte obligatorio de la que esperaba un dato (decisión 49):** el perdón depende del resultado (si el dato tardío
+  no cumple, la medición pide análisis con plazo nuevo y la tarea «Falta el soporte obligatorio» vuelve, sin vencer); la
+  que quedó reportada vuelve a pedirlo, con su fecha vieja y por tanto vencida, si alguien le escribe un análisis
+  (`analizar` recalcula sin `sistema`, `analisis.ts`, igual que en la 14A); un soporte que sí se debía (activado en plazo
+  después de reportar, o quitado por quien mide) se perdona si el dato llega tarde; y `esperabaElDato` (`mediciones.ts`)
+  no distingue «nunca tuvo resultado» de «lo perdió». La tabla del año dice «Falta un dato» mientras la tarea dice
+  «Reportar», y la pantalla de reportar dice siempre «Este indicador exige un soporte». La salida es guardar desde cuándo
+  es obligatorio (una columna, como `ente_desde`).
+- **Lo copiado de otra fuente:** en una rejilla, la celda vieja no se limpia hasta la siguiente escritura de esa celda (no
+  se lee, pero la cuentan «en uso» `dimensiones.ts` y `conDatos`); `columnasDePendiente` (`con_valor`, `tareas.ts`) no
+  mira la fuente de la fila, y por eso la propagación quita las de otra fuente; una pasada que solo limpia cuenta como
+  `escritas`, y al no dejar evento el historial de una corregida puede leer «de — a 37,5» y después «de — a 50»; el
+  historial tapa también la fuente visible de una letra que en otra versión salió de un componente oculto (lado seguro).
+- **«Reportes a tiempo»:** cambiar el plazo del indicador no rejuzga a la medición que ya tiene `venceAntes`; y un reinicio
+  del reporte con reporte previo y sin `venceAntes` (solo por caminos rebuscados: marcar y quitar «No aplica» antes del
+  contagio) se juzga contra la fecha nueva.
+- Un periodo de un dato que nació sin categorías sigue siendo tarea de su responsable, que no puede reportarlo: le
+  recuerda, vence y escala, y a quien administra nadie le avisa (decisión 44).
+- Los soportes del dato no salen en la pantalla de reportar de un mixto **cerrado** (sí en la tabla del año).
+- El periodo que va después de « · » en un título visible sigue con mayúscula («Corregir · Octubre de 2026», «Registrar el
+  envío · …»); la etiqueta de un mes sale de dos fuentes, una en minúscula y otra con mayúscula.
+- `cerrarDeNuevoAccion` y las acciones de un dato traducen un `40P01`, pero nada lo provoca en las pruebas (se simula).
+- `MOTIVO_DE_RECALCULO.plazo` (`src/lib/indicadores/historial.ts`) no tiene emisor.
+- Tres pruebas de pantalla pintan con la hora real (`tests/indicadores-datos-pantallas.test.tsx`,
+  `tests/normograma-pantallas.test.tsx` y el caso de «Actualizar categorías» del dato, que pide que octubre de 2026 ya
+  haya terminado).
+- En una corrida de la suite completa un proceso de Vitest se cayó a mitad de `tests/externos-pantallas.test.tsx`
+  («Worker exited unexpectedly», sin ninguna aserción fallida); el archivo pasa solo y la suite se repitió (ver
+  «Verificación de cierre»).
 
 ## Fase 14B — Lo que el sistema ya sabe y lo regulatorio
 
