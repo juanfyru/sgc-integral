@@ -51,6 +51,7 @@ import { ErrorPermiso, puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { serializarCierreYReapertura } from "./candado-del-cierre";
 import { maestroDeCategorias } from "./dimensiones";
 import { obtenerParametros } from "./maestros";
 import { primeraAprobada, texto, tramos, versionesAprobadasDe, type VersionDeCalculo } from "./mediciones";
@@ -521,14 +522,17 @@ export async function reportarDato(
 
 /**
  * «Cerrar de nuevo» un periodo reabierto del dato (anexo 14C, §3.5), de quien administra: vuelve a `cerrado` con el último
- * cierre del mes, como esté (sin valor, «Sin dato»), con su evento `cierre` y su bitácora (`dato_cerrado_de_nuevo`). Con los
- * candados de quien reporta: el dato `FOR SHARE` y el periodo `FOR UPDATE`.
+ * cierre del mes, como esté (sin valor, «Sin dato»), con su evento `cierre` y su bitácora (`dato_cerrado_de_nuevo`). Primero
+ * el candado consultivo del cierre (`serializarCierreYReapertura`: todo lo que cierra o reabre pasa por él, así una medición
+ * no se cierra de nuevo con lo copiado de un periodo que se corrige y se cierra entretanto); después los de quien reporta: el
+ * dato `FOR SHARE` y el periodo `FOR UPDATE`.
  */
 export async function cerrarDeNuevoElDato(sesion: SesionFlujo, periodoId: number, opciones?: Opciones): Promise<void> {
   if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
   if (!Number.isInteger(periodoId) || periodoId <= 0) throw new ErrorIndicador(PERIODO_NO_EXISTE);
   const ahora = opciones?.ahora ?? new Date();
   await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    await serializarCierreYReapertura(tx);
     const [d] = await tx`SELECT id, nombre FROM variables_compartidas WHERE id = (SELECT variable_id FROM variable_valores WHERE id = ${periodoId}) FOR SHARE`;
     const [p] = await tx`SELECT * FROM variable_valores WHERE id = ${periodoId} FOR UPDATE`;
     if (!d || !p || Number(p.variable_id) !== Number(d.id)) throw new ErrorIndicador(PERIODO_NO_EXISTE);

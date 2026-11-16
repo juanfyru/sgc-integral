@@ -509,7 +509,8 @@ export const MAXIMO_VISTAS = 1000;
 
 /**
  * La justificación de una reapertura (spec §8.7): de 10 a 1000 caracteres; el `id` de la medición o del periodo viaja aparte.
- * En cascada (anexo 14C, §3.5), `vistas`: los ids de las mediciones que el diálogo listó en «se reabren», en JSON.
+ * `vistas` (anexo 14C, §3.5: se confirma lo que se vio), obligatorio: los ids de las mediciones que el diálogo listó en «se
+ * reabren», en JSON; el diálogo sencillo de una medición, ella sola; vacío, «solo se reabre el dato».
  */
 export const EsquemaReapertura = z
   .object({
@@ -519,7 +520,7 @@ export const EsquemaReapertura = z
         .array(z.number({ error: VISTAS_INVALIDAS }).int(VISTAS_INVALIDAS).positive(VISTAS_INVALIDAS), { error: VISTAS_INVALIDAS })
         .max(MAXIMO_VISTAS, VISTAS_INVALIDAS),
       VISTAS_INVALIDAS,
-    ).optional(),
+    ),
   })
   .strict();
 

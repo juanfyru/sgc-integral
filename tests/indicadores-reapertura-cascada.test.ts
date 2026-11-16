@@ -276,7 +276,8 @@ describe("la cascada", () => {
       });
       expect(await avisosDelDato(tx, c.d.id)).toHaveLength(1);
       // Su plazo y sus marcas de aviso no se tocan.
-      expect(p.vence_en).toEqual(cerradoAntes.vence_en);
+      const plazoYMarcas = (x: Record<string, unknown>) => [x.vence_en, x.aviso_previo_en, x.aviso_vencido_en, x.escalado_en];
+      expect(plazoYMarcas(p)).toEqual(plazoYMarcas(cerradoAntes));
 
       // El retirado queda como estaba, y su constancia no cambia.
       const t = await fila(tx, c.m.trimestral);
@@ -349,6 +350,34 @@ describe("la cascada", () => {
       expect((await fila(tx, deCompuesto)).corregida).toBe(true);
     }));
 
+  it("el diálogo se pintó sin dependientes y antes de confirmar se cerró una: con lo que listó (la medición sola), no se reabre nada", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const componente = await e.nuevo();
+      // El compuesto sigue en plazo en el cierre de marzo: cuando se pinta el diálogo del componente, nadie cerrado lo usa.
+      const compuesto = await e.espejo(componente.id);
+      await tx`UPDATE indicadores SET plazo_reporte_dias = 30 WHERE id = ${compuesto.id}`;
+      await tx`UPDATE mediciones SET vence_en = '2003-04-30T23:00:00Z' WHERE indicador_id = ${compuesto.id}`;
+      const deComponente = await medicionDe(tx, componente.id, MARZO);
+      const deCompuesto = await medicionDe(tx, compuesto.id, MARZO);
+      await e.reportarLoPropio(e.mide, deComponente, { A: "9", B: "10" });
+      await propagar(opc(tx));
+      await cerrarMes(e.admin, MARZO, opc(tx));
+      expect((await fila(tx, deCompuesto)).estado).toBe("reportada");
+      expect(await reaperturaEnTexto(e.admin, { clase: "medicion", medicionId: deComponente }, opc(tx))).toBeNull();
+      // Entre pintar y confirmar, otro cierre cierra el compuesto.
+      await cerrarMes(e.admin, "2003-04", opc(tx, dia(15, 5)));
+      expect((await fila(tx, deCompuesto)).estado).toBe("cerrada");
+
+      await rechaza(
+        reabrirMedicion(e.admin, { medicionId: deComponente, justificacion: JUSTIFICACION, vistas: [deComponente] }, opc(tx, dia(16, 5))),
+        "Lo que se reabre cambió mientras se confirmaba: revise la lista y vuelva a intentarlo",
+      );
+      expect((await fila(tx, deComponente)).estado).toBe("cerrada");
+      expect((await fila(tx, deCompuesto)).estado).toBe("cerrada");
+      expect((await eventos(tx, deCompuesto)).filter((x) => x.tipo === "reapertura")).toHaveLength(0);
+    }));
+
   it("el aviso nombra el dato a quien sí lo ve", () =>
     revertida(sql, async (tx) => {
       const e = await entorno(tx);
@@ -396,9 +425,16 @@ describe("la cascada", () => {
       expect([cerrado.estado, cerrado.valor]).toEqual(["cerrado", null]);
       expect([(await fila(tx, marzo)).estado, (await fila(tx, marzo)).resultado_exacto]).toEqual(["cerrada", null]);
 
+      const plazoYMarcas = (x: Record<string, unknown>) => [x.vence_en, x.aviso_previo_en, x.aviso_vencido_en, x.escalado_en];
       const r = await reabrirEnCascada(e.admin, { fuente: { clase: "dato", periodoId: periodos[MARZO] }, justificacion: JUSTIFICACION }, opc(tx, dia(22)));
       expect(r).toEqual({ reabiertas: 1, sinTocar: 0 });
-      expect((await periodoDelDato(tx, periodos[MARZO])).estado).toBe("pendiente");
+      const pendiente = await periodoDelDato(tx, periodos[MARZO]);
+      expect(pendiente.estado).toBe("pendiente");
+      // Queda pendiente: su responsable recibe el aviso igual, y su plazo y sus marcas no se tocan.
+      expect(plazoYMarcas(pendiente)).toEqual(plazoYMarcas(cerrado));
+      expect((await avisosDelDato(tx, d.id)).map((a) => [Number(a.usuario_id), a.cuerpo])).toEqual([
+        [e.responsable.usuarioId, `${e.admin.nombre} reabrió el dato «${d.nombre}», marzo de 2003: ${JUSTIFICACION}`],
+      ]);
       expect((await fila(tx, marzo)).estado).toBe("abierta");
       await e.reportarElDato(periodos[MARZO], "10", dia(23));
       await propagar(opc(tx, dia(23)));
@@ -655,6 +691,16 @@ describe("el candado consultivo del cierre, paso 0 del orden de candados", () =>
       candadoAntesDe(sentencias, "UPDATE mediciones SET estado = 'abierta', reabierta_por", "JOIN mediciones x ON x.id =");
     }));
 
+  it("cerrarDeNuevoElDato lo toma primero y lee el periodo después", () =>
+    revertida(sql, async (tx) => {
+      const c = await cerradoConSusUsuarios(tx);
+      await reabrirEnCascada(c.admin, { fuente: { clase: "dato", periodoId: c.marzo }, justificacion: JUSTIFICACION }, opc(tx, dia(22)));
+      const sentencias: string[] = [];
+      await cerrarDeNuevoElDato(c.admin, c.marzo, opc(espiar(tx, sentencias), dia(23)));
+      candadoAntesDe(sentencias, "UPDATE variable_valores SET estado = 'cerrado'", "SELECT * FROM variable_valores WHERE id =");
+      candadoAntesDe(sentencias, "UPDATE variable_valores SET estado = 'cerrado'", "FROM variables_compartidas WHERE id =");
+    }));
+
   it("cerrarDeNuevo lo toma primero y revisa las entradas después", () =>
     revertida(sql, async (tx) => {
       const e = await entorno(tx);
@@ -678,8 +724,8 @@ describe("lo que listó el diálogo, en el formulario (`vistas`)", () => {
   const leer = (vistas?: string) => parsearFormulario(formulario({ justificacion: JUSTIFICACION, ...(vistas === undefined ? {} : { vistas }) }), EsquemaReapertura);
   const INVALIDA = "La lista de lo que se reabre no es válida: recargue la página";
 
-  it("una lista de enteros positivos, con tope; sin ella, nada", () => {
-    expect(leer()).toEqual({ justificacion: JUSTIFICACION });
+  it("una lista de enteros positivos, con tope; vacía vale (solo el dato); sin ella, rechazo", () => {
+    expect(() => leer()).toThrow(INVALIDA);
     expect(leer("[3, 1]")).toEqual({ justificacion: JUSTIFICACION, vistas: [3, 1] });
     expect(leer("[]")).toEqual({ justificacion: JUSTIFICACION, vistas: [] });
     for (const mala of ["[0]", "[-2]", "[1.5]", '["x"]', "no es json", "{}"]) expect(() => leer(mala)).toThrow(INVALIDA);

@@ -25,7 +25,7 @@
  *
  * Candados (los mismos de la reapertura en cascada, `reapertura.ts`): antes que nada el candado consultivo del cierre
  * (`serializarCierreYReapertura`, la primera sentencia de la transacción del cierre, de la cascada, de la reapertura directa y
- * de «Cerrar de nuevo»); después los periodos de los datos `FOR UPDATE`, por id; los indicadores `FOR SHARE`, por id; y las
+ * de «Cerrar de nuevo» una medición o un periodo de un dato); después los periodos de los datos `FOR UPDATE`, por id; los indicadores `FOR SHARE`, por id; y las
  * mediciones `FOR UPDATE`, por indicador, periodo e id (el orden de `registrarHistoricos` dentro de un indicador): así un
  * cierre no se interbloquea con un reporte ni con un lote de históricos. Las fuentes se leen sin candado: lo que el cierre
  * revisa de ellas está bloqueado por él o cerrado, y el candado consultivo impide que una reapertura lo cambie mientras tanto
@@ -46,6 +46,7 @@ import { ErrorIndicador, type Semaforo, type TipoEvento } from "@/lib/indicadore
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { serializarCierreYReapertura } from "./candado-del-cierre";
 import { asegurarPeriodosDeDatos } from "./datos-periodos";
 import { dependientesDe, memoriaNueva, revisarFuentes, type FuenteQueFalta, type RevisionDeFuentes } from "./dependencias";
 import { tomarFotos } from "./fotos";
@@ -60,7 +61,6 @@ import {
   OCULTA,
   reabrirEnCascada,
   reabrirLaMedicion,
-  serializarCierreYReapertura,
 } from "./reapertura";
 
 export type { EntradaDeHistorial } from "@/lib/indicadores/historial";
@@ -243,8 +243,8 @@ async function periodosDeDatosDelCierre(sql: Cliente, hasta: Date, ahora: Date, 
  * Las mediciones sin cerrar cuyo periodo terminó en `hasta` o antes, repartidas en lo que el cierre alcanza (por grupo)
  * y lo que deja abierto, y los periodos de los datos que se cierran. Una sola regla para el resumen previo y el cierre; con
  * `bloquear`, dentro de la transacción del cierre, con los candados del encabezado. Al bloquear, solo las de los indicadores
- * ya bloqueados: una que aparezca entre las dos sentencias (una reapertura que se confirma en medio) la alcanza el siguiente
- * cierre. Las que el cierre alcanzaría pasan después por `apartarLasQueEsperan`.
+ * ya bloqueados: una que aparezca entre las dos sentencias (un periodo que una lectura abre en medio; una reapertura no,
+ * porque espera al candado consultivo) la alcanza el siguiente cierre. Las que el cierre alcanzaría pasan después por `apartarLasQueEsperan`.
  */
 async function clasificar(sql: Cliente, hasta: Date, ahora: Date, bloquear: boolean): Promise<Clasificacion> {
   const zona = zonaHoraria();
@@ -631,9 +631,10 @@ const idValido = (id: number) => Number.isSafeInteger(id) && id > 0;
  * Reabre una medición cerrada (spec §8.7, F14-DC31) con justificación y sin clave: queda «Corregida», vuelve a
  * `reportada` o a `abierta` y se avisa a quienes miden (`reabrirLaMedicion`, `reapertura.ts`). Un indicador retirado no se
  * reabre: nadie podría corregirlo. Si otras mediciones cerradas la usaron (es la de un componente), va en cascada
- * (`reabrirEnCascada`, anexo 14C §3.5): se reabren también; también con `vistas` (lo que listó el diálogo), que la cascada
- * compara con lo que reabriría. Sin dependientes, en su transacción, tras el candado consultivo del cierre; si una aparece
- * entre la lectura y los candados, no reabre nada (`LO_QUE_SE_REABRE_CAMBIO`).
+ * (`reabrirEnCascada`, anexo 14C §3.5): se reabren también. Con `vistas` (lo que listó el diálogo: la medición sola si no
+ * listó dependientes; la acción lo exige) va siempre por la cascada, que lo compara con lo que reabriría y, si no es lo
+ * mismo, no reabre nada. Sin `vistas` (la semilla, los tests) y sin dependientes, en su transacción, tras el candado
+ * consultivo del cierre; si una aparece entre la lectura y los candados, no reabre nada (`LO_QUE_SE_REABRE_CAMBIO`).
  */
 export async function reabrirMedicion(
   sesion: SesionFlujo,

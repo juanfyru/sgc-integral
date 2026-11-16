@@ -438,12 +438,13 @@ export async function cerrarMesAccion(_prev: EstadoAccion, formData: FormData): 
 
 /**
  * `id` es el de la medición cerrada. La reabre con justificación y sin clave, con las cerradas que la tomaron (en cascada,
- * anexo 14C §3.5); no navega: la tabla se repinta.
+ * anexo 14C §3.5), si es lo que listó el diálogo (`vistas`, obligatorio: la medición sola si no listó otras); no navega: la
+ * tabla se repinta.
  */
 export async function reabrirMedicionAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { justificacion, vistas } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
-    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion, ...(vistas ? { vistas } : {}) }).catch(sinInterbloqueoDelCierre);
+    await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion, vistas }).catch(sinInterbloqueoDelCierre);
     await propagarSinFallar();
   });
 }
@@ -457,7 +458,7 @@ export async function reabrirDatoCompartido(_prev: EstadoAccion, formData: FormD
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { justificacion, vistas } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
     const fuente = { clase: "dato" as const, periodoId: idNumerico(formData, "id") };
-    await reabrirEnCascada(sesion, { fuente, justificacion, ...(vistas ? { vistas } : {}) }).catch(sinInterbloqueoDelCierre);
+    await reabrirEnCascada(sesion, { fuente, justificacion, vistas }).catch(sinInterbloqueoDelCierre);
   });
 }
 

@@ -8,11 +8,12 @@
  *
  * **Orden de candados**, el mismo del cierre del mes (`clasificar`, en `cierre.ts`), para que la cascada, el cierre y quien
  * reporta no se interbloqueen:
- *   0. el candado consultivo del cierre (`serializarCierreYReapertura`), la primera sentencia de la transacción del cierre del
- *      mes, de la cascada, del camino directo de `reabrirMedicion` y de «Cerrar de nuevo»: las cuatro deciden con lo que está
- *      cerrado y lo que depende de qué, y sin él una puede decidir con lo que la otra está cambiando (el cierre ve cerrada una
- *      entrada que la cascada reabre a la vez y cierra lo que la usa). Toda lectura que decide va después de él, en la misma
- *      transacción; lo que se lee antes (para elegir el camino o pintar la lista) se vuelve a leer dentro;
+ *   0. el candado consultivo del cierre (`serializarCierreYReapertura`, `candado-del-cierre.ts`), la primera sentencia de la
+ *      transacción de todo lo que cierra o reabre: el cierre del mes, la cascada, el camino directo de `reabrirMedicion`,
+ *      «Cerrar de nuevo» una medición (`cerrarDeNuevo`) y un periodo de un dato (`cerrarDeNuevoElDato`). Deciden con lo que
+ *      está cerrado y lo que depende de qué, y sin él uno puede decidir con lo que otro está cambiando (el cierre ve cerrada
+ *      una entrada que la cascada reabre a la vez y cierra lo que la usa). Toda lectura que decide va después de él, en la
+ *      misma transacción; lo que se lee antes (para elegir el camino o pintar la lista) se vuelve a leer dentro;
  *   1. los periodos de los datos, `FOR UPDATE`, por id: aquí, el que se reabre. La fila del dato (`variables_compartidas`) no
  *      se toma: quien lo edita la toma `FOR UPDATE` sin tocar sus periodos, y quien reporta la toma `FOR SHARE` antes de su
  *      único periodo;
@@ -52,6 +53,7 @@ import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede, type SujetoPermiso } from "@/lib/permisos";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { serializarCierreYReapertura } from "./candado-del-cierre";
 import { PERIODO_NO_EXISTE } from "./datos-periodos";
 import { constanciasDe, dependientesDe, type Dependiente, type Fuente } from "./dependencias";
 import { contextoDeMedicion, mide, NO_EXISTE, recalcularMedicion, versionesAprobadas, type Contexto, type CondicionDePersona } from "./mediciones";
@@ -69,17 +71,11 @@ function exigirAdministrar(sesion: SujetoPermiso): void {
   if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
 }
 
-/**
- * El paso 0 del orden de candados (ver el encabezado): el candado consultivo de transacción que serializan el cierre del mes,
- * la reapertura en cascada, la reapertura directa de una medición y «Cerrar de nuevo». La primera sentencia de cada una.
- */
-export async function serializarCierreYReapertura(tx: TransactionSql): Promise<void> {
-  await tx`SELECT pg_advisory_xact_lock(hashtext('sgc.indicadores.cierre'))`;
-}
 
 /**
  * El cierre y la reapertura en cascada bloquean varios indicadores (ver el encabezado): si se cruzan con quien reporta o
- * cierra a la vez, PostgreSQL cancela una con `40P01`. Para el `.catch` de una acción: ese error, legible; los demás, tal cual.
+ * corrige a la vez, PostgreSQL cancela una con `40P01` (entre ellos no se cruzan: los serializa el candado consultivo del
+ * cierre). Para el `.catch` de una acción: ese error, legible; los demás, tal cual.
  */
 export function sinInterbloqueoDelCierre(err: unknown): never {
   throw (err as { code?: string } | null)?.code === "40P01" ? new ErrorIndicador(INTERBLOQUEO_DEL_CIERRE) : err;

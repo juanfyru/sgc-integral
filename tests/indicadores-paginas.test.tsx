@@ -69,6 +69,7 @@ import { GET as excelDeResultados } from "@/app/(app)/indicadores/excel/route";
 import ExcelJS from "exceljs";
 import { NextRequest } from "next/server";
 import { crearSesion } from "@/lib/sesion";
+import { FormularioDeReapertura, reaperturaDeDato, reaperturaDeMedicion } from "@/componentes/indicadores/cierre/DialogoReabrir";
 import { encabezadoDeLaLista, ListaDeReapertura, textoDelBoton } from "@/componentes/indicadores/cierre/ListaDeReapertura";
 import { ResumenDeCierre } from "@/componentes/indicadores/cierre/ResumenDeCierre";
 import { TablaDelAnio } from "@/componentes/indicadores/medicion/TablaDelAnio";
@@ -566,6 +567,29 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     expect(fraseDeDatosDelCierre({ seCierran: 0, sinDato: 0 })).toBeNull();
     expect(fraseDeDatosDelCierre({ seCierran: 1, sinDato: 0 })).toBe("También se cerrará 1 periodo de un dato compartido.");
     expect(fraseDeDatosDelCierre({ seCierran: 3, sinDato: 1 })).toBe("También se cerrarán 3 periodos de datos compartidos, 1 sin dato.");
+  });
+
+  it("los dos formularios de «Reabrir» mandan lo que listaron (`vistas`); el sencillo, la medición sola", () => {
+    const formulario = (r: ReturnType<typeof reaperturaDeMedicion>) =>
+      renderToStaticMarkup(<FormularioDeReapertura r={r} enviar={() => {}} estado={null} pendiente={false} alCerrar={() => {}} />);
+    const sencillo = formulario(reaperturaDeMedicion({ medicionId: 7, codigo: "ZZ-ID-001", etiqueta: "Marzo de 2003", reapertura: null }));
+    expect(sencillo).toContain('name="vistas" value="[7]"');
+    expect(sencillo).toContain("Reabrir la medición");
+    const lista = {
+      titulo: "Reabrir ZZ-ID-001, marzo de 2003",
+      deDato: false,
+      seReabren: [
+        { id: 7, texto: "ZZ-ID-001 Uno · marzo de 2003", constancia: null },
+        { id: 3, texto: "ZZ-ID-002 Dos · marzo de 2003", constancia: null },
+      ],
+      noSeReabren: [],
+    };
+    expect(formulario(reaperturaDeMedicion({ medicionId: 7, codigo: "ZZ-ID-001", etiqueta: "Marzo de 2003", reapertura: lista }))).toContain(
+      'name="vistas" value="[3,7]"',
+    );
+    const delDato = { ...lista, titulo: "Reabrir «Total» · marzo de 2003", deDato: true, seReabren: lista.seReabren.slice(1) };
+    expect(formulario(reaperturaDeDato({ periodoId: 40, reapertura: delDato }))).toContain('name="vistas" value="[3]"');
+    expect(formulario(reaperturaDeDato({ periodoId: 40, reapertura: { ...delDato, seReabren: [] } }))).toContain('name="vistas" value="[]"');
   });
 
   it("la lista de la reapertura en cascada (maqueta 13): lo que se reabre, lo que no y la constancia ya enviada", () => {

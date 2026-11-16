@@ -623,8 +623,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   cerrado de un dato (también para reportarlo tarde) o la medición cerrada de un componente reabre en una
   transacción cada medición cerrada que lo usó y las que dependen de esas (`dependientesDe`), salvo las de
   un indicador retirado o de otra periodicidad, que no se tocan; la lista se ve antes de confirmar
-  (`listaDeReapertura`, maqueta 13) y se confirma lo que se vio: el diálogo manda lo que listó (`vistas`) y,
-  si con todo bloqueado no es lo mismo, no se reabre nada. Cada una queda «Corregida» con el único `UPDATE`
+  (`listaDeReapertura`, maqueta 13) y se confirma lo que se vio: los dos diálogos mandan siempre lo que listaron
+  (`vistas`; el sencillo de una medición sin dependientes, ella sola; el de un dato sin ninguna, la lista vacía), las
+  dos acciones lo exigen (`EsquemaReapertura`) y, si con todo bloqueado no es lo mismo, no se reabre nada. Cada una queda «Corregida» con el único `UPDATE`
   que el trigger admite, su evento `reapertura` (`detalle.porFuente = { clase, id }`, nunca el nombre de la
   fuente: el historial la nombra al leer, `fuenteEnTexto`, solo a quien puede verla), su aviso (que la nombra
   solo a quien puede verla, por destinatario; a los demás, «un componente» o, si es un dato, «una de sus
@@ -634,8 +635,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   responsables (`indicadores.dato_reabierto`, salvo a quien reabre) y su bitácora (`dato_reabierto`). Una
   constancia de envío al ente no cambia. **Orden de candados del cierre y de la cascada**, el mismo en los
   dos: **0.** el candado consultivo del cierre (`serializarCierreYReapertura`, `reapertura.ts`), la primera
-  sentencia de la transacción de `cerrarMes`, `reabrirEnCascada`, el camino directo de `reabrirMedicion` y
-  `cerrarDeNuevo`: es él, y no la relectura con todo bloqueado, lo que impide que un cierre decida con una
+  sentencia de la transacción de todo lo que cierra o reabre (`cerrarMes`, `reabrirEnCascada`, el camino directo de
+  `reabrirMedicion`, `cerrarDeNuevo` y `cerrarDeNuevoElDato`; vive en `candado-del-cierre.ts`, liviano): es él, y no la relectura con todo bloqueado, lo que impide que un cierre decida con una
   entrada que una reapertura cambia a la vez; toda lectura que decide va después de él, en la misma
   transacción (lo que se lee antes solo elige el camino o pinta, y se lee otra vez dentro); **1.** los
   periodos de los datos `FOR UPDATE`, por id (sin la fila del dato); **2.** los indicadores `FOR SHARE`, por
