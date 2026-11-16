@@ -15,6 +15,12 @@
  * de otro indicador) las copia el sistema, y la persona no las digita ni las borra. En un histórico se digitan todas
  * (§3.6). Reportar lo propio pone `reportada_en` aunque falte lo ajeno: la medición queda en «Falta un dato» y el resultado
  * sale cuando llega. Un indicador sin variables propias no lo mide nadie (`mide`), como un automático.
+ *
+ * Una medición desagregada (anexo 14C, §5) guarda su lista de categorías (`categorias`), que se fija al abrirla con el maestro
+ * leído con candado; una histórica no la lleva (se digita el total, §3.6). Se reporta una rejilla: una celda por categoría y
+ * variable (`medicion_valores` con `categoria_id`), y el «No aplica» de cada fila vive en la lista. El total de cada letra, la
+ * fila sin categoría, lo escribe solo el sistema (`escribirTotal`, sin usuario) al reportar o al propagar; la persona nunca lo
+ * digita ni lo borra. Con él calcula `recalcularMedicion`, como en cualquier indicador.
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -22,7 +28,8 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeMedir, puedeVerIndicador, type Capacidad, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
-import { calcular, variacionExcesiva } from "@/lib/indicadores/calculo";
+import { calcular, variacionExcesiva, type FichaDeCalculo } from "@/lib/indicadores/calculo";
+import { estadoDeFila, listaDelPeriodo, resultadoDeCategoria, totalDeCategorias, type CategoriaDeMedicion } from "@/lib/indicadores/categorias";
 import { analisisCompleto, analisisExigido, cumpleDeFila, esRepetido } from "@/lib/indicadores/estados";
 import { aDecimal, aTexto, comparar, deTexto, fraccion, type Fraccion } from "@/lib/indicadores/formula/fraccion";
 import { alguienMide, esAjena, letrasAjenas } from "@/lib/indicadores/origen";
@@ -39,6 +46,7 @@ import {
   DIVISION_POR_CERO,
   fichaDeCalculo,
   fueraDeLimites,
+  leerValor,
   leerValores,
   reglaDeTexto,
   valorEnTexto,
@@ -50,6 +58,7 @@ import { limiteDeCritico, type Regla } from "@/lib/indicadores/semaforo";
 import { fraseDeVariacion, textoValor, type Unidad } from "@/lib/indicadores/textos";
 import {
   ErrorIndicador,
+  MOTIVO_TODAS_NO_APLICAN,
   MOTIVOS_DEL_SISTEMA,
   type Consolidacion,
   type EstadoMedicion,
@@ -65,6 +74,7 @@ import {
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { alRecalcular } from "./alertas";
+import { maestroDeCategorias } from "./dimensiones";
 import { obtenerParametros } from "./maestros";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -87,6 +97,10 @@ export const noSeDigitaDesdeAqui = (nombre: string) => `«${nombre}» no se digi
 export const MOTIVO_RESERVADO = "Ese motivo lo usa el sistema: escriba el suyo con otras palabras";
 /** El «No aplica» que puso el sistema no lo quita una persona: lo quita la propagación cuando deja de ser cierto (`quitarNoAplica`). */
 export const NO_APLICA_DEL_SISTEMA = "Este «No aplica» lo puso el sistema: se quita solo cuando cambie el dato";
+/** Reportar una rejilla exige todas sus filas completas, «Sin casos» o «No aplica» (anexo 14C, §5.4). */
+export const faltanCategorias = (nombres: readonly string[]) => `Faltan categorías por completar: ${nombres.join(", ")}`;
+/** Una medición desagregada que nació sin categorías (ninguna existía en su periodo): no se reporta vacía. */
+const SIN_CATEGORIAS = "Esta medición no tiene categorías: pida al Administrador del SGC que las actualice";
 
 /**
  * Una medición abierta de la periodicidad vieja que quedó dentro del tramo de un cambio mayor de periodicidad (los meses
@@ -150,8 +164,9 @@ export type VersionDeCalculo = {
   regla: ReglaEnTexto;
   unidad: Unidad;
   variables: VariableDeVersion[];
-  /** La dimensión por la que se desagrega (anexo 14C, §5.2); `null` sin desagregación. */
+  /** La dimensión por la que se desagrega (anexo 14C, §5.2) y el nombre con que se firmó; `null` sin desagregación. */
   dimensionId: number | null;
+  dimensionNombre: string | null;
 };
 
 /** ¿Alguien digita algo en esta versión? Una ficha manual con alguna variable propia (anexo 14C, §3.1; `alguienMide`). */
@@ -181,7 +196,7 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
   if (indicadorIds.length === 0) return salida;
   const filas = await sql`SELECT id, indicador_id, numero, tipo_cambio, rige_desde, aprobada_en, periodicidad, nombre, origen_dato, calculo,
       calculo_alcance, formula, resultado_min, resultado_max, tendencia, meta, meta_max, semaforo_modo, umbral_atencion_pct, limite_critico,
-      tolerancia, rangos, unidad_sufijo, decimales, dimension_id
+      tolerancia, rangos, unidad_sufijo, decimales, dimension_id, dimension_nombre
     FROM indicador_versiones WHERE indicador_id IN ${sql([...new Set(indicadorIds)])} AND estado = 'aprobada'
     ORDER BY indicador_id, numero DESC`;
   if (filas.length === 0) return salida;
@@ -244,6 +259,7 @@ export async function versionesAprobadasDe(sql: Cliente, indicadorIds: readonly 
       unidad: { sufijo: (f.unidad_sufijo as string | null) ?? "", decimales: f.decimales === null ? 0 : Number(f.decimales) },
       variables: deLaVersion,
       dimensionId: f.dimension_id === null ? null : Number(f.dimension_id),
+      dimensionNombre: texto(f.dimension_nombre),
     };
     const id = Number(f.indicador_id);
     salida.set(id, [...(salida.get(id) ?? []), version]);
@@ -385,7 +401,12 @@ export async function asegurarMediciones(opciones?: { sql?: Cliente; ahora?: Dat
   return creadas;
 }
 
-/** Un indicador en su transacción, tomado `FOR SHARE` con el estado releído: no abre nada en uno que se acaba de retirar. */
+/**
+ * Un indicador en su transacción, tomado `FOR SHARE` con el estado releído: no abre nada en uno que se acaba de retirar. Una
+ * medición ordinaria cuya versión que rige se desagrega nace con su lista de categorías (`listaDelPeriodo`, anexo 14C §5.3),
+ * del maestro leído `FOR KEY SHARE` en esta misma transacción (`maestroDeCategorias`: el `jsonb` no tiene llave foránea y
+ * `borrarCategoria` espera a que la lista quede guardada). Una histórica no lleva lista: se digita el total (§3.6).
+ */
 function abrirPeriodos(sql: Cliente, indicadorId: number, ahora: Date): Promise<number> {
   return enTransaccion(sql, async (tx) => {
     const [i] = await tx`SELECT inicio_medicion, plazo_reporte_dias FROM indicadores
@@ -395,31 +416,55 @@ function abrirPeriodos(sql: Cliente, indicadorId: number, ahora: Date): Promise<
     const versiones = await versionesAprobadas(tx, indicadorId);
     const aprobada = primeraAprobada(versiones)?.aprobadaEn ?? null;
     const existentes = new Set((await tx`SELECT periodo FROM mediciones WHERE indicador_id = ${indicadorId}`).map((f) => f.periodo as string));
-    const nuevos: { periodo: Periodo; versionId: number }[] = [];
+    const nuevos: { periodo: Periodo; version: VersionDeCalculo; historica: boolean }[] = [];
     for (const t of tramos(versiones, i.inicio_medicion as string, zona)) {
       for (const periodo of periodosTerminados(t.periodicidad, t.primero.clave, ahora, zona)) {
         if (periodo.desde.getTime() >= t.hasta) break;
         if (existentes.has(periodo.clave)) continue;
-        nuevos.push({ periodo, versionId: versionQueRigeEntre(versiones, periodo, zona)!.id });
+        const historica = aprobada !== null && periodo.hasta.getTime() < aprobada.getTime();
+        nuevos.push({ periodo, version: versionQueRigeEntre(versiones, periodo, zona)!, historica });
       }
     }
     if (nuevos.length === 0) return 0;
+    const listas = await listasDeCategorias(tx, nuevos.map((n) => ({ dimensionId: n.historica ? null : n.version.dimensionId, periodo: n.periodo })));
     const plazo = Number(i.plazo_reporte_dias);
     const iso = (d: Date) => d.toISOString();
-    const creadas = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, historica)
-      SELECT ${indicadorId}, x.version_id, x.periodo, x.desde, x.hasta, x.vence_en, x.historica
+    const creadas = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, historica, categorias)
+      SELECT ${indicadorId}, x.version_id, x.periodo, x.desde, x.hasta, x.vence_en, x.historica, x.categorias::jsonb
       FROM unnest(
-        ${tx.array(nuevos.map((n) => n.versionId))}::bigint[],
+        ${tx.array(nuevos.map((n) => n.version.id))}::bigint[],
         ${tx.array(nuevos.map((n) => n.periodo.clave))}::text[],
         ${tx.array(nuevos.map((n) => iso(n.periodo.desde)))}::timestamptz[],
         ${tx.array(nuevos.map((n) => iso(n.periodo.hasta)))}::timestamptz[],
         ${tx.array(nuevos.map((n) => iso(fechaLimiteDeReporte(n.periodo, plazo, zona))))}::timestamptz[],
-        ${tx.array(nuevos.map((n) => aprobada !== null && n.periodo.hasta.getTime() < aprobada.getTime()))}::boolean[]
-      ) AS x(version_id, periodo, desde, hasta, vence_en, historica)
+        ${tx.array(nuevos.map((n) => n.historica))}::boolean[],
+        ${tx.array(listas.map((l) => (l === null ? null : JSON.stringify(l))) as string[])}::text[]
+      ) AS x(version_id, periodo, desde, hasta, vence_en, historica, categorias)
       ON CONFLICT (indicador_id, periodo) DO NOTHING
       RETURNING id`;
     return creadas.length;
   });
+}
+
+/**
+ * La lista de categorías de cada periodo pedido (`null` sin dimensión), con el maestro de cada dimensión leído una vez y
+ * `FOR KEY SHARE`, dentro de la transacción que guarda la lista.
+ */
+export async function listasDeCategorias(
+  tx: TransactionSql,
+  pedidos: readonly { dimensionId: number | null; periodo: Periodo }[],
+): Promise<(CategoriaDeMedicion[] | null)[]> {
+  const maestros = new Map<number, Awaited<ReturnType<typeof maestroDeCategorias>>>();
+  const salida: (CategoriaDeMedicion[] | null)[] = [];
+  for (const p of pedidos) {
+    if (p.dimensionId === null) {
+      salida.push(null);
+      continue;
+    }
+    if (!maestros.has(p.dimensionId)) maestros.set(p.dimensionId, await maestroDeCategorias(tx, p.dimensionId, { bloquear: true }));
+    salida.push(listaDelPeriodo(maestros.get(p.dimensionId)!, p.periodo));
+  }
+  return salida;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -441,6 +486,13 @@ export type Recalculo = {
   historica: boolean;
   /** Algo cambió (y quedó el evento); `false` si todo quedó como estaba. */
   cambio: boolean;
+  /**
+   * En una medición desagregada (anexo 14C, §5.6), cuántas categorías quedan en Crítico y cuántas había (`categorias_en_critico`)
+   * y cuáles, con su cifra; `null` y vacía si no se desagrega.
+   */
+  enCritico: number | null;
+  enCriticoAntes: number | null;
+  criticas: { nombre: string; resultado: string }[];
 };
 
 /** Los soportes de la medición: filas de `archivos` con contexto `medicion`. */
@@ -507,6 +559,190 @@ function enTexto(v: VersionDeCalculo, valores: Readonly<Record<string, Fraccion 
   return Object.fromEntries(v.calculo.letras.map((l) => [l, valores[l] ? valorEnTexto(valores[l]!) : null]));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// La rejilla de un desagregado (anexo 14C, §5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** La lista de categorías de la medición (anexo 14C, §5.3), con los nombres de entonces; `null` si no se desagrega. */
+export function listaDe(m: Record<string, unknown>): CategoriaDeMedicion[] | null {
+  if (!Array.isArray(m.categorias)) return null;
+  return (m.categorias as Record<string, unknown>[]).map((c) => ({
+    id: Number(c.id),
+    nombre: String(c.nombre),
+    orden: Number(c.orden),
+    noAplica: typeof c.noAplica === "string" ? c.noAplica : null,
+  }));
+}
+
+/** Las celdas de una medición desagregada por categoría, cada una por letra de la versión (`elegirValores`). */
+export function celdasDeFilas(filas: readonly (ValorGuardado & { categoria_id: unknown })[], v: VersionDeCalculo): Map<number, Record<string, Fraccion>> {
+  const porCategoria = new Map<number, ValorGuardado[]>();
+  for (const f of filas) {
+    if (f.categoria_id === null || f.categoria_id === undefined) continue;
+    const id = Number(f.categoria_id);
+    porCategoria.set(id, [...(porCategoria.get(id) ?? []), f]);
+  }
+  return new Map([...porCategoria].map(([id, deLaCategoria]) => [id, elegirValores(deLaCategoria, v)]));
+}
+
+/** Las celdas de la medición, por categoría y letra (`celdasDeFilas`). */
+export async function celdasPorCategoria(sql: Cliente, medicionId: number, v: VersionDeCalculo): Promise<Map<number, Record<string, Fraccion>>> {
+  const filas = await sql`SELECT mv.categoria_id, ${columnasDeValor(sql)}
+    FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
+    WHERE mv.medicion_id = ${medicionId} AND mv.categoria_id IS NOT NULL AND mv.valor IS NOT NULL`;
+  return celdasDeFilas(filas as unknown as (ValorGuardado & { categoria_id: unknown })[], v);
+}
+
+/** La fila de `medicion_valores` de una variable (con categoría o sin ella), con su fracción exacta si no cabe en cuatro decimales. */
+async function escribirFila(
+  tx: TransactionSql,
+  medicionId: number,
+  variableId: number,
+  categoriaId: number | null,
+  valor: Fraccion,
+  c: { usuarioId: number | null; ahora: Date },
+): Promise<void> {
+  const texto = valorEnTexto(valor);
+  const exacto = comparar(fraccion(texto)!, valor) === 0 ? null : aTexto(valor);
+  const deLaCategoria = categoriaId === null ? tx`categoria_id IS NULL` : tx`categoria_id = ${categoriaId}`;
+  const [cambiada] = await tx`UPDATE medicion_valores SET valor = ${texto}, valor_exacto = ${exacto}, reportado_por = ${c.usuarioId}, reportado_en = ${c.ahora}
+    WHERE medicion_id = ${medicionId} AND variable_id = ${variableId} AND ${deLaCategoria}
+    RETURNING id`;
+  if (!cambiada) {
+    await tx`INSERT INTO medicion_valores (medicion_id, variable_id, categoria_id, valor, valor_exacto, reportado_por, reportado_en)
+      VALUES (${medicionId}, ${variableId}, ${categoriaId}, ${texto}, ${exacto}, ${c.usuarioId}, ${c.ahora})`;
+  }
+}
+
+/**
+ * Deja una celda de la rejilla en la variable de la versión: antes quita las de esa categoría y esa letra en otra variable de
+ * la misma clase (propia o ajena: cada escritor toca lo suyo, anexo 14C §3.1); sin valor, quita también la suya. La de una
+ * persona lleva quién la digitó; la del sistema (`usuarioId` nulo), no.
+ */
+export async function escribirCelda(
+  tx: TransactionSql,
+  m: { id: number; indicadorId: number },
+  categoriaId: number,
+  v: VariableDeVersion,
+  valor: Fraccion | null,
+  c: { usuarioId: number | null; ahora: Date },
+): Promise<void> {
+  const ajenas = tx`iv.origen IN ('compartida', 'indicador')`;
+  await tx`DELETE FROM medicion_valores mv
+    WHERE mv.medicion_id = ${m.id} AND mv.categoria_id = ${categoriaId} AND mv.variable_id <> ${v.id}
+      AND mv.variable_id IN (SELECT iv.id FROM indicador_variables iv JOIN indicador_versiones x ON x.id = iv.version_id
+        WHERE x.indicador_id = ${m.indicadorId} AND iv.letra = ${v.letra} AND ${esAjena(v.origen) ? ajenas : tx`NOT ${ajenas}`})`;
+  if (valor === null) {
+    await tx`DELETE FROM medicion_valores WHERE medicion_id = ${m.id} AND variable_id = ${v.id} AND categoria_id = ${categoriaId}`;
+    return;
+  }
+  await escribirFila(tx, m.id, v.id, categoriaId, valor, c);
+}
+
+/**
+ * El total de una medición desagregada (anexo 14C, §5.5): por cada letra de la versión, la fila sin categoría con la suma,
+ * sin usuario (lo escribe solo el sistema) y solo si cambió; quita las filas sin categoría de otras variables. Sin total
+ * (`null`), quita todas las filas sin categoría. `actual` es el total guardado (`valoresPorLetra`).
+ */
+export async function escribirTotal(
+  tx: TransactionSql,
+  medicionId: number,
+  v: VersionDeCalculo,
+  total: Readonly<Record<string, Fraccion>> | null,
+  actual: Readonly<Record<string, Fraccion>>,
+  ahora: Date,
+): Promise<void> {
+  if (total === null) {
+    await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND categoria_id IS NULL`;
+    return;
+  }
+  await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND categoria_id IS NULL
+    AND NOT (variable_id = ANY(${v.variables.map((x) => x.id)}))`;
+  for (const x of v.variables) {
+    const nuevo = total[x.letra];
+    if (!nuevo) {
+      await tx`DELETE FROM medicion_valores WHERE medicion_id = ${medicionId} AND variable_id = ${x.id} AND categoria_id IS NULL`;
+    } else if (!actual[x.letra] || comparar(actual[x.letra], nuevo) !== 0) {
+      await escribirFila(tx, medicionId, x.id, null, nuevo, { usuarioId: null, ahora });
+    }
+  }
+}
+
+/** ¿Dos totales tienen las mismas letras con los mismos valores? */
+export const mismoTotal = (a: Readonly<Record<string, Fraccion>>, b: Readonly<Record<string, Fraccion>>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((l) => b[l] !== undefined && comparar(a[l], b[l]) === 0);
+
+/**
+ * Lo que la rejilla da para el total (`totalDeCategorias`): la suma, «ninguna aplica» o qué categorías faltan; o `espera` si a
+ * las filas incompletas solo les falta lo ajeno (un dato por categoría que no ha llegado: anexo 14C, §3.1).
+ */
+export type TotalDeRejilla = ReturnType<typeof totalDeCategorias> | { clase: "espera" };
+
+export function totalDeRejilla(
+  lista: readonly CategoriaDeMedicion[],
+  celdas: ReadonlyMap<number, Readonly<Record<string, Fraccion>>>,
+  v: VersionDeCalculo,
+  ficha: FichaDeCalculo,
+): TotalDeRejilla {
+  const filas = lista.map((c) => ({ categoria: c, valores: celdas.get(c.id) ?? {} }));
+  const t = totalDeCategorias(filas, ficha);
+  if (t.clase !== "faltan" || t.categorias.length === 0 || letrasAjenas(v.variables).length === 0) return t;
+  const propias = v.variables.filter((x) => !esAjena(x.origen)).map((x) => x.letra);
+  const incompletas = filas.filter((f) => estadoDeFila(f.categoria, f.valores, ficha) === "incompleta");
+  return incompletas.every((f) => propias.every((l) => f.valores[l] !== undefined)) ? { clase: "espera" } : t;
+}
+
+/** Lo que cambió en una celda: su categoría (de la lista de antes), su variable y sus valores. */
+export type CambioDeCelda = { categoria: CategoriaDeMedicion; variable: VariableDeVersion; antes: Fraccion | null; despues: Fraccion | null };
+/** Lo que cambió en el «No aplica» de una fila: el motivo de antes y el de después (`null`, sin «No aplica»). */
+export type CambioDeFila = { categoria: CategoriaDeMedicion; antes: string | null; despues: string | null };
+
+/**
+ * Las categorías que cambiaron, como las guarda el detalle de un evento (anexo 14C, §5.4): por categoría, en el orden de la
+ * lista, sus celdas (por letra) y su «No aplica» (`noAplica`, con el motivo o `null`) antes y después.
+ */
+export function detalleDeCategorias(
+  lista: readonly CategoriaDeMedicion[],
+  celdas: readonly CambioDeCelda[],
+  filas: readonly CambioDeFila[],
+): { id: number; nombre: string; antes: Record<string, string | null>; despues: Record<string, string | null> }[] {
+  const salida: { id: number; nombre: string; antes: Record<string, string | null>; despues: Record<string, string | null> }[] = [];
+  for (const c of lista) {
+    const antes: Record<string, string | null> = {};
+    const despues: Record<string, string | null> = {};
+    for (const x of celdas.filter((y) => y.categoria.id === c.id).sort((a, b) => (a.variable.letra < b.variable.letra ? -1 : 1))) {
+      antes[x.variable.letra] = x.antes ? valorEnTexto(x.antes) : null;
+      despues[x.variable.letra] = x.despues ? valorEnTexto(x.despues) : null;
+    }
+    const fila = filas.find((y) => y.categoria.id === c.id);
+    if (fila) {
+      antes.noAplica = fila.antes;
+      despues.noAplica = fila.despues;
+    }
+    if (Object.keys(antes).length > 0) salida.push({ id: c.id, nombre: c.nombre, antes, despues });
+  }
+  return salida;
+}
+
+/**
+ * Las categorías completas de la lista que quedan en Crítico con la versión y la regla de la medición (`resultadoDeCategoria`),
+ * con su cifra (`textoValor`, que no contradice el color), en el orden de la lista.
+ */
+export function categoriasEnCritico(
+  lista: readonly CategoriaDeMedicion[],
+  celdas: ReadonlyMap<number, Readonly<Record<string, Fraccion>>>,
+  ficha: FichaDeCalculo,
+  regla: Regla,
+  unidad: Unidad,
+): { nombre: string; resultado: string }[] {
+  return lista.flatMap((c) => {
+    const valores = celdas.get(c.id) ?? {};
+    if (estadoDeFila(c, valores, ficha) !== "completa") return [];
+    const r = resultadoDeCategoria(valores, ficha, regla);
+    return r.semaforo === "critico" && r.resultado ? [{ nombre: c.nombre, resultado: textoValor(r.resultado, unidad, regla) }] : [];
+  });
+}
+
 const igualNumero = (a: unknown, b: unknown) => {
   const x = fr(a);
   const y = fr(b);
@@ -567,6 +803,11 @@ export function versionesDeCalculo(
  *
  * `c.conElResultado`, si algo cambió, corre con el resultado ya escrito y antes del evento, en la misma transacción; lo que
  * devuelve va al detalle del evento. La foto lo usa para mover el plazo solo cuando pide un análisis (anexo 14B, §5.4).
+ *
+ * En una medición desagregada (con lista, anexo 14C §5.6) escribe también `categorias_en_critico`: con resultado, cuántas
+ * filas completas de la lista quedan en Crítico con esa versión y esa regla (`categoriasEnCritico`, leídas de sus celdas sin
+ * tocarlas); nulo sin resultado (como al abrirla) o si no se desagrega. Unas celdas que cambiaron (`c.detalle.categorias`) cuentan como cambio
+ * aunque el total quede igual: dejan su evento.
  */
 export async function recalcularMedicion(
   tx: TransactionSql,
@@ -636,6 +877,11 @@ export async function recalcularMedicion(
   const conDato = noAplica || resultado !== null;
   const estado: EstadoMedicion = conDato && conAnalisis && conSoporte ? "reportada" : "abierta";
   const limite = conDato ? limiteDeCritico(regla) : null;
+  // Las categorías en Crítico se cuentan de las celdas, con la versión y la regla con que se calcula el total (anexo 14C, §5.6).
+  const lista = listaDe(m);
+  const criticas = lista && resultado !== null ? categoriasEnCritico(lista, await celdasPorCategoria(tx, medicionId, version), ficha, regla, version.unidad) : [];
+  const enCritico = lista && resultado !== null ? criticas.length : null;
+  const enCriticoAntes = m.categorias_en_critico === null || m.categorias_en_critico === undefined ? null : Number(m.categorias_en_critico);
 
   const nuevo = {
     version_id: conDato ? version.id : Number(m.version_id),
@@ -649,6 +895,7 @@ export async function recalcularMedicion(
     requiere_accion: !historica && !noAplica && (semaforo === "critico" || repetido),
     incumplimiento_repetido: repetido,
     estado,
+    categorias_en_critico: enCritico,
   };
   const cumpleAntes = cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null });
   const columnasCambiaron =
@@ -661,12 +908,14 @@ export async function recalcularMedicion(
     !igualNumero(m.limite_aplicado, nuevo.limite_aplicado) ||
     m.requiere_accion !== nuevo.requiere_accion ||
     m.incumplimiento_repetido !== nuevo.incumplimiento_repetido ||
-    m.estado !== nuevo.estado;
+    m.estado !== nuevo.estado ||
+    enCriticoAntes !== nuevo.categorias_en_critico;
   if (columnasCambiaron) {
     await tx`UPDATE mediciones SET version_id = ${nuevo.version_id}, resultado_exacto = ${nuevo.resultado_exacto},
         resultado = ${nuevo.resultado}, semaforo = ${nuevo.semaforo}, cumple = ${nuevo.cumple}, meta_aplicada = ${nuevo.meta_aplicada},
         meta_max_aplicada = ${nuevo.meta_max_aplicada}, limite_aplicado = ${nuevo.limite_aplicado},
-        requiere_accion = ${nuevo.requiere_accion}, incumplimiento_repetido = ${nuevo.incumplimiento_repetido}, estado = ${nuevo.estado}
+        requiere_accion = ${nuevo.requiere_accion}, incumplimiento_repetido = ${nuevo.incumplimiento_repetido}, estado = ${nuevo.estado},
+        categorias_en_critico = ${nuevo.categorias_en_critico}
       WHERE id = ${medicionId}`;
   }
 
@@ -684,7 +933,8 @@ export async function recalcularMedicion(
     ...(cumpleAntes !== cumple ? { cumple: cumpleAntes } : {}),
   };
   const despues = { ...objeto(despuesDe), resultado: resultado ? decimalCorto(resultado) : null, semaforo, estado, ...marca(repetido), ...(cumpleAntes !== cumple ? { cumple } : {}) };
-  const cambio = columnasCambiaron || JSON.stringify(antes) !== JSON.stringify(despues);
+  const celdasCambiaron = Array.isArray(resto.categorias) && resto.categorias.length > 0;
+  const cambio = columnasCambiaron || celdasCambiaron || JSON.stringify(antes) !== JSON.stringify(despues);
   const r: Recalculo = {
     medicionId,
     indicadorId,
@@ -697,6 +947,9 @@ export async function recalcularMedicion(
     repetido,
     historica,
     cambio,
+    enCritico,
+    enCriticoAntes,
+    criticas,
   };
   if (!cambio) return r;
   const delLlamador = c.conElResultado ? await c.conElResultado(r) : {};
@@ -830,7 +1083,125 @@ export async function anteriorConResultado(
   return { clave, etiqueta: periodoDe(clave, zonaHoraria())?.etiqueta ?? clave, valor: deTexto(a.resultado_exacto as string) };
 }
 
-type DatosDeReportar = { medicionId: number; valores: Record<string, string>; parcial: boolean; confirmado: boolean };
+/**
+ * Una fila de la rejilla tal como llega (anexo 14C, §5.4). En `valores`, una letra que no vino no se toca y «» vacía la celda:
+ * dos personas guardan partes distintas sin pisarse. `noAplica`: sin valor, no se toca; `null`, se quita; un texto, se pone
+ * con ese motivo.
+ */
+export type FilaDeReporte = { categoriaId: number; valores: Record<string, string | undefined>; noAplica?: string | null };
+
+type DatosDeReportar = { medicionId: number; valores: Record<string, string>; parcial: boolean; confirmado: boolean; filas?: FilaDeReporte[] };
+
+/** Lo que va a escribir el reporte de una rejilla (`planDeRejilla`): las celdas y los «No aplica» que cambian y el total. */
+export type PlanDeRejilla = {
+  cambios: CambioDeCelda[];
+  filas: CambioDeFila[];
+  /** La lista con los «No aplica» de después. */
+  lista: CategoriaDeMedicion[];
+  /** Lo que da el total con lo de después; `null` en «Guardar sin reportar», que no lo toca. */
+  total: TotalDeRejilla | null;
+};
+
+/** El motivo de «No aplica» de una fila: de 5 a 500 caracteres y ninguno de los del sistema (`motivoValido`). */
+function motivoDeFila(motivo: string, categoria: string): string {
+  const m = motivo.trim();
+  if (m.length < 5) throw new ErrorIndicador(`Escriba el motivo de «No aplica» de ${categoria}`);
+  if (m.length > 500) throw new ErrorIndicador(`El motivo de «No aplica» de ${categoria} no puede pasar de 500 caracteres`);
+  return motivoValido(m);
+}
+
+/**
+ * El plan de reporte de una medición desagregada (anexo 14C, §5.4), sin escribir nada. Las filas traen solo categorías de su
+ * lista y letras de la versión (si no, `FICHA_CAMBIO`); la persona digita solo las propias, cada celda con sus límites de
+ * captura, y un total digitado es otro formulario. Un «No aplica» que puso el sistema en una fila no lo cambia la persona.
+ * «Guardar sin reportar» escribe lo que llegó, también después de reportar: el total se queda como estaba hasta el siguiente
+ * reporte. Reportar exige cada fila con sus celdas propias o «No aplica» (`faltanCategorias`); con todo (también lo ajeno) da
+ * el total, y sobre él valen la división por cero, los límites del resultado, el soporte obligatorio y la confirmación por
+ * variación; si a alguna fila solo le falta lo ajeno, se reporta lo propio y el total espera al dato («Reportar lo mío»).
+ */
+async function planDeRejilla(
+  sql: Cliente,
+  ctx: Contexto,
+  d: DatosDeReportar,
+  lista: readonly CategoriaDeMedicion[],
+): Promise<{ valores: Record<string, Fraccion | null>; confirmar: string | null; rejilla: PlanDeRejilla }> {
+  const { version, medicion: m } = ctx;
+  if (Object.values(d.valores).some((v) => typeof v === "string" && v.trim() !== "")) throw new ErrorIndicador(FICHA_CAMBIO);
+  const porId = new Map(lista.map((c) => [c.id, c]));
+  const vistas = new Set<number>();
+  for (const f of d.filas ?? []) {
+    if (!porId.has(f.categoriaId) || vistas.has(f.categoriaId)) throw new ErrorIndicador(FICHA_CAMBIO);
+    vistas.add(f.categoriaId);
+    if (Object.keys(f.valores).some((l) => !version.calculo.letras.includes(l))) throw new ErrorIndicador(FICHA_CAMBIO);
+  }
+  const guardadas = await celdasPorCategoria(sql, m.id, version);
+  const celdas = new Map([...guardadas].map(([id, v]) => [id, { ...v }]));
+  const cambios: CambioDeCelda[] = [];
+  const filas: CambioDeFila[] = [];
+  const nueva = lista.map((c) => ({ ...c }));
+  for (const f of d.filas ?? []) {
+    const c = porId.get(f.categoriaId)!;
+    const deLaFila = celdas.get(c.id) ?? {};
+    for (const v of version.variables) {
+      const digitado = f.valores[v.letra];
+      if (digitado === undefined) continue;
+      if (v.origen !== "propia") {
+        if (digitado.trim() !== "") throw new ErrorIndicador(noSeDigitaDesdeAqui(v.nombre));
+        continue;
+      }
+      const leido = leerValor(digitado, v);
+      if (!leido.ok) throw new ErrorIndicador(`${c.nombre}: ${leido.error}`);
+      const antes = guardadas.get(c.id)?.[v.letra] ?? null;
+      const despues = leido.valor;
+      if (despues === null) delete deLaFila[v.letra];
+      else deLaFila[v.letra] = despues;
+      if (antes === null ? despues !== null : despues === null || comparar(antes, despues) !== 0) cambios.push({ categoria: c, variable: v, antes, despues });
+    }
+    celdas.set(c.id, deLaFila);
+    if (f.noAplica === undefined) continue;
+    const motivo = f.noAplica === null ? null : motivoDeFila(f.noAplica, c.nombre);
+    if (motivo === c.noAplica) continue;
+    if (c.noAplica !== null && MOTIVOS_DEL_SISTEMA.includes(c.noAplica)) throw new ErrorIndicador(NO_APLICA_DEL_SISTEMA);
+    filas.push({ categoria: c, antes: c.noAplica, despues: motivo });
+    nueva.find((x) => x.id === c.id)!.noAplica = motivo;
+  }
+  if (d.parcial) return { valores: {}, confirmar: null, rejilla: { cambios, filas, lista: nueva, total: null } };
+
+  if (nueva.length === 0) throw new ErrorIndicador(SIN_CATEGORIAS);
+  const propias = version.variables.filter((v) => v.origen === "propia");
+  const faltan = nueva.filter((c) => c.noAplica === null && propias.some((v) => celdas.get(c.id)?.[v.letra] === undefined));
+  if (faltan.length > 0) throw new ErrorIndicador(faltanCategorias(faltan.map((c) => c.nombre)));
+  const ficha = fichaDeCalculo(version.calculo);
+  if (!ficha) throw new ErrorIndicador(FICHA_CAMBIO);
+  const total = totalDeRejilla(nueva, celdas, version, ficha);
+  if (total.clase === "faltan") throw new ErrorIndicador(faltanCategorias(total.categorias));
+  const rejilla: PlanDeRejilla = { cambios, filas, lista: nueva, total };
+  if (total.clase === "ninguna_aplica") return { valores: {}, confirmar: null, rejilla };
+
+  let fuera: string | null = null;
+  let resultado: Fraccion | null = null;
+  if (total.clase === "total") {
+    const regla = reglaDeTexto(await reglaDelPeriodo(sql, ctx.indicador.id, m.periodo as string, version));
+    const r = calcular(ficha, total.valores, regla);
+    if (r.sinResultado === "division_por_cero") throw new ErrorIndicador(DIVISION_POR_CERO);
+    if (!r.resultado) throw new ErrorIndicador(CIFRA_FUERA_DE_RANGO);
+    if (r.fueraDeLimites) fuera = fueraDeLimites(textoValor(r.resultado, version.unidad));
+    if (fuera && propias.length === version.variables.length) throw new ErrorIndicador(fuera);
+    resultado = r.resultado;
+  }
+  if (ctx.indicador.soporteObligatorio && (await contarSoportes(sql, m.id)) === 0) {
+    throw new ErrorIndicador("Este indicador exige un soporte: adjúntelo antes de reportar");
+  }
+  if (fuera && !d.confirmado) return { valores: {}, confirmar: `${fuera}. ¿Los datos son correctos?`, rejilla };
+  if (resultado && !d.confirmado) {
+    const anterior = await anteriorConResultado(sql, ctx.indicador.id, m.desde);
+    const { variacionConfirmarPct } = await obtenerParametros({ sql });
+    if (anterior && variacionExcesiva(resultado, anterior.valor, variacionConfirmarPct)) {
+      return { valores: {}, confirmar: fraseDeVariacion(resultado, anterior, version.unidad), rejilla };
+    }
+  }
+  return { valores: {}, confirmar: null, rejilla };
+}
 
 /**
  * Lo que se va a escribir, sin escribir nada: los valores leídos y validados (spec §7.4) y, en un reporte, el cálculo,
@@ -843,13 +1214,19 @@ type DatosDeReportar = { medicionId: number; valores: Record<string, string>; pa
  * resultado fuera de los límites del indicador no bloquea a quien no puede cambiar ese valor: se le pide confirmar lo suyo,
  * como un salto grande (`confirmado`); la división por cero sigue rechazando, porque «No aplica» es su salida. En un
  * histórico se digitan y se exigen todas (§3.6), y el límite bloquea. `valores` trae solo las letras que la persona digita.
+ *
+ * Una medición con lista de categorías se reporta por su rejilla (`planDeRejilla`, en `rejilla`); unas filas para una que no
+ * la tiene son otro formulario (`FICHA_CAMBIO`).
  */
 export async function planDeReporte(
   sql: Cliente,
   ctx: Contexto,
   d: DatosDeReportar,
-): Promise<{ valores: Record<string, Fraccion | null>; confirmar: string | null }> {
+): Promise<{ valores: Record<string, Fraccion | null>; confirmar: string | null; rejilla?: PlanDeRejilla }> {
   const { version, medicion: m } = ctx;
+  const lista = listaDe(m);
+  if (lista) return planDeRejilla(sql, ctx, d, lista);
+  if ((d.filas ?? []).length > 0) throw new ErrorIndicador(FICHA_CAMBIO);
   for (const letra of Object.keys(d.valores)) {
     if (!version.calculo.letras.includes(letra)) throw new ErrorIndicador(FICHA_CAMBIO);
   }
@@ -905,7 +1282,9 @@ export async function planDeReporte(
 /**
  * Deja los valores que la persona digita en la versión que rige (`variablesQueDigita`): quita los de otra versión y los
  * vaciados, inserta o cambia los demás. Nunca toca una fila de una variable ajena, ni de esta versión ni de otra (anexo 14C,
- * §3.1: cada escritor toca lo suyo); en un histórico, que se digita completo, sí las de otra versión.
+ * §3.1: cada escritor toca lo suyo); en un histórico, que se digita completo, sí las de otra versión. Una medición con lista
+ * de categorías no pasa por aquí (`planDeReporte` la manda a la rejilla): su fila sin categoría es el total, que escribe solo
+ * el sistema (`escribirTotal`).
  */
 async function escribirValores(
   tx: TransactionSql,
@@ -1008,6 +1387,58 @@ export async function escribirReporte(
   return { r, primera, detalle };
 }
 
+/**
+ * Las celdas y los «No aplica» de fila de una rejilla ya validada (`planDeRejilla`), con los candados tomados: la persona
+ * escribe solo las celdas que llegaron (`escribirCelda`) y la lista con sus «No aplica»; nunca el total. Devuelve las
+ * categorías que cambiaron, como las guarda el detalle (`detalleDeCategorias`).
+ */
+async function escribirCeldas(tx: TransactionSql, ctx: Contexto, plan: PlanDeRejilla, c: { usuarioId: number; ahora: Date }) {
+  const m = ctx.medicion;
+  for (const x of plan.cambios) await escribirCelda(tx, { id: m.id, indicadorId: ctx.indicador.id }, x.categoria.id, x.variable, x.despues, c);
+  if (plan.filas.length > 0) await tx`UPDATE mediciones SET categorias = ${tx.json(plan.lista as never)} WHERE id = ${m.id}`;
+  return detalleDeCategorias(listaDe(m) ?? [], plan.cambios, plan.filas);
+}
+
+/**
+ * Escribe el reporte de una rejilla ya validado (`planDeRejilla`, anexo 14C §5.4 y §5.5), con los candados tomados: las celdas
+ * que llegaron y los «No aplica» de fila; el total, que escribe el sistema sin usuario (`escribirTotal`) con la suma de las
+ * filas que aplican, o ninguno si espera un dato; la marca de reportada (quién y cuándo, la primera vez); y el «No aplica»
+ * de la medición: con todas las filas «No aplica», el del sistema (`MOTIVO_TODAS_NO_APLICAN`), y si no, ninguno (el
+ * siguiente reporte con una fila medida quita ese y el de una persona, como quita «no aplica» cualquier reporte). Después
+ * recalcula; el detalle del evento lleva el total a los dos lados y, en `categorias`, cada celda y cada «No aplica» de fila que
+ * cambió, aunque el total quede igual.
+ */
+async function escribirReporteDeRejilla(
+  tx: TransactionSql,
+  ctx: Contexto,
+  plan: PlanDeRejilla,
+  c: { usuarioId: number; ahora: Date },
+): Promise<ReporteEscrito & { faltaDato: boolean }> {
+  const { medicion: m, version } = ctx;
+  const t = plan.total!;
+  const guardados = await valoresPorLetra(tx, m.id, version);
+  const primera = !(await seReportoAlgunaVez(tx, m.id));
+  const categorias = await escribirCeldas(tx, ctx, plan, c);
+  const total = t.clase === "total" ? t.valores : null;
+  await escribirTotal(tx, m.id, version, total, guardados, c.ahora);
+  const ninguna = t.clase === "ninguna_aplica";
+  const motivo = ninguna ? MOTIVO_TODAS_NO_APLICAN : null;
+  await tx`UPDATE mediciones SET reportada_por = coalesce(reportada_por, ${c.usuarioId}), reportada_en = coalesce(reportada_en, ${c.ahora}),
+      no_aplica = ${ninguna}, no_aplica_motivo = ${motivo}
+    WHERE id = ${m.id}`;
+  const motivoAntes = m.no_aplica === true ? ((m.no_aplica_motivo as string | null) ?? null) : null;
+  const conMotivo = (v: string | null) => (motivoAntes !== motivo ? { motivo: v } : {});
+  const marca = (v: boolean) => (m.reportada_en === null && letrasAjenas(version.variables).length > 0 ? { reportada: v } : {});
+  const detalle = {
+    antes: { ...enTexto(version, guardados), noAplica: m.no_aplica === true, ...conMotivo(motivoAntes), ...marca(false) },
+    despues: { ...enTexto(version, total ?? {}), noAplica: ninguna, ...conMotivo(motivo), ...marca(true) },
+    ...(categorias.length > 0 ? { categorias } : {}),
+    ...(ctx.capacidad.sinMedidor ? { sinMedidor: true as const } : {}),
+  };
+  const r = await recalcularMedicion(tx, m.id, { ahora: c.ahora, actorId: c.usuarioId, evento: primera ? "reporte" : "correccion", detalle });
+  return { r, primera, detalle, faltaDato: t.clase === "espera" };
+}
+
 /** Un histórico no se reporta ni se guarda por aquí: entra por la tabla del año (spec §8.8). */
 function noHistorica(ctx: Contexto): Contexto {
   if (ctx.medicion.historica === true) throw new ErrorIndicador(ES_HISTORICO);
@@ -1021,6 +1452,10 @@ function noHistorica(ctx: Contexto): Contexto {
  * salto grande frente al periodo anterior con resultado no escribe y pide confirmación (`confirmado`). Un reporte deja el
  * evento `reporte` si la medición nunca se reportó y `correccion` si ya; lo mismo otra vez no deja nada. «Guardar sin
  * reportar» no calcula ni deja evento: solo los valores y su acción de bitácora (`medicion_guardada`).
+ *
+ * Una medición desagregada (con lista) se reporta por su rejilla, con las celdas, la lista y el total en esta misma
+ * transacción antes de recalcular (`escribirReporteDeRejilla`); su «Guardar sin reportar» escribe solo las celdas y los «No
+ * aplica» de fila que llegaron, también ya reportada, y su bitácora lleva las categorías que cambiaron.
  */
 export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones?: Opciones): Promise<ResultadoDeReporte> {
   if (!puede(sesion, "indicadores.medir")) throw new ErrorPermiso();
@@ -1035,6 +1470,28 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
     if (plan.confirmar) return { ok: false as const, confirmar: plan.confirmar };
     const { medicion: m, version } = ctx;
     const base = { codigo: ctx.indicador.codigo, indicadorId: ctx.indicador.id, periodo: m.periodo };
+    const sinMedidor = ctx.capacidad.sinMedidor ? { sinMedidor: true } : {};
+    const sinCambios = () => ({
+      ok: true as const,
+      estado: m.estado as EstadoMedicion,
+      semaforo: (m.semaforo as Semaforo | null) ?? null,
+      cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null | undefined) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null }),
+      // Sin reportar, lo que falta es lo propio, no el dato.
+      faltaDato: false,
+    });
+    if (d.parcial && plan.rejilla) {
+      const categorias = await escribirCeldas(tx, ctx, plan.rejilla, { usuarioId: sesion.usuarioId, ahora });
+      if (categorias.length > 0) {
+        await registrarAuditoria(tx, {
+          usuarioId: sesion.usuarioId,
+          accion: "medicion_guardada",
+          entidad: "medicion",
+          entidadId: m.id,
+          detalle: { ...base, categorias, ...sinMedidor },
+        });
+      }
+      return sinCambios();
+    }
     if (d.parcial) {
       const guardados = await valoresPorLetra(tx, m.id, version);
       const antes = enTexto(version, guardados);
@@ -1046,20 +1503,17 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
           accion: "medicion_guardada",
           entidad: "medicion",
           entidadId: m.id,
-          detalle: { ...base, antes, despues, ...(ctx.capacidad.sinMedidor ? { sinMedidor: true } : {}) },
+          detalle: { ...base, antes, despues, ...sinMedidor },
         });
       }
-      return {
-        ok: true as const,
-        estado: m.estado as EstadoMedicion,
-        semaforo: (m.semaforo as Semaforo | null) ?? null,
-        cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null | undefined) ?? null, semaforo: (m.semaforo as Semaforo | null) ?? null }),
-        // Sin reportar, lo que falta es lo propio, no el dato.
-        faltaDato: false,
-      };
+      return sinCambios();
     }
 
-    const { r, primera, detalle } = await escribirReporte(tx, ctx, plan.valores, { usuarioId: sesion.usuarioId, ahora, primerEvento: "reporte" });
+    const quien = { usuarioId: sesion.usuarioId, ahora };
+    const escrito: ReporteEscrito & { faltaDato?: boolean } = plan.rejilla
+      ? await escribirReporteDeRejilla(tx, ctx, plan.rejilla, quien)
+      : await escribirReporte(tx, ctx, plan.valores, { ...quien, primerEvento: "reporte" });
+    const { r, primera, detalle } = escrito;
     if (r.cambio) {
       const regla = reglaDeTexto(await reglaDelPeriodo(tx, ctx.indicador.id, m.periodo as string, version));
       await registrarAuditoria(tx, {
@@ -1076,7 +1530,9 @@ export async function reportar(sesion: SesionFlujo, d: DatosDeReportar, opciones
         },
       });
     }
-    const faltaDato = r.resultado === null && letrasAjenas(version.variables).length > 0 && faltanAjenas(version, await valoresPorLetra(tx, m.id, version));
+    const faltaDato =
+      escrito.faltaDato ??
+      (r.resultado === null && letrasAjenas(version.variables).length > 0 && faltanAjenas(version, await valoresPorLetra(tx, m.id, version)));
     return { ok: true as const, estado: r.estado, semaforo: r.despues, cumple: r.cumple, faltaDato };
   });
 }

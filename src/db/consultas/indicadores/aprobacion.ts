@@ -60,6 +60,7 @@ import {
   type FichaConOrigenes,
   type Toman,
 } from "./componentes";
+import { rehacerCategorias } from "./categorias";
 import { contenidoDeVersion } from "./fichas";
 import { asegurarMediciones, quitarMedicionesDeOtraPeriodicidad } from "./mediciones";
 import { alPublicarVersion, esCalculoRepetido, yaHayUnaActiva, type Publicado } from "./publicacion";
@@ -824,6 +825,8 @@ export async function aprobarFichas(
       });
       // Un cambio mayor de periodicidad deja vacías de la periodicidad vieja en su tramo: se quitan (las que tienen datos, no).
       const medicionesQuitadas = f.tipo === "mayor" ? await quitarMedicionesDeOtraPeriodicidad(tx, f.indicadorId, f.rigeDesde) : 0;
+      // Y si cambia la dimensión, las abiertas sin reportar de su tramo rehacen su lista y pierden las celdas de la anterior.
+      const categoriasRehechas = f.tipo === "mayor" ? await rehacerCategorias(tx, f.indicadorId, f.rigeDesde, ahora) : 0;
       if (f.tipo === "inicial") {
         await tx`UPDATE indicadores SET estado = 'activo' WHERE id = ${f.indicadorId} AND estado = 'borrador'`;
         // Al aprobarse la primera versión se abren de una vez los periodos históricos (spec §8.1).
@@ -874,6 +877,7 @@ export async function aprobarFichas(
           tipoCambio: f.tipo,
           rigeDesde: f.rigeDesde,
           ...(f.tipo === "mayor" ? { medicionesQuitadas } : {}),
+          ...(categoriasRehechas > 0 ? { categoriasRehechas } : {}),
           ...(inicioMovido ? { inicioMedicion: inicioMovido } : {}),
           ...rastroDePublicacion(publicado),
         },

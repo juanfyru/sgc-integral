@@ -61,9 +61,12 @@ import { laFuenteMueveElPlazo } from "@/lib/indicadores/propagacion";
 import { fichaDeCalculo, reglaDeTexto, valorEnTexto, type ReglaEnTexto } from "@/lib/indicadores/reporte";
 import { rachasDe } from "@/lib/indicadores/resultados";
 import type { Regla } from "@/lib/indicadores/semaforo";
+import type { CategoriaDeMedicion } from "@/lib/indicadores/categorias";
 import {
   MOTIVO_COMPONENTE_NO_APLICA,
+  MOTIVO_DATO_SIN_CATEGORIA,
   MOTIVO_NADA_QUE_MEDIR,
+  MOTIVO_TODAS_NO_APLICAN,
   type Consolidacion,
   type Periodicidad,
   type Semaforo,
@@ -74,26 +77,44 @@ import { aristasDeComponentes } from "./componentes";
 import {
   analisisDe,
   asegurarMediciones,
+  celdasDeFilas,
+  celdasPorCategoria,
   columnasDeValor,
+  detalleDeCategorias,
   elegirValores,
   esDeOtraPeriodicidad,
+  escribirCelda,
+  escribirTotal,
+  listaDe,
   mide,
+  mismoTotal,
   primeraAprobada,
   recalcularMedicion,
   texto,
+  totalDeRejilla,
   tramos,
   valoresPorLetra,
   versionesAprobadas,
   versionesAprobadasDe,
   versionesDeCalculo,
+  type CambioDeCelda,
+  type CambioDeFila,
+  type Recalculo,
   type ValorGuardado,
   type VersionDeCalculo,
 } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date; indicadorIds?: readonly number[] };
 
-/** El valor de un dato juntado para un periodo: listo, con los periodos del dato que se juntaron, o falta alguno. */
-export type ValorDeDato = { estado: "listo"; valor: Fraccion; periodos: number[] } | { estado: "falta" };
+/**
+ * El valor de un dato juntado para un periodo: listo, con los periodos del dato que se juntaron, o falta alguno. Por categoría,
+ * además, `sin_categoria`: todos los periodos del dato están reportados y ninguno la trae en su lista (anexo 14C, §5.7), con
+ * esos periodos.
+ */
+export type ValorDeDato =
+  | { estado: "listo"; valor: Fraccion; periodos: number[] }
+  | { estado: "falta" }
+  | { estado: "sin_categoria"; periodos: number[] };
 
 /**
  * Lo que tiene un componente para el periodo de un compuesto (anexo 14C, §6.3): listo, con las mediciones del componente
@@ -119,30 +140,50 @@ type DatoDelPeriodo = { datoId: number; consolidacion: Consolidacion; datoPeriod
 /** Los periodos con valor (`reportado` o `cerrado`) de los datos, sin candado: de todos sus periodos, para juntar. */
 async function filasDeDatos(sql: Cliente, datoIds: readonly number[]): Promise<readonly Row[]> {
   if (datoIds.length === 0) return [];
-  return sql`SELECT id, variable_id, periodo, valor, por_categoria FROM variable_valores
+  return sql`SELECT id, variable_id, periodo, valor, por_categoria, categorias FROM variable_valores
     WHERE variable_id IN ${sql([...new Set(datoIds)])} AND estado IN ('reportado', 'cerrado') AND valor IS NOT NULL`;
 }
 
+/** Un valor guardado en texto como fracción, o `null`. */
+const fr = (v: unknown): Fraccion | null => {
+  const t = texto(v);
+  return t === null ? null : fraccion(t);
+};
+
 /**
  * El dato juntado sobre los periodos que forman el de la medición (`clavesFinas`), con su regla (`juntadoONada`): falta si
- * alguno no tiene valor. Con `categoriaId`, el valor de esa categoría (`por_categoria`). `filas` son las de `filasDeDatos`.
+ * alguno no tiene valor. Con `categoriaId`, el valor de esa categoría (`por_categoria`), juntado solo con los periodos del dato
+ * cuya lista la trae (anexo 14C, §5.7): un periodo que no la traía no la vuelve «falta»; si ninguno la trae, `sin_categoria`.
+ * `filas` son las de `filasDeDatos`.
  */
 function juntarDato(filas: readonly Row[], d: DatoDelPeriodo): ValorDeDato {
   const claves = clavesFinas(d.periodo, d.datoPeriodicidad);
   const porClave = new Map(filas.filter((f) => Number(f.variable_id) === d.datoId).map((f) => [f.periodo as string, f]));
-  const valorDe = (f: Row | undefined): Fraccion | null => {
-    if (!f) return null;
-    const t = d.categoriaId === undefined ? texto(f.valor) : texto((f.por_categoria as Record<string, unknown> | null)?.[String(d.categoriaId)]);
-    return t === null ? null : fraccion(t);
-  };
-  const valor = juntadoONada(d.consolidacion, claves.map((c) => valorDe(porClave.get(c))));
-  return valor ? { estado: "listo", valor, periodos: claves.map((c) => Number(porClave.get(c)!.id)) } : { estado: "falta" };
+  if (d.categoriaId === undefined) {
+    const valor = juntadoONada(d.consolidacion, claves.map((c) => fr(porClave.get(c)?.valor)));
+    return valor ? { estado: "listo", valor, periodos: claves.map((c) => Number(porClave.get(c)!.id)) } : { estado: "falta" };
+  }
+  const valores: Fraccion[] = [];
+  const usados: number[] = [];
+  for (const clave of claves) {
+    const f = porClave.get(clave);
+    if (!f) return { estado: "falta" };
+    const lista = f.categorias as { id: unknown }[] | null;
+    if (Array.isArray(lista) && !lista.some((c) => Number(c.id) === d.categoriaId)) continue;
+    const valor = fr((f.por_categoria as Record<string, unknown> | null)?.[String(d.categoriaId)]);
+    if (!valor) return { estado: "falta" };
+    valores.push(valor);
+    usados.push(Number(f.id));
+  }
+  if (valores.length === 0) return { estado: "sin_categoria", periodos: claves.map((c) => Number(porClave.get(c)!.id)) };
+  const valor = juntadoONada(d.consolidacion, valores);
+  return valor ? { estado: "listo", valor, periodos: usados } : { estado: "falta" };
 }
 
 /**
  * El valor de un dato compartido para el periodo `periodo` de un indicador (anexo 14C, §4.5): los periodos del dato que lo
  * forman, juntados con su regla, solo si todos están reportados o cerrados con valor; si falta alguno, `falta`. Con
- * `categoriaId`, el de esa categoría. Lee sin candado.
+ * `categoriaId`, el de esa categoría con los periodos cuya lista la trae, o `sin_categoria` (§5.7). Lee sin candado.
  */
 export async function valorDeDato(sql: Cliente, d: DatoDelPeriodo): Promise<ValorDeDato> {
   return juntarDato(await filasDeDatos(sql, [d.datoId]), d);
@@ -424,6 +465,86 @@ function planear(m: Row, version: VersionDeCalculo, guardados: Readonly<Record<s
   return { cambios, valores, reportar, quitarReporte, noAplica, componente: noAplica?.motivo === MOTIVO_COMPONENTE_NO_APLICA ? sinAplicar!.fuenteId : null };
 }
 
+/** Lo que la propagación le cambia a una medición desagregada (`planearRejilla`). */
+type PlanDeRejilla = {
+  cambios: CambioDeCelda[];
+  filas: CambioDeFila[];
+  /** La lista con los «No aplica» de fila de después. */
+  lista: CategoriaDeMedicion[];
+  /** El total que queda (`null`: ninguno); sin valor, no se toca. */
+  total?: Record<string, Fraccion> | null;
+  /** La medición queda reportada por el sistema: nadie la mide y ya tiene todo (o ninguna fila aplica). */
+  reportar: boolean;
+  /** El «No aplica» del sistema de la medición que se pone (con su motivo) o se quita (`motivo: null`); `null` si no cambia. */
+  noAplica: { motivo: string | null } | null;
+};
+
+/**
+ * Lo que la propagación le cambia a una medición desagregada `m` (anexo 14C, §5.7), o `null` si nada; no consulta nada. Por
+ * cada categoría de su lista copia a su celda el valor de cada dato para esa categoría (`juntarDato` con `categoriaId`). Si,
+ * con todos los periodos del dato reportados, ninguno trae la categoría, la fila queda «No aplica» con
+ * `MOTIVO_DATO_SIN_CATEGORIA`; cuando el dato pasa a traerla, ese «No aplica» se quita. Nunca toca el «No aplica» que una
+ * persona puso en una fila. Después el total, como en un reporte, solo en una medición reportada o en una que no mide nadie:
+ * la suma de las filas que aplican (`totalDeRejilla`), ninguno si falta algo, y el «No aplica» del sistema de la medición
+ * (`MOTIVO_TODAS_NO_APLICAN` si ninguna fila aplica; `MOTIVO_NADA_QUE_MEDIR` si el total divide por cero), que se quita cuando
+ * deja de ser cierto; el de una persona no se toca. `celdas` y `guardado` son sus celdas y su total por letra de `version`.
+ */
+function planearRejilla(
+  m: Row,
+  version: VersionDeCalculo,
+  celdas: ReadonlyMap<number, Readonly<Record<string, Fraccion>>>,
+  guardado: Readonly<Record<string, Fraccion>>,
+  deDatos: readonly Row[],
+): PlanDeRejilla | null {
+  const lista = listaDe(m)!;
+  const nuevas = new Map([...celdas].map(([id, v]) => [id, { ...v }]));
+  const nueva = lista.map((c) => ({ ...c }));
+  const cambios: CambioDeCelda[] = [];
+  const filas: CambioDeFila[] = [];
+  for (const [k, c] of lista.entries()) {
+    const deLaFila = nuevas.get(c.id) ?? {};
+    let sinCategoria = false;
+    for (const v of version.variables) {
+      if (v.origen !== "compartida" || v.datoId === null || v.datoPeriodicidad === null) continue;
+      const r = juntarDato(deDatos, { datoId: v.datoId, consolidacion: v.consolidacion, datoPeriodicidad: v.datoPeriodicidad, periodo: m.periodo as string, categoriaId: c.id });
+      if (r.estado === "sin_categoria") sinCategoria = true;
+      const despues = r.estado === "listo" ? r.valor : null;
+      const antes = celdas.get(c.id)?.[v.letra] ?? null;
+      if (despues) deLaFila[v.letra] = despues;
+      else delete deLaFila[v.letra];
+      if (antes === null ? despues !== null : despues === null || comparar(antes, despues) !== 0) cambios.push({ categoria: c, variable: v, antes, despues });
+    }
+    nuevas.set(c.id, deLaFila);
+    if (c.noAplica !== null && c.noAplica !== MOTIVO_DATO_SIN_CATEGORIA) continue;
+    const debido = sinCategoria ? MOTIVO_DATO_SIN_CATEGORIA : null;
+    if (debido === c.noAplica) continue;
+    filas.push({ categoria: c, antes: c.noAplica, despues: debido });
+    nueva[k].noAplica = debido;
+  }
+
+  const plan: PlanDeRejilla = { cambios, filas, lista: nueva, reportar: false, noAplica: null };
+  const ficha = fichaDeCalculo(version.calculo);
+  const reportada = m.reportada_en !== null;
+  if (ficha && (reportada || !mide(version))) {
+    const t = totalDeRejilla(nueva, nuevas, version, ficha);
+    const total = t.clase === "total" ? t.valores : null;
+    if (total === null ? Object.keys(guardado).length > 0 : !mismoTotal(total, guardado)) plan.total = total;
+    const motivo = m.no_aplica === true ? ((m.no_aplica_motivo as string | null) ?? null) : null;
+    const delSistema = motivo === MOTIVO_TODAS_NO_APLICAN || motivo === MOTIVO_NADA_QUE_MEDIR ? motivo : null;
+    const dePersona = m.no_aplica === true && delSistema === null;
+    plan.reportar = !reportada && !dePersona && (t.clase === "total" || t.clase === "ninguna_aplica");
+    const debido =
+      t.clase === "ninguna_aplica"
+        ? MOTIVO_TODAS_NO_APLICAN
+        : total && calcular(ficha, total, reglaDeTexto(version.regla)).sinResultado === "division_por_cero"
+          ? MOTIVO_NADA_QUE_MEDIR
+          : null;
+    if (!dePersona && debido !== delSistema) plan.noAplica = { motivo: debido };
+  }
+  if (cambios.length === 0 && filas.length === 0 && plan.total === undefined && !plan.reportar && plan.noAplica === null) return null;
+  return plan;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Escribir
 // ─────────────────────────────────────────────────────────────────────────────
@@ -474,9 +595,33 @@ async function contagioATiempo(tx: TransactionSql, medicionId: number, venceEn: 
 }
 
 /**
+ * El `conElResultado` de una propagación: un cambio ajeno que deja a la medición `m` pidiendo el análisis con la fecha ya
+ * pasada no la deja vencida (anexo 14C, §3.4); ni el contagio que llegó a tiempo y, al quitarse, le devuelve el reporte a
+ * quien mide un mixto (`devuelveATiempo`): nadie amanece vencido por lo que cambió otro. Si el contagio llegó tarde, la fecha y
+ * las marcas de aviso no se tocan: ya debía su reporte. `noAplica` es el «No aplica» que le queda.
+ */
+function plazoPorLaFuente(tx: TransactionSql, i: Row, m: Row, c: { noAplica: boolean; devuelveATiempo: boolean; ahora: Date }) {
+  const semaforo = (m.semaforo as Semaforo | null) ?? null;
+  const pedia = pideAnalisis(
+    { semaforo, cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo }), repetido: m.incumplimiento_repetido === true, noAplica: m.no_aplica === true },
+    m,
+  );
+  return async (r: Recalculo): Promise<Record<string, unknown>> => {
+    const pide = pideAnalisis({ semaforo: r.despues, cumple: r.cumple, repetido: r.repetido, noAplica: c.noAplica }, m);
+    const plazo = { venceEn: new Date(m.vence_en as string), ahora: c.ahora, plazoDias: Number(i.plazo_reporte_dias), zona: zonaHoraria() };
+    const vence =
+      laFuenteMueveElPlazo({ pedia, pide, ...plazo }) ?? (c.devuelveATiempo ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
+    if (!vence) return {};
+    await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
+      WHERE id = ${Number(m.id)}`;
+    return { venceEn: vence.toISOString() };
+  };
+}
+
+/**
  * La propagación de una medición en su transacción, con los candados (el indicador `FOR SHARE` y la medición `FOR UPDATE`) y
  * todo releído bajo ellos (la fuente, sin candado): «valores», «no_aplica» (quedó en el «No aplica» del sistema) o `null` si
- * ya no le tocaba o nada difería.
+ * ya no le tocaba o nada difería. Una medición desagregada va por su rejilla (`propagarRejilla`).
  */
 async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): Promise<"valores" | "no_aplica" | null> {
   const [i] = await tx`SELECT id, estado, plazo_reporte_dias FROM indicadores
@@ -488,6 +633,7 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
   const indicadorId = Number(i.id);
   const version = versionQuePropaga(m, await versionesAprobadas(tx, indicadorId), zona);
   if (!version) return null;
+  if (listaDe(m)) return propagarRejilla(tx, i, m, version, ahora);
   const guardados = await valoresPorLetra(tx, medicionId, version);
   const plan = planear(m, version, guardados, await ajenosDe(tx, version, m, await filasDeDatos(tx, datosDe(version))));
   if (!plan) return null;
@@ -502,11 +648,6 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
   // El contagio que se quita le devuelve a quien mide un mixto el reporte: si había llegado a tiempo, no le debía nada.
   const devuelveATiempo = plan.quitarReporte && mide(version) && (await contagioATiempo(tx, medicionId, new Date(m.vence_en as string)));
   const marca = (no: boolean, motivo: unknown) => (plan.noAplica ? { noAplica: no, motivo: (motivo as string | null) ?? null } : {});
-  const semaforo = (m.semaforo as Semaforo | null) ?? null;
-  const pedia = pideAnalisis(
-    { semaforo, cumple: cumpleDeFila({ cumple: (m.cumple as boolean | null) ?? null, semaforo }), repetido: m.incumplimiento_repetido === true, noAplica: m.no_aplica === true },
-    m,
-  );
   await recalcularMedicion(tx, medicionId, {
     ahora,
     actorId: null,
@@ -525,19 +666,51 @@ async function propagarEn(tx: TransactionSql, medicionId: number, ahora: Date): 
       antes: { ...enTexto(version, guardados), ...marca(m.no_aplica === true, m.no_aplica_motivo) },
       despues: { ...enTexto(version, plan.valores), ...marca(noAplica, plan.noAplica?.motivo) },
     },
-    // Un cambio ajeno que la deja pidiendo el análisis con la fecha ya pasada no la deja vencida (anexo 14C, §3.4); ni el
-    // contagio que llegó a tiempo y, al quitarse, le devuelve el reporte a quien mide un mixto: nadie amanece vencido por lo
-    // que cambió otro. Si el contagio llegó tarde, la fecha y las marcas de aviso no se tocan: ya debía su reporte.
-    conElResultado: async (r) => {
-      const pide = pideAnalisis({ semaforo: r.despues, cumple: r.cumple, repetido: r.repetido, noAplica }, m);
-      const plazo = { venceEn: new Date(m.vence_en as string), ahora, plazoDias: Number(i.plazo_reporte_dias), zona };
-      const vence =
-        laFuenteMueveElPlazo({ pedia, pide, ...plazo }) ?? (devuelveATiempo ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
-      if (!vence) return {};
-      await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
-        WHERE id = ${medicionId}`;
-      return { venceEn: vence.toISOString() };
+    conElResultado: plazoPorLaFuente(tx, i, m, { noAplica, devuelveATiempo, ahora }),
+  });
+  return plan.noAplica?.motivo ? "no_aplica" : "valores";
+}
+
+/**
+ * La propagación de una medición desagregada (`planearRejilla`), con los candados ya tomados: las celdas de los datos por
+ * categoría, sin usuario (`escribirCelda`); la lista con los «No aplica» de fila; el total, que escribe el sistema
+ * (`escribirTotal`); el reporte del sistema y su «No aplica»; y el cálculo único con el evento `propagacion`, sin usuario, que
+ * lleva en `fuentes` el total de cada dato que cambió y en `categorias` cada celda y cada «No aplica» de fila que cambió.
+ */
+async function propagarRejilla(tx: TransactionSql, i: Row, m: Row, version: VersionDeCalculo, ahora: Date): Promise<"valores" | "no_aplica" | null> {
+  const medicionId = Number(m.id);
+  const guardados = await valoresPorLetra(tx, medicionId, version);
+  const celdas = await celdasPorCategoria(tx, medicionId, version);
+  const plan = planearRejilla(m, version, celdas, guardados, await filasDeDatos(tx, datosDe(version)));
+  if (!plan) return null;
+  for (const c of plan.cambios) {
+    await escribirCelda(tx, { id: medicionId, indicadorId: Number(i.id) }, c.categoria.id, c.variable, c.despues, { usuarioId: null, ahora });
+  }
+  if (plan.filas.length > 0) await tx`UPDATE mediciones SET categorias = ${tx.json(plan.lista as never)} WHERE id = ${medicionId}`;
+  if (plan.total !== undefined) await escribirTotal(tx, medicionId, version, plan.total, guardados, ahora);
+  if (plan.reportar) await tx`UPDATE mediciones SET reportada_en = ${ahora}, reportada_por = NULL WHERE id = ${medicionId}`;
+  if (plan.noAplica) {
+    await tx`UPDATE mediciones SET no_aplica = ${plan.noAplica.motivo !== null}, no_aplica_motivo = ${plan.noAplica.motivo} WHERE id = ${medicionId}`;
+  }
+  const noAplica = plan.noAplica ? plan.noAplica.motivo !== null : m.no_aplica === true;
+  const total = plan.total === undefined ? guardados : (plan.total ?? {});
+  const marca = (no: boolean, motivo: unknown) => (plan.noAplica ? { noAplica: no, motivo: (motivo as string | null) ?? null } : {});
+  const enTotal = (valores: Readonly<Record<string, Fraccion>>, letra: string) => (valores[letra] ? valorEnTexto(valores[letra]) : null);
+  const categorias = detalleDeCategorias(listaDe(m)!, plan.cambios, plan.filas);
+  await recalcularMedicion(tx, medicionId, {
+    ahora,
+    actorId: null,
+    evento: "propagacion",
+    sistema: "fuente",
+    detalle: {
+      fuentes: version.variables
+        .filter((v) => v.origen === "compartida" && enTotal(guardados, v.letra) !== enTotal(total, v.letra))
+        .map((v) => ({ letra: v.letra, clase: "dato", id: v.datoId, antes: enTotal(guardados, v.letra), despues: enTotal(total, v.letra) })),
+      ...(categorias.length > 0 ? { categorias } : {}),
+      antes: { ...enTexto(version, guardados), ...marca(m.no_aplica === true, m.no_aplica_motivo) },
+      despues: { ...enTexto(version, total), ...marca(noAplica, plan.noAplica?.motivo) },
     },
+    conElResultado: plazoPorLaFuente(tx, i, m, { noAplica, devuelveATiempo: false, ahora }),
   });
   return plan.noAplica?.motivo ? "no_aplica" : "valores";
 }
@@ -590,9 +763,9 @@ async function porNivelDeDependencia(
 async function conTrabajo(sql: Cliente, candidatas: readonly Candidata[]): Promise<number[]> {
   if (candidatas.length === 0) return [];
   const [guardados, deDatos] = await Promise.all([
-    sql`SELECT mv.medicion_id, ${columnasDeValor(sql)}
+    sql`SELECT mv.medicion_id, mv.categoria_id, ${columnasDeValor(sql)}
       FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
-      WHERE mv.medicion_id IN ${sql(candidatas.map((x) => Number(x.m.id)))} AND mv.categoria_id IS NULL AND mv.valor IS NOT NULL`,
+      WHERE mv.medicion_id IN ${sql(candidatas.map((x) => Number(x.m.id)))} AND mv.valor IS NOT NULL`,
     filasDeDatos(sql, candidatas.flatMap((x) => datosDe(x.version))),
   ]);
   const porMedicion = new Map<number, Row[]>();
@@ -601,8 +774,13 @@ async function conTrabajo(sql: Cliente, candidatas: readonly Candidata[]): Promi
   for (const { m, version } of candidatas) {
     const id = Number(m.id);
     try {
-      const valores = elegirValores((porMedicion.get(id) ?? []) as unknown as ValorGuardado[], version);
-      if (planear(m, version, valores, await ajenosDe(sql, version, m, deDatos))) ids.push(id);
+      const filas = (porMedicion.get(id) ?? []) as unknown as (ValorGuardado & { categoria_id: unknown })[];
+      // El total (o los valores de una sin desagregar) es la fila sin categoría; las celdas de una desagregada, las demás.
+      const valores = elegirValores(filas.filter((f) => f.categoria_id === null), version);
+      const plan = listaDe(m)
+        ? planearRejilla(m, version, celdasDeFilas(filas, version), valores, deDatos)
+        : planear(m, version, valores, await ajenosDe(sql, version, m, deDatos));
+      if (plan) ids.push(id);
     } catch {
       ids.push(id);
     }

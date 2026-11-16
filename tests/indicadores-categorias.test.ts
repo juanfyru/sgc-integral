@@ -58,6 +58,32 @@ describe("categorías de una desagregación", () => {
   it("con todas en No aplica, ninguna aplica", () => {
     expect(totalDeCategorias([{ categoria: cat(1, "a", "x"), valores: {} }], calculo())).toEqual({ clase: "ninguna_aplica" });
   });
+  it("una lista vacía no deja la medición «No aplica»: faltan categorías, sin nombres", () => {
+    expect(totalDeCategorias([], calculo())).toEqual({ clase: "faltan", categorias: [] });
+  });
+  it("una fila cuya cuenta se sale de rango está completa, sin resultado, y suma al total (anexo §5.5)", () => {
+    const a = analizar("A * A * A * A * A * A * A * A * A * A * A * A * A * A / B");
+    if (!a.ok) throw new Error();
+    const grande: FichaDeCalculo = { arbol: a.arbol, letras: ["A", "B"], resultadoMin: null, resultadoMax: null };
+    const enorme = vals("999999999999999", "1");
+    expect(estadoDeFila(cat(1, "x"), enorme, grande)).toBe("completa");
+    expect(resultadoDeCategoria(enorme, grande, regla)).toEqual({ resultado: null, semaforo: null, cumple: null });
+    const t = totalDeCategorias([{ categoria: cat(1, "x"), valores: enorme }, { categoria: cat(2, "y"), valores: vals("1", "2") }], grande);
+    expect(t.clase).toBe("total");
+    if (t.clase === "total") expect(comparar(t.valores.B, f("3"))).toBe(0);
+  });
+  it("con el mismo orden, la lista del periodo desempata por id", () => {
+    const d = (s: string) => new Date(s);
+    const viejo = d("2025-01-10T12:00:00Z");
+    const maestro = [
+      { id: 9, nombre: "Nueve", orden: 1, activo: true, creadoEn: viejo, desactivadaEn: null },
+      { id: 3, nombre: "Tres", orden: 1, activo: true, creadoEn: viejo, desactivadaEn: null },
+      { id: 5, nombre: "Cinco", orden: 0, activo: true, creadoEn: viejo, desactivadaEn: null },
+    ];
+    const periodo = { desde: d("2026-01-01T05:00:00Z"), hasta: d("2026-02-01T04:59:59Z") };
+    expect(listaDelPeriodo(maestro, periodo).map((c) => c.id)).toEqual([5, 3, 9]);
+    expect(listaDelPeriodo([...maestro].reverse(), periodo).map((c) => c.id)).toEqual([5, 3, 9]);
+  });
   it("el resultado de una categoría usa calcular", () => {
     const r = resultadoDeCategoria(vals("182", "200"), calculo(), regla);
     expect(r.semaforo).toBe("bien");

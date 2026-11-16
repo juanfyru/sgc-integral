@@ -1016,6 +1016,11 @@ export function describirEvento(e: EventoAuditoria): string {
     }
     case "medicion_no_aplica":
       return `Marcó «No aplica» en ${medicionDe(cod, d.periodo)}${conMotivo(d.motivo)}`;
+    // ── Indicadores (14C): la lista de categorías de una medición desagregada
+    case "medicion_categorias_actualizadas": {
+      const agregadas = Array.isArray(d.agregadas) ? d.agregadas.filter((n): n is string => typeof n === "string") : [];
+      return `Actualizó las categorías de ${medicionDe(cod, d.periodo)}${agregadas.length > 0 ? `: añadió ${agregadas.join(", ")}` : ""}`;
+    }
     case "medicion_analizada":
       return `${d.primera === false ? "Editó" : "Escribió"} el análisis de ${medicionDe(cod, d.periodo)}${d.sinMedidor === true ? " (sin nadie más que pudiera analizarlo)" : ""}`;
     case "medicion_soporte_quitado":
@@ -1303,6 +1308,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   medicion_corregida: "Corrigió una medición de indicador",
   medicion_no_aplica: "Marcó «No aplica» en una medición de indicador",
   medicion_guardada: "Guardó sin reportar una medición de indicador",
+  medicion_categorias_actualizadas: "Actualizó las categorías de una medición de indicador",
   medicion_analizada: "Escribió o editó el análisis de una medición de indicador",
   medicion_soporte_quitado: "Quitó un soporte de una medición de indicador",
   medicion_observada: "Dejó una observación en una medición de indicador",

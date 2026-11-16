@@ -8,6 +8,7 @@ import { idNumerico, mutacion, valoresDeFormulario, type EstadoAccion, type Esta
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
+import { actualizarCategorias } from "@/db/consultas/indicadores/categorias";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { corregirConstancia, quitarSoporteDeConstancia, registrarConstancia } from "@/db/consultas/indicadores/constancias";
 import { reportarDato } from "@/db/consultas/indicadores/datos-periodos";
@@ -249,13 +250,14 @@ export async function descartarIndicadorAccion(_prev: EstadoAccion, formData: Fo
  */
 export async function reportarAccion(_prev: EstadoReporte, formData: FormData): Promise<EstadoReporte> {
   // `mutacion` solo devuelve un destino: lo demás que dice `reportar` sale por aquí.
-  const dicho: { confirmar: string | null; parcial: boolean } = { confirmar: null, parcial: false };
+  const dicho: { confirmar: string | null; parcial: boolean; reportada: boolean } = { confirmar: null, parcial: false, reportada: false };
   const estado = await mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(juntarValoresDeReporte(formData), EsquemaReporte, { omitir: ["id", "volver", "periodo"] });
     dicho.parcial = d.intencion === "parcial";
     const r = await reportar(sesion, {
       medicionId: idNumerico(formData, "id"),
       valores: d.valores,
+      ...(d.filas ? { filas: d.filas } : {}),
       parcial: dicho.parcial,
       confirmado: d.confirmado,
     });
@@ -263,13 +265,17 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
       dicho.confirmar = r.confirmar;
       return;
     }
+    // Un desagregado ya reportado también guarda sin reportar (anexo 14C, §5.4): su total queda hasta el siguiente reporte.
+    dicho.reportada = r.estado === "reportada";
     if (dicho.parcial) return;
     await propagarSinFallar();
     // Si el periodo quedó pidiendo su análisis, la página a la que se vuelve lleva el foco a él (Tarea 19, D-12).
     return destinoTrasReportar(rutaInterna(formData.get("volver"), "/indicadores"), String(formData.get("periodo") ?? ""), r);
   });
   if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
-  if (estado === null && dicho.parcial) return { ok: true, aviso: "Se guardó sin reportar: la medición sigue abierta." };
+  if (estado === null && dicho.parcial) {
+    return { ok: true, aviso: dicho.reportada ? "Se guardó sin reportar: el total cambia cuando vuelva a reportar." : "Se guardó sin reportar: la medición sigue abierta." };
+  }
   return estado;
 }
 
@@ -300,6 +306,25 @@ export async function reportarDatoCompartido(_prev: EstadoReporte, formData: For
   if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
   if (estado === null) return { ok: true, aviso: dicho.corregido ? "Se corrigió el dato." : "Se reportó el dato." };
   return estado;
+}
+
+/**
+ * `id` es el de la medición desagregada (anexo 14C, §5.3). Añade a su lista las categorías activas que no estaban, si sigue
+ * abierta sin reportar; no navega: la pantalla se repinta y el aviso dice cuántas añadió.
+ */
+export async function actualizarCategoriasDeMedicion(_prev: EstadoConAviso, formData: FormData): Promise<EstadoConAviso> {
+  let agregadas = 0;
+  const estado = await mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
+    parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
+    ({ agregadas } = await actualizarCategorias(sesion, idNumerico(formData, "id")));
+    // Una categoría nueva toma en seguida lo que un dato compartido por categoría ya trae para ella.
+    if (agregadas > 0) await propagarSinFallar();
+  });
+  if (estado) return estado;
+  return {
+    ok: true,
+    aviso: agregadas === 0 ? "No hay categorías nuevas que añadir." : `Se ${agregadas === 1 ? "añadió 1 categoría" : `añadieron ${agregadas} categorías`}.`,
+  };
 }
 
 /** `id` es el de la medición. Pide el motivo y lleva a `volver`. */

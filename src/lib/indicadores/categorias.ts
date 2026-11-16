@@ -9,14 +9,17 @@ import type { Forma, Semaforo } from "./tipos";
 
 export type CategoriaDeMedicion = { id: number; nombre: string; orden: number; noAplica: string | null };
 
-/** Las categorías que cuentan en un periodo: creadas antes de que termine y activas o desactivadas después de que empezó. */
+/**
+ * Las categorías que cuentan en un periodo: creadas antes de que termine y activas o desactivadas después de que empezó, en
+ * el orden del maestro (y por id con el mismo orden).
+ */
 export function listaDelPeriodo(
   maestro: readonly { id: number; nombre: string; orden: number; activo: boolean; creadoEn: Date; desactivadaEn: Date | null }[],
   periodo: { desde: Date; hasta: Date },
 ): CategoriaDeMedicion[] {
   return maestro
     .filter((c) => c.creadoEn.getTime() < periodo.hasta.getTime() && (c.activo || (c.desactivadaEn !== null && c.desactivadaEn.getTime() > periodo.desde.getTime())))
-    .sort((a, b) => a.orden - b.orden)
+    .sort((a, b) => a.orden - b.orden || a.id - b.id)
     .map((c) => ({ id: c.id, nombre: c.nombre, orden: c.orden, noAplica: null }));
 }
 
@@ -25,6 +28,11 @@ export type EstadoDeFila = "completa" | "sin_casos" | "no_aplica" | "incompleta"
 /** Sin meta: solo importa si la fórmula se puede calcular. */
 const SIN_REGLA: Regla = { tendencia: "ascendente", meta: null, metaMax: null, modo: null, umbralPct: null, limite: null, tolerancia: null };
 
+/**
+ * Una fila con todos sus valores está completa aunque su fórmula no dé resultado por una cifra intermedia fuera de rango: sus
+ * valores son válidos y suman al total (anexo 14C, §5.5); solo le falta la cifra propia. «Sin casos» es solo la división por
+ * cero.
+ */
 export function estadoDeFila(c: CategoriaDeMedicion, valores: Readonly<Record<string, Fraccion>>, calculo: FichaDeCalculo): EstadoDeFila {
   if (c.noAplica !== null) return "no_aplica";
   const r = calcular(calculo, valores, SIN_REGLA);
@@ -34,12 +42,14 @@ export function estadoDeFila(c: CategoriaDeMedicion, valores: Readonly<Record<st
 
 /**
  * El total de las categorías: la suma de cada letra en las que aplican (una sin casos suma sus ceros). Con alguna
- * incompleta dice cuáles faltan; si todas son «No aplica» (o no hay ninguna), ninguna aplica.
+ * incompleta dice cuáles faltan; si todas son «No aplica», ninguna aplica. Una lista vacía no es «ninguna aplica» (dejaría la
+ * medición «No aplica» sin que nadie lo decidiera): faltan categorías, sin nombres.
  */
 export function totalDeCategorias(
   filas: readonly { categoria: CategoriaDeMedicion; valores: Readonly<Record<string, Fraccion>> }[],
   calculo: FichaDeCalculo,
 ): { clase: "total"; valores: Record<string, Fraccion> } | { clase: "faltan"; categorias: string[] } | { clase: "ninguna_aplica" } {
+  if (filas.length === 0) return { clase: "faltan", categorias: [] };
   const conEstado = filas.map((f) => ({ ...f, estado: estadoDeFila(f.categoria, f.valores, calculo) }));
   const faltan = conEstado.filter((f) => f.estado === "incompleta").map((f) => f.categoria.nombre);
   if (faltan.length > 0) return { clase: "faltan", categorias: faltan };

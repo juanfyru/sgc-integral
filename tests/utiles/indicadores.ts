@@ -440,13 +440,16 @@ export async function versionNueva(
     periodicidad?: Periodicidad;
     formula?: string;
     variables?: Partial<Record<"A" | "B", { nombre?: string; datoId?: number; indicadorOrigenId?: number; toma?: Toma }>>;
+    /** La dimensión por la que se desagrega, con su nombre de hoy (anexo 14C, §5.2); sin valor, ninguna. */
+    dimensionId?: number;
   },
 ): Promise<{ versionId: number; variables: { A: number; B: number } }> {
   const [{ numero }] = await tx`SELECT coalesce(max(numero), 0) + 1 AS numero FROM indicador_versiones WHERE indicador_id = ${d.indicadorId}`;
   const [v] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
-      tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+      tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, dimension_id, dimension_nombre, creado_por)
     VALUES (${d.indicadorId}, ${numero}, 'borrador', ${d.tipoCambio}, ${`Versión ${numero}`}, 'porcentaje', ${d.formula ?? "A / B * 100"},
-      ${d.periodicidad ?? "mensual"}, 'ascendente', 90, 'relativo', 70, ' %', 1, ${d.usuarioId}) RETURNING id`;
+      ${d.periodicidad ?? "mensual"}, 'ascendente', 90, 'relativo', 70, ' %', 1, ${d.dimensionId ?? null},
+      (SELECT nombre FROM dimensiones WHERE id = ${d.dimensionId ?? null}), ${d.usuarioId}) RETURNING id`;
   const versionId = Number(v.id);
   await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
   const variables: Record<"A" | "B", number> = { A: 0, B: 0 };

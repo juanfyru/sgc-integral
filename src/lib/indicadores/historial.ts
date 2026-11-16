@@ -52,7 +52,9 @@ const MOTIVO_DE_RECALCULO: Readonly<Record<string, string>> = {
  * «El sistema actualizó «Total facturado»: de 1284300000 a 40000000»: lo que cambió de cada fuente de la propagación
  * (`detalle.fuentes`, anexo 14C §3.3), con el nombre de su variable; varias, separadas por «;». Si el evento pone o quita el
  * «No aplica» del sistema (nada que medir, §3.4, o el contagio de un componente, §6.3), «El sistema marcó «No aplica»» o «El
- * sistema quitó «No aplica»»: su motivo y los valores van en los cambios. Sin fuentes, «El sistema actualizó un valor».
+ * sistema quitó «No aplica»»: su motivo y los valores van en los cambios. Sin fuentes, «El sistema actualizó los valores por
+ * categoría» si cambiaron celdas de un desagregado (anexo 14C, §5.7: van en los cambios), y si no, «El sistema actualizó un
+ * valor».
  */
 function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>): string {
   const antes = objeto(e.detalle.antes);
@@ -61,7 +63,7 @@ function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, stri
     return despues.noAplica ? "El sistema marcó «No aplica»" : "El sistema quitó «No aplica»";
   }
   const fuentes = Array.isArray(e.detalle.fuentes) ? e.detalle.fuentes.map(objeto) : [];
-  if (fuentes.length === 0) return "El sistema actualizó un valor";
+  if (fuentes.length === 0) return categoriasDe(e).length > 0 ? "El sistema actualizó los valores por categoría" : "El sistema actualizó un valor";
   const cada = fuentes.map((f) => {
     const letra = String(f.letra);
     return `«${nombres[letra] ?? letra}»: de ${numero(f.antes, null) ?? "—"} a ${numero(f.despues, null) ?? "—"}`;
@@ -99,19 +101,58 @@ function queHizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>)
       return e.detalle.recalculo === true ? "Se volvió a calcular" : "El sistema tomó la foto";
     case "propagacion":
       return queActualizo(e, nombres);
-    case "categorias":
-      return "Actualizó las categorías";
+    case "categorias": {
+      // El sistema la rehace cuando un cambio mayor cambia la dimensión; quien administra le añade las que faltaban.
+      if (e.detalle.causa === "dimension") return "El sistema rehízo las categorías por el cambio de desagregación";
+      const agregadas = (Array.isArray(e.detalle.agregadas) ? e.detalle.agregadas : []).map((c) => texto(objeto(c).nombre)).filter((n) => n !== null);
+      if (agregadas.length === 0) return "Actualizó las categorías";
+      return `Añadió ${agregadas.length === 1 ? "1 categoría" : `${agregadas.length} categorías`}: ${agregadas.join(", ")}`;
+    }
   }
 }
 
-/** Qué había y qué quedó: las variables (por su nombre), «no aplica», el resultado, el semáforo, el estado, la marca de incumplimiento repetido, el análisis y la meta. */
+/** Las categorías que cambiaron en un reporte, una corrección o una propagación (`detalle.categorias`, anexo 14C §5.4). */
+const categoriasDe = (e: EventoDeMedicion) => (Array.isArray(e.detalle.categorias) ? e.detalle.categorias.map(objeto) : []);
+
+/**
+ * «Sede principal · Pacientes auditados: 182 → 183» por cada celda que cambió y «Puesto de salud 5 · No aplica: No →
+ * «Cerrado por obras»» por cada «No aplica» de fila; en el evento que rehízo la lista, «Categorías: … → …».
+ */
+function cambiosDeCategorias(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>): string[] {
+  if (e.tipo === "categorias" && e.detalle.causa === "dimension") {
+    const lista = (v: unknown) => (Array.isArray(v) && v.length > 0 ? v.map(String).join(", ") : "ninguna");
+    return [`Categorías: ${lista(e.detalle.antes)} → ${lista(e.detalle.despues)}`];
+  }
+  const salida: string[] = [];
+  for (const c of categoriasDe(e)) {
+    const nombre = texto(c.nombre) ?? "Una categoría";
+    const antes = objeto(c.antes);
+    const despues = objeto(c.despues);
+    for (const l of [...new Set([...Object.keys(antes), ...Object.keys(despues)])].filter((k) => /^[A-Z]$/.test(k)).sort()) {
+      if (distinto(antes[l], despues[l])) salida.push(`${nombre} · ${nombres[l] ?? l}: ${numero(antes[l], null) ?? "—"} → ${numero(despues[l], null) ?? "—"}`);
+    }
+    if (distinto(antes.noAplica, despues.noAplica)) {
+      const motivo = (v: unknown) => (texto(v) ? `«${texto(v)}»` : "No");
+      salida.push(`${nombre} · No aplica: ${motivo(antes.noAplica)} → ${motivo(despues.noAplica)}`);
+    }
+  }
+  return salida;
+}
+
+/**
+ * Qué había y qué quedó: las variables (por su nombre), las celdas y los «No aplica» de fila de un desagregado, «no aplica», el
+ * resultado, el semáforo, el estado, la marca de incumplimiento repetido, el análisis y la meta.
+ */
 function cambiosDe(e: EventoDeMedicion, unidad: Unidad, nombres: Readonly<Record<string, string>>): string[] {
   const antes = objeto(e.detalle.antes);
   const despues = objeto(e.detalle.despues);
   const salida: string[] = [];
   const cambio = (etiqueta: string, a: string | null, b: string | null, vacio: string) => salida.push(`${etiqueta}: ${a ?? vacio} → ${b ?? vacio}`);
+  // El evento que rehízo la lista guarda en `antes` y `despues` los nombres de las categorías, no valores.
+  if (e.tipo === "categorias") return cambiosDeCategorias(e, nombres);
   const letras = [...new Set([...Object.keys(antes), ...Object.keys(despues)])].filter((k) => /^[A-Z]$/.test(k)).sort();
   for (const l of letras) if (distinto(antes[l], despues[l])) cambio(nombres[l] ?? l, numero(antes[l], null), numero(despues[l], null), "—");
+  salida.push(...cambiosDeCategorias(e, nombres));
   if (distinto(antes.noAplica, despues.noAplica)) {
     cambio("No aplica", antes.noAplica === true ? "Sí" : "No", despues.noAplica === true ? "Sí" : "No", "No");
   }

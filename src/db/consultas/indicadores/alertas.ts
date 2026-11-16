@@ -5,11 +5,14 @@
  * reapertura) no vuelve a avisar.
  *
  * Nivel de alerta: `critico` con un resultado crítico o con incumplimiento repetido (el color no cambia: lo dice el
- * texto), `atencion` con uno en atención o en bien que no alcanza la meta (spec 14A §3.1) y ninguno en lo demás (bien, sin meta, «no aplica»). Si el nivel cambió y nada se
+ * texto), `atencion` con uno en atención o en bien que no alcanza la meta (spec 14A §3.1), `bien_con_critico` con el total
+ * de un desagregado en Bien, cumpliendo, y alguna categoría en Crítico (anexo 14C §5.6, F14C-DC39: un aviso informativo, que
+ * no exige análisis), y ninguno en lo demás (bien, sin meta, «no aplica»). Si el nivel cambió y nada se
  * había alertado, es una alerta (`indicadores.alerta`); si ya se había alertado, una corrección (`indicadores.correccion`)
- * a los destinatarios del nivel anterior y del nuevo. «Atención» va a quienes analizan y a quienes hacen seguimiento;
- * «Crítico», además, a los líderes del proceso y a los Admin SGC. Nunca a quien hizo el cambio. Un histórico no alerta ni
- * guarda nada (spec §8.8).
+ * a los destinatarios del nivel anterior y del nuevo. «Atención» y una categoría en Crítico van a quienes analizan y a quienes
+ * hacen seguimiento; «Crítico», además, a los líderes del proceso y a los Admin SGC. Nunca a quien hizo el cambio. Las
+ * categorías en Crítico se nombran en el aviso; quienes lo reciben ya ven el indicador. Un histórico no alerta ni guarda
+ * nada (spec §8.8).
  *
  * Los textos salen del cálculo y de la medición, nunca del detalle de un evento: ningún aviso lleva contenido de un
  * soporte (spec §10.4 y §21). Sin fila en `auditoria`: el rastro es el evento de quien hizo el cambio.
@@ -23,19 +26,39 @@ import { responsablesDeAnalizar } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import { reglaDeTexto } from "@/lib/indicadores/reporte";
-import { fraseDeResultado, resultadoFrenteAMeta } from "@/lib/indicadores/textos";
+import { fraseDeResultado, resultadoFrenteAMeta, textoValor } from "@/lib/indicadores/textos";
 import { ETIQUETA_SEMAFORO, type ModoSemaforo, type Semaforo, type Tendencia } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { obtenerParametros } from "./maestros";
 import { conMayuscula, texto, type Recalculo } from "./mediciones";
 
-type Nivel = "atencion" | "critico";
+type Nivel = "atencion" | "critico" | "bien_con_critico";
 
-/** El nivel de alerta del resultado: el incumplimiento repetido se alerta como crítico (spec §10.3). */
+/**
+ * El nivel de alerta del resultado: el incumplimiento repetido se alerta como crítico (spec §10.3); un total en Bien que cumple
+ * con alguna categoría en Crítico, `bien_con_critico` (anexo 14C, §5.6).
+ */
 const nivelDe = (r: Recalculo): Nivel | null =>
-  r.despues === "critico" || r.repetido ? "critico" : r.despues === "atencion" || (r.despues === "bien" && r.cumple === false) ? "atencion" : null;
+  r.despues === "critico" || r.repetido
+    ? "critico"
+    : r.despues === "atencion" || (r.despues === "bien" && r.cumple === false)
+      ? "atencion"
+      : r.despues === "bien" && (r.enCritico ?? 0) > 0
+        ? "bien_con_critico"
+        : null;
 
-/** Quienes reciben el nivel: los que analizan y hacen seguimiento; en crítico, además, los líderes del proceso y los Admin SGC. */
+/** «Bien con 1 categoría en Crítico», «Bien con 2 categorías en Crítico»; sin la cuenta, «Bien con categorías en Crítico». */
+const bienConCritico = (n: number | null) =>
+  n !== null && n > 0 ? `Bien con ${n} ${n === 1 ? "categoría" : "categorías"} en Crítico` : "Bien con categorías en Crítico";
+
+/** « En Crítico: Puesto de salud 3 (55 %).», con cada categoría en Crítico y su cifra; nada si no hay ninguna. */
+const enCriticoEnPalabras = (r: Recalculo) =>
+  r.criticas.length === 0 ? "" : ` En Crítico: ${r.criticas.map((c) => `${c.nombre} (${c.resultado})`).join(", ")}.`;
+
+/**
+ * Quienes reciben el nivel: los que analizan y hacen seguimiento (también con una categoría en Crítico); en crítico, además, los
+ * líderes del proceso y los Admin SGC.
+ */
 async function destinatarios(tx: TransactionSql, m: { indicadorId: number; procesoId: number }, nivel: Nivel | null): Promise<number[]> {
   if (nivel === null) return [];
   const siguen = await tx`SELECT DISTINCT d.usuario_id FROM indicador_designados d JOIN usuarios u ON u.id = d.usuario_id AND u.activo
@@ -83,7 +106,12 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
   // Un nivel crítico con un color que no es crítico fue un incumplimiento repetido (Atención, o Bien sin cumplir).
   const repetidoAntes = guardado === "critico" && r.antes !== "critico";
   const periodos = r.repetido || repetidoAntes ? (await obtenerParametros({ sql: tx })).incumplimientoPeriodos : 0;
-  const estado = estadoEnPalabras(r.despues, r.repetido, periodos, noAplica ? "No aplica" : r.resultado ? "Sin meta" : "Sin dato", r.cumple);
+  const estado =
+    nivel === "bien_con_critico"
+      ? bienConCritico(r.enCritico)
+      : estadoEnPalabras(r.despues, r.repetido, periodos, noAplica ? "No aplica" : r.resultado ? "Sin meta" : "Sin dato", r.cumple);
+  // La alerta y la corrección hacia Atención o Crítico nombran también las categorías en Crítico (anexo 14C, §5.6).
+  const enCritico = enCriticoEnPalabras(r);
   const donde = { indicadorId: r.indicadorId, procesoId: Number(m.proceso_id) };
   const sinQuienCambio = (ids: number[]) => [...new Set(ids)].filter((u) => u !== c.actorId);
   // Una sola inserción para todos, con la medición bloqueada (como `avisarA`).
@@ -95,15 +123,23 @@ export async function alRecalcular(tx: TransactionSql, r: Recalculo, c: { ahora:
   };
 
   if (guardado === null) {
-    const frente = resultadoFrenteAMeta({ resultado: r.resultado, semaforo: r.despues, cumple: r.cumple }, regla, unidad);
-    const titulo = `${nombre}: ${frente ? `${frente}, ` : ""}${estado}. ${periodo}`;
+    // Con el total en Bien y una categoría en Crítico: «Indicador: 85,9 %, Bien. En Crítico: Puesto de salud 3 (55 %). Octubre de 2026».
+    const frente =
+      nivel === "bien_con_critico" && r.resultado
+        ? textoValor(r.resultado, unidad, regla)
+        : resultadoFrenteAMeta({ resultado: r.resultado, semaforo: r.despues, cumple: r.cumple }, regla, unidad);
+    const palabras = nivel === "bien_con_critico" ? ETIQUETA_SEMAFORO.bien : estado;
+    const titulo = `${nombre}: ${frente ? `${frente}, ` : ""}${palabras}.${enCritico} ${periodo}`;
     const cuerpo = `${codigo} · ${m.proceso as string}`;
     await avisar("indicadores.alerta", titulo, cuerpo, sinQuienCambio(await destinatarios(tx, donde, nivel)));
   } else {
-    // El estado de antes, con el color y el cumplir que tenía: «Atención», «Crítico», «Bien, sin alcanzar la meta» o, si
-    // el nivel crítico fue por incumplimiento repetido, el mismo con sus periodos.
-    const antes = estadoEnPalabras(r.antes, repetidoAntes, periodos, guardado === "critico" ? "Crítico" : "Atención", r.cumpleAntes);
-    const titulo = `Corrección: ${nombre} pasó de ${antes} a ${estado}. ${periodo}`;
+    // El estado de antes, con el color y el cumplir que tenía: «Atención», «Crítico», «Bien, sin alcanzar la meta», «Bien con
+    // 1 categoría en Crítico» o, si el nivel crítico fue por incumplimiento repetido, el mismo con sus periodos.
+    const antes =
+      guardado === "bien_con_critico"
+        ? bienConCritico(r.enCriticoAntes)
+        : estadoEnPalabras(r.antes, repetidoAntes, periodos, guardado === "critico" ? "Crítico" : "Atención", r.cumpleAntes);
+    const titulo = `Corrección: ${nombre} pasó de ${antes} a ${estado}.${nivel === "atencion" || nivel === "critico" ? enCritico : ""} ${periodo}`;
     const frase = fraseDeResultado({ resultado: r.resultado, semaforo: r.despues, cumple: r.cumple, noAplica, motivo: texto(m.no_aplica_motivo) }, regla, unidad);
     const cuerpo = `${codigo} · ${frase}`;
     const para = sinQuienCambio([...(await destinatarios(tx, donde, guardado)), ...(await destinatarios(tx, donde, nivel))]);

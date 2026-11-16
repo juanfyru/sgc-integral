@@ -336,19 +336,44 @@ export const EsquemaDuplicar = z.object({ procesoId: id("Elija el proceso") }).s
 /** Retirar o descartar un indicador (spec §7.7): motivo obligatorio y sin clave; el `id` viaja aparte. */
 export const EsquemaMotivoDeBaja = z.object({ motivo: textoAcotado("El motivo", 5, 500) }).strict();
 
+const VALORES_INVALIDOS = "Los valores no tienen un formato válido";
+
+/** Los valores por letra, tal como se digitaron (la consulta los valida con los límites de la ficha). */
+const valoresDigitados = z
+  .record(z.string(), z.string({ error: VALORES_INVALIDOS }).max(40, "Un valor no puede pasar de 40 caracteres"))
+  .refine((v) => Object.keys(v).length <= 26 && Object.keys(v).every((l) => /^[A-Z]$/.test(l)), VALORES_INVALIDOS);
+
+/**
+ * Una fila de la rejilla de un desagregado (anexo 14C, §5.4), como la arma `juntarValoresDeReporte`: sus celdas por letra
+ * (una que no vino no se toca; «» la vacía) y su «No aplica»: `na` «1» lo pone con `motivo` (la consulta lo valida), «0» lo
+ * quita y sin `na` no se toca.
+ */
+const EsquemaFilaDeRejilla = z
+  .object(
+    {
+      categoriaId: z.number({ error: VALORES_INVALIDOS }).int(VALORES_INVALIDOS).positive(VALORES_INVALIDOS),
+      valores: valoresDigitados,
+      na: z.enum(["1", "0"], { error: VALORES_INVALIDOS }).optional(),
+      motivo: z.string({ error: VALORES_INVALIDOS }).max(2000, VALORES_INVALIDOS).optional(),
+    },
+    { error: VALORES_INVALIDOS },
+  )
+  .strict()
+  .transform(({ categoriaId, valores, na, motivo }) => ({
+    categoriaId,
+    valores,
+    ...(na === undefined ? {} : { noAplica: na === "1" ? (motivo ?? "") : null }),
+  }));
+
 /**
  * Reportar, guardar sin reportar o corregir una medición (spec §8.2): los valores por letra, en JSON, tal como se
- * digitaron (la consulta los valida con los límites de la ficha); `intencion` dice qué botón se pulsó. El `id` de la
- * medición y `volver` viajan aparte.
+ * digitaron (la consulta los valida con los límites de la ficha); en un desagregado, las filas de la rejilla (`filas`);
+ * `intencion` dice qué botón se pulsó. El `id` de la medición y `volver` viajan aparte.
  */
 export const EsquemaReporte = z
   .object({
-    valores: enJson(
-      z
-        .record(z.string(), z.string({ error: "Los valores no tienen un formato válido" }).max(40, "Un valor no puede pasar de 40 caracteres"))
-        .refine((v) => Object.keys(v).length <= 26 && Object.keys(v).every((l) => /^[A-Z]$/.test(l)), "Los valores no tienen un formato válido"),
-      "Los valores no tienen un formato válido",
-    ),
+    valores: enJson(valoresDigitados, VALORES_INVALIDOS),
+    filas: enJson(z.array(EsquemaFilaDeRejilla, { error: VALORES_INVALIDOS }).max(500, VALORES_INVALIDOS), VALORES_INVALIDOS).optional(),
     // Obligatorio: si el botón pulsado no llega, no se reporta un borrador por error.
     intencion: z.enum(["reportar", "parcial"], { error: "Elija si reporta o guarda sin reportar" }),
     confirmado: casilla,
@@ -360,17 +385,37 @@ export const EsquemaNoAplica = z.object({ motivo: textoAcotado("El motivo", 5, 5
 
 /**
  * El formulario de reporte manda cada variable en su propio campo (`valor_A` … `valor_Z`), para que funcione igual antes
- * de hidratar; aquí se juntan en `valores` (JSON), como los lee `EsquemaReporte`. Lo demás pasa igual.
+ * de hidratar; aquí se juntan en `valores` (JSON), como los lee `EsquemaReporte`. La rejilla de un desagregado manda cada
+ * celda en `c_<categoría>_<letra>` (vacía es vaciarla), y por fila `na_<categoría>` («1» la marca «No aplica», «0» se lo
+ * quita) y `motivo_<categoría>`; se juntan en `filas`, una por categoría en el orden en que llegan, sin que una celda vacía
+ * se pierda. Lo demás pasa igual.
  */
 export function juntarValoresDeReporte(formData: FormData): FormData {
   const salida = new FormData();
   const valores: Record<string, string> = {};
+  const filas = new Map<string, { categoriaId: number | string; valores: Record<string, string>; na?: string; motivo?: string }>();
+  // Un id que no es un número llega tal cual: el esquema lo rechaza.
+  const fila = (id: string) => {
+    if (!filas.has(id)) filas.set(id, { categoriaId: /^\d{1,15}$/.test(id) ? Number(id) : id, valores: {} });
+    return filas.get(id)!;
+  };
   for (const [campo, valor] of formData) {
+    if (typeof valor !== "string") {
+      salida.append(campo, valor);
+      continue;
+    }
     const letra = /^valor_(.+)$/.exec(campo)?.[1];
-    if (letra !== undefined && typeof valor === "string") valores[letra] = valor;
+    const celda = /^c_([^_]*)_(.*)$/.exec(campo);
+    const na = /^na_(.*)$/.exec(campo)?.[1];
+    const motivo = /^motivo_(.*)$/.exec(campo)?.[1];
+    if (letra !== undefined) valores[letra] = valor;
+    else if (celda) fila(celda[1]).valores[celda[2]] = valor;
+    else if (na !== undefined) fila(na).na = valor;
+    else if (motivo !== undefined) fila(motivo).motivo = valor;
     else salida.append(campo, valor);
   }
-  if (Object.keys(valores).length > 0) salida.set("valores", JSON.stringify(valores));
+  if (Object.keys(valores).length > 0 || filas.size > 0) salida.set("valores", JSON.stringify(valores));
+  if (filas.size > 0) salida.set("filas", JSON.stringify([...filas.values()]));
   return salida;
 }
 

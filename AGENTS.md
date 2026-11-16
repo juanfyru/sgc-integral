@@ -539,7 +539,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   con los que la medición tiene, y los que nadie digita los escriben solo `tomarFotos` y
   `volverACalcular` (`fotos.ts`) y `propagar` (`propagacion.ts`: el valor de un dato compartido,
   juntado a la periodicidad del indicador, y el de un componente, su resultado o su cumplimiento, o
-  su acumulado si es más fino, `valorDeComponente`; anexo 14C, §3.2, §3.3 y §6.3), en `medicion_valores` y sin
+  su acumulado si es más fino, `valorDeComponente`; anexo 14C, §3.2, §3.3 y §6.3) y, en un indicador
+  desagregado, el total (`escribirTotal`, al reportar la rejilla o al propagar), en `medicion_valores` y sin
   usuario (`reportado_por` nulo). Cada escritor toca lo suyo: el de la persona, solo sus variables
   propias (en un histórico, todas); la propagación, solo las ajenas. El valor que copia el sistema
   va con cuatro decimales y, si no cabe exacto en ellos, también con su fracción (`valor_exacto`,
@@ -566,6 +567,29 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   escribe `cumple`: alcanzar la meta no es lo mismo que estar en Bien, porque con rangos escritos
   (forma B, spec 14A §3) Bien puede empezar antes de la meta; una medición anterior a la `0012`
   tiene `cumple` nulo y se lee como antes (Bien ⇔ cumple, `cumpleDeFila`).
+- **La medición desagregada** (anexo 14C, §5; `mediciones.ts` y `categorias.ts`): cada medición ordinaria de
+  una versión con dimensión congela al abrirse su lista de categorías (`mediciones.categorias`:
+  `listaDelPeriodo`, con el maestro leído `FOR KEY SHARE` en la transacción que la guarda, porque el `jsonb`
+  no tiene llave foránea y `borrarCategoria` toma la categoría `FOR UPDATE` antes de ver si está usada);
+  una histórica no lleva lista (se digita el total, §3.6). La lista solo cambia por «Actualizar
+  categorías» (`actualizarCategorias`, de quien administra, en una abierta sin reportar: solo añade) o
+  cuando un cambio mayor cambia la dimensión (`rehacerCategorias`, desde `aprobarFichas`: rehace las
+  abiertas sin reportar de su tramo y borra sus valores); una reabierta conserva la suya. Se reporta
+  una rejilla: cada celda es una fila de `medicion_valores` con `categoria_id` y el «No aplica» de una
+  fila vive en la lista. **El total es la fila sin categoría y lo escribe solo el sistema**
+  (`escribirTotal`, la suma de las filas que no están «No aplica»): la persona escribe solo las celdas
+  que llegan, nunca el total; «Guardar sin reportar» (que en un desagregado vale también ya reportado)
+  deja el total como estaba hasta el siguiente reporte, y con él calculan el semáforo, la racha, la
+  tabla del año, el acumulado y los Excel, sin cambios. Con todas las filas «No aplica», la medición
+  queda «No aplica» con `MOTIVO_TODAS_NO_APLICAN`, que quita el siguiente reporte con una fila medida;
+  una fila que ningún periodo de su dato por categoría trae queda «No aplica» con
+  `MOTIVO_DATO_SIN_CATEGORIA`, que quita la propagación cuando el dato pasa a traerla (nunca el de una
+  persona). `recalcularMedicion` escribe `categorias_en_critico` (las filas completas en Crítico, con la
+  versión y la meta de la medición; nulo sin resultado o sin lista), y el desglose (`desgloseDe`) calcula
+  cada fila al leer: nunca se guarda. **Una categoría en Crítico avisa** aunque el total no avise: con
+  el total en Bien y cumpliendo, el nivel `bien_con_critico` de `alertas.ts` (a quienes reciben los de
+  Atención), y con el total en Atención o Crítico la alerta nombra las categorías; no exige análisis
+  ni pone «Requiere acción de mejora», y entra a la «Corrección» como un nivel más.
 - **El cumplimiento de un porcentaje con meta se decide con la razón exacta, en enteros**
   (`cumplePorcentaje`, `src/lib/indicadores-documentales/metas.ts`; `conformidad`,
   `src/lib/distribucion/verificacion.ts`), nunca con el entero que se muestra. `conformidad()`
