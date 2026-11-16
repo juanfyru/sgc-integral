@@ -368,6 +368,26 @@ describe("la cascada", () => {
       await rechaza(cerrarDeNuevo(e.admin, deCompuesto, opc(tx, dia(23))), FUENTE_ABIERTA);
     }));
 
+  it("un componente cerrado «Sin dato» y su compuesto, cerrado «Sin dato» por él: reabrir el componente reabre el compuesto", () =>
+    revertida(sql, async (tx) => {
+      const e = await entorno(tx);
+      const componente = await e.nuevo();
+      const compuesto = await e.espejo(componente.id);
+      const deComponente = await medicionDe(tx, componente.id, MARZO);
+      const deCompuesto = await medicionDe(tx, compuesto.id, MARZO);
+      await cerrarMes(e.admin, MARZO, opc(tx));
+      for (const id of [deComponente, deCompuesto]) expect([(await fila(tx, id)).estado, (await fila(tx, id)).resultado_exacto]).toEqual(["cerrada", null]);
+
+      const lista = await listaDeReapertura(e.admin, { clase: "medicion", medicionId: deComponente }, opc(tx));
+      expect(lista.seReabren.map((x) => [x.medicionId, x.nivel])).toEqual([[deCompuesto, 1]]);
+      await reabrirMedicion(e.admin, { medicionId: deComponente, justificacion: JUSTIFICACION }, opc(tx, dia(22)));
+      expect((await fila(tx, deCompuesto)).corregida).toBe(true);
+      // Reportado tarde el componente, la propagación completa al compuesto reabierto.
+      await e.reportarLoPropio(e.mide, deComponente, { A: "9", B: "10" }, dia(23));
+      await propagar(opc(tx, dia(23)));
+      expect((await fila(tx, deCompuesto)).resultado_exacto).toBe("90/1");
+    }));
+
   it("el aviso nombra la fuente solo a quien la ve: un general que toma un restringido avisa sin nombrarlo a quien no lo ve", () =>
     revertida(sql, async (tx) => {
       const e = await entorno(tx);

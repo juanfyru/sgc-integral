@@ -26,7 +26,7 @@ import { asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadore
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import { propagar } from "@/db/consultas/indicadores/propagacion";
-import { datoDePrueba, indicadorDePrueba, periodoDeDatoDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -296,6 +296,57 @@ describe("lo que espera una fuente no se cierra", () => {
       await cerrarMes(admin, MARZO, opc(tx));
       expect((await fila(tx, deComponente)).estado).toBe("cerrada");
       expect((await fila(tx, deCompuesto)).estado).toBe("reportada");
+    }));
+
+  it("un compuesto cuyo componente sigue en plazo y aún no tiene dato espera: no se cierra «Sin dato» bajo un componente abierto", () =>
+    revertida(sql, async (tx) => {
+      const { admin, nuevo, espejo } = await entorno(tx);
+      const componente = await nuevo({ plazo: 30 });
+      const compuesto = await espejo(componente.id);
+      const deCompuesto = await medicionDe(tx, compuesto.id, MARZO);
+
+      const r = await resumenDeCierre(admin, MARZO, opc(tx));
+      expect(r.enPlazo).toBe(1);
+      expect(r.sinDato.map((s) => s.codigo)).not.toContain(compuesto.codigo);
+      expect(r.esperanEntrada).toEqual([{ codigo: compuesto.codigo, periodo: MARZO, espera: `El indicador ${componente.codigo}, marzo de 2003` }]);
+      await cerrarMes(admin, MARZO, opc(tx));
+      expect((await fila(tx, deCompuesto)).estado).toBe("abierta");
+      expect((await fila(tx, await medicionDe(tx, componente.id, MARZO))).estado).toBe("abierta");
+    }));
+
+  it("un desagregado que toma un dato por categoría se cierra con su dato, y espera si una celda ya no coincide con el dato", () =>
+    revertida(sql, async (tx) => {
+      const { admin, mide, procesoId, nuevo } = await entorno(tx);
+      const sede = await dimensionDePrueba(tx, `Sede ${Date.now() % 100_000_000}`, ["S1", "S2"]);
+      // Que las sedes entren a los periodos de 2003.
+      await tx`UPDATE dimension_categorias SET creado_en = '2000-01-01T00:00:00Z' WHERE dimension_id = ${sede.id}`;
+      const [s1, s2] = sede.categorias;
+      const dato = await datoDePrueba(tx, { procesoId, nombre: `ZZ Auditados ${Date.now() % 100_000_000}`, dimensionId: sede.id });
+      const pMarzo = await periodoDeDatoDePrueba(tx, { datoId: dato, periodo: MARZO, valor: "30", ahora: ABRE });
+      await tx`UPDATE variable_valores SET por_categoria = ${tx.json({ [s1]: "10", [s2]: "20" })} WHERE id = ${pMarzo}`;
+      const coherente = await nuevo({ dimensionId: sede.id, variables: { B: { datoId: dato } } });
+      const desviado = await nuevo({ dimensionId: sede.id, variables: { B: { datoId: dato } } });
+      const filas = [
+        { categoriaId: s1, valores: { A: "9" } },
+        { categoriaId: s2, valores: { A: "18" } },
+      ];
+      const ids = { coherente: await medicionDe(tx, coherente.id, MARZO), desviado: await medicionDe(tx, desviado.id, MARZO) };
+      for (const id of Object.values(ids)) {
+        expect((await fila(tx, id)).categorias).toHaveLength(2);
+        await reportar(mide, { medicionId: id, valores: {}, filas, parcial: false, confirmado: true }, opc(tx));
+      }
+      await propagar(opc(tx));
+      for (const id of Object.values(ids)) expect((await fila(tx, id)).resultado_exacto).toBe("90/1");
+      // La celda de S2 del desviado se aparta del dato y la pasada no la arregla (su indicador queda sin inicio: no se propaga).
+      await tx`UPDATE medicion_valores SET valor = 25 WHERE medicion_id = ${ids.desviado} AND categoria_id = ${s2} AND variable_id = ${desviado.variables.B}`;
+      await tx`UPDATE indicadores SET inicio_medicion = NULL WHERE id = ${desviado.id}`;
+
+      const r = await resumenDeCierre(admin, MARZO, opc(tx));
+      expect(r.esperanEntrada).toEqual([{ codigo: desviado.codigo, periodo: MARZO, espera: "Lo copiado de sus fuentes aún no está al día" }]);
+      await cerrarMes(admin, MARZO, opc(tx));
+      expect((await periodoDelDato(tx, pMarzo)).estado).toBe("cerrado");
+      expect((await fila(tx, ids.coherente)).estado).toBe("cerrada");
+      expect((await fila(tx, ids.desviado)).estado).toBe("reportada");
     }));
 
   it("un histórico sin registrar del componente no frena el cierre del compuesto", () =>
