@@ -3,13 +3,18 @@
  * revierte (`revertida`): lo que crea aquí no sobrevive al test.
  */
 import type { TransactionSql } from "postgres";
+import { maestroDeCategorias } from "@/db/consultas/indicadores/dimensiones";
 import { escribirFoto } from "@/db/consultas/indicadores/fotos";
 import { versionDelPeriodo } from "@/db/consultas/indicadores/mediciones";
+import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { CALCULOS, CLAVES_DE_CALCULO, calculoDe, type AlcanceDeCalculo, type ClaveDeCalculo } from "@/lib/indicadores/calculos/registro";
+import { listaDelPeriodo } from "@/lib/indicadores/categorias";
 import { formulaDeForma } from "@/lib/indicadores/formula/formas";
-import { contiene } from "@/lib/indicadores/periodos";
+import { contiene, fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
 import type { RangosEnTexto } from "@/lib/indicadores/rangos";
 import type { Consolidacion, Periodicidad, Tendencia, Toma } from "@/lib/indicadores/tipos";
+import { fechaLimite } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { usuarioDePrueba } from "./tramites";
 
 let consecutivo = 0;
@@ -294,7 +299,8 @@ export async function indicadorDePrueba(
 
 /**
  * Inserta por SQL un dato compartido activo del catálogo (anexo 14C, §4.1), sin periodos, con sus responsables. Sin valor:
- * un nombre único, mensual, se suma, plazo de 10 días y sin dimensión. Solo dentro de `revertida`.
+ * un nombre único, mensual, se suma, plazo de 10 días, sin límites de captura, sin negativos y sin dimensión. Solo dentro
+ * de `revertida`.
  */
 export async function datoDePrueba(
   tx: TransactionSql,
@@ -305,18 +311,51 @@ export async function datoDePrueba(
     consolidacion?: Consolidacion;
     dimensionId?: number;
     plazoReporteDias?: number;
+    capturaMin?: string;
+    capturaMax?: string;
+    admiteNegativos?: boolean;
     responsables?: number[];
   },
 ): Promise<number> {
   consecutivo += 1;
-  const [dato] = await tx`INSERT INTO variables_compartidas (proceso_id, nombre, periodicidad, consolidacion, plazo_reporte_dias, dimension_id)
+  const [dato] = await tx`INSERT INTO variables_compartidas (proceso_id, nombre, periodicidad, consolidacion, plazo_reporte_dias, dimension_id,
+      captura_min, captura_max, admite_negativos)
     VALUES (${d.procesoId}, ${d.nombre ?? `ZZ Dato ${Date.now() % 100_000_000}-${consecutivo}`}, ${d.periodicidad ?? "mensual"},
-      ${d.consolidacion ?? "suma"}, ${d.plazoReporteDias ?? 10}, ${d.dimensionId ?? null})
+      ${d.consolidacion ?? "suma"}, ${d.plazoReporteDias ?? 10}, ${d.dimensionId ?? null}, ${d.capturaMin ?? null}, ${d.capturaMax ?? null},
+      ${d.admiteNegativos ?? false})
     RETURNING id`;
   for (const usuarioId of d.responsables ?? []) {
     await tx`INSERT INTO variable_responsables (variable_id, usuario_id) VALUES (${dato.id}, ${usuarioId})`;
   }
   return Number(dato.id);
+}
+
+/**
+ * Inserta por SQL un periodo del dato (anexo 14C, §4.3), como lo abriría `asegurarPeriodosDeDatos` a `ahora`: su fecha
+ * límite es el fin del periodo más el plazo del dato o, si ya pasó, `ahora` más el plazo (no nace vencido); con dimensión,
+ * su lista de categorías. Sin `estado`, `reportado` si trae `valor` y `pendiente` si no; reportado o cerrado, con `valor`
+ * (sin él, 0), sin quien lo reportó y a `ahora`. Solo dentro de `revertida`.
+ */
+export async function periodoDeDatoDePrueba(
+  tx: TransactionSql,
+  d: { datoId: number; periodo: string; valor?: string; estado?: "pendiente" | "reportado" | "cerrado"; ahora: Date },
+): Promise<number> {
+  const zona = zonaHoraria();
+  const periodo = periodoDe(d.periodo, zona);
+  if (!periodo) throw new Error(`El periodo «${d.periodo}» no existe`);
+  const [dato] = await tx`SELECT plazo_reporte_dias, dimension_id FROM variables_compartidas WHERE id = ${d.datoId}`;
+  const plazo = Number(dato.plazo_reporte_dias);
+  const limite = fechaLimiteDeReporte(periodo, plazo, zona);
+  const vence = limite.getTime() < d.ahora.getTime() ? fechaLimite(d.ahora, plazo, zona) : limite;
+  const categorias =
+    dato.dimension_id === null ? null : listaDelPeriodo(await maestroDeCategorias(tx, Number(dato.dimension_id)), periodo);
+  const estado = d.estado ?? (d.valor === undefined ? "pendiente" : "reportado");
+  const conValor = estado !== "pendiente";
+  const [fila] = await tx`INSERT INTO variable_valores (variable_id, periodo, desde, hasta, vence_en, estado, valor, reportado_en, categorias)
+    VALUES (${d.datoId}, ${d.periodo}, ${periodo.desde}, ${periodo.hasta}, ${vence}, ${estado}, ${conValor ? (d.valor ?? "0") : null},
+      ${conValor ? d.ahora : null}, ${categorias === null ? null : tx.json(categorias as never)})
+    RETURNING id`;
+  return Number(fila.id);
 }
 
 /** Un lote de importación con su evento «importado» (quién y cuándo), dentro de la transacción de la prueba. */
@@ -331,15 +370,19 @@ export async function loteImportado(tx: TransactionSql, d: { usuarioId: number; 
  * Calla la pasada de los indicadores (y el cierre) sobre lo que trae la base (la demo, el punto de control): marca como
  * avisadas y escaladas sus mediciones abiertas; da por fotografiadas (`foto_en`, sin valores) las de sus automáticos que
  * esperan la foto, para que `tomarFotos` no las calcule (anexo 14B, §5.4); marca como avisadas y escaladas sus constancias
- * de envío pendientes y sus revisiones por cambio de norma pendientes (anexo 14B, §9); y deja sin inicio de medición a sus
- * indicadores activos, para que no abra periodos nuevos ni
- * constancias nuevas (`asegurarConstancias` solo mira los que tienen inicio). `revisarVencimientos` los recorre todos y un
- * test cuenta solo lo suyo. Se llama antes de crear los datos del test, dentro de la transacción que se revierte.
+ * de envío pendientes, sus revisiones por cambio de norma pendientes (anexo 14B, §9) y los periodos pendientes de sus datos
+ * compartidos (anexo 14C, §4.4); y deja sin inicio de medición a sus indicadores activos, para que no abra periodos nuevos
+ * ni constancias nuevas (`asegurarConstancias` solo mira los que tienen inicio) ni periodos nuevos de un dato
+ * (`asegurarPeriodosDeDatos`, tampoco). `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Se llama
+ * antes de crear los datos del test, dentro de la transacción que se revierte.
  */
 export async function silenciarIndicadores(tx: TransactionSql): Promise<void> {
   await tx`UPDATE mediciones SET aviso_previo_en = coalesce(aviso_previo_en, now()), aviso_vencido_en = coalesce(aviso_vencido_en, now()),
       escalado_en = coalesce(escalado_en, now())
     WHERE estado <> 'cerrada' AND (aviso_previo_en IS NULL OR aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+  await tx`UPDATE variable_valores SET aviso_previo_en = coalesce(aviso_previo_en, now()), aviso_vencido_en = coalesce(aviso_vencido_en, now()),
+      escalado_en = coalesce(escalado_en, now())
+    WHERE estado = 'pendiente' AND (aviso_previo_en IS NULL OR aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
   await tx`UPDATE reportes_externos SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())
     WHERE estado = 'pendiente' AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
   await tx`UPDATE impactos_indicadores SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())

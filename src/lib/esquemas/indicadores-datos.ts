@@ -33,3 +33,50 @@ export const EsquemaResponsablesDeDato = z
 
 /** Activar o desactivar un dato; el `id` del dato viaja aparte. */
 export const EsquemaEstadoDeDato = z.object({ activa: z.enum(["true", "false"]) }).strict();
+
+const VALOR_INVALIDO = "El valor no tiene un formato válido";
+const valorDigitado = z.string({ error: VALOR_INVALIDO }).max(40, "Un valor no puede pasar de 40 caracteres");
+
+/**
+ * Reportar o corregir un periodo de un dato compartido (anexo 14C, §4.4): el valor tal como se digitó o, si el periodo se
+ * reporta por categoría, uno por categoría en JSON (`porCategoria`, que arma `juntarValoresDeDato`); la consulta los valida
+ * con los límites del dato. El `id` del periodo viaja aparte.
+ */
+export const EsquemaReporteDeDato = z
+  .object({
+    valor: valorDigitado.optional(),
+    porCategoria: z
+      .preprocess(
+        (v, ctx) => {
+          if (typeof v !== "string") return v;
+          try {
+            return JSON.parse(v) as unknown;
+          } catch {
+            ctx.addIssue({ code: "custom", message: VALOR_INVALIDO });
+            return z.NEVER;
+          }
+        },
+        z
+          .record(z.string().regex(/^\d{1,15}$/, VALOR_INVALIDO), valorDigitado)
+          .refine((r) => Object.keys(r).length <= 500, VALOR_INVALIDO),
+      )
+      .optional(),
+    confirmado: casilla,
+  })
+  .strict();
+
+/**
+ * El formulario del dato manda el valor de cada categoría en su propio campo (`categoria_<id>`), para que funcione igual
+ * antes de hidratar; aquí se juntan en `porCategoria` (JSON), como lo lee `EsquemaReporteDeDato`. Lo demás pasa igual.
+ */
+export function juntarValoresDeDato(formData: FormData): FormData {
+  const salida = new FormData();
+  const porCategoria: Record<string, string> = {};
+  for (const [campo, valor] of formData) {
+    const categoria = /^categoria_(.+)$/.exec(campo)?.[1];
+    if (categoria !== undefined && typeof valor === "string") porCategoria[categoria] = valor;
+    else salida.append(campo, valor);
+  }
+  if (Object.keys(porCategoria).length > 0) salida.set("porCategoria", JSON.stringify(porCategoria));
+  return salida;
+}

@@ -730,3 +730,40 @@ export async function responsablesDeDato(sql: Cliente, datoId: number): Promise<
     SELECT id FROM res UNION ALL SELECT id FROM lid UNION ALL SELECT id FROM adm ORDER BY id`;
   return filas.map((f) => Number(f.id));
 }
+
+/**
+ * La regla de `responsablesDeDato` para una persona, en un `SELECT` sobre `variables_compartidas d` (las tareas de «Mis
+ * tareas», una sola consulta), como `responsableDe` para un indicador: `designado` si es responsable activo del dato; si no
+ * hay responsable activo, `lider` si es líder activo del proceso dueño; si tampoco hay líder activo, `respaldo` si es Admin
+ * SGC activo («sin responsable»). `NULL` si no le toca.
+ */
+export function responsabilidadEnDato(sql: Cliente, sujeto: SujetoVisibilidad) {
+  const hayResponsable = sql`EXISTS (
+    SELECT 1 FROM variable_responsables rdd_r JOIN usuarios rdd_u ON rdd_u.id = rdd_r.usuario_id AND rdd_u.activo
+    WHERE rdd_r.variable_id = d.id)`;
+  const respaldo =
+    sujeto.rol === "admin_sgc"
+      ? sql`(NOT EXISTS (${lideresActivos(sql, sql`d.proceso_id`)})
+          AND EXISTS (SELECT 1 FROM usuarios rdd_a WHERE rdd_a.id = ${sujeto.usuarioId} AND rdd_a.activo))`
+      : sql`false`;
+  return sql`(CASE
+    WHEN ${esResponsableDelDato(sql, sujeto)} THEN 'designado'
+    WHEN ${hayResponsable} THEN NULL
+    WHEN ${esLiderDe(sql, sujeto, sql`d.proceso_id`)} THEN 'lider'
+    WHEN ${respaldo} THEN 'respaldo'
+  END)`;
+}
+
+/**
+ * El dato no tiene responsable activo ni líder activo del proceso dueño: sus tareas y avisos van al Admin SGC de respaldo
+ * (`responsablesDeDato`) y no se escalan al jefe, como `sinResponsable` en un indicador.
+ */
+export async function sinResponsableDeDato(sql: Cliente, datoId: number): Promise<boolean> {
+  const [f] = await sql`
+    SELECT NOT EXISTS (
+        SELECT 1 FROM variable_responsables srd_r JOIN usuarios srd_u ON srd_u.id = srd_r.usuario_id AND srd_u.activo
+        WHERE srd_r.variable_id = d.id)
+      AND NOT EXISTS (${lideresActivos(sql, sql`d.proceso_id`)}) AS sin
+    FROM variables_compartidas d WHERE d.id = ${datoId}`;
+  return f?.sin === true;
+}

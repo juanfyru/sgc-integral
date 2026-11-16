@@ -35,6 +35,8 @@ import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { asegurarConstancias } from "./constancias";
 import { constanciasVencidas } from "./constancias-vencidas";
+import { asegurarPeriodosDeDatos } from "./datos-periodos";
+import { datosVencidos } from "./datos-vencidos";
 import { tomarFotos } from "./fotos";
 import { impactosDeIndicadoresVencidos } from "./impactos";
 import { obtenerParametros } from "./maestros";
@@ -45,8 +47,11 @@ import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona as Falt
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number; avisoPrevioDias: number };
 type Resultado = { avisados: number; escalados: number };
 
-/** Lo que falta es siempre de alguien: «Falta un dato» (un automático que espera su cálculo) no entra a ningún paso. */
-type Medicion = { id: number; indicadorId: number; procesoId: number; proceso: string; vence: Date; falta: Falta };
+/**
+ * Lo que falta es siempre de alguien: «Falta un dato» (un automático que espera su cálculo) no entra a ningún paso. El
+ * `grupo` de `correrPaso` es el indicador.
+ */
+type Medicion = { id: number; grupo: number; indicadorId: number; procesoId: number; proceso: string; vence: Date; falta: Falta };
 
 /**
  * Lo que un paso necesita de un indicador, buscado antes del candado: quienes tienen cada función (`responsables`), los
@@ -109,6 +114,7 @@ async function leer(sql: Cliente, c: Contexto, paso: Paso, ids?: number[]): Prom
     if (!p || p.falta === "dato") return [];
     const m: Medicion = {
       id: Number(f.id),
+      grupo: Number(f.indicador_id),
       indicadorId: Number(f.indicador_id),
       procesoId: Number(f.proceso_id),
       proceso: f.proceso as string,
@@ -326,9 +332,11 @@ async function abrirPeriodos(sql: Cliente, ahora: Date): Promise<void> {
 
 /**
  * La pasada de los indicadores (spec 14 §10.2): abre los periodos, toma las fotos (después de abrir y antes de los avisos),
- * abre las constancias de envío al ente (anexo 14B, §8: `asegurarConstancias`) y manda los avisos: los de las mediciones,
- * después los de las constancias (`constanciasVencidas`) y al final los de las revisiones por cambio de norma (anexo 14B,
- * §9: `impactosDeIndicadoresVencidos`), que suman a sus cuentas. Un paso que falla se registra y los demás siguen.
+ * abre las constancias de envío al ente (anexo 14B, §8: `asegurarConstancias`) y los periodos de los datos compartidos
+ * (anexo 14C, §4.3: `asegurarPeriodosDeDatos`), y manda los avisos: los de las mediciones, después los de las constancias
+ * (`constanciasVencidas`), los de las revisiones por cambio de norma (anexo 14B, §9: `impactosDeIndicadoresVencidos`) y al
+ * final los de los datos compartidos (anexo 14C, §4.4: `datosVencidos`), que suman a sus cuentas. Un paso que falla se
+ * registra y los demás siguen.
  */
 export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente; ahora: Date; config: ConfigDocumental }): Promise<Resultado> {
   const { sql, ahora } = opciones;
@@ -342,6 +350,11 @@ export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente;
     await asegurarConstancias({ sql, ahora });
   } catch (err) {
     console.error("No se pudieron abrir las constancias de envío de los indicadores:", err);
+  }
+  try {
+    await asegurarPeriodosDeDatos({ sql, ahora });
+  } catch (err) {
+    console.error("No se pudieron abrir los periodos de los datos compartidos:", err);
   }
   const { avisoPrevioDias } = await obtenerParametros({ sql });
   const c: Contexto = { sql, ahora, zona: zonaHoraria(), escalamientoDias: opciones.config.escalamientoDias, avisoPrevioDias };
@@ -370,6 +383,13 @@ export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente;
     total.escalados += impactos.escalados;
   } catch (err) {
     console.error("No se pudieron revisar los vencimientos de las revisiones de indicadores por cambio de norma:", err);
+  }
+  try {
+    const deDatos = await datosVencidos({ sql, ahora, escalamientoDias: c.escalamientoDias });
+    total.avisados += deDatos.previos + deDatos.vencidos;
+    total.escalados += deDatos.escalados;
+  } catch (err) {
+    console.error("No se pudieron revisar los vencimientos de los datos compartidos:", err);
   }
   return total;
 }

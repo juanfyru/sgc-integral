@@ -10,6 +10,7 @@ import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, descartarBorrador, devolverFicha, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { cerrarDeNuevo, cerrarMes, reabrirMedicion } from "@/db/consultas/indicadores/cierre";
 import { corregirConstancia, quitarSoporteDeConstancia, registrarConstancia } from "@/db/consultas/indicadores/constancias";
+import { reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { abrirCambio, crearIndicador, guardarBorrador } from "@/db/consultas/indicadores/fichas";
 import { volverACalcular } from "@/db/consultas/indicadores/fotos";
 import { registrarHistoricos } from "@/db/consultas/indicadores/historicos";
@@ -53,6 +54,7 @@ import {
   juntarHistoricos,
   juntarValoresDeReporte,
 } from "@/lib/esquemas/indicadores";
+import { EsquemaReporteDeDato, juntarValoresDeDato } from "@/lib/esquemas/indicadores-datos";
 import { destinoTrasReportar, type EstadoReporte } from "@/lib/indicadores/reporte";
 import { rutaInterna } from "@/lib/rutas";
 import { parsearFormulario } from "@/lib/validacion";
@@ -259,6 +261,30 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
   });
   if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
   if (estado === null && dicho.parcial) return { ok: true, aviso: "Se guardó sin reportar: la medición sigue abierta." };
+  return estado;
+}
+
+/**
+ * `id` es el del periodo del dato compartido (anexo 14C, §4.4). Lo reporta o, si ya estaba reportado, lo corrige, y se
+ * queda en la página con su aviso. Un valor que se aleja del periodo anterior no escribe nada y vuelve con la pregunta
+ * (`confirmar`), que la persona responde con `confirmado`.
+ */
+export async function reportarDatoCompartido(_prev: EstadoReporte, formData: FormData): Promise<EstadoReporte> {
+  // `mutacion` solo devuelve un destino: lo demás que dice `reportarDato` sale por aquí.
+  const dicho: { confirmar: string | null; corregido: boolean } = { confirmar: null, corregido: false };
+  const estado = await mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
+    const d = parsearFormulario(juntarValoresDeDato(formData), EsquemaReporteDeDato, { omitir: ["id"] });
+    const r = await reportarDato(sesion, {
+      periodoId: idNumerico(formData, "id"),
+      valor: d.valor,
+      porCategoria: d.porCategoria,
+      confirmado: d.confirmado,
+    });
+    if (!r.ok) dicho.confirmar = r.confirmar;
+    else dicho.corregido = r.corregido;
+  });
+  if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
+  if (estado === null) return { ok: true, aviso: dicho.corregido ? "Se corrigió el dato." : "Se reportó el dato." };
   return estado;
 }
 

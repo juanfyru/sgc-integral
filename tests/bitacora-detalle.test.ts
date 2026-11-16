@@ -716,6 +716,21 @@ describe("el catálogo de datos compartidos (14C)", () => {
     expect(nombreDeAccion("dato_compartido_desactivado")).toBe("Desactivó un dato compartido");
     expect(nombreDeAccion("dato_compartido_borrado")).toBe("Borró un dato compartido");
   });
+
+  it("reportar y corregir un periodo dicen qué dato, qué periodo y qué valor", () => {
+    expect(frase("dato_reportado", { nombre: "Total facturado", periodo: "2026-10", periodoId: 7, valor: "1284300000" })).toBe(
+      "Reportó el dato compartido «Total facturado», octubre de 2026: 1284300000",
+    );
+    expect(frase("dato_reportado", { nombre: "Total facturado", periodo: "2026-10", valor: "5.25", sinResponsable: true })).toBe(
+      "Reportó el dato compartido «Total facturado», octubre de 2026: 5,25 (sin nadie más que pudiera reportarlo)",
+    );
+    expect(frase("dato_corregido", { nombre: "Total facturado", periodo: "2026-09", antes: "1179850000", despues: "1197850000" })).toBe(
+      "Corrigió el dato compartido «Total facturado», septiembre de 2026: 1179850000 → 1197850000",
+    );
+    expect(frase("dato_reportado", {})).toBe("Reportó un dato compartido");
+    expect(nombreDeAccion("dato_reportado")).toBe("Reportó un dato compartido");
+    expect(nombreDeAccion("dato_corregido")).toBe("Corrigió un dato compartido");
+  });
 });
 
 describe("la ficha de indicador", () => {

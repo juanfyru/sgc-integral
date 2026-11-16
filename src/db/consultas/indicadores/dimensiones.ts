@@ -92,13 +92,19 @@ export async function listarDimensiones(opciones?: { sql?: Cliente; soloActivas?
   }));
 }
 
-/** Todas las categorías de la dimensión, activas o no, con cuándo nacieron y cuándo se desactivaron: la lista de un periodo. */
+/**
+ * Todas las categorías de la dimensión, activas o no, con cuándo nacieron y cuándo se desactivaron: la lista de un periodo.
+ * Con `bloquear`, dentro de la transacción que guarda la lista en un `jsonb` (que no tiene llave foránea), cada fila
+ * `FOR KEY SHARE`: `borrarCategoria`, que la toma `FOR UPDATE` antes de ver si está usada, espera a que la lista quede
+ * guardada y la ve.
+ */
 export async function maestroDeCategorias(
   sql: Cliente,
   dimensionId: number,
+  opciones?: { bloquear?: boolean },
 ): Promise<{ id: number; nombre: string; orden: number; activo: boolean; creadoEn: Date; desactivadaEn: Date | null }[]> {
   const filas = await sql`SELECT id, nombre, orden, activo, creado_en, desactivada_en FROM dimension_categorias
-    WHERE dimension_id = ${dimensionId} ORDER BY orden, id`;
+    WHERE dimension_id = ${dimensionId} ORDER BY orden, id ${opciones?.bloquear === true ? sql`FOR KEY SHARE` : sql``}`;
   return filas.map((f) => ({
     id: Number(f.id),
     nombre: f.nombre as string,

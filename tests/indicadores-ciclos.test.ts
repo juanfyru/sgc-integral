@@ -8,7 +8,7 @@ const carpeta = path.resolve(import.meta.dirname, "..", "src", "db", "consultas"
 const EXCEPCIONES: Array<[string, string]> = [["mediciones", "alertas"]];
 
 /** Módulos que `alPublicarVersion` y la operación llaman sin cerrar un ciclo: sus tareas amplían la lista. */
-const LIVIANOS = ["en-curso", "constancias-soporte", "impactos", "fichas-de-calculo", "componentes"];
+const LIVIANOS = ["en-curso", "constancias-soporte", "impactos", "fichas-de-calculo", "componentes", "datos-periodos"];
 const PROHIBIDOS = ["lectura", "fichas", "aprobacion", "operacion"];
 
 const IMPORTA = /\bfrom\s+["']\.\/([\w-]+)["']/g;

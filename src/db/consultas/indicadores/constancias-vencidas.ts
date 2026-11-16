@@ -30,7 +30,8 @@ import { correrPaso, diaYMes } from "./pasada";
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number };
 type Resultado = { avisados: number; escalados: number };
 
-type Pendiente = { id: number; indicadorId: number; procesoId: number; proceso: string; vence: Date };
+/** El `grupo` de `correrPaso` es el indicador. */
+type Pendiente = { id: number; grupo: number; indicadorId: number; procesoId: number; proceso: string; vence: Date };
 
 /** Lo que un paso necesita de un indicador, buscado antes del candado. */
 type Resuelto = {
@@ -74,6 +75,7 @@ async function leer(sql: Cliente, ctx: Contexto, paso: Paso, ids?: number[]): Pr
   return filas
     .map((f) => ({
       id: Number(f.id),
+      grupo: Number(f.indicador_id),
       indicadorId: Number(f.indicador_id),
       procesoId: Number(f.proceso_id),
       proceso: f.proceso as string,

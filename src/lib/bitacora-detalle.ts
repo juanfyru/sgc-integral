@@ -393,6 +393,16 @@ const laCategoria = (nombre: string | null, d: Record<string, unknown>) =>
   `${nombre ? `la categoría «${nombre}»` : "una categoría"}${texto(d.dimension) ? ` de la dimensión «${texto(d.dimension)}»` : ""}`;
 const elDato = (nombre: string | null) => (nombre ? `el dato compartido «${nombre}»` : "un dato compartido");
 
+/** «el dato compartido «Total facturado», octubre de 2026»: el dato y la etiqueta del periodo, si los trae el detalle. */
+function periodoDelDato(nombre: string | null, periodo: unknown): string {
+  const clave = texto(periodo);
+  const etiqueta = clave ? (periodoDe(clave, zonaHoraria())?.etiqueta ?? clave) : null;
+  return `${elDato(nombre)}${etiqueta ? `, ${etiqueta}` : ""}`;
+}
+
+/** Un valor de un dato como se guardó («1284300000.5»), con coma decimal. */
+const cifraDeDato = (v: unknown) => texto(v)?.replace(".", ",") ?? null;
+
 /** «: título, tema»: los campos de `nombres` cuyo valor difiere entre `antes` y `despues` (guardados completos). */
 function camposDistintos(antes: unknown, despues: unknown, nombres: Record<string, string>): string {
   const a = objeto(antes);
@@ -852,6 +862,16 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Desactivó ${elDato(nombre)}`;
     case "dato_compartido_borrado":
       return `Borró ${elDato(nombre)}`;
+    // ── Indicadores (14C): los periodos de los datos compartidos
+    case "dato_reportado": {
+      const valor = cifraDeDato(d.valor);
+      return `Reportó ${periodoDelDato(nombre, d.periodo)}${valor ? `: ${valor}` : ""}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
+    }
+    case "dato_corregido": {
+      const antes = cifraDeDato(d.antes);
+      const despues = cifraDeDato(d.despues);
+      return `Corrigió ${periodoDelDato(nombre, d.periodo)}${antes && despues ? `: ${antes} → ${despues}` : ""}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
+    }
     // ── Indicadores (14C): dimensiones y categorías
     case "dimension_guardada":
       return d.creada === true
@@ -1241,6 +1261,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   dato_compartido_activado: "Activó un dato compartido",
   dato_compartido_desactivado: "Desactivó un dato compartido",
   dato_compartido_borrado: "Borró un dato compartido",
+  dato_reportado: "Reportó un dato compartido",
+  dato_corregido: "Corrigió un dato compartido",
   dimension_guardada: "Guardó una dimensión de indicadores",
   dimension_activada: "Activó una dimensión de indicadores",
   dimension_desactivada: "Desactivó una dimensión de indicadores",
