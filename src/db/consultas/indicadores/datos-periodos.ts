@@ -7,7 +7,8 @@
  *   de un indicador activo cuya **versión que rige ese periodo** cita el dato, también el periodo del indicador que sigue en
  *   curso y aún no tiene medición: un anual aprobado en noviembre pide los meses del año. No nacen vencidos: si su fecha
  *   límite ya pasó al abrirlo, el plazo cuenta desde ese día. Con dimensión, el periodo fija su lista de categorías. Los
- *   pendientes sin eventos que ya nadie pide se quitan.
+ *   pendientes sin eventos ni soportes que ya nadie pide se quitan; los que se conservan quedan con `se_pide` en falso y
+ *   vuelven a pedirse (sin nacer vencidos) si otra versión vuelve a citar el dato.
  * - **Quién reporta y corrige** (`reportarDato`): el permiso `indicadores.medir` más `puedeReportarDato`, comprobado dentro de
  *   la transacción. Corregir antes del cierre no pide justificación; cada cambio deja su antes y su después en el historial
  *   (`variable_eventos`, de solo inserción).
@@ -80,18 +81,13 @@ const SIN_CAMBIOS = "No hay cambios que corregir";
 const FORMULARIO_CAMBIO = "El formulario no corresponde a este periodo: recargue la página";
 
 /**
- * Lo que se pide de un dato, para un `WHERE` sobre `variable_valores vv` (anexo 14C, §4.3): un periodo pendiente de un dato
- * que cita alguna versión aprobada de un indicador activo. El pendiente que ya ningún indicador necesita y que se conserva
- * solo porque tiene historial o un soporte (`asegurarDe` no lo quita) sigue existiendo, pero no se pide, como la constancia
- * de la 14B (`constanciaQueSePide`). Es la regla por dato, no por periodo: la de qué periodo pide cada indicador vive en
- * `loQuePiden` y no se repite en SQL. Lo comparten la tarea, sus recordatorios (`datos-vencidos.ts`), el número de la pestaña
+ * Lo que se pide de un dato, para un `WHERE` sobre `variable_valores vv` (anexo 14C, §4.3): un periodo pendiente que alguna
+ * medición necesita. Lo sabe `loQuePiden` y lo deja escrito `asegurarDe` en `se_pide`: el pendiente que ya ningún indicador
+ * necesita y que se conserva solo porque tiene historial o un soporte sigue existiendo, pero no se pide, como la constancia
+ * de la 14B (`constanciaQueSePide`). Lo comparten la tarea, sus recordatorios (`datos-vencidos.ts`), el número de la pestaña
  * y el estado de la lista y de la página del dato.
  */
-export const periodoQueSePide = (sql: Cliente) => sql`(vv.estado = 'pendiente' AND EXISTS (
-  SELECT 1 FROM indicador_variables qsp_iv
-  JOIN indicador_versiones qsp_v ON qsp_v.id = qsp_iv.version_id AND qsp_v.estado = 'aprobada'
-  JOIN indicadores qsp_i ON qsp_i.id = qsp_v.indicador_id AND qsp_i.estado = 'activo'
-  WHERE qsp_iv.variable_compartida_id = vv.variable_id))`;
+export const periodoQueSePide = (sql: Cliente) => sql`(vv.estado = 'pendiente' AND vv.se_pide)`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cuándo se abren
@@ -175,8 +171,11 @@ async function loQuePiden(
 
 /**
  * Un dato en su transacción, tomado `FOR SHARE`: abre (idempotente) los periodos que se piden y quita los pendientes que ya
- * nadie pide, sin eventos ni soportes. Con dimensión, la lista de cada periodo nuevo sale del maestro leído `FOR KEY SHARE`
- * en esta misma transacción (`maestroDeCategorias`).
+ * nadie pide, sin eventos ni soportes; el que se conserva (con historia o soporte) queda con `se_pide` en falso, y el que
+ * vuelve a pedirse, en verdadero, sin nacer vencido: si su fecha límite ya pasó, cuenta desde hoy con el plazo del dato y sus
+ * avisos empiezan otra vez. Si no se pudo saber qué pide algún indicador (`completo` falso), solo abre: no quita ni marca.
+ * Con dimensión, la lista de cada periodo nuevo sale del maestro leído `FOR KEY SHARE` en esta misma transacción
+ * (`maestroDeCategorias`).
  */
 function asegurarDe(sql: Cliente, datoId: number, ahora: Date): Promise<{ abiertos: number; quitados: number }> {
   return enTransaccion(sql, async (tx) => {
@@ -189,9 +188,9 @@ function asegurarDe(sql: Cliente, datoId: number, ahora: Date): Promise<{ abiert
     const existentes = new Set((await tx`SELECT periodo FROM variable_valores WHERE variable_id = ${dato.id}`).map((f) => f.periodo as string));
     const nuevos = [...pedidos.values()].filter((p) => !existentes.has(p.clave)).sort((a, b) => a.desde.getTime() - b.desde.getTime());
     let abiertos = 0;
+    const plazo = Number(d.plazo_reporte_dias);
     if (nuevos.length > 0) {
       const maestro = d.dimension_id === null ? null : await maestroDeCategorias(tx, Number(d.dimension_id), { bloquear: true });
-      const plazo = Number(d.plazo_reporte_dias);
       for (const p of nuevos) {
         const limite = fechaLimiteDeReporte(p, plazo, zona);
         const vence = limite.getTime() < ahora.getTime() ? fechaLimite(ahora, plazo, zona) : limite;
@@ -204,12 +203,24 @@ function asegurarDe(sql: Cliente, datoId: number, ahora: Date): Promise<{ abiert
       }
     }
     if (!completo) return { abiertos, quitados: 0 };
+    const claves = [...pedidos.keys()];
     // `archivos` no tiene llave foránea hacia el periodo: quitar uno con soporte dejaría la evidencia huérfana.
     const quitados = await tx`DELETE FROM variable_valores vv
-      WHERE vv.variable_id = ${dato.id} AND vv.estado = 'pendiente' AND NOT (vv.periodo = ANY(${[...pedidos.keys()]}::text[]))
+      WHERE vv.variable_id = ${dato.id} AND vv.estado = 'pendiente' AND NOT (vv.periodo = ANY(${claves}::text[]))
         AND NOT EXISTS (SELECT 1 FROM variable_eventos ve WHERE ve.valor_id = vv.id)
         AND NOT EXISTS (SELECT 1 FROM archivos ar WHERE ar.contexto = 'dato_compartido' AND ar.contexto_id = vv.id)
       RETURNING vv.id`;
+    // El que se conserva sin que nadie lo pida deja de ser tarea, aviso y número de la pestaña.
+    await tx`UPDATE variable_valores SET se_pide = false
+      WHERE variable_id = ${dato.id} AND estado = 'pendiente' AND se_pide AND NOT (periodo = ANY(${claves}::text[]))`;
+    // El que vuelve a pedirse no nace vencido (los SET leen la fila de antes: todos miran el `vence_en` viejo).
+    const desdeHoy = fechaLimite(ahora, plazo, zona);
+    await tx`UPDATE variable_valores SET se_pide = true,
+        vence_en = CASE WHEN vence_en < ${ahora} THEN ${desdeHoy} ELSE vence_en END,
+        aviso_previo_en = CASE WHEN vence_en < ${ahora} THEN NULL ELSE aviso_previo_en END,
+        aviso_vencido_en = CASE WHEN vence_en < ${ahora} THEN NULL ELSE aviso_vencido_en END,
+        escalado_en = CASE WHEN vence_en < ${ahora} THEN NULL ELSE escalado_en END
+      WHERE variable_id = ${dato.id} AND estado = 'pendiente' AND NOT se_pide AND periodo = ANY(${claves}::text[])`;
     return { abiertos, quitados: quitados.length };
   });
 }

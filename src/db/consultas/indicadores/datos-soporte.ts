@@ -4,7 +4,8 @@
  * (`variable_valores`). Los suben y los quitan, mientras el periodo no esté cerrado, quienes pueden reportar el dato
  * (`puedeReportarDato`, con el permiso `indicadores.medir`); los ven quienes ven el dato y quienes ven los soportes de algún
  * indicador con una ficha aprobada que lo cita (`puedeVerSoporteDeDato`). Para los demás no existen: 404. Cada subida y cada
- * quitada dejan su evento `soporte` en el historial del periodo (`variable_eventos`) y su entrada en la bitácora.
+ * quitada dejan su evento `soporte` en el historial del periodo (`variable_eventos`); en la bitácora, la subida queda con el
+ * `subir_archivo` de `registrarArchivo`, como la de cualquier evidencia, y la quitada con `dato_soporte_quitado`.
  *
  * Candados, como al reportar (`periodoBloqueado`): el dato `FOR SHARE`, el periodo `FOR UPDATE` y solo después la fila de
  * `archivos` y el evento.
@@ -126,32 +127,25 @@ export async function bloquearParaSoporteDeDato(tx: TransactionSql, periodoId: n
   return p;
 }
 
-/** Lo que dejan una subida y una quitada: el evento `soporte` del periodo y la entrada de la bitácora, con la marca del respaldo. */
-async function dejarConstancia(
-  tx: TransactionSql,
-  p: PeriodoBloqueado,
-  c: { usuarioId: number; archivo: string; subido: boolean; ahora: Date },
-): Promise<void> {
-  const marca = p.sinMedidor ? { sinResponsable: true as const } : {};
-  const evento = { accion: c.subido ? "subido" : "quitado", nombre: c.archivo, ...marca };
+/** La marca de que el Admin SGC actuó porque nadie más podía reportar el dato. */
+const marcaDe = (p: PeriodoBloqueado) => (p.sinMedidor ? { sinResponsable: true as const } : {});
+
+/** El evento `soporte` del periodo, con la marca del respaldo. */
+async function dejarEvento(tx: TransactionSql, p: PeriodoBloqueado, c: { usuarioId: number; archivo: string; accion: string; ahora: Date }) {
   await tx`INSERT INTO variable_eventos (valor_id, tipo, usuario_id, detalle, creado_en)
-    VALUES (${p.id}, 'soporte', ${c.usuarioId}, ${tx.json(evento)}, ${c.ahora})`;
-  await registrarAuditoria(tx, {
-    usuarioId: c.usuarioId,
-    accion: c.subido ? "dato_soporte_subido" : "dato_soporte_quitado",
-    entidad: "dato_compartido",
-    entidadId: p.datoId,
-    detalle: { nombre: p.nombre, periodo: p.periodo, periodoId: p.id, archivo: c.archivo, ...marca },
-  });
+    VALUES (${p.id}, 'soporte', ${c.usuarioId}, ${tx.json({ accion: c.accion, nombre: c.archivo, ...marcaDe(p) })}, ${c.ahora})`;
 }
 
-/** El evento y la bitácora de una subida, con la fila de `archivos` ya escrita y los candados de `bloquearParaSoporteDeDato`. */
+/**
+ * El evento de una subida, con la fila de `archivos` ya escrita (y su `subir_archivo` en la bitácora) y los candados de
+ * `bloquearParaSoporteDeDato`.
+ */
 export function dejarSoporteDeDatoSubido(
   tx: TransactionSql,
   p: PeriodoBloqueado,
   c: { usuarioId: number; archivo: string; ahora: Date },
 ): Promise<void> {
-  return dejarConstancia(tx, p, { ...c, subido: true });
+  return dejarEvento(tx, p, { ...c, accion: "subido" });
 }
 
 /**
@@ -175,7 +169,15 @@ export async function quitarSoporteDeDato(
       WHERE id = ${d.archivoId} AND contexto = 'dato_compartido' AND contexto_id = ${p.id} AND rol = 'evidencia' FOR UPDATE`;
     if (!archivo) throw new ErrorIndicador(SOPORTE_NO_EXISTE);
     await tx`DELETE FROM archivos WHERE id = ${d.archivoId}`;
-    await dejarConstancia(tx, p, { usuarioId: sesion.usuarioId, archivo: archivo.nombre_original as string, subido: false, ahora });
+    const nombre = archivo.nombre_original as string;
+    await dejarEvento(tx, p, { usuarioId: sesion.usuarioId, archivo: nombre, accion: "quitado", ahora });
+    await registrarAuditoria(tx, {
+      usuarioId: sesion.usuarioId,
+      accion: "dato_soporte_quitado",
+      entidad: "dato_compartido",
+      entidadId: p.datoId,
+      detalle: { nombre: p.nombre, periodo: p.periodo, periodoId: p.id, archivo: nombre, ...marcaDe(p) },
+    });
     return archivo.ruta as string;
   });
   const absoluta = resolverRutaAlmacen(ruta);

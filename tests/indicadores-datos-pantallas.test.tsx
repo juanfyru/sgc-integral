@@ -31,12 +31,20 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: () => {}, push: () => {} }),
 }));
 vi.mock("@/app/acciones-indicadores", () => ({ reportarDatoCompartido: vi.fn() }));
-vi.mock("@/app/admin/acciones-indicadores", () => ({ guardarDatoCompartido: vi.fn(), designarResponsablesDelDato: vi.fn() }));
+vi.mock("@/app/admin/acciones-indicadores", () => ({
+  guardarDatoCompartido: vi.fn(),
+  designarResponsablesDelDato: vi.fn(),
+  cambiarEstadoDelDato: vi.fn(),
+  borrarDatoCompartido: vi.fn(),
+}));
 
 import PaginaDato from "@/app/(app)/indicadores/datos/[id]/page";
 import PaginaDatos from "@/app/(app)/indicadores/datos/page";
+import { cifraDeDato, conPuntoDeMiles } from "@/componentes/indicadores/datos/comun";
+import { CamposDelDato } from "@/componentes/indicadores/datos/FormularioDato";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import type { DatoCompartido } from "@/db/consultas/indicadores/datos";
 import { reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import type { SesionValida } from "@/lib/sesion";
 import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
@@ -129,6 +137,8 @@ describe("la lista de «Datos compartidos»", () => {
       const suya = await lista(responsable);
       expect(suya).toContain(NOMBRE);
       expect(suya).toContain(general.codigo);
+      // El nombre va junto al código para el lector de pantalla, no solo en `title`.
+      expect(suya).toContain(`<span class="sr-only"> Indicador de prueba ${general.codigo}</span>`);
       expect(suya).not.toContain(restringido.codigo);
       expect(suya).not.toMatch(/y otros?\b|más indicadores|\+\d/);
       // Sus periodos se abrieron al entrar y el responsable los tiene por reportar.
@@ -155,13 +165,13 @@ describe("la página de un dato", () => {
       const html = await pagina(responsable, datoId);
       expect(html).toContain(NOMBRE);
       expect(html).toContain("Septiembre de 2026");
-      expect(html).toContain("1197850000");
-      expect(html).toContain("antes 1179850000");
+      expect(html).toContain("1.197.850.000");
+      expect(html).toContain("antes 1.179.850.000");
       expect(html).toContain(`${responsable.nombre} · 6 oct 2026`);
       expect(html).toContain(`lo corrigió ${otro.nombre} · 9 oct 2026`);
       expect(html).toContain("Corregido");
       // En el historial del periodo, la corrección con su antes y su después.
-      expect(html).toContain("1179850000 → 1197850000");
+      expect(html).toContain("1.179.850.000 → 1.197.850.000");
       // «Lo usan», solo lo que la persona ve.
       expect(html).toContain(general.codigo);
       expect(html).not.toContain(restringido.codigo);
@@ -205,4 +215,112 @@ describe("la página de un dato", () => {
       expect(suya).toContain(NOMBRE);
       expect(suya).not.toContain("Reportar el dato");
     }));
+});
+
+describe("lo que ya no se pide y lo que hace quien administra", () => {
+  it("un pendiente con soporte que ninguna medición necesita: la lista y la página dicen «Ya no se pide» y no se reporta ni se le sube nada", () =>
+    enTransaccion(async (tx) => {
+      const { responsable, datoId, general, restringido } = await entorno(tx);
+      const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-09", ahora: OCT_6 });
+      const [archivo] = await tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+        VALUES (NULL, 'dato_compartido', ${periodoId}, 'evidencia', ${`datos-compartidos/${periodoId}/cierre.pdf`}, 'cierre.pdf', 'pdf',
+          'application/pdf', 4, ${"e".repeat(64)})
+        RETURNING id`;
+      const admin = await sesionAdmin(tx);
+      for (const i of [general, restringido]) {
+        await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${admin.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide'
+          WHERE id = ${i.id}`;
+      }
+
+      expect(await lista(responsable)).toContain("Ya no se pide");
+      const html = await pagina(responsable, datoId);
+      expect(html).toContain("Ya no se pide");
+      expect(html).not.toContain("Reportar el dato");
+      expect(html).not.toContain("Reportar septiembre de 2026");
+      expect(html).not.toContain("Zona de carga de los soportes de septiembre de 2026");
+      // Su soporte se sigue descargando.
+      expect(html).toContain(`href="/indicadores/datos/${datoId}/soportes/${Number(archivo.id)}"`);
+    }));
+
+  it("quien administra activa o desactiva el dato y lo borra desde su página; quien no administra, no", () =>
+    enTransaccion(async (tx) => {
+      const { responsable, datoId } = await entorno(tx);
+      const delAdmin = await pagina(await sesionAdmin(tx), datoId);
+      expect(delAdmin).toContain("Desactivar el dato");
+      expect(delAdmin).toContain("Borrar el dato");
+      await tx`UPDATE variables_compartidas SET activa = false WHERE id = ${datoId}`;
+      expect(await pagina(await sesionAdmin(tx), datoId)).toContain("Activar el dato");
+      const suya = await pagina(responsable, datoId);
+      for (const texto of ["Activar el dato", "Desactivar el dato", "Borrar el dato", "Editar el dato", "Cambiar responsables"]) {
+        expect(suya).not.toContain(texto);
+      }
+    }));
+});
+
+describe("los campos del dato (CamposDelDato)", () => {
+  const opciones = { procesos: [{ id: 1, nombre: "Facturación" }], dimensiones: [{ id: 3, nombre: "Sedes" }], usuarios: [], plazoReporteDias: 15 };
+  const dato: DatoCompartido = {
+    id: 9,
+    procesoId: 1,
+    proceso: "Facturación",
+    nombre: NOMBRE,
+    descripcion: null,
+    fuente: null,
+    unidad: null,
+    periodicidad: "mensual",
+    consolidacion: "suma",
+    capturaMin: null,
+    capturaMax: null,
+    admiteNegativos: false,
+    plazoReporteDias: 10,
+    dimensionId: 3,
+    dimension: "Sedes",
+    activa: true,
+    citado: true,
+    responsables: [],
+  };
+  const campos = (d: DatoCompartido | null) => renderToStaticMarkup(<CamposDelDato dato={d} opciones={opciones} estado={null} prefijo="prueba" />);
+  const etiqueta = (html: string, nombre: string) => html.match(new RegExp(`<(input|select)[^>]*name="${nombre}"[^>]*>`))?.[0] ?? "";
+
+  it("un dato nuevo trae puesto el plazo de reporte de la entidad", () => {
+    const html = campos(null);
+    expect(etiqueta(html, "plazoReporteDias")).toContain('value="15"');
+    expect(etiqueta(html, "periodicidad")).toMatch(/^<select/);
+  });
+
+  it("si una ficha aprobada lo cita, periodicidad, cómo se junta y desagregación van de solo lectura, con sus campos ocultos", () => {
+    const html = campos(dato);
+    expect(html).toContain("Una ficha aprobada ya cita este dato");
+    for (const [nombre, valor] of [
+      ["periodicidad", "mensual"],
+      ["consolidacion", "suma"],
+      ["dimensionId", "3"],
+    ]) {
+      const tag = etiqueta(html, nombre);
+      expect(tag, nombre).toMatch(/^<input/);
+      expect(tag, nombre).toContain('type="hidden"');
+      expect(tag, nombre).toContain(`value="${valor}"`);
+    }
+    expect(html).toContain("Se suma");
+    expect(etiqueta(html, "plazoReporteDias")).toContain('value="10"');
+    // Lo demás se edita siempre; sin cita, también la periodicidad.
+    expect(etiqueta(campos({ ...dato, citado: false }), "periodicidad")).toMatch(/^<select/);
+  });
+});
+
+describe("las cifras de las pantallas del dato", () => {
+  it.each([
+    ["1284300000", "1.284.300.000"],
+    ["-1234,5", "-1.234,5"],
+    ["999", "999"],
+    ["1000", "1.000"],
+    ["0,1234", "0,1234"],
+    ["?", "?"],
+  ])("conPuntoDeMiles(%s) = %s", (entrada, salida) => expect(conPuntoDeMiles(entrada)).toBe(salida));
+
+  it("cifraDeDato pone la coma decimal y el punto de miles a un valor guardado", () => {
+    expect(cifraDeDato("1284300000.5")).toBe("1.284.300.000,5");
+    expect(cifraDeDato("-1234.5")).toBe("-1.234,5");
+    expect(cifraDeDato("12.3456")).toBe("12,3456");
+  });
 });

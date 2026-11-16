@@ -10,6 +10,7 @@
  * Candados: el dato `FOR UPDATE` antes de leer si está citado o en uso y antes de tocar sus responsables.
  */
 import type { TransactionSql } from "postgres";
+import { cache } from "react";
 import type { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
@@ -213,10 +214,14 @@ export async function indicadoresQueLoUsan(
   return salida;
 }
 
-/** Lo que la lista de «Datos compartidos» dice de un dato: su último valor y el periodo que se pide con la fecha más próxima. */
+/**
+ * Lo que la lista de «Datos compartidos» dice de un dato: su último valor, el periodo que se pide con la fecha más próxima y si
+ * conserva algún pendiente que ya no se pide (`periodoQueSePide`).
+ */
 export type ResumenDeDato = {
   ultimo: { periodo: string; valor: string; categorias: number | null; reporto: string | null; reportadoEn: Date | null } | null;
   porReportar: { periodo: string; venceEn: Date } | null;
+  yaNoSePide: boolean;
 };
 
 /** El resumen de cada dato de `datoIds` que la persona ve (`filtroDatos`): uno sin periodos no trae ninguno de los dos. */
@@ -230,7 +235,7 @@ export async function resumenDeDatos(
   if (datoIds.length === 0) return salida;
   const deLosDatos = sql`vv.variable_id IN ${sql([...datoIds])}
     AND EXISTS (SELECT 1 FROM variables_compartidas d WHERE d.id = vv.variable_id AND ${filtroDatos(sql, sesion)})`;
-  const [ultimos, pedidos] = await Promise.all([
+  const [ultimos, pedidos, sinPedir] = await Promise.all([
     sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, vv.periodo, vv.valor, vv.categorias, vv.reportado_en, u.nombre AS reporto
       FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
       WHERE ${deLosDatos} AND vv.valor IS NOT NULL
@@ -239,9 +244,11 @@ export async function resumenDeDatos(
       FROM variable_valores vv
       WHERE ${deLosDatos} AND ${periodoQueSePide(sql)}
       ORDER BY vv.variable_id, vv.vence_en, vv.desde, vv.id`,
+    sql`SELECT DISTINCT vv.variable_id FROM variable_valores vv
+      WHERE ${deLosDatos} AND vv.estado = 'pendiente' AND NOT ${periodoQueSePide(sql)}`,
   ]);
   const de = (id: number): ResumenDeDato => {
-    const actual = salida.get(id) ?? { ultimo: null, porReportar: null };
+    const actual = salida.get(id) ?? { ultimo: null, porReportar: null, yaNoSePide: false };
     salida.set(id, actual);
     return actual;
   };
@@ -255,6 +262,7 @@ export async function resumenDeDatos(
     };
   }
   for (const f of pedidos) de(Number(f.variable_id)).porReportar = { periodo: f.periodo as string, venceEn: f.vence_en as Date };
+  for (const f of sinPedir) de(Number(f.variable_id)).yaNoSePide = true;
   return salida;
 }
 
@@ -289,16 +297,25 @@ export async function opcionesDeDato(
 
 /**
  * La pestaña «Datos compartidos» de Indicadores: la ve quien administra indicadores y quien ve algún dato (`filtroDatos`);
- * su número son los periodos que la persona tiene por reportar, los mismos de «Mis tareas» (`tareasDeDatos`).
+ * su número son los periodos que la persona tiene por reportar, los mismos de «Mis tareas» (`tareasDeDatos`). Se comparte por
+ * petición (`React.cache`). Si no se puede saber, se registra y la página sigue: la ve quien administra, sin número.
  */
-export async function pestanaDeDatos(sesion: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<{ visible: boolean; porReportar: number }> {
-  const sql = opciones?.sql ?? obtenerSql();
-  const [ve] = puede(sesion, "indicadores.administrar")
-    ? [{ si: true }]
-    : await sql`SELECT EXISTS (SELECT 1 FROM variables_compartidas d WHERE ${filtroDatos(sql, sesion)}) AS si`;
-  if (ve.si !== true) return { visible: false, porReportar: 0 };
-  return { visible: true, porReportar: (await tareasDeDatos(sql, sesion)).length };
-}
+export const pestanaDeDatos = cache(
+  async (sesion: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<{ visible: boolean; porReportar: number }> => {
+    const sql = opciones?.sql ?? obtenerSql();
+    const administra = puede(sesion, "indicadores.administrar");
+    try {
+      const [ve] = administra
+        ? [{ si: true }]
+        : await sql`SELECT EXISTS (SELECT 1 FROM variables_compartidas d WHERE ${filtroDatos(sql, sesion)}) AS si`;
+      if (ve.si !== true) return { visible: false, porReportar: 0 };
+      return { visible: true, porReportar: (await tareasDeDatos(sql, sesion)).length };
+    } catch (err) {
+      console.error("No se pudo saber qué datos compartidos ve la persona ni cuántos tiene por reportar:", err);
+      return { visible: administra, porReportar: 0 };
+    }
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Escrituras

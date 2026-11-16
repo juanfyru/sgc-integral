@@ -256,8 +256,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `<html>` solo tras validar el hex estricto y el contraste P1/P2 (`src/lib/marca.ts`).
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
-  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de esta entrega son dieciséis
-  (`drizzle/0000` a `drizzle/0015`); la `0015` alteró en su sitio las tablas vacías de la 14C.
+  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de esta entrega son diecisiete
+  (`drizzle/0000` a `drizzle/0016`); la `0015` alteró en su sitio las tablas vacías de la 14C y la `0016`
+  añade `variable_valores.se_pide` (el periodo de un dato que alguna medición necesita).
 - **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
   dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
   `(app)`, `(cuenta)` y `(app)/admin/(panel)`): nunca se prerenderiza, y el build de CI no

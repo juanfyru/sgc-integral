@@ -878,11 +878,8 @@ export function describirEvento(e: EventoAuditoria): string {
       const despues = cifraDeDato(d.despues);
       return `Corrigió ${periodoDelDato(nombre, d.periodo)}${antes && despues ? `: ${antes} → ${despues}` : ""}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
     }
-    case "dato_soporte_subido":
-    case "dato_soporte_quitado": {
-      const verbo = e.accion === "dato_soporte_subido" ? "Subió" : "Quitó";
-      return `${verbo} el soporte «${texto(d.archivo) ?? "?"}» ${delPeriodoDelDato(nombre, d.periodo)}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
-    }
+    case "dato_soporte_quitado":
+      return `Quitó el soporte «${texto(d.archivo) ?? "?"}» ${delPeriodoDelDato(nombre, d.periodo)}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
     // ── Indicadores (14C): dimensiones y categorías
     case "dimension_guardada":
       return d.creada === true
@@ -1274,7 +1271,6 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   dato_compartido_borrado: "Borró un dato compartido",
   dato_reportado: "Reportó un dato compartido",
   dato_corregido: "Corrigió un dato compartido",
-  dato_soporte_subido: "Subió un soporte de un dato compartido",
   dato_soporte_quitado: "Quitó un soporte de un dato compartido",
   dimension_guardada: "Guardó una dimensión de indicadores",
   dimension_activada: "Activó una dimensión de indicadores",

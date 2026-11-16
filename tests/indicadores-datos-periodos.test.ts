@@ -86,8 +86,8 @@ async function entorno(tx: TransactionSql, o: Partial<Parameters<typeof datoDePr
 const asegurar = (tx: TransactionSql, datoId: number, ahora: Date) => asegurarPeriodosDeDatos({ sql: tx, ahora, datoIds: [datoId] });
 
 /**
- * Un indicador activo, mensual y aprobado en diciembre de 2025, cuya ficha cita el dato en B: sin uno así, un periodo
- * pendiente no se pide (`periodoQueSePide`) y no es tarea de nadie.
+ * Un indicador activo, mensual y aprobado en diciembre de 2025, cuya ficha cita el dato en B: lo que pide lo deja escrito
+ * `asegurarPeriodosDeDatos` en `se_pide`.
  */
 const usado = (tx: TransactionSql, procesoId: number, datoId: number) =>
   indicadorDePrueba(tx, { procesoId, aprobadaEn: DIC_2025, variables: { B: { datoId } } });
@@ -511,7 +511,6 @@ describe("la tarea de reportar el dato", () => {
     revertida(sql, async (tx) => {
       const zona = zonaHoraria();
       const { procesoId, responsable, datoId } = await entorno(tx);
-      await usado(tx, procesoId, datoId);
       const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-11", ahora: DIC_5 });
       const opciones = { sql: tx, ahora: DIC_5 };
 
@@ -547,7 +546,6 @@ describe("la tarea de reportar el dato", () => {
     revertida(sql, async (tx) => {
       const procesoId = await procesoNuevo(tx);
       const datoId = await datoDePrueba(tx, { procesoId, nombre: NOMBRE });
-      await usado(tx, procesoId, datoId);
       const periodoId = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-11", ahora: DIC_5 });
       const admin = await sesionAdmin(tx);
       const opciones = { sql: tx, ahora: DIC_5 };
@@ -588,8 +586,60 @@ describe("la tarea de reportar el dato", () => {
       expect((await periodosDeDato(responsable, datoId, { sql: tx }))!).toEqual([
         expect.objectContaining({ id: octubre.id, estado: "pendiente", sePide: false }),
       ]);
-      expect((await resumenDeDatos(responsable, [datoId], { sql: tx })).get(datoId)?.porReportar ?? null).toBeNull();
+      expect((await resumenDeDatos(responsable, [datoId], { sql: tx })).get(datoId)).toMatchObject({ porReportar: null, yaNoSePide: true });
       expect(await pestanaDeDatos(responsable, { sql: tx })).toEqual({ visible: true, porReportar: 0 });
+    }));
+
+  it("un cambio mayor quita el dato de un indicador que sigue activo: el pendiente con soporte se conserva y ya no se pide; otra versión que vuelve a citarlo lo pide otra vez, sin nacer vencido", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const zona = zonaHoraria();
+      const { procesoId, responsable, datoId } = await entorno(tx);
+      const admin = await sesionAdmin(tx);
+      const ind = await usado(tx, procesoId, datoId);
+      await asegurarMediciones({ sql: tx, ahora: NOV_20, indicadorId: ind.id });
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 10, quitados: 0 });
+      const septiembre = (await periodos(tx, datoId)).find((f) => f.periodo === "2026-09")!;
+      // El soporte se subió antes de reportar, como lo deja la zona de carga.
+      await archivoDeDato(tx, septiembre.id);
+
+      // El indicador sigue activo; desde enero rige una versión que ya no cita el dato.
+      await cambioMayor(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, rigeDesde: "2026-01", aprobadaEn: NOV_20, datoId: null });
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 0, quitados: 9 });
+      expect((await periodos(tx, datoId)).map((f) => [f.periodo, f.estado])).toEqual([["2026-09", "pendiente"]]);
+      const opciones = { sql: tx, ahora: NOV_20 };
+      expect(deDatos(await tareasDeIndicadores(responsable, opciones))).toEqual([]);
+      for (const ahora of [new Date("2026-11-28T15:00:00Z"), new Date("2026-12-02T15:00:00Z"), new Date("2027-01-10T15:00:00Z")]) {
+        expect(await datosVencidos({ sql: tx, ahora, escalamientoDias: 3 })).toEqual({ previos: 0, vencidos: 0, escalados: 0 });
+      }
+      const marcas = async () =>
+        (await tx`SELECT se_pide, vence_en, aviso_previo_en, aviso_vencido_en, escalado_en FROM variable_valores WHERE id = ${septiembre.id}`)[0];
+      expect(await marcas()).toMatchObject({ se_pide: false, aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
+      expect(await pestanaDeDatos(responsable, { sql: tx })).toEqual({ visible: true, porReportar: 0 });
+      expect((await resumenDeDatos(responsable, [datoId], { sql: tx })).get(datoId)).toMatchObject({ porReportar: null, yaNoSePide: true });
+      expect((await periodosDeDato(responsable, datoId, { sql: tx }))!).toEqual([
+        expect.objectContaining({ id: septiembre.id, estado: "pendiente", sePide: false }),
+      ]);
+
+      // Las marcas de cuando se pedía, y una versión que desde febrero vuelve a citar el dato: el 5 de diciembre su fecha
+      // límite (30 de noviembre) ya pasó, así que cuenta desde ese día y sus avisos empiezan otra vez.
+      await tx`UPDATE variable_valores SET aviso_previo_en = ${NOV_20}, aviso_vencido_en = ${NOV_20}, escalado_en = ${NOV_20}
+        WHERE id = ${septiembre.id}`;
+      await cambioMayor(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, rigeDesde: "2026-02", aprobadaEn: DIC_5, datoId });
+      expect(await asegurar(tx, datoId, DIC_5)).toEqual({ abiertos: 9, quitados: 0 });
+      const otraVez = await marcas();
+      expect(otraVez).toEqual({
+        se_pide: true,
+        vence_en: fechaLimite(DIC_5, 10, zona),
+        aviso_previo_en: null,
+        aviso_vencido_en: null,
+        escalado_en: null,
+      });
+      expect((otraVez.vence_en as Date).getTime()).toBeGreaterThan(DIC_5.getTime());
+      expect(deDatos(await tareasDeIndicadores(responsable, { sql: tx, ahora: DIC_5 })).map((t) => t.id)).toContain(`dato:${septiembre.id}`);
+      // Idempotente: otra pasada no lo mueve.
+      expect(await asegurar(tx, datoId, DIC_5)).toEqual({ abiertos: 0, quitados: 0 });
+      expect((await marcas()).vence_en).toEqual(fechaLimite(DIC_5, 10, zona));
     }));
 
   it("más de cinco se agrupan en «Datos compartidos por reportar», que lleva a la pestaña", () => {

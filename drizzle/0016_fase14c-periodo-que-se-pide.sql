@@ -1,0 +1,1 @@
+ALTER TABLE "variable_valores" ADD COLUMN "se_pide" boolean DEFAULT true NOT NULL;

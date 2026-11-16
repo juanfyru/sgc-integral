@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { paraReportar } from "@/componentes/indicadores/datos/comun";
 import { FichaDelDato } from "@/componentes/indicadores/datos/FichaDelDato";
-import { EditarDato, ResponsablesDelDato } from "@/componentes/indicadores/datos/FormularioDato";
+import { BorrarDato, EditarDato, EstadoDelDato, ResponsablesDelDato } from "@/componentes/indicadores/datos/FormularioDato";
 import { HistorialDelDato } from "@/componentes/indicadores/datos/HistorialDelDato";
 import { ReportarDato } from "@/componentes/indicadores/datos/ReportarDato";
 import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
@@ -20,8 +20,9 @@ export const metadata: Metadata = { title: "Dato compartido" };
 /**
  * La página de un dato compartido (anexo 14C, §4.4 a §4.7, maqueta 12), para quien lo ve: reportar el periodo que se pide
  * más antiguo (quien responde por él), la ficha del dato, sus periodos con el antes y el después de cada corrección, sus
- * soportes y su historial. Quien administra edita el dato y sus responsables aquí mismo; lo que una ficha aprobada congela va
- * de solo lectura. Antes de leer abre los periodos que se piden del dato. Para quien no lo ve, no existe.
+ * soportes y su historial. Quien administra edita el dato y sus responsables aquí mismo, lo activa o lo desactiva y lo borra;
+ * lo que una ficha aprobada congela va de solo lectura. Antes de leer abre los periodos que se piden del dato. Para quien no
+ * lo ve, no existe.
  */
 export default async function PaginaDato({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -53,6 +54,8 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
             <>
               <EditarDato dato={dato} opciones={opciones} />
               <ResponsablesDelDato dato={dato} usuarios={opciones.usuarios} />
+              <EstadoDelDato dato={dato} />
+              <BorrarDato dato={dato} />
             </>
           ) : null
         }

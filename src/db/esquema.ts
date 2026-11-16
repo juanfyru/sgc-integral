@@ -2097,6 +2097,9 @@ export const variableValores = pgTable(
     escaladoEn: marca("escalado_en"),
     cierreId: ref("cierre_id", () => cierresIndicadores.id),
     creadoEn: creado(),
+    // Algún indicador lo necesita (lo escribe `asegurarPeriodosDeDatos`): un pendiente que ya nadie pide y se conserva
+    // porque tiene historia o un soporte queda en falso y no es tarea de nadie (anexo 14C, §4.3).
+    sePide: boolean("se_pide").notNull().default(true),
   },
   (t) => [
     // La migración 0011 lo crea con NULLS NOT DISTINCT.

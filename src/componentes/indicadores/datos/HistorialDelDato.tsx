@@ -63,6 +63,9 @@ function Estado({ periodo, ahora }: { periodo: PeriodoDeDato; ahora: Date }) {
   return <Insignia variante="sin-dato">Ya no se pide</Insignia>;
 }
 
+/** Un periodo sin cerrar, salvo el pendiente que ya no se pide: ese solo conserva sus soportes para descargarlos. */
+const seReportaDesdeLaFila = (p: PeriodoDeDato) => p.estado === "reportado" || (p.estado === "pendiente" && p.sePide);
+
 function Soportes({ datoId, soportes }: { datoId: number; soportes: Soporte[] }) {
   if (soportes.length === 0) return <span className="text-muted-foreground">—</span>;
   return (
@@ -82,7 +85,8 @@ function Soportes({ datoId, soportes }: { datoId: number; soportes: Soporte[] })
 /**
  * Los periodos de un dato (anexo 14C, §4.4 y §4.7, maqueta 12), del más reciente al más viejo: su valor y, si se corrigió,
  * el de antes; quién lo reportó y quién lo corrigió; sus soportes y su estado. Con `editable` (quien puede reportar el dato),
- * cada periodo sin cerrar se reporta o se corrige desde su fila. Debajo, el historial de cada periodo, de solo inserción: qué
+ * desde su fila se corrige un periodo reportado sin cerrar y se reporta uno pendiente que se pide. Debajo, el historial de
+ * cada periodo, de solo inserción: qué
  * había, qué quedó, quién y cuándo.
  */
 export function HistorialDelDato({
@@ -141,7 +145,9 @@ export function HistorialDelDato({
               </td>
               {editable ? (
                 <td className={celda}>
-                  {p.estado === "cerrado" ? null : <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p, ahora)} soportes={soportes.get(p.id) ?? []} />}
+                  {seReportaDesdeLaFila(p) ? (
+                    <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p, ahora)} soportes={soportes.get(p.id) ?? []} />
+                  ) : null}
                 </td>
               ) : null}
             </tr>

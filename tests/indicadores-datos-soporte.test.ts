@@ -224,13 +224,15 @@ describe("POST /api/datos-compartidos/[id]/archivos: qué se guarda", () => {
         { tipo: "soporte", usuarioId: responsable.sesion.usuarioId, detalle: { accion: "subido", nombre: "Cierre de facturación octubre.pdf" } },
         { tipo: "soporte", usuarioId: responsable.sesion.usuarioId, detalle: { accion: "subido", nombre: "detalle.xlsx" } },
       ]);
-      expect(await bitacora(tx, datoId, "dato_soporte_subido")).toEqual([
-        {
-          usuarioId: responsable.sesion.usuarioId,
-          detalle: { nombre: NOMBRE, periodo: "2026-10", periodoId, archivo: "Cierre de facturación octubre.pdf" },
-        },
-        { usuarioId: responsable.sesion.usuarioId, detalle: { nombre: NOMBRE, periodo: "2026-10", periodoId, archivo: "detalle.xlsx" } },
+      // En la bitácora, como cualquier evidencia: el `subir_archivo` de `registrarArchivo`, sin una entrada propia del dato.
+      const subidas = await tx`SELECT usuario_id, detalle FROM auditoria
+        WHERE accion = 'subir_archivo' AND detalle->>'contexto' = 'dato_compartido' AND (detalle->>'contextoId')::bigint = ${periodoId}
+        ORDER BY id`;
+      expect(subidas.map((f) => [Number(f.usuario_id), (f.detalle as Record<string, unknown>).nombre])).toEqual([
+        [responsable.sesion.usuarioId, "Cierre de facturación octubre.pdf"],
+        [responsable.sesion.usuarioId, "detalle.xlsx"],
       ]);
+      expect(await tx`SELECT 1 FROM auditoria WHERE entidad = 'dato_compartido' AND entidad_id = ${datoId}`).toHaveLength(0);
       // El periodo sigue pendiente: el soporte no es el reporte.
       expect((await tx`SELECT estado FROM variable_valores WHERE id = ${periodoId}`)[0].estado).toBe("pendiente");
     }));
@@ -254,7 +256,7 @@ describe("POST /api/datos-compartidos/[id]/archivos: qué se guarda", () => {
 
   it("sin responsable ni líder activos, el Admin SGC sube el soporte y el evento lo marca", () =>
     entorno(async (e) => {
-      const { tx, datoId, periodoId, responsable, admin } = e;
+      const { tx, periodoId, responsable, admin } = e;
       await tx`UPDATE usuarios SET activo = false WHERE id = ${responsable.sesion.usuarioId}`;
       const r = await subir(admin.token, periodoId, "soporte.pdf", await PDF());
       expect(r.status).toBe(201);
@@ -263,7 +265,6 @@ describe("POST /api/datos-compartidos/[id]/archivos: qué se guarda", () => {
         usuarioId: admin.sesion.usuarioId,
         detalle: { accion: "subido", nombre: "soporte.pdf", sinResponsable: true },
       });
-      expect((await bitacora(tx, datoId, "dato_soporte_subido"))[0].detalle.sinResponsable).toBe(true);
     }));
 });
 
@@ -383,17 +384,15 @@ describe("quién ve el soporte de un dato (puedeVerSoporteDeDato, soporteDeDatoS
 });
 
 describe("la bitácora del soporte de un dato", () => {
-  it("cada acción dice qué archivo, de qué dato y de qué periodo", () => {
+  it("la quitada dice qué archivo, de qué dato y de qué periodo (la subida queda en el «subir_archivo» genérico)", () => {
     const evento = (accion: string, detalle: Record<string, unknown>) =>
       describirEvento({ accion, entidad: "dato_compartido", entidadId: 4, detalle });
     const detalle = { nombre: NOMBRE, periodo: "2026-10", periodoId: 9, archivo: "cierre.pdf" };
-    expect(evento("dato_soporte_subido", detalle)).toBe(`Subió el soporte «cierre.pdf» del dato compartido «${NOMBRE}», octubre de 2026`);
     expect(evento("dato_soporte_quitado", detalle)).toBe(`Quitó el soporte «cierre.pdf» del dato compartido «${NOMBRE}», octubre de 2026`);
-    expect(evento("dato_soporte_subido", { ...detalle, sinResponsable: true })).toBe(
-      `Subió el soporte «cierre.pdf» del dato compartido «${NOMBRE}», octubre de 2026 (sin nadie más que pudiera reportarlo)`,
+    expect(evento("dato_soporte_quitado", { ...detalle, sinResponsable: true })).toBe(
+      `Quitó el soporte «cierre.pdf» del dato compartido «${NOMBRE}», octubre de 2026 (sin nadie más que pudiera reportarlo)`,
     );
     expect(evento("dato_soporte_quitado", { archivo: "cierre.pdf" })).toBe("Quitó el soporte «cierre.pdf» de un dato compartido");
-    expect(nombreDeAccion("dato_soporte_subido")).toBe("Subió un soporte de un dato compartido");
     expect(nombreDeAccion("dato_soporte_quitado")).toBe("Quitó un soporte de un dato compartido");
   });
 });

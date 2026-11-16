@@ -1,7 +1,7 @@
 "use client";
 
-import { useId, useState } from "react";
-import { designarResponsablesDelDato, guardarDatoCompartido } from "@/app/admin/acciones-indicadores";
+import { useActionState, useId, useState, type KeyboardEvent } from "react";
+import { borrarDatoCompartido, cambiarEstadoDelDato, designarResponsablesDelDato, guardarDatoCompartido } from "@/app/admin/acciones-indicadores";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { CLASE_DIALOGO } from "@/componentes/indicadores/admin/DialogoRetirar";
@@ -11,14 +11,18 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import type { DatoCompartido, OpcionesDeDato } from "@/db/consultas/indicadores/datos";
-import { CONSOLIDACIONES, ETIQUETA_PERIODICIDAD, PERIODICIDADES, type Consolidacion } from "@/lib/indicadores/tipos";
+import { CONSOLIDACION } from "@/lib/indicadores/ficha-en-texto";
+import { CONSOLIDACIONES, ETIQUETA_PERIODICIDAD, PERIODICIDADES } from "@/lib/indicadores/tipos";
 
 const CONTROL = `${claseControl} w-full min-w-0 max-w-full`;
-// Como `CLASE_DIALOGO`, más ancho: el formulario del dato va en dos columnas.
-const DIALOGO = "m-auto w-full max-w-2xl rounded-lg border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40";
+// `CLASE_DIALOGO`, más ancho: el formulario del dato va en dos columnas.
+const DIALOGO = CLASE_DIALOGO.replace("max-w-md", "max-w-2xl");
 const MAXIMO_RESPONSABLES = 20;
 
-const ETIQUETA_JUNTA: Record<Consolidacion, string> = { suma: "Se suma", ultimo: "Último valor", promedio: "Promedio" };
+/** En un campo de búsqueda dentro de un formulario, Enter no envía la selección a medio hacer. */
+const sinEnviarConEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+  if (e.key === "Enter") e.preventDefault();
+};
 
 const CONGELADO =
   "Una ficha aprobada ya cita este dato: su periodicidad, cómo se junta y su desagregación no cambian. Si hace falta otra cosa, cree otro dato.";
@@ -48,7 +52,7 @@ function Fijo({ etiqueta, nombre, valor, texto }: { etiqueta: string; nombre: st
  * periodicidad, cómo se junta y la desagregación van de solo lectura con su explicación (F14C-DC34). Un dato nuevo trae puesto
  * el plazo de reporte de la entidad.
  */
-function CamposDelDato({ dato, opciones, estado, prefijo }: { dato: DatoCompartido | null; opciones: OpcionesDeDato; estado: EstadoAccion; prefijo: string }) {
+export function CamposDelDato({ dato, opciones, estado, prefijo }: { dato: DatoCompartido | null; opciones: OpcionesDeDato; estado: EstadoAccion; prefijo: string }) {
   const v = (campo: string, guardado: string | number | null | undefined) => valorDe(estado, campo, guardado);
   const congelado = dato?.citado === true;
   const negativos = estado?.valores ? estado.valores.admiteNegativos === "on" : dato?.admiteNegativos === true;
@@ -82,7 +86,7 @@ function CamposDelDato({ dato, opciones, estado, prefijo }: { dato: DatoComparti
         <>
           <p className="text-sm text-muted-foreground sm:col-span-2">{CONGELADO}</p>
           <Fijo etiqueta="Periodicidad" nombre="periodicidad" valor={dato.periodicidad} texto={ETIQUETA_PERIODICIDAD[dato.periodicidad]} />
-          <Fijo etiqueta="Cómo se junta" nombre="consolidacion" valor={dato.consolidacion} texto={ETIQUETA_JUNTA[dato.consolidacion]} />
+          <Fijo etiqueta="Cómo se junta" nombre="consolidacion" valor={dato.consolidacion} texto={CONSOLIDACION[dato.consolidacion]} />
           <Fijo
             etiqueta="Desagregación"
             nombre="dimensionId"
@@ -110,7 +114,7 @@ function CamposDelDato({ dato, opciones, estado, prefijo }: { dato: DatoComparti
             <select required defaultValue={v("consolidacion", dato?.consolidacion ?? "suma")} className={CONTROL}>
               {CONSOLIDACIONES.map((c) => (
                 <option key={c} value={c}>
-                  {ETIQUETA_JUNTA[c]}
+                  {CONSOLIDACION[c]}
                 </option>
               ))}
             </select>
@@ -270,7 +274,14 @@ export function ResponsablesDelDato({ dato, usuarios }: { dato: DatoCompartido; 
               <label htmlFor={idFiltro} className="text-sm font-medium">
                 Buscar persona
               </label>
-              <input id={idFiltro} type="search" value={filtro} onChange={(e) => setFiltro(e.target.value)} className={CONTROL} />
+              <input
+                id={idFiltro}
+                type="search"
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                onKeyDown={sinEnviarConEnter}
+                className={CONTROL}
+              />
             </div>
             <fieldset className="flex flex-col gap-1">
               <legend className="text-sm font-medium">{`Responden: ${elegidos.length} de ${MAXIMO_RESPONSABLES} como máximo`}</legend>
@@ -299,6 +310,65 @@ export function ResponsablesDelDato({ dato, usuarios }: { dato: DatoCompartido; 
               </Boton>
               <Boton type="submit" pendiente={pendiente}>
                 {pendiente ? "Guardando…" : "Guardar"}
+              </Boton>
+            </div>
+          </form>
+        ) : null}
+      </Dialogo>
+    </>
+  );
+}
+
+/**
+ * «Desactivar el dato» o «Activar el dato» (anexo 14C, §4.1), para quien administra indicadores. Se desactiva solo si ningún
+ * indicador activo lo usa; si el servidor lo rechaza, su mensaje se muestra tal cual.
+ */
+export function EstadoDelDato({ dato }: { dato: DatoCompartido }) {
+  const [estado, enviar, pendiente] = useActionState(cambiarEstadoDelDato, null);
+  return (
+    <form action={enviar} className="flex flex-col items-start gap-1">
+      <input type="hidden" name="id" value={dato.id} />
+      <input type="hidden" name="activa" value={dato.activa ? "false" : "true"} />
+      <Boton type="submit" variante="secundario" pendiente={pendiente}>
+        {pendiente ? "Guardando…" : dato.activa ? "Desactivar el dato" : "Activar el dato"}
+      </Boton>
+      <ErrorAccion estado={estado} />
+    </form>
+  );
+}
+
+/**
+ * «Borrar el dato» (anexo 14C, §4.1), para quien administra indicadores: pide confirmarlo, porque no se deshace, y al terminar
+ * lleva a «Datos compartidos». Un dato con historia no se borra (se desactiva): el servidor lo rechaza con su mensaje.
+ */
+export function BorrarDato({ dato }: { dato: DatoCompartido }) {
+  const [abierto, setAbierto] = useState(false);
+  const cerrar = () => setAbierto(false);
+  const [estado, enviar, pendiente] = useAccionDeDialogo(borrarDatoCompartido, cerrar);
+  const titulo = `Borrar «${dato.nombre}»`;
+  return (
+    <>
+      <Boton variante="peligro" onClick={() => setAbierto(true)}>
+        Borrar el dato
+      </Boton>
+      <Dialogo abierto={abierto} alCerrar={cerrar} titulo={titulo} className={CLASE_DIALOGO}>
+        {abierto ? (
+          <form action={enviar} className="flex flex-col gap-4 p-5">
+            <input type="hidden" name="id" value={dato.id} />
+            <p aria-hidden="true" className="font-semibold">
+              {titulo}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Se borran el dato y sus responsables, y no se puede deshacer. Solo se borra un dato que ninguna ficha cita y que no
+              tiene periodos; si ya tiene historia, desactívelo.
+            </p>
+            <ErrorAccion estado={estado} />
+            <div className="flex flex-wrap justify-end gap-2">
+              <Boton variante="secundario" onClick={cerrar}>
+                Volver
+              </Boton>
+              <Boton type="submit" variante="peligro" pendiente={pendiente}>
+                {pendiente ? "Borrando…" : "Borrar el dato"}
               </Boton>
             </div>
           </form>

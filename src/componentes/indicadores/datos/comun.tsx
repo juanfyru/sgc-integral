@@ -25,10 +25,20 @@ export function paraReportar(p: PeriodoDeDato, ahora: Date): PeriodoParaReportar
   };
 }
 
-/** Un valor guardado (punto decimal) como lo escribe la tabla del año de un indicador: coma decimal, hasta cuatro decimales. */
+/** «-1234,5» → «-1.234,5»: el punto de miles en la parte entera de una cifra ya escrita con coma decimal. */
+export function conPuntoDeMiles(cifra: string): string {
+  const [, signo, entera, resto] = /^(-?)(\d+)(.*)$/.exec(cifra) ?? [];
+  if (entera === undefined) return cifra;
+  return `${signo}${entera.replace(/\B(?=(\d{3})+(?!\d))/g, ".")}${resto}`;
+}
+
+/**
+ * Un valor guardado (punto decimal) como lo muestran las pantallas del dato (maquetas 11 y 12): coma decimal, hasta cuatro
+ * decimales y punto de miles, «1.284.300.000». Solo al mostrar: los campos de captura siguen sin separador.
+ */
 export function cifraDeDato(valor: string): string {
   const f = fraccion(valor);
-  return f ? numeroEs(f, 4, "truncar") : valor;
+  return f ? conPuntoDeMiles(numeroEs(f, 4, "truncar")) : valor;
 }
 
 /** «octubre de 2026»; con `inicial`, «Octubre de 2026». */

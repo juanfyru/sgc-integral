@@ -103,11 +103,12 @@ export async function cambiarEstadoDelDato(_prev: EstadoAccion, formData: FormDa
   });
 }
 
-/** `id` es el del dato. */
+/** `id` es el del dato. Borrado, su página ya no existe: lleva a «Datos compartidos». */
 export async function borrarDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     await borrarDato(sesion, idNumerico(formData, "id"));
+    return "/indicadores/datos";
   });
 }
 

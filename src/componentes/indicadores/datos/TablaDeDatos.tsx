@@ -28,11 +28,12 @@ const deDondeEs = (d: DatoCompartido) =>
 
 /**
  * El estado de un dato en la lista (maqueta 11): el periodo que se pide con la fecha límite más próxima, por reportar o
- * vencido; sin ninguno que se pida, «Reportado» si ya tiene algún valor y, si no, que aún no se pide (ningún indicador lo
- * ha necesitado).
+ * vencido; sin ninguno que se pida, «Ya no se pide» si conserva un pendiente que ninguna medición necesita, «Reportado» si ya
+ * tiene algún valor y, si no, que aún no se pide (ningún indicador lo ha necesitado).
  */
 function Estado({ resumen, ahora }: { resumen: ResumenDeDato | undefined; ahora: Date }) {
   if (resumen?.porReportar) return <InsigniaPorReportar venceEn={resumen.porReportar.venceEn} ahora={ahora} />;
+  if (resumen?.yaNoSePide) return <Insignia variante="sin-dato">Ya no se pide</Insignia>;
   if (resumen?.ultimo) return <Insignia variante="neutra">Reportado</Insignia>;
   return <Insignia variante="sin-dato">Aún no se pide</Insignia>;
 }
@@ -89,6 +90,7 @@ export function TablaDeDatos({ filas, ahora }: { filas: FilaDeDato[]; ahora: Dat
                     <li key={i.id}>
                       <Link href={rutaDeIndicador(i.codigo)} title={i.nombre} className={`font-mono text-xs ${ENLACE}`}>
                         {i.codigo}
+                        <span className="sr-only">{` ${i.nombre}`}</span>
                       </Link>
                       {k < usan.length - 1 ? "," : null}
                     </li>

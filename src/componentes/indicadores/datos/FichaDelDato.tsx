@@ -1,11 +1,10 @@
 import Link from "next/link";
 import type { DatoCompartido, IndicadorQueLoUsa } from "@/db/consultas/indicadores/datos";
-import { fraccion } from "@/lib/indicadores/formula/fraccion";
 import { CONSOLIDACION } from "@/lib/indicadores/ficha-en-texto";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
-import { numeroEs } from "@/lib/indicadores/semaforo";
 import { ETIQUETA_PERIODICIDAD, type Consolidacion, type Periodicidad } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
+import { cifraDeDato } from "./comun";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const CONGELADO = "(no cambia mientras una ficha aprobada lo use)";
@@ -43,20 +42,15 @@ function plazo(d: DatoCompartido): string {
     : `${cuenta(d.plazoReporteDias, "día", "días")} después de terminar ${PERIODO[d.periodicidad]}`;
 }
 
-const limite = (v: string) => {
-  const f = fraccion(v);
-  return f ? numeroEs(f, 4, "truncar") : v;
-};
-
 /** «Entre 10 y 1000 · no admite negativos». */
 function captura(d: DatoCompartido): string {
   const limites =
     d.capturaMin && d.capturaMax
-      ? `Entre ${limite(d.capturaMin)} y ${limite(d.capturaMax)}`
+      ? `Entre ${cifraDeDato(d.capturaMin)} y ${cifraDeDato(d.capturaMax)}`
       : d.capturaMin
-        ? `Desde ${limite(d.capturaMin)}`
+        ? `Desde ${cifraDeDato(d.capturaMin)}`
         : d.capturaMax
-          ? `Hasta ${limite(d.capturaMax)}`
+          ? `Hasta ${cifraDeDato(d.capturaMax)}`
           : null;
   const negativos = d.admiteNegativos ? "admite negativos" : "no admite negativos";
   return limites ? `${limites} · ${negativos}` : negativos.charAt(0).toUpperCase() + negativos.slice(1);

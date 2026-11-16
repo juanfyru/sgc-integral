@@ -222,15 +222,16 @@ describe("el costo del cascarón por render", () => {
         // Interno bajan de 11 a 10 con el conteo (F-I3); el layout y la página comparten las demás lecturas por petición
         // (`tests/cascaron-peticion.test.ts`), lo que este test no ve porque aquí `React.cache` no guarda nada. Con los
         // indicadores (Fase 14A), las de arriba; la 14B suma una para todos, la de las constancias de envío al ente, y otra
-        // para el Admin SGC, la de las revisiones de indicadores por cambio de norma (Tarea 12).
+        // para el Admin SGC, la de las revisiones de indicadores por cambio de norma (Tarea 12). La 14C suma una para todos,
+        // la de los periodos de los datos compartidos a cargo de la persona (`tareasDeDatos`).
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
-          "Admin SGC": 21,
-          líder: 20,
-          Gerencia: 14,
-          "Control Interno": 13,
-          "Consulta sin externos": 12,
-          "Consulta responsable técnico": 14,
-          "Consulta con hallazgo abierto": 12,
+          "Admin SGC": 22,
+          líder: 21,
+          Gerencia: 15,
+          "Control Interno": 14,
+          "Consulta sin externos": 13,
+          "Consulta responsable técnico": 15,
+          "Consulta con hallazgo abierto": 13,
         });
       } finally {
         await e.limpiar();

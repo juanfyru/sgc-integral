@@ -88,7 +88,17 @@ export function DialogoDesignar({
             <label htmlFor={idFiltro} className="text-sm font-medium">
               Buscar persona
             </label>
-            <input id={idFiltro} type="search" value={filtro} onChange={(e) => setFiltro(e.target.value)} className={`${claseControl} w-full`} />
+            <input
+              id={idFiltro}
+              type="search"
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+              // Enter en la búsqueda no envía la selección a medio hacer.
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.preventDefault();
+              }}
+              className={`${claseControl} w-full`}
+            />
           </div>
           <fieldset className="flex flex-col gap-1">
             <legend className="text-sm font-medium">{`${info.etiqueta}: ${actuales.length} de ${MAXIMO} como máximo`}</legend>
