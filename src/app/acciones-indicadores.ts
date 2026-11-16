@@ -29,7 +29,7 @@ import {
   retirar,
 } from "@/db/consultas/indicadores/operacion";
 import { propagarSinFallar } from "@/db/consultas/indicadores/propagacion";
-import { LO_QUE_SE_REABRE_CAMBIO, reabrirEnCascada, sinInterbloqueoDelCierre } from "@/db/consultas/indicadores/reapertura";
+import { LO_QUE_SE_REABRE_CAMBIO, reabrirEnCascada, sinInterbloqueoDelCierre, sinInterbloqueoDelDato } from "@/db/consultas/indicadores/reapertura";
 import { quitarSoporte } from "@/db/consultas/indicadores/soportes";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
@@ -297,7 +297,7 @@ export async function reportarDatoCompartido(_prev: EstadoReporte, formData: For
       porCategoria: d.porCategoria,
       confirmado: d.confirmado,
       ...(d.confirmado ? { confirmadoValor: d.confirmadoValor ?? "" } : {}),
-    }).catch(sinInterbloqueoCrudo);
+    }).catch(sinInterbloqueoDelDato);
     if (!r.ok) {
       dicho.confirmar = r.confirmar;
       dicho.valor = r.valor;
@@ -325,7 +325,7 @@ export async function actualizarCategoriasDeMedicion(_prev: EstadoConAviso, form
   let agregadas = 0;
   const estado = await mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
-    ({ agregadas } = await actualizarCategorias(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoCrudo));
+    ({ agregadas } = await actualizarCategorias(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoDelCierre));
     // Una categoría nueva toma en seguida lo que un dato compartido por categoría ya trae para ella.
     if (agregadas > 0) await propagarSinFallar();
   });
@@ -345,7 +345,7 @@ export async function actualizarCategoriasDelDatoCompartido(_prev: EstadoConAvis
   let agregadas = 0;
   const estado = await mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
-    ({ agregadas } = await actualizarCategoriasDelDato(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoCrudo));
+    ({ agregadas } = await actualizarCategoriasDelDato(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoDelDato));
     // Como la de la medición: lo que cambie para los indicadores que usan el dato no espera a la pasada.
     if (agregadas > 0) await propagarSinFallar();
   });
@@ -511,7 +511,7 @@ export async function reabrirDatoCompartido(_prev: EstadoAccion, formData: FormD
 export async function cerrarDeNuevoElDatoCompartido(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
-    await cerrarDeNuevoElDato(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoCrudo);
+    await cerrarDeNuevoElDato(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoDelDato);
   });
 }
 
@@ -519,7 +519,7 @@ export async function cerrarDeNuevoElDatoCompartido(_prev: EstadoAccion, formDat
 export async function cerrarDeNuevoAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
-    await cerrarDeNuevo(sesion, idNumerico(formData, "id"));
+    await cerrarDeNuevo(sesion, idNumerico(formData, "id")).catch(sinInterbloqueoDelCierre);
   });
 }
 

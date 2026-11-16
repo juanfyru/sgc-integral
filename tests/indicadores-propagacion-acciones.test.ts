@@ -13,6 +13,7 @@ const dominio = vi.hoisted(() => ({
   actualizarCategoriasDelDato: vi.fn(),
   actualizarCategorias: vi.fn(),
   reabrirMedicion: vi.fn(),
+  cerrarDeNuevo: vi.fn(),
   reabrirEnCascada: vi.fn(),
   reportar: vi.fn(),
   propagarSinFallar: vi.fn(async () => {}),
@@ -37,6 +38,7 @@ vi.mock("@/db/consultas/indicadores/datos-periodos", async (original) => ({
 vi.mock("@/db/consultas/indicadores/cierre", async (original) => ({
   ...(await original<typeof import("@/db/consultas/indicadores/cierre")>()),
   reabrirMedicion: dominio.reabrirMedicion,
+  cerrarDeNuevo: dominio.cerrarDeNuevo,
 }));
 vi.mock("@/db/consultas/indicadores/reapertura", async (original) => ({
   ...(await original<typeof import("@/db/consultas/indicadores/reapertura")>()),
@@ -58,14 +60,14 @@ vi.mock("@/db/consultas/indicadores/propagacion", async (original) => ({
 import {
   actualizarCategoriasDelDatoCompartido,
   actualizarCategoriasDeMedicion,
+  cerrarDeNuevoAccion,
   cerrarDeNuevoElDatoCompartido,
   reabrirDatoCompartido,
   reabrirMedicionAccion,
   reportarAccion,
   reportarDatoCompartido,
 } from "@/app/acciones-indicadores";
-import { INTERBLOQUEO_NORMA_O_FICHA } from "@/db/consultas/indicadores/impactos";
-import { LO_QUE_SE_REABRE_CAMBIO } from "@/db/consultas/indicadores/reapertura";
+import { INTERBLOQUEO_DEL_CIERRE, INTERBLOQUEO_DEL_DATO, LO_QUE_SE_REABRE_CAMBIO } from "@/db/consultas/indicadores/reapertura";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 
 function formulario(campos: Record<string, string>) {
@@ -133,19 +135,29 @@ describe("la confirmación de un dato viaja con el valor que confirma", () => {
 
 describe("un interbloqueo de la base llega legible a la persona (ola final, O11)", () => {
   const interbloqueo = () => Object.assign(new Error("deadlock detected"), { code: "40P01" });
-  const LEGIBLE = { ok: false, error: INTERBLOQUEO_NORMA_O_FICHA };
+  const DEL_DATO = { ok: false, error: INTERBLOQUEO_DEL_DATO };
+  const DEL_CIERRE = { ok: false, error: INTERBLOQUEO_DEL_CIERRE };
 
-  it("al reportar un dato, al actualizar las categorías de una medición o de un periodo del dato y al cerrar de nuevo un periodo", async () => {
+  it("cada acción dice lo que le toca: las del periodo de un dato, que ese periodo; las de mediciones, esas mediciones", async () => {
     requerirSesion.mockResolvedValue({ usuarioId: 7, rol: "admin_sgc", verHistorial: true });
+    expect(INTERBLOQUEO_DEL_DATO).toBe("Otra persona estaba reportando, cerrando o reabriendo ese periodo del dato al mismo tiempo: inténtelo de nuevo");
     dominio.reportarDato.mockRejectedValue(interbloqueo());
-    expect(await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "1284300000" }))).toMatchObject(LEGIBLE);
-    dominio.actualizarCategorias.mockRejectedValue(interbloqueo());
-    expect(await actualizarCategoriasDeMedicion(null, formulario({ id: "5" }))).toMatchObject(LEGIBLE);
+    expect(await reportarDatoCompartido(vacio, formulario({ id: "5", valor: "1284300000" }))).toMatchObject(DEL_DATO);
     dominio.actualizarCategoriasDelDato.mockRejectedValue(interbloqueo());
-    expect(await actualizarCategoriasDelDatoCompartido(null, formulario({ id: "5" }))).toMatchObject(LEGIBLE);
+    expect(await actualizarCategoriasDelDatoCompartido(null, formulario({ id: "5" }))).toMatchObject(DEL_DATO);
     dominio.cerrarDeNuevoElDato.mockRejectedValue(interbloqueo());
-    expect(await cerrarDeNuevoElDatoCompartido(null, formulario({ id: "5" }))).toMatchObject(LEGIBLE);
+    expect(await cerrarDeNuevoElDatoCompartido(null, formulario({ id: "5" }))).toMatchObject(DEL_DATO);
+    dominio.actualizarCategorias.mockRejectedValue(interbloqueo());
+    expect(await actualizarCategoriasDeMedicion(null, formulario({ id: "5" }))).toMatchObject(DEL_CIERRE);
+    dominio.cerrarDeNuevo.mockRejectedValue(interbloqueo());
+    expect(await cerrarDeNuevoAccion(null, formulario({ id: "5" }))).toMatchObject(DEL_CIERRE);
     expect(dominio.propagarSinFallar).not.toHaveBeenCalled();
+  });
+
+  it("cerrar de nuevo una medición: cualquier otro error llega tal cual", async () => {
+    requerirSesion.mockResolvedValue({ usuarioId: 7, rol: "admin_sgc", verHistorial: true });
+    dominio.cerrarDeNuevo.mockRejectedValue(new Error("Solo se cierra de nuevo una medición reabierta"));
+    expect(await cerrarDeNuevoAccion(null, formulario({ id: "5" }))).toMatchObject({ ok: false, error: "Solo se cierra de nuevo una medición reabierta" });
   });
 
   it("cualquier otro error llega tal cual", async () => {

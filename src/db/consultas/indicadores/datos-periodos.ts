@@ -449,7 +449,7 @@ function leerReporte(p: PeriodoBloqueado, d: { valor?: string; porCategoria?: Re
   // Un periodo que nació sin categorías (ninguna existía cuando terminó) no se reporta vacío: guardaría 0 sin que nadie digite.
   if (p.categorias.length === 0) throw new ErrorIndicador(PERIODO_SIN_CATEGORIAS);
   const pedidas = new Set(p.categorias.map((c) => String(c.id)));
-  if ((d.valor ?? "").trim() !== ""|| Object.keys(porCategoria).some((id) => !pedidas.has(id))) throw new ErrorIndicador(FORMULARIO_CAMBIO);
+  if ((d.valor ?? "").trim() !== "" || Object.keys(porCategoria).some((id) => !pedidas.has(id))) throw new ErrorIndicador(FORMULARIO_CAMBIO);
   let total = CERO;
   const guardado: Record<string, string> = {};
   for (const c of p.categorias) {

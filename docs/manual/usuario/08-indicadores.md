@@ -1533,7 +1533,9 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 | Su fuente sigue abierta: ciérrela primero | Se pidió **Cerrar de nuevo** con un dato o un componente aún abierto | Cierre primero la fuente |
 | Lo copiado de sus fuentes aún no está al día: vuelva a intentarlo en un momento | El SGC aún no llevó el último valor de la fuente | Espere un momento y repita |
 | Lo que se reabre cambió mientras se confirmaba: revise la lista y vuelva a intentarlo | Entre la lista y la confirmación cambió algo | Revise la lista, que ya es la de ahora, y confirme otra vez |
-| Otra persona estaba cambiando esa norma o esa ficha al mismo tiempo: inténtelo de nuevo | Dos personas escribieron lo mismo a la vez (también al reportar un dato o actualizar categorías) | Repita la acción |
+| Otra persona estaba cambiando esa norma o esa ficha al mismo tiempo: inténtelo de nuevo | Dos personas guardaron lo mismo a la vez | Repita la acción |
+| Otra persona estaba reportando, cerrando o reabriendo ese periodo del dato al mismo tiempo: inténtelo de nuevo | Al reportar un dato, actualizar sus categorías o **Cerrar de nuevo** un periodo del dato, otra persona hacía algo con ese periodo | Repita la acción |
+| Otra persona estaba reportando o cerrando una de esas mediciones al mismo tiempo: inténtelo de nuevo | Al actualizar categorías o **Cerrar de nuevo** una medición, o al cerrar el mes o reabrir, otra persona hacía algo con ellas | Repita la acción |
 | Ya hay un dato con ese nombre en ese proceso / Ya hay una dimensión con ese nombre | El nombre ya existe | Use otro nombre |
 | Este dato ya tiene historia: desactívelo | Se confirmó **Borrar el dato** y, entretanto, una ficha lo citó o se abrió un periodo | Desactívelo en lugar de borrarlo |
 | Ya se usó: desactívela | Una dimensión o categoría con historia | Desactívela en lugar de borrarla |

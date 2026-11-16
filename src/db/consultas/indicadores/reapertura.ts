@@ -66,6 +66,7 @@ type Opciones = { sql?: Cliente; ahora?: Date };
 const SOLO_CERRADO = "Solo se reabre lo que está cerrado";
 export const LO_QUE_SE_REABRE_CAMBIO = "Lo que se reabre cambió mientras se confirmaba: revise la lista y vuelva a intentarlo";
 export const INTERBLOQUEO_DEL_CIERRE = "Otra persona estaba reportando o cerrando una de esas mediciones al mismo tiempo: inténtelo de nuevo";
+export const INTERBLOQUEO_DEL_DATO = "Otra persona estaba reportando, cerrando o reabriendo ese periodo del dato al mismo tiempo: inténtelo de nuevo";
 
 function exigirAdministrar(sesion: SujetoPermiso): void {
   if (!puede(sesion, "indicadores.administrar")) throw new ErrorPermiso();
@@ -79,6 +80,11 @@ function exigirAdministrar(sesion: SujetoPermiso): void {
  */
 export function sinInterbloqueoDelCierre(err: unknown): never {
   throw (err as { code?: string } | null)?.code === "40P01" ? new ErrorIndicador(INTERBLOQUEO_DEL_CIERRE) : err;
+}
+
+/** Lo mismo para las acciones de un periodo de dato compartido (reportar, categorías, cerrar de nuevo). */
+export function sinInterbloqueoDelDato(err: unknown): never {
+  throw (err as { code?: string } | null)?.code === "40P01" ? new ErrorIndicador(INTERBLOQUEO_DEL_DATO) : err;
 }
 
 /**
