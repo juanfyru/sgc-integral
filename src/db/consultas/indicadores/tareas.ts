@@ -86,7 +86,8 @@ type VersionDePendiente = {
  * 14C §3.1): si alguien la mide y no reportó lo suyo, el reporte; si lo suyo está (o nadie la mide) y falta un valor ajeno
  * o el sistema aún no la reporta, el dato (`"dato"`), que no es de nadie; con todo, el análisis exigido si no está (la regla
  * del estado guardado, `analisisCompleto`). Un automático cuenta como uno que nadie mide y cuyo único valor ajeno es su
- * foto. El soporte obligatorio falta solo en lo que alguien mide (como en `recalcularMedicion`). Con el periodo y el nombre
+ * foto. Lo que nadie mide no le pide el reporte a nadie: con todos sus valores y aún sin resultado, espera el dato. El
+ * soporte obligatorio falta solo en lo que alguien mide (como en `recalcularMedicion`). Con el periodo y el nombre
  * de la versión que lo rige. Sin las de otra periodicidad (`esDeOtraPeriodicidad`): no se miden. No consulta nada.
  */
 export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
@@ -109,7 +110,9 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
     const mide = alguienMide({ origenDato: version.origenDato, variables: version.propias.map((letra) => ({ letra, origen: "propia" as const })) });
     const conValor = new Set((f.con_valor as string[] | null) ?? []);
     const faltanAjenas = automatica ? !reportada : (version.ajenas ?? []).some((l) => !conValor.has(l));
-    const falta: Falta = faltaSegunOrigen({ mide, reportada, faltanAjenas, analisisCompleto: analisisCompleto(exigido, analisisDe(f)) });
+    const segun = faltaSegunOrigen({ mide, reportada, faltanAjenas, analisisCompleto: analisisCompleto(exigido, analisisDe(f)) });
+    // Con todo y sin resultado, lo que nadie mide espera al sistema (su «No aplica» o su cálculo), no un reporte de alguien.
+    const falta: Falta = segun === "reporte" && !mide ? "dato" : segun;
     const faltaSoporte = reportada && mide && f.soporte_obligatorio === true && f.con_soporte !== true;
     salida.set(Number(f.id), { falta, faltaSoporte, periodo, nombre: version.nombre });
   }

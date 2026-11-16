@@ -444,15 +444,33 @@ export async function contarSoportes(sql: Cliente, medicionId: number): Promise<
   return Number(f.n);
 }
 
-/** Una fila de `medicion_valores` con la letra de su variable, la que leen `valoresPorLetra` y `elegirValores`. */
-export type ValorGuardado = { variable_id: unknown; letra: unknown; valor: unknown; reportado_en: unknown; id: unknown };
+/**
+ * Una fila de `medicion_valores` con la letra y el origen de su variable, la que leen `valoresPorLetra` y `elegirValores`;
+ * `valor_exacto` es la fracción («n/d») que el sistema guarda cuando el valor no cabe en cuatro decimales (anexo 14C, §3.2).
+ */
+export type ValorGuardado = {
+  variable_id: unknown;
+  letra: unknown;
+  origen: unknown;
+  valor: unknown;
+  valor_exacto: unknown;
+  reportado_en: unknown;
+  id: unknown;
+};
+
+const esAjena = (origen: unknown) => origen === "compartida" || origen === "indicador";
 
 /**
  * Los valores de una medición por letra de la versión dada, de sus filas guardadas: primero los de las variables de esa
- * versión; si no, los de otra versión (un cambio menor da otros ids a las mismas letras), el más reciente.
+ * versión; si no, los de otra versión (un cambio menor da otros ids a las mismas letras), el más reciente. Cada valor con
+ * su fracción exacta, si la tiene (`valor_exacto`), y si no, la de `valor`. Una letra ajena en la versión solo toma filas
+ * de variables ajenas, y una que no lo es, solo de las que no lo son (anexo 14C, §3.1): el valor que la persona guardó
+ * cuando la letra era suya no entra cuando un cambio mayor la vuelve un dato, ni el que copió el sistema cuando la letra
+ * era ajena entra cuando la vuelve propia.
  */
 export function elegirValores(filas: readonly ValorGuardado[], v: VersionDeCalculo): Record<string, Fraccion> {
   const deLaVersion = new Set(v.variables.map((x) => x.id));
+  const ajenas = new Set(letrasAjenas(v.variables));
   const instante = (f: ValorGuardado) => (f.reportado_en === null || f.reportado_en === undefined ? -Infinity : new Date(f.reportado_en as string).getTime());
   const ordenadas = [...filas].sort(
     (a, b) =>
@@ -463,15 +481,19 @@ export function elegirValores(filas: readonly ValorGuardado[], v: VersionDeCalcu
   const salida: Record<string, Fraccion> = {};
   for (const f of ordenadas) {
     const letra = f.letra as string;
-    const valor = fr(f.valor);
-    if (v.calculo.letras.includes(letra) && !Object.hasOwn(salida, letra) && valor) salida[letra] = valor;
+    if (!v.calculo.letras.includes(letra) || Object.hasOwn(salida, letra) || esAjena(f.origen) !== ajenas.has(letra)) continue;
+    const valor = typeof f.valor_exacto === "string" ? deTexto(f.valor_exacto) : fr(f.valor);
+    if (valor) salida[letra] = valor;
   }
   return salida;
 }
 
+/** Las columnas de `medicion_valores mv` e `indicador_variables iv` que lee `elegirValores`. */
+export const columnasDeValor = (sql: Cliente) => sql`mv.id, mv.variable_id, iv.letra, iv.origen, mv.valor, mv.valor_exacto, mv.reportado_en`;
+
 /** Los valores de la medición por letra de la versión dada (`elegirValores`). */
 export async function valoresPorLetra(sql: Cliente, medicionId: number, v: VersionDeCalculo): Promise<Record<string, Fraccion>> {
-  const filas = await sql`SELECT mv.id, mv.variable_id, iv.letra, mv.valor, mv.reportado_en
+  const filas = await sql`SELECT ${columnasDeValor(sql)}
     FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
     WHERE mv.medicion_id = ${medicionId} AND mv.categoria_id IS NULL AND mv.valor IS NOT NULL`;
   return elegirValores(filas as unknown as ValorGuardado[], v);
@@ -490,6 +512,28 @@ const igualNumero = (a: unknown, b: unknown) => {
 
 const objeto = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+/** Un recálculo que no nace de una acción sobre la medición (`recalcularMedicion`, `c.sistema`). */
+export type RecalculoDeSistema = "racha" | "soporte" | "fuente";
+
+/**
+ * La versión que rige el periodo de la medición `m` y la versión con que se calcula: la que rige, salvo en un recálculo de
+ * sistema, que calcula con la que la medición ya tiene (`version_id`, la que se congeló al reportarla). El de una fuente
+ * (`"fuente"`, la propagación) solo la conserva si la medición ya tenía resultado: sin él, el valor que llega la completa
+ * con la ficha que rige. Lo comparten `recalcularMedicion` y la propagación, que escribe el valor ajeno en la variable de la
+ * versión con que se calcula.
+ */
+export function versionesDeCalculo(
+  versiones: readonly VersionDeCalculo[],
+  m: Record<string, unknown>,
+  sistema: RecalculoDeSistema | undefined,
+  zona: string,
+): { rige: VersionDeCalculo | null; version: VersionDeCalculo | null } {
+  const periodo = periodoDe(m.periodo as string, zona);
+  const rige = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
+  if (!rige || !sistema || (sistema === "fuente" && typeof m.resultado_exacto !== "string")) return { rige, version: rige };
+  return { rige, version: versiones.find((v) => v.id === Number(m.version_id)) ?? rige };
+}
 
 /**
  * El único camino que escribe el resultado, el semáforo, la meta aplicada y el estado de una medición (spec §8.2): con la
@@ -512,7 +556,10 @@ const objeto = (v: unknown): Record<string, unknown> =>
  * - `"racha"` (la de una siguiente, desde `recalcularSiguientes`) no sigue en cadena y la falta del soporte obligatorio no
  *   regresa a `abierta` una medición ya `reportada`: el soporte rige hacia adelante (residuos finales, punto 1);
  * - `"soporte"` (`cambiarOperacion` al cambiar «soporte obligatorio») aplica el soporte como está, porque es su causa:
- *   quien llama elige a qué mediciones (al activarlo, solo a las que siguen en plazo).
+ *   quien llama elige a qué mediciones (al activarlo, solo a las que siguen en plazo);
+ * - `"fuente"` (la propagación, anexo 14C §3.3: llegó o cambió un valor ajeno) calcula con la versión congelada solo si la
+ *   medición ya tenía resultado, y con la que rige si no (`versionesDeCalculo`), y como la racha, nunca regresa a `abierta`
+ *   por falta del soporte una medición ya `reportada`.
  * Una acción sobre la medición (reportar, corregir, analizar, la meta, un soporte, reabrir) aplica la regla viva.
  *
  * `c.conElResultado`, si algo cambió, corre con el resultado ya escrito y antes del evento, en la misma transacción; lo que
@@ -527,7 +574,7 @@ export async function recalcularMedicion(
     evento: TipoEvento;
     detalle?: Record<string, unknown>;
     estadoAnterior?: EstadoMedicion;
-    sistema?: "racha" | "soporte";
+    sistema?: RecalculoDeSistema;
     conElResultado?: (r: Recalculo) => Promise<Record<string, unknown>>;
   },
 ): Promise<Recalculo> {
@@ -537,10 +584,7 @@ export async function recalcularMedicion(
   if (!m) throw new ErrorIndicador(NO_EXISTE);
   if (m.estado === "cerrada") throw new ErrorIndicador(CERRADA);
   const indicadorId = Number(m.indicador_id);
-  const periodo = periodoDe(m.periodo as string, zona);
-  const versiones = await versionesAprobadas(tx, indicadorId);
-  const rige = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
-  const version = rige && c.sistema ? (versiones.find((v) => v.id === Number(m.version_id)) ?? rige) : rige;
+  const { rige, version } = versionesDeCalculo(await versionesAprobadas(tx, indicadorId), m, c.sistema, zona);
   const ficha = version ? fichaDeCalculo(version.calculo) : null;
   if (!rige || !version || !ficha) throw new ErrorIndicador("El indicador no tiene una ficha aprobada que calcule este periodo");
   if (esDeOtraPeriodicidad(m.periodo as string, rige)) throw new ErrorIndicador(OTRA_PERIODICIDAD);
@@ -576,15 +620,15 @@ export async function recalcularMedicion(
     );
   }
   const conAnalisis = analisisCompleto(analisisExigido({ semaforo, cumple, repetido, historica, noAplica }), analisisDe(m));
-  // El soporte rige hacia adelante: la racha de una siguiente no reabre por él lo que ya estaba reportado. Lo que nadie mide
-  // (un automático, anexo 14B §5.3, o un indicador sin variables propias, anexo 14C §3.1) no lleva soporte: nadie podría
-  // adjuntarlo.
+  // El soporte rige hacia adelante: la racha de una siguiente, o un valor ajeno que llega, no reabre por él lo que ya estaba
+  // reportado. Lo que nadie mide (un automático, anexo 14B §5.3, o un indicador sin variables propias, anexo 14C §3.1) no
+  // lleva soporte: nadie podría adjuntarlo.
   const conSoporte =
     !mide(version) ||
     m.soporte_obligatorio !== true ||
     historica ||
     noAplica ||
-    (c.sistema === "racha" && m.estado === "reportada") ||
+    ((c.sistema === "racha" || c.sistema === "fuente") && m.estado === "reportada") ||
     (await contarSoportes(tx, medicionId)) > 0;
   const conDato = noAplica || resultado !== null;
   const estado: EstadoMedicion = conDato && conAnalisis && conSoporte ? "reportada" : "abierta";
@@ -625,7 +669,8 @@ export async function recalcularMedicion(
 
   const { antes: antesDe, despues: despuesDe, ...resto } = c.detalle ?? {};
   const resultadoAntes = m.resultado_exacto ? decimalCorto(deTexto(m.resultado_exacto as string)) : null;
-  // Un recálculo de sistema no cambia valores ni resultado: dice también qué pasó con la marca (residuos finales, punto 3).
+  // Un recálculo de sistema dice también qué pasó con la marca (residuos finales, punto 3): el de la racha o el soporte no
+  // cambia valores ni resultado, y el de una fuente cambia lo ajeno sin que nadie toque la medición.
   const marca = (v: boolean) => (c.sistema ? { incumplimientoRepetido: v } : {});
   const antes = {
     ...objeto(antesDe),
@@ -791,8 +836,10 @@ type DatosDeReportar = { medicionId: number; valores: Record<string, string>; pa
  *
  * La persona digita solo las variables propias (anexo 14C, §3.1): un valor para una ajena se rechaza
  * (`noSeDigitaDesdeAqui`) y un reporte exige solo las propias. Lo ajeno que ya llegó entra al cálculo; si falta, no hay
- * resultado que validar ni salto que confirmar, pero el soporte obligatorio se pide igual. En un histórico se digitan y se
- * exigen todas (§3.6). `valores` trae solo las letras que la persona digita.
+ * resultado que validar ni salto que confirmar, pero el soporte obligatorio se pide igual. Si lo ajeno ya llegó, un
+ * resultado fuera de los límites del indicador no bloquea a quien no puede cambiar ese valor: se le pide confirmar lo suyo,
+ * como un salto grande (`confirmado`); la división por cero sigue rechazando, porque «No aplica» es su salida. En un
+ * histórico se digitan y se exigen todas (§3.6), y el límite bloquea. `valores` trae solo las letras que la persona digita.
  */
 export async function planDeReporte(
   sql: Cliente,
@@ -824,6 +871,7 @@ export async function planDeReporte(
   );
   const completo = version.variables.every((v) => todos[v.letra] !== undefined);
   let resultado: Fraccion | null = null;
+  let fuera: string | null = null;
   if (completo) {
     const regla = reglaDeTexto(await reglaDelPeriodo(sql, ctx.indicador.id, m.periodo as string, version));
     const ficha = fichaDeCalculo(version.calculo);
@@ -831,12 +879,16 @@ export async function planDeReporte(
     const r = calcular(ficha, todos, regla);
     if (r.sinResultado === "division_por_cero") throw new ErrorIndicador(DIVISION_POR_CERO);
     if (!r.resultado) throw new ErrorIndicador(CIFRA_FUERA_DE_RANGO);
-    if (r.fueraDeLimites) throw new ErrorIndicador(fueraDeLimites(textoValor(r.resultado, version.unidad)));
+    if (r.fueraDeLimites) fuera = fueraDeLimites(textoValor(r.resultado, version.unidad));
+    // Con lo digitado completo, el límite bloquea: la persona puede corregirlo. Con un valor ajeno que no puede cambiar, se
+    // le pide confirmar lo suyo (anexo 14C, §3.1).
+    if (fuera && digita.length === version.variables.length) throw new ErrorIndicador(fuera);
     resultado = r.resultado;
   }
   if (ctx.indicador.soporteObligatorio && m.historica !== true && (await contarSoportes(sql, m.id)) === 0) {
     throw new ErrorIndicador("Este indicador exige un soporte: adjúntelo antes de reportar");
   }
+  if (fuera && !d.confirmado) return { valores, confirmar: `${fuera}. ¿Los datos son correctos?` };
   if (resultado && !d.confirmado) {
     const anterior = await anteriorConResultado(sql, ctx.indicador.id, m.desde);
     const { variacionConfirmarPct } = await obtenerParametros({ sql });
@@ -884,7 +936,8 @@ async function escribirValores(
       await tx`INSERT INTO medicion_valores (medicion_id, variable_id, valor, reportado_por, reportado_en)
         VALUES (${medicionId}, ${v.id}, ${valor}, ${usuarioId}, ${ahora})`;
     } else if (!actual || comparar(actual, nuevo) !== 0) {
-      await tx`UPDATE medicion_valores SET valor = ${valor}, reportado_por = ${usuarioId}, reportado_en = ${ahora}
+      // Lo digitado cabe en cuatro decimales: la fracción exacta solo la escribe el sistema.
+      await tx`UPDATE medicion_valores SET valor = ${valor}, valor_exacto = NULL, reportado_por = ${usuarioId}, reportado_en = ${ahora}
         WHERE medicion_id = ${medicionId} AND variable_id = ${v.id} AND categoria_id IS NULL`;
     }
   }
@@ -918,9 +971,9 @@ export type ReporteEscrito = { r: Recalculo; primera: boolean; detalle: { antes:
  * `primerEvento` si la medición nunca se reportó y `correccion` si ya. Lo comparten `reportar` y `registrarHistoricos`.
  *
  * `valores` trae solo lo que la persona digita (`planDeReporte`): el antes y el después del evento llevan lo ajeno tal como
- * está a los dos lados. En una versión con variables ajenas, el primer reporte deja también la marca `reportada`: sin el
- * dato no cambia ninguna columna calculada y, sin ella, «Reportar lo mío» tras «Guardar sin reportar» lo mismo no dejaría
- * el evento `reporte` (el que cuenta «Reportes a tiempo», F14C-DC41).
+ * está a los dos lados. En una versión con variables ajenas, el primer reporte (no un histórico) deja también la marca
+ * `reportada`: sin el dato no cambia ninguna columna calculada y, sin ella, «Reportar lo mío» tras «Guardar sin reportar»
+ * lo mismo no dejaría el evento `reporte` (el que cuenta «Reportes a tiempo», F14C-DC41).
  */
 export async function escribirReporte(
   tx: TransactionSql,
@@ -940,7 +993,9 @@ export async function escribirReporte(
       WHERE id = ${m.id}`;
   }
   const conMotivo = m.no_aplica === true ? { motivo: m.no_aplica_motivo as string | null } : {};
-  const marca = (v: boolean) => (m.reportada_en === null && letrasAjenas(version.variables).length > 0 ? { reportada: v } : {});
+  // Un histórico no espera lo ajeno ni cuenta para «Reportes a tiempo»: su evento no lleva la marca.
+  const marca = (v: boolean) =>
+    m.reportada_en === null && m.historica !== true && letrasAjenas(version.variables).length > 0 ? { reportada: v } : {};
   const detalle = {
     antes: { ...antes, noAplica: m.no_aplica === true, ...conMotivo, ...marca(false) },
     despues: { ...despues, noAplica: false, ...(m.no_aplica === true ? { motivo: null } : {}), ...marca(true) },

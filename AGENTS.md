@@ -514,17 +514,30 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Un solo camino de cálculo:** solo `recalcularMedicion`
   (`src/db/consultas/indicadores/mediciones.ts`) escribe el resultado, el semáforo, la meta
   aplicada y el estado de una medición abierta o reportada; reportar, registrar históricos,
-  corregir, marcar «no aplica», reprogramar la meta, subir o quitar un soporte, reabrir y la foto
-  pasan por ella, con la fila bloqueada. **No refresca valores por sí misma:** calcula con los que la
-  medición tiene, y los que nadie digita los escriben solo `tomarFotos` y `volverACalcular`
-  (`fotos.ts`), en `medicion_valores` y sin usuario (`reportado_por` nulo). El cierre del mes y «Cerrar de nuevo»
+  corregir, marcar «no aplica», reprogramar la meta, subir o quitar un soporte, reabrir, la foto y
+  la propagación pasan por ella, con la fila bloqueada. **No refresca valores por sí misma:** calcula
+  con los que la medición tiene, y los que nadie digita los escriben solo `tomarFotos` y
+  `volverACalcular` (`fotos.ts`) y `propagar` (`propagacion.ts`: el valor de un dato compartido,
+  juntado a la periodicidad del indicador; anexo 14C, §3.2 y §3.3), en `medicion_valores` y sin
+  usuario (`reportado_por` nulo). Cada escritor toca lo suyo: el de la persona, solo sus variables
+  propias (en un histórico, todas); la propagación, solo las ajenas. El valor que copia el sistema
+  va con cuatro decimales y, si no cabe exacto en ellos, también con su fracción (`valor_exacto`,
+  «n/d»), que solo escribe el sistema y el cálculo prefiere (`elegirValores`). La propagación es una
+  pasada idempotente con la forma de `tomarFotos` (compara lo copiado con la fuente y solo escribe
+  si difiere; una transacción por medición, y la que falla se registra y se reintenta) que corre en
+  tres momentos: justo después de la acción que cambia una fuente (`propagarSinFallar`, fuera de su
+  transacción), en la pasada de vencimientos (después de las fotos y de abrir los periodos de los
+  datos) y, antes de clasificar, en el resumen y el cierre del mes (`abrirPeriodosDelCierre`). La
+  medición que depende lee su fuente sin candado: nunca la bloquea. El cierre del mes y «Cerrar de nuevo»
   solo la pasan a `cerrada` (`src/db/consultas/indicadores/cierre.ts`). Cuando cambia el semáforo o
   el resultado de una medición ordinaria, ella misma recalcula la racha de las n − 1 siguientes
   medidas sin cerrar (`recalcularSiguientes`, evento `recalculo`, F14A-R53), y cambiar el plazo o
   «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52). Un
-  recálculo que no nace de un cambio en la medición (esos dos) es de sistema (`sistema: "racha"` o
-  `"soporte"`): no la mueve de la versión con que se congeló al reportarla, su evento dice qué pasó
-  con la marca, y el de la racha no reabre por falta de soporte lo ya reportado. **El soporte
+  recálculo que no nace de un cambio en la medición (esos dos y la propagación) es de sistema
+  (`sistema: "racha"`, `"soporte"` o `"fuente"`): no la mueve de la versión con que se congeló al
+  reportarla (el de una fuente, solo si ya tenía resultado: `versionesDeCalculo`), su evento dice qué
+  pasó con la marca, y el de la racha o el de una fuente no reabre por falta de soporte lo ya
+  reportado. **El soporte
   obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo. También
   escribe `cumple`: alcanzar la meta no es lo mismo que estar en Bien, porque con rangos escritos
   (forma B, spec 14A §3) Bien puede empezar antes de la meta; una medición anterior a la `0012`

@@ -26,6 +26,7 @@ import {
   duplicar,
   retirar,
 } from "@/db/consultas/indicadores/operacion";
+import { propagarSinFallar } from "@/db/consultas/indicadores/propagacion";
 import { quitarSoporte } from "@/db/consultas/indicadores/soportes";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import { EsquemaSinDatos } from "@/lib/esquemas/documentos";
@@ -83,6 +84,10 @@ function destinoDeFirma(err: unknown): string {
 // la bloquea y después abre las revisiones de los indicadores que la citan (anexo 14B, §9). Si se cruzan, PostgreSQL cancela
 // una con `40P01`: a la persona le llega un mensaje legible, sin reintentar (`sinInterbloqueoCrudo`, `legibleSiInterbloqueo`).
 
+// Las acciones que cambian una fuente (un dato compartido, o lo que otra medición toma de una: su resultado, su meta, su
+// «No aplica», una ficha que empieza a regir) llaman la propagación en cuanto confirman lo suyo (anexo 14C, §3.3:
+// `propagarSinFallar`), fuera de su transacción: si falla, la pasada de vencimientos lo intenta otra vez.
+
 /** Crea el indicador en borrador y lleva a su ficha para seguir editándola. */
 export async function crearIndicadorAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
@@ -118,7 +123,7 @@ export async function enviarAAprobacionAccion(_prev: EstadoAccion, formData: For
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(firma, EsquemaEnviarFicha, { omitir: ["id"] });
     try {
-      const { codigo } = await enviarAAprobacion(
+      const { codigo, menor } = await enviarAAprobacion(
         sesion,
         {
           versionId: idNumerico(formData, "id"),
@@ -128,6 +133,8 @@ export async function enviarAAprobacionAccion(_prev: EstadoAccion, formData: For
         },
         { contexto: await contextoDePeticion() },
       );
+      // Un cambio menor se publica de inmediato: ya rige.
+      if (menor) await propagarSinFallar();
       return rutaDeIndicador(codigo);
     } catch (err) {
       return destinoDeFirma(legibleSiInterbloqueo(err));
@@ -150,6 +157,7 @@ export async function aprobarFichasAccion(_prev: EstadoAccion, formData: FormDat
         { versionIds: d.versionIds, credenciales: { clave: d.clave, codigo: d.codigo } },
         { contexto: await contextoDePeticion() },
       );
+      await propagarSinFallar();
       const destino = rutaInterna(firma.get("volver"), POR_APROBAR);
       return `${destino}${destino.includes("?") ? "&" : "?"}aprobadas=${aprobadas}`;
     } catch (err) {
@@ -256,6 +264,7 @@ export async function reportarAccion(_prev: EstadoReporte, formData: FormData): 
       return;
     }
     if (dicho.parcial) return;
+    await propagarSinFallar();
     // Si el periodo quedó pidiendo su análisis, la página a la que se vuelve lleva el foco a él (Tarea 19, D-12).
     return destinoTrasReportar(rutaInterna(formData.get("volver"), "/indicadores"), String(formData.get("periodo") ?? ""), r);
   });
@@ -280,8 +289,13 @@ export async function reportarDatoCompartido(_prev: EstadoReporte, formData: For
       porCategoria: d.porCategoria,
       confirmado: d.confirmado,
     });
-    if (!r.ok) dicho.confirmar = r.confirmar;
-    else dicho.corregido = r.corregido;
+    if (!r.ok) {
+      dicho.confirmar = r.confirmar;
+      return;
+    }
+    dicho.corregido = r.corregido;
+    // Los indicadores que esperaban el dato se calculan sin esperar a la pasada.
+    await propagarSinFallar();
   });
   if (dicho.confirmar) return { ok: false, error: dicho.confirmar, confirmar: dicho.confirmar, valores: valoresDeFormulario(formData) };
   if (estado === null) return { ok: true, aviso: dicho.corregido ? "Se corrigió el dato." : "Se reportó el dato." };
@@ -293,6 +307,7 @@ export async function marcarNoAplicaAccion(_prev: EstadoAccion, formData: FormDa
   return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     const { motivo } = parsearFormulario(formData, EsquemaNoAplica, { omitir: ["id", "volver"] });
     await marcarNoAplica(sesion, { medicionId: idNumerico(formData, "id"), motivo });
+    await propagarSinFallar();
     return rutaInterna(formData.get("volver"), "/indicadores");
   });
 }
@@ -302,6 +317,7 @@ export async function quitarNoAplicaAccion(_prev: EstadoAccion, formData: FormDa
   return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     await quitarNoAplica(sesion, idNumerico(formData, "id"));
+    await propagarSinFallar();
   });
 }
 
@@ -348,6 +364,7 @@ export async function programarMetaAccion(_prev: EstadoAccion, formData: FormDat
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaMeta, { omitir: ["id"] });
     await programarMeta(sesion, { indicadorId: idNumerico(formData, "id"), ...d });
+    await propagarSinFallar();
   });
 }
 
@@ -356,6 +373,7 @@ export async function quitarMetaProgramadaAccion(_prev: EstadoAccion, formData: 
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const d = parsearFormulario(formData, EsquemaQuitarMeta, { omitir: ["id"] });
     await quitarMetaProgramada(sesion, { indicadorId: idNumerico(formData, "id"), ...d });
+    await propagarSinFallar();
   });
 }
 
@@ -367,6 +385,7 @@ export async function registrarHistoricosAccion(_prev: EstadoAccion, formData: F
   return mutacion(formData, "indicadores.medir", async (_usuarioId, _formData, sesion) => {
     const { filas } = parsearFormulario(juntarHistoricos(formData), EsquemaHistoricos, { omitir: ["id", "volver"] });
     const { registrados } = await registrarHistoricos(sesion, { indicadorId: idNumerico(formData, "id"), filas });
+    await propagarSinFallar();
     const destino = rutaInterna(formData.get("volver"), "/indicadores");
     return `${destino}${destino.includes("?") ? "&" : "?"}registrados=${registrados}`;
   });
@@ -398,6 +417,7 @@ export async function reabrirMedicionAccion(_prev: EstadoAccion, formData: FormD
   return mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     const { justificacion } = parsearFormulario(formData, EsquemaReapertura, { omitir: ["id"] });
     await reabrirMedicion(sesion, { medicionId: idNumerico(formData, "id"), justificacion });
+    await propagarSinFallar();
   });
 }
 
@@ -448,6 +468,7 @@ export async function volverACalcularAccion(_prev: EstadoConAviso, formData: For
   const estado = await mutacion(formData, "indicadores.administrar", async (_usuarioId, _formData, sesion) => {
     parsearFormulario(formData, EsquemaSinDatos, { omitir: ["id"] });
     ({ cambio } = await volverACalcular(sesion, idNumerico(formData, "id")));
+    if (cambio) await propagarSinFallar();
   });
   if (estado) return estado;
   return { ok: true, aviso: cambio ? "Se volvió a calcular: los datos cambiaron." : "Se volvió a calcular: los datos son los mismos." };

@@ -355,7 +355,8 @@ export async function cambiarOperacion(
 
 /**
  * El plazo nuevo en las mediciones en curso: la fecha límite (`fechaLimiteDeReporte`, como al abrir el periodo; la de una
- * a la que su foto le movió el plazo, desde esa foto, como la dejó: anexo 14B §5.4) y las marcas de aviso que ya no son
+ * a la que su foto o la propagación de una fuente le movió el plazo, desde la última vez que se movió, como la dejó: anexo
+ * 14B §5.4 y anexo 14C §3.4, `plazo_desde` de `enCurso`) y las marcas de aviso que ya no son
  * ciertas con ella (`marcasQueSiguen`), para que la pasada vuelva a avisar cuando toque. Quien llama tiene el indicador
  * `FOR UPDATE`. Devuelve cuántas cambiaron de fecha.
  */

@@ -44,7 +44,7 @@ import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { datoDePrueba, indicadorDePrueba, silenciarIndicadores, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { datoDePrueba, indicadorDePrueba, silenciarIndicadores, versionNueva, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -634,5 +634,156 @@ describe("la pantalla de reportar de un mixto (datosDeReporte)", () => {
         venceEn: null,
         venceEl: null,
       });
+    }));
+});
+
+describe("cada escritor toca lo suyo (anexo 14C, §3.1)", () => {
+  it("una letra que un cambio mayor volvió ajena no toma el valor que la persona guardó cuando era propia", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const proceso = await procesoNuevo(tx);
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const datoId = await datoDePrueba(tx, { procesoId: proceso.id });
+      const ind = await indicadorDePrueba(tx, {
+        procesoId: proceso.id,
+        periodicidad: "mensual",
+        inicioMedicion: "2026-09",
+        aprobadaEn: APROBADA,
+        mide: [mide.usuarioId],
+        variables: { A: { nombre: GLOSADO } },
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id });
+      const medicion = await medicionDe(tx, ind.id, "2026-09");
+      await guardarSinReportar(tx, mide, medicion, { A: "38529000", B: "1284300000" });
+      // Un cambio mayor que rige desde septiembre vuelve B un dato compartido.
+      await versionNueva(tx, {
+        indicadorId: ind.id,
+        usuarioId: admin.usuarioId,
+        tipoCambio: "mayor",
+        rigeDesde: "2026-09",
+        aprobadaEn: AHORA,
+        variables: { A: { nombre: GLOSADO }, B: { datoId } },
+      });
+
+      expect(await reportarCon(tx, mide, medicion, { A: "38529000" })).toEqual({
+        ok: true,
+        estado: "abierta",
+        semaforo: null,
+        cumple: null,
+        faltaDato: true,
+      });
+      const [reporte] = await tx`SELECT detalle FROM medicion_eventos WHERE medicion_id = ${medicion} AND tipo = 'reporte'`;
+      expect([reporte.detalle.antes.B, reporte.detalle.despues.B]).toEqual([null, null]);
+      // El valor viejo de B era de la persona: lo quita su propio escritor.
+      expect(await valores(tx, medicion)).toEqual({ A: 38529000 });
+    }));
+
+  it("tras un cambio menor, reportar lo mío no borra el valor ajeno que quedó en la versión anterior", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const { mide, datoId, ind, medicion } = await mixto(tx);
+      await ponerAjeno(tx, medicion, ind.variables.B, "1284300000");
+      await versionNueva(tx, {
+        indicadorId: ind.id,
+        usuarioId: admin.usuarioId,
+        tipoCambio: "menor",
+        rigeDesde: "2026-09",
+        aprobadaEn: AHORA,
+        variables: { A: { nombre: GLOSADO }, B: { datoId } },
+      });
+      expect(await reportarCon(tx, mide, medicion, { A: "38529000" })).toMatchObject({ ok: true, semaforo: "critico", faltaDato: false });
+      const filasDeB = await tx`SELECT valor, reportado_por FROM medicion_valores WHERE medicion_id = ${medicion} AND variable_id = ${ind.variables.B}`;
+      expect(filasDeB.map((f) => [Number(f.valor), f.reportado_por])).toEqual([[1284300000, null]]);
+    }));
+
+  it("corregir, «No aplica» y quitarlo, con el valor ajeno puesto, no lo tocan", () =>
+    revertida(sql, async (tx) => {
+      const { mide, ind, medicion } = await mixto(tx);
+      await ponerAjeno(tx, medicion, ind.variables.B, "1284300000");
+      const filaDeB = async () =>
+        (await tx`SELECT id, valor, reportado_por, reportado_en FROM medicion_valores WHERE medicion_id = ${medicion} AND variable_id = ${ind.variables.B}`)[0];
+      const antes = await filaDeB();
+      await reportarCon(tx, mide, medicion, { A: "38529000" });
+      await reportarCon(tx, mide, medicion, { A: "1000000000" });
+      expect(await eventos(tx, medicion)).toEqual(["reporte", "correccion"]);
+      expect(await filaDeB()).toEqual(antes);
+      await marcarNoAplica(mide, { medicionId: medicion, motivo: "Sin glosas en el mes" }, opc(tx));
+      expect(await filaDeB()).toEqual(antes);
+      await quitarNoAplica(mide, medicion, opc(tx));
+      expect(await filaDeB()).toEqual(antes);
+      expect(await valores(tx, medicion)).toEqual({ A: 1000000000, B: 1284300000 });
+    }));
+
+  it("la marca «reportada» va en el primer reporte de un mixto, no en el evento de un histórico", () =>
+    revertida(sql, async (tx) => {
+      const { mide, ind } = await mixto(tx, { inicioMedicion: "2026-07" });
+      const julio = await medicionDe(tx, ind.id, "2026-07");
+      await registrarHistoricos(mide, { indicadorId: ind.id, filas: [{ periodo: "2026-07", valores: { A: "9", B: "10" } }] }, opc(tx));
+      const [historico] = await tx`SELECT detalle FROM medicion_eventos WHERE medicion_id = ${julio} AND tipo = 'historico'`;
+      expect(historico.detalle.antes).not.toHaveProperty("reportada");
+      expect(historico.detalle.despues).not.toHaveProperty("reportada");
+
+      const septiembre = await medicionDe(tx, ind.id, "2026-09");
+      await reportarCon(tx, mide, septiembre, { A: "38529000" });
+      const [reporte] = await tx`SELECT detalle FROM medicion_eventos WHERE medicion_id = ${septiembre} AND tipo = 'reporte'`;
+      expect([reporte.detalle.antes.reportada, reporte.detalle.despues.reportada]).toEqual([false, true]);
+    }));
+
+  it("sin variables propias, con todos sus valores y sin resultado, no le da «Reportar» a nadie", () =>
+    revertida(sql, async (tx) => {
+      const { lider, analiza, ind, medicion } = await sinVariablesPropias(tx);
+      await ponerAjeno(tx, medicion, ind.variables.A, "5");
+      await ponerAjeno(tx, medicion, ind.variables.B, "10");
+      await tx`UPDATE mediciones SET reportada_en = ${AHORA} WHERE id = ${medicion}`;
+      expect((await fila(tx, medicion)).resultado_exacto).toBeNull();
+      expect(await falta(tx, medicion)).toBe("dato");
+      for (const s of [lider, analiza]) {
+        expect((await tareasDeIndicadores(s, opc(tx, TARDE))).tareas.map((t) => t.id)).not.toContain(`medir:${medicion}`);
+      }
+    }));
+});
+
+describe("los límites del resultado en un mixto", () => {
+  const FUERA = "El resultado (200 %) queda fuera de los límites del indicador";
+
+  it("con el valor ajeno puesto, un resultado fuera de los límites se pide como confirmación, sin escribir nada", () =>
+    revertida(sql, async (tx) => {
+      const { mide, ind, medicion } = await mixto(tx, { resultadoMax: "100" });
+      await ponerAjeno(tx, medicion, ind.variables.B, "10");
+      expect(await reportar(mide, { medicionId: medicion, valores: { A: "20" }, parcial: false, confirmado: false }, opc(tx))).toEqual({
+        ok: false,
+        confirmar: `${FUERA}. ¿Los datos son correctos?`,
+      });
+      expect(await valores(tx, medicion)).toEqual({ B: 10 });
+      expect(await eventos(tx, medicion)).toEqual([]);
+      expect(await reportarCon(tx, mide, medicion, { A: "20" })).toMatchObject({ ok: true, faltaDato: false });
+      expect((await fila(tx, medicion)).resultado_exacto).toBe("200/1");
+    }));
+
+  it("la división por cero sigue rechazando; sin variables ajenas y en un histórico, el límite sigue bloqueando", () =>
+    revertida(sql, async (tx) => {
+      const cero = await mixto(tx);
+      await ponerAjeno(tx, cero.medicion, cero.ind.variables.B, "0");
+      await rechaza(
+        reportarCon(tx, cero.mide, cero.medicion, { A: "5" }),
+        "No se puede calcular: división por cero. Si no hubo casos, marque «No aplica en este periodo».",
+      );
+
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const propio = await indicadorDePrueba(tx, {
+        periodicidad: "mensual",
+        inicioMedicion: "2026-09",
+        aprobadaEn: APROBADA,
+        mide: [mide.usuarioId],
+        resultadoMax: "100",
+      });
+      await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: propio.id });
+      await rechaza(reportarCon(tx, mide, await medicionDe(tx, propio.id, "2026-09"), { A: "20", B: "10" }), FUERA);
+
+      const historico = await mixto(tx, { inicioMedicion: "2026-07", resultadoMax: "100" });
+      await rechaza(
+        registrarHistoricos(historico.mide, { indicadorId: historico.ind.id, filas: [{ periodo: "2026-07", valores: { A: "20", B: "10" } }] }, opc(tx)),
+        `Julio de 2026: ${FUERA}`,
+      );
     }));
 });

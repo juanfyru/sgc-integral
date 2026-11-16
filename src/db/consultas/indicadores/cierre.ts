@@ -53,6 +53,7 @@ import {
   type VersionDeCalculo,
 } from "./mediciones";
 import { sinRespuestaPorProceso } from "./observaciones";
+import { propagarSinFallar } from "./propagacion";
 
 export type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 
@@ -288,7 +289,8 @@ async function nombresDe(sql: Cliente, ids: number[]): Promise<string[]> {
  * §4 y §5.4), antes de clasificar: una medición no se cierra «Sin dato» si su foto ya tocaba. La foto que pide un análisis
  * y mueve su plazo (la de flujo, o la de estado que llegó con su fecha límite vencida: `laFotoMueveElPlazo`) lo cuenta desde
  * ella, así que sigue en plazo y la alcanza un cierre posterior; la que cumple la meta o queda «No aplica» conserva su fecha
- * y la cierra este mismo cierre.
+ * y la cierra este mismo cierre. Al final propaga lo que nadie propagó (anexo 14C, §3.3: `propagarSinFallar`), con la misma
+ * regla del plazo (`laFuenteMueveElPlazo`).
  */
 async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Date): Promise<void> {
   const zona = zonaHoraria();
@@ -303,6 +305,7 @@ async function abrirPeriodosDelCierre(sql: Cliente, periodo: Periodo, ahora: Dat
   } catch (err) {
     console.error("No se pudieron tomar las fotos de los indicadores automáticos antes del cierre:", err);
   }
+  await propagarSinFallar({ sql, ahora });
 }
 
 /**

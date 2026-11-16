@@ -70,6 +70,8 @@ export type OpcionesIndicadorDePrueba = {
   variables?: Partial<Record<"A" | "B", VariableDePrueba>>;
   /** El máximo del resultado (límites del indicador); sin valor, ninguno. */
   resultadoMax?: string;
+  /** La fórmula de la versión 1, tal cual (sin validarla); sin valor, la de la forma «porcentaje». */
+  formula?: string;
   /**
    * Una versión automática (anexo 14B, §5.3): la forma, la fórmula, la tendencia y las variables del registro (origen
    * `automatica`). Aprobada, el indicador guarda el cálculo y el alcance, como `alPublicarVersion`; el alcance «proceso» es el
@@ -179,7 +181,7 @@ export async function indicadorDePrueba(
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, ${o.objetivoId ?? null},
       (SELECT enunciado FROM objetivos WHERE id = ${o.objetivoId ?? null}), ${calculo ? "automatico" : "manual"}, ${o.calculo?.clave ?? null},
-      ${o.calculo?.alcance ?? null}, ${forma}, NULL, ${formulaDeForma(forma)},
+      ${o.calculo?.alcance ?? null}, ${forma}, NULL, ${o.formula ?? formulaDeForma(forma)},
       un.id, un.nombre, un.sufijo, 1, ${o.periodicidad ?? "mensual"}, ${calculo?.tendencia ?? o.tendencia ?? "ascendente"}, ${meta},
       ${o.rangos ? "rangos" : (o.modo ?? "relativo")}, ${o.rangos || o.modo === "fijo" ? null : (o.umbralPct ?? 70)}, ${o.limite ?? null},
       ${o.rangos ? tx.json(o.rangos as never) : null}, ${o.resultadoMax ?? null}, ${o.nivel ?? null}, ${o.riesgoAsociado ?? null},
@@ -374,8 +376,9 @@ export async function loteImportado(tx: TransactionSql, d: { usuarioId: number; 
  * de envío pendientes, sus revisiones por cambio de norma pendientes (anexo 14B, §9) y los periodos pendientes de sus datos
  * compartidos (anexo 14C, §4.4); y deja sin inicio de medición a sus indicadores activos, para que no abra periodos nuevos
  * ni constancias nuevas (`asegurarConstancias` solo mira los que tienen inicio) ni periodos nuevos de un dato
- * (`asegurarPeriodosDeDatos`, tampoco). `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Se llama
- * antes de crear los datos del test, dentro de la transacción que se revierte.
+ * (`asegurarPeriodosDeDatos`, tampoco), y para que la propagación no les copie nada (`propagar` tampoco: anexo 14C, §3.3).
+ * `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Se llama antes de crear los datos del test,
+ * dentro de la transacción que se revierte.
  */
 export async function silenciarIndicadores(tx: TransactionSql): Promise<void> {
   await tx`UPDATE mediciones SET aviso_previo_en = coalesce(aviso_previo_en, now()), aviso_vencido_en = coalesce(aviso_vencido_en, now()),
@@ -416,6 +419,50 @@ export async function versionTrimestral(
       rige_desde = ${d.rigeDesde}, aprobada_por = ${d.usuarioId}, aprobada_en = ${d.aprobadaEn}
     WHERE id = ${v2.id}`;
   return Number(v2.id);
+}
+
+/**
+ * La versión siguiente del indicador, aprobada y rigiendo desde `rigeDesde`, como la deja aprobar un cambio menor o mayor,
+ * sin tocar las mediciones: de la periodicidad dada (sin valor, mensual), forma «porcentaje» (`A / B * 100`, meta 90, umbral
+ * 70) y sus variables A y B, propias (con el nombre dado o su letra) o, con `datoId`, de un dato compartido, con lo que
+ * firman del dato (su nombre, su periodicidad y «cómo se junta»), como `indicadorDePrueba`. Solo dentro de `revertida`.
+ */
+export async function versionNueva(
+  tx: TransactionSql,
+  d: {
+    indicadorId: number;
+    usuarioId: number;
+    tipoCambio: "menor" | "mayor";
+    rigeDesde: string;
+    aprobadaEn: Date;
+    periodicidad?: Periodicidad;
+    variables?: Partial<Record<"A" | "B", { nombre?: string; datoId?: number }>>;
+  },
+): Promise<{ versionId: number; variables: { A: number; B: number } }> {
+  const [{ numero }] = await tx`SELECT coalesce(max(numero), 0) + 1 AS numero FROM indicador_versiones WHERE indicador_id = ${d.indicadorId}`;
+  const [v] = await tx`INSERT INTO indicador_versiones (indicador_id, numero, estado, tipo_cambio, nombre, forma, formula, periodicidad,
+      tendencia, meta, semaforo_modo, umbral_atencion_pct, unidad_sufijo, decimales, creado_por)
+    VALUES (${d.indicadorId}, ${numero}, 'borrador', ${d.tipoCambio}, ${`Versión ${numero}`}, 'porcentaje', 'A / B * 100',
+      ${d.periodicidad ?? "mensual"}, 'ascendente', 90, 'relativo', 70, ' %', 1, ${d.usuarioId}) RETURNING id`;
+  const versionId = Number(v.id);
+  await tx`SELECT id FROM indicador_versiones WHERE id = ${versionId} FOR UPDATE`;
+  const variables: Record<"A" | "B", number> = { A: 0, B: 0 };
+  for (const [orden, letra] of [[1, "A"], [2, "B"]] as const) {
+    const x = d.variables?.[letra] ?? {};
+    const [dato] =
+      x.datoId === undefined ? [] : await tx`SELECT nombre, periodicidad, consolidacion FROM variables_compartidas WHERE id = ${x.datoId}`;
+    const [fila] = dato
+      ? await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden, origen, consolidacion, variable_compartida_id, dato_periodicidad)
+          VALUES (${versionId}, ${letra}, ${dato.nombre as string}, ${orden}, 'compartida', ${dato.consolidacion as string}, ${x.datoId!},
+            ${dato.periodicidad as string}) RETURNING id`
+      : await tx`INSERT INTO indicador_variables (version_id, letra, nombre, orden) VALUES (${versionId}, ${letra}, ${x.nombre ?? letra}, ${orden})
+          RETURNING id`;
+    variables[letra] = Number(fila.id);
+  }
+  await tx`UPDATE indicador_versiones SET estado = 'aprobada', elaborada_por = ${d.usuarioId}, huella = ${"3".repeat(64)},
+      rige_desde = ${d.rigeDesde}, aprobada_por = ${d.usuarioId}, aprobada_en = ${d.aprobadaEn}
+    WHERE id = ${versionId}`;
+  return { versionId, variables };
 }
 
 /**

@@ -48,6 +48,7 @@ import { obtenerParametros } from "./maestros";
 import {
   analisisDe,
   anteriorConResultado,
+  columnasDeValor,
   conMayuscula,
   contarSoportes,
   contextoDeMedicion,
@@ -526,7 +527,7 @@ export async function leerPeriodos(
   const valores =
     mediciones.length === 0
       ? []
-      : await sql`SELECT mv.id, mv.medicion_id, mv.variable_id, iv.letra, mv.valor, mv.reportado_en
+      : await sql`SELECT mv.medicion_id, ${columnasDeValor(sql)}
           FROM medicion_valores mv JOIN indicador_variables iv ON iv.id = mv.variable_id
           WHERE mv.medicion_id IN ${sql(mediciones.map((m) => Number(m.id)))} AND mv.categoria_id IS NULL AND mv.valor IS NOT NULL`;
   const valoresDe = agrupar(valores, (v) => Number(v.medicion_id));

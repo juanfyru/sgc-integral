@@ -48,7 +48,22 @@ const MOTIVO_DE_RECALCULO: Readonly<Record<string, string>> = {
   plazo: " por el cambio del plazo",
 };
 
-function queHizo(e: EventoDeMedicion): string {
+/**
+ * «El sistema actualizó «Total facturado»: de 1284300000 a 40000000»: lo que cambió de cada fuente de la propagación
+ * (`detalle.fuentes`, anexo 14C §3.3), con el nombre de su variable; varias, separadas por «;». Sin fuentes (solo cambió su
+ * «No aplica»), «El sistema actualizó un valor».
+ */
+function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>): string {
+  const fuentes = Array.isArray(e.detalle.fuentes) ? e.detalle.fuentes.map(objeto) : [];
+  if (fuentes.length === 0) return "El sistema actualizó un valor";
+  const cada = fuentes.map((f) => {
+    const letra = String(f.letra);
+    return `«${nombres[letra] ?? letra}»: de ${numero(f.antes, null) ?? "—"} a ${numero(f.despues, null) ?? "—"}`;
+  });
+  return `El sistema actualizó ${cada.join("; ")}`;
+}
+
+function queHizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>): string {
   switch (e.tipo) {
     case "reapertura":
       return "Reabrió";
@@ -77,7 +92,7 @@ function queHizo(e: EventoDeMedicion): string {
       // La foto la toma el sistema; con `recalculo`, quien administra la volvió a tomar (anexo 14B, §5.4).
       return e.detalle.recalculo === true ? "Se volvió a calcular" : "El sistema tomó la foto";
     case "propagacion":
-      return "El sistema actualizó un valor";
+      return queActualizo(e, nombres);
     case "categorias":
       return "Actualizó las categorías";
   }
@@ -148,7 +163,7 @@ export function historialDeCorreccion(
     .filter((e) => c.conSoportes || e.tipo !== "soporte")
     .map((e) => ({
       id: e.id,
-      que: queHizo(e),
+      que: queHizo(e, c.nombres),
       quien: e.quien ?? "El sistema",
       cuando: fechaHoraLarga(e.creadoEn),
       porque: texto(e.detalle.justificacion),

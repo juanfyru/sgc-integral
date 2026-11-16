@@ -42,6 +42,7 @@ import { impactosDeIndicadoresVencidos } from "./impactos";
 import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
 import { correrPaso, diaYMes } from "./pasada";
+import { propagarSinFallar } from "./propagacion";
 import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona as Falta } from "./tareas";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number; avisoPrevioDias: number };
@@ -333,7 +334,8 @@ async function abrirPeriodos(sql: Cliente, ahora: Date): Promise<void> {
 /**
  * La pasada de los indicadores (spec 14 §10.2): abre los periodos, toma las fotos (después de abrir y antes de los avisos),
  * abre las constancias de envío al ente (anexo 14B, §8: `asegurarConstancias`) y los periodos de los datos compartidos
- * (anexo 14C, §4.3: `asegurarPeriodosDeDatos`), y manda los avisos: los de las mediciones, después los de las constancias
+ * (anexo 14C, §4.3: `asegurarPeriodosDeDatos`), propaga lo que nadie propagó (anexo 14C, §3.3: `propagarSinFallar`) y manda
+ * los avisos: los de las mediciones, después los de las constancias
  * (`constanciasVencidas`), los de las revisiones por cambio de norma (anexo 14B, §9: `impactosDeIndicadoresVencidos`) y al
  * final los de los datos compartidos (anexo 14C, §4.4: `datosVencidos`), que suman a sus cuentas. Un paso que falla se
  * registra y los demás siguen.
@@ -356,6 +358,8 @@ export async function revisarVencimientosDeIndicadores(opciones: { sql: Cliente;
   } catch (err) {
     console.error("No se pudieron abrir los periodos de los datos compartidos:", err);
   }
+  // Lo que nadie propagó (anexo 14C, §3.3): después de las fotos y de los periodos de los datos, antes de los avisos.
+  await propagarSinFallar({ sql, ahora });
   const { avisoPrevioDias } = await obtenerParametros({ sql });
   const c: Contexto = { sql, ahora, zona: zonaHoraria(), escalamientoDias: opciones.config.escalamientoDias, avisoPrevioDias };
   const total: Resultado = { avisados: 0, escalados: 0 };
