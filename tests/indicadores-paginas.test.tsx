@@ -482,7 +482,7 @@ describe("el cierre del mes", () => {
       const de2003 = () => pagina(ind.codigo, { vista: "resultados", anio: "2003" });
 
       contexto.sesion = valida(admin);
-      expect(await de2003()).toMatch(/aria-haspopup="dialog"[^>]*>Reabrir<span class="sr-only"> Enero de 2003<\/span>/);
+      expect(await de2003()).toMatch(/aria-haspopup="dialog"[^>]*>Reabrir<span class="sr-only"> enero de 2003<\/span>/);
       contexto.sesion = valida(mide);
       expect(await de2003()).not.toContain(">Reabrir<");
 
@@ -490,7 +490,7 @@ describe("el cierre del mes", () => {
       contexto.sesion = valida(admin);
       const reabierta = await de2003();
       expect(reabierta).not.toContain(">Reabrir<");
-      expect(reabierta).toMatch(/>Cerrar de nuevo<span class="sr-only"> Enero de 2003<\/span>/);
+      expect(reabierta).toMatch(/>Cerrar de nuevo<span class="sr-only"> enero de 2003<\/span>/);
       expect(reabierta).toContain(">Corregida<");
       expect(reabierta).toContain("Reabrió");
       expect(reabierta).toContain("El dato venía del informe equivocado");
@@ -679,8 +679,8 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
         historial={historial}
       />,
     );
-    expect(html).toMatch(/<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*>Reabrir<span class="sr-only"> Enero de 2003<\/span>/);
-    expect(html).toMatch(/<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*>Cerrar de nuevo<span class="sr-only"> Febrero de 2003<\/span>/);
+    expect(html).toMatch(/<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*>Reabrir<span class="sr-only"> enero de 2003<\/span>/);
+    expect(html).toMatch(/<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*>Cerrar de nuevo<span class="sr-only"> febrero de 2003<\/span>/);
     // La lista del historial ocupa al menos 18 rem: la columna se ensancha solo mientras está abierta.
     expect(html).toMatch(/<details[^>]*>.*<ol class="[^"]*min-w-72[^"]*">.*El dato venía de otro informe/);
   });

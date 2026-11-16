@@ -133,7 +133,8 @@ function Reabrir({ accion, etiqueta, r }: { accion: Accion; etiqueta: string; r:
   return (
     <>
       <Boton variante="secundario" tamano="sm" onClick={() => setAbierto(true)} aria-haspopup="dialog" className="whitespace-nowrap">
-        Reabrir<span className="sr-only">{` ${etiqueta}`}</span>
+        {/* El periodo, en minúscula a mitad de frase: «Reabrir septiembre de 2026», como «Corregir septiembre de 2026». */}
+        Reabrir<span className="sr-only">{` ${etiqueta.toLowerCase()}`}</span>
       </Boton>
       <Dialogo abierto={abierto} alCerrar={cerrar} titulo={r.titulo} className={CLASE_DIALOGO}>
         {/* Solo abierto: varios diálogos en la tabla no repiten el id del campo. */}
@@ -182,7 +183,7 @@ function CerrarOtraVez({ accion, id, etiqueta }: { accion: Accion; id: number; e
       <input type="hidden" name="id" value={id} />
       <Boton type="submit" variante="secundario" tamano="sm" pendiente={pendiente} className="whitespace-nowrap">
         {pendiente ? "Cerrando…" : "Cerrar de nuevo"}
-        <span className="sr-only">{` ${etiqueta}`}</span>
+        <span className="sr-only">{` ${etiqueta.toLowerCase()}`}</span>
       </Boton>
       {estado && !estado.ok ? (
         <p role="alert" className="text-xs text-estado-critico-texto">

@@ -400,12 +400,12 @@ describe("reabrir y cerrar de nuevo un periodo del dato (anexo 14C, §3.5)", () 
       await tx`UPDATE variable_valores SET reabierto_por = ${admin.usuarioId}, reabierto_en = ${OCT_9}, reapertura_justificacion = 'Faltaban dos facturas'
         WHERE id = ${reabierto}`;
       const delAdmin = await pagina(admin, datoId);
-      expect(delAdmin).toContain(`Reabrir<span class="sr-only"> Agosto de 2026</span>`);
-      expect(delAdmin).toContain(`Cerrar de nuevo<span class="sr-only"> Julio de 2026</span>`);
+      expect(delAdmin).toContain(`Reabrir<span class="sr-only"> agosto de 2026</span>`);
+      expect(delAdmin).toContain(`Cerrar de nuevo<span class="sr-only"> julio de 2026</span>`);
       // La celda del estado: con valor, «Cerrado»; sin él, «Cerrado sin dato».
       expect(delAdmin).toMatch(/>Cerrado<\/span>/);
       expect(delAdmin).toMatch(/>Cerrado sin dato<\/span>/);
-      expect(delAdmin).toContain(`Reabrir<span class="sr-only"> Junio de 2026</span>`);
+      expect(delAdmin).toContain(`Reabrir<span class="sr-only"> junio de 2026</span>`);
       // El foco tiene a dónde ir cuando el botón pulsado se va de la fila (M3): el título es enfocable.
       expect(delAdmin).toContain('<h1 tabindex="-1"');
       const suya = await pagina(responsable, datoId);
