@@ -754,7 +754,7 @@ describe("«Reportes a tiempo» ante el contagio", () => {
       variables: { A: { indicadorOrigenId: x.ind.id, toma: "valor" }, B: { nombre: "Casos evaluados" } },
     });
     await abrir(tx, AHORA, x.ind, c);
-    return { procesoId, ...x, deX: await medicionDe(tx, x.ind.id, "2026-09") };
+    return { procesoId, ...x, mideC, deX: await medicionDe(tx, x.ind.id, "2026-09"), deC: await medicionDe(tx, c.id, "2026-09") };
   }
 
   it("un mixto que el contagio marcó antes de su fecha límite no cuenta: quien mide no debía nada", () =>
@@ -773,6 +773,23 @@ describe("«Reportes a tiempo» ante el contagio", () => {
       await marcarNoAplica(mide, { medicionId: deX, motivo: MOTIVO_DE_X }, { sql: tx, ahora: TARDE });
       await propagarA(tx, TARDE, [x.id]);
       expect(await reportesDeOctubre(tx, procesoId)).toEqual({ A: "0", B: "2" });
+    }));
+
+  it("al quitarse un contagio que llegó a tiempo, el reporte de quien mide se juzga contra su fecha nueva", () =>
+    revertida(sql, async (tx) => {
+      const { procesoId, ind: x, mide, mideC, deX, deC } = await mixtoEnSuProceso(tx);
+      await marcarNoAplica(mide, { medicionId: deX, motivo: MOTIVO_DE_X }, { sql: tx, ahora: AHORA });
+      await propagarA(tx, AHORA, [x.id]);
+      // El contagio se quita el 20, con la fecha (el 10) ya pasada: el reporte de quien mide el mixto se cuenta desde ese día.
+      await quitarNoAplica(mide, deX, { sql: tx, ahora: TARDE });
+      await propagarA(tx, TARDE, [x.id]);
+      const devuelto = (await eventos(tx, deC)).at(-1)!.detalle;
+      expect(devuelto.venceEn).toBe(fechaLimite(TARDE, 10, ZONA).toISOString());
+      // No es el plazo de un análisis: el evento no guarda la fecha de antes, y la nueva es la del reporte.
+      expect(devuelto).not.toHaveProperty("venceAntes");
+      await reportar(mideC, { medicionId: deC, valores: { B: "100" }, parcial: false, confirmado: true }, { sql: tx, ahora: DESPUES });
+      // X (su «no aplica» del 5 fue su primer reporte) y el mixto, que reportó el 25 con plazo hasta el 30.
+      expect(await reportesDeOctubre(tx, procesoId)).toEqual({ A: "2", B: "2" });
     }));
 });
 

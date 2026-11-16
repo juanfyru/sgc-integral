@@ -29,7 +29,7 @@
  *   una persona no se toca.
  * - **El plazo** (§3.4): si la medición pasa de no pedir el análisis a pedirlo y su fecha límite ya pasó (o el plazo es 0),
  *   se cuenta otra vez desde hoy con el mismo plazo (`laFuenteMueveElPlazo`), con las marcas de aviso limpias y `venceEn` en
- *   el evento. Vale igual para un dato y para un componente, y cuando el contagio se quita y un mixto vuelve a pedir el
+ *   el evento, que guarda además la fecha que tenía (`venceAntes`: contra ella se sigue juzgando el reporte). Vale igual para un dato y para un componente, y cuando el contagio se quita y un mixto vuelve a pedir el
  *   reporte de quien mide, si el contagio había llegado a tiempo (`contagioATiempo`); si llegó tarde, nada se toca.
  * - **El evento es del sistema** (`propagacion`, sin usuario): qué cambió de cada fuente (`detalle.fuentes`, con la letra,
  *   la clase, el id del dato o del indicador y el antes y el después) y los valores de todas las letras a los dos lados.
@@ -662,6 +662,11 @@ async function sinCategoriaATiempo(tx: TransactionSql, medicionId: number, categ
  * pasada no la deja vencida (anexo 14C, §3.4); ni el contagio que llegó a tiempo y, al quitarse, le devuelve el reporte a
  * quien mide un mixto (`devuelveATiempo`): nadie amanece vencido por lo que cambió otro. Si el contagio llegó tarde, la fecha y
  * las marcas de aviso no se tocan: ya debía su reporte. `noAplica` es el «No aplica» que le queda.
+ *
+ * Cuando la fecha se mueve porque la medición pasa a pedir el análisis, el evento guarda también la que tenía (`venceAntes`):
+ * esa fecha nueva es la del análisis, y «Reportes a tiempo» (`reportesDelPeriodo`, `calculos.ts`) sigue juzgando el reporte
+ * contra la del primer evento que la lleva. Cuando se mueve porque el reporte vuelve a quien mide (`devuelveATiempo`), no: esa
+ * sí es la fecha nueva de su reporte.
  */
 function plazoPorLaFuente(tx: TransactionSql, i: Row, m: Row, c: { noAplica: boolean; devuelveATiempo: boolean; ahora: Date }) {
   const semaforo = (m.semaforo as Semaforo | null) ?? null;
@@ -672,12 +677,12 @@ function plazoPorLaFuente(tx: TransactionSql, i: Row, m: Row, c: { noAplica: boo
   return async (r: Recalculo): Promise<Record<string, unknown>> => {
     const pide = pideAnalisis({ semaforo: r.despues, cumple: r.cumple, repetido: r.repetido, noAplica: c.noAplica }, m);
     const plazo = { venceEn: new Date(m.vence_en as string), ahora: c.ahora, plazoDias: Number(i.plazo_reporte_dias), zona: zonaHoraria() };
-    const vence =
-      laFuenteMueveElPlazo({ pedia, pide, ...plazo }) ?? (c.devuelveATiempo ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
+    const porElAnalisis = laFuenteMueveElPlazo({ pedia, pide, ...plazo });
+    const vence = porElAnalisis ?? (c.devuelveATiempo ? laFuenteMueveElPlazo({ pedia: false, pide: true, ...plazo }) : null);
     if (!vence) return {};
     await tx`UPDATE mediciones SET vence_en = ${vence}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL
       WHERE id = ${Number(m.id)}`;
-    return { venceEn: vence.toISOString() };
+    return { venceEn: vence.toISOString(), ...(porElAnalisis ? { venceAntes: plazo.venceEn.toISOString() } : {}) };
   };
 }
 

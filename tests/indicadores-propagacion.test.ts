@@ -19,6 +19,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { tomarCalculo } from "@/db/consultas/indicadores/calculos";
 import { asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { basesDe, leerPeriodos } from "@/db/consultas/indicadores/lectura";
 import {
@@ -590,6 +591,76 @@ describe("el plazo del análisis", () => {
       // Otro plazo cuenta desde la última vez que la fuente la movió.
       await plazo(7, dic10);
       expect((await fila(tx, medicion)).vence_en).toEqual(fechaLimite(nov20, 7, ZONA));
+    }));
+});
+
+describe("«Reportes a tiempo» ante el plazo que mueve la fuente", () => {
+  /** «Reportes a tiempo» del proceso para las mediciones cuyo reporte vencía en el mes `clave`. */
+  const reportesDe = (tx: TransactionSql, procesoId: number, clave: string) => {
+    const mes = periodoDe(clave, ZONA)!;
+    return tomarCalculo(tx, {
+      clave: "reportes_a_tiempo",
+      alcance: "proceso",
+      procesoId,
+      indicadorId: 0,
+      periodo: { clave: mes.clave, desde: mes.desde, hasta: mes.hasta },
+      ahora: new Date("2026-12-12T15:00:00Z"),
+    });
+  };
+
+  it("un reporte tardío no pasa a «a tiempo» porque el dato llegue después", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      // Septiembre vencía el 10 de octubre: quien mide reporta lo suyo el 12, tarde.
+      await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" }, new Date("2026-10-12T15:00:00Z"));
+      expect(await reportesDe(tx, x.procesoId, "2026-10")).toEqual({ A: "0", B: "1" });
+
+      // El dato llega el 20 y el resultado no cumple (3 %): el plazo del análisis se cuenta desde ese día.
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "1284300000", TARDE);
+      await propagarA(tx, TARDE, [x.ind.id]);
+      const m = await fila(tx, x.medicion);
+      expect(m.vence_en).toEqual(fechaLimite(TARDE, 10, ZONA));
+
+      expect(await reportesDe(tx, x.procesoId, "2026-10")).toEqual({ A: "0", B: "1" });
+      // El evento guarda la fecha contra la que se juzga el reporte.
+      expect((await eventos(tx, x.medicion)).at(-1)!.detalle.venceAntes).toBe(VENCE_SEPTIEMBRE.toISOString());
+    }));
+
+  it("el reporte puntual cuyo dato llega al mes siguiente no cambia de ventana ni cuenta dos veces", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" });
+      expect(await reportesDe(tx, x.procesoId, "2026-10")).toEqual({ A: "1", B: "1" });
+      expect(await reportesDe(tx, x.procesoId, "2026-11")).toEqual({ A: "0", B: "0" });
+
+      // El dato llega el 5 de noviembre, con la foto de octubre ya tomada: el plazo del análisis pasa a noviembre.
+      const NOVIEMBRE = new Date("2026-11-05T15:00:00Z");
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "1284300000", NOVIEMBRE);
+      await propagarA(tx, NOVIEMBRE, [x.ind.id]);
+      expect((await fila(tx, x.medicion)).vence_en).toEqual(fechaLimite(NOVIEMBRE, 10, ZONA));
+
+      expect(await reportesDe(tx, x.procesoId, "2026-10")).toEqual({ A: "1", B: "1" });
+      expect(await reportesDe(tx, x.procesoId, "2026-11")).toEqual({ A: "0", B: "0" });
+    }));
+
+  it("cuenta la primera fecha: una segunda corrección que vuelve a mover el plazo no cambia contra qué se juzga", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" }, new Date("2026-10-12T15:00:00Z"));
+      const corregir = async (valor: string, ahora: Date) => {
+        await reportarElDato(tx, x.responsable, x.datoId, "2026-09", valor, ahora);
+        await propagarA(tx, ahora, [x.ind.id]);
+      };
+      await corregir("1284300000", TARDE);
+      await corregir("40000000", new Date("2026-11-10T15:00:00Z"));
+      // Deja de cumplir con la fecha (30 de octubre) ya pasada: se mueve otra vez, y ese evento guarda el 30 de octubre.
+      const nov20 = new Date("2026-11-20T15:00:00Z");
+      await corregir("1284300000", nov20);
+      expect((await fila(tx, x.medicion)).vence_en).toEqual(fechaLimite(nov20, 10, ZONA));
+
+      expect(await reportesDe(tx, x.procesoId, "2026-10")).toEqual({ A: "0", B: "1" });
+      expect(await reportesDe(tx, x.procesoId, "2026-11")).toEqual({ A: "0", B: "0" });
+      expect((await eventos(tx, x.medicion)).at(-1)!.detalle.venceAntes).toBe(fechaLimite(TARDE, 10, ZONA).toISOString());
     }));
 });
 

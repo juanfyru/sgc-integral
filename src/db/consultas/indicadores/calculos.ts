@@ -96,10 +96,17 @@ type VersionQueRige = { rigeDesde: string | null; periodicidad: Periodicidad | n
  * cuenta la que quien mide no debía (anexo 14C, §3.1 y §6.3): sin reporte suyo, sigue «No aplica» por el contagio de un
  * componente (`MOTIVO_COMPONENTE_NO_APLICA`) y el evento que la marcó (`propagacion` con `detalle.componente`; el último, si
  * hubo varios) llegó en su fecha límite o antes. Si llegó después, la persona ya debía su reporte, y cuenta como tarde.
+ *
+ * La fecha límite es la **del reporte** (`limite.en`), no siempre `vence_en`: cuando un cambio ajeno deja a una medición ya
+ * reportada pidiendo el análisis con la fecha pasada, la fecha se cuenta otra vez para analizar (anexo 14C, §3.4) y el evento
+ * guarda la que tenía (`venceAntes`: la propagación y la racha que nace de ella). Con alguno así, vale la del primero: con
+ * ella se decide en qué periodo cuenta la medición y si su reporte fue a tiempo, también en las dos excepciones de arriba.
+ * La fecha que se mueve porque el reporte vuelve a quien mide (al quitarse un contagio que llegó a tiempo) no deja
+ * `venceAntes`: esa sí es la de su reporte.
  */
 async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<ValoresDeCalculo> {
   const delProceso = p.alcance === "proceso" ? sql`i.proceso_id = ${p.procesoId}` : sql`true`;
-  const filas = await sql`SELECT m.periodo, m.vence_en, primero.en AS primer_reporte_en,
+  const filas = await sql`SELECT m.periodo, limite.en AS vence_en, primero.en AS primer_reporte_en,
       (SELECT coalesce(json_agg(json_build_object('rigeDesde', v.rige_desde, 'periodicidad', v.periodicidad, 'origenDato', v.origen_dato,
             'propias', (SELECT coalesce(json_agg(vp.letra), '[]'::json) FROM indicador_variables vp WHERE vp.version_id = v.id AND vp.origen = 'propia'))
           ORDER BY v.numero DESC), '[]'::json)
@@ -108,11 +115,13 @@ async function reportesDelPeriodo(sql: Cliente, p: PeticionDeCalculo): Promise<V
     JOIN indicadores i ON i.id = m.indicador_id
     CROSS JOIN LATERAL (SELECT min(e.creado_en) AS en FROM medicion_eventos e
       WHERE e.medicion_id = m.id AND e.tipo IN ('reporte', 'no_aplica')) primero
-    WHERE m.vence_en >= ${p.periodo.desde} AND m.vence_en <= ${p.periodo.hasta} AND NOT m.historica AND ${delProceso}
-      AND NOT (i.estado = 'retirado' AND i.baja_en < m.vence_en AND (primero.en IS NULL OR primero.en > i.baja_en))
+    CROSS JOIN LATERAL (SELECT coalesce((SELECT (a.detalle ->> 'venceAntes')::timestamptz FROM medicion_eventos a
+        WHERE a.medicion_id = m.id AND a.detalle ? 'venceAntes' ORDER BY a.id LIMIT 1), m.vence_en) AS en) limite
+    WHERE limite.en >= ${p.periodo.desde} AND limite.en <= ${p.periodo.hasta} AND NOT m.historica AND ${delProceso}
+      AND NOT (i.estado = 'retirado' AND i.baja_en < limite.en AND (primero.en IS NULL OR primero.en > i.baja_en))
       AND NOT (primero.en IS NULL AND m.no_aplica AND m.no_aplica_motivo = ${MOTIVO_COMPONENTE_NO_APLICA}
         AND coalesce((SELECT max(c.creado_en) FROM medicion_eventos c
-          WHERE c.medicion_id = m.id AND c.tipo = 'propagacion' AND c.detalle ? 'componente'), 'infinity'::timestamptz) <= m.vence_en)`;
+          WHERE c.medicion_id = m.id AND c.tipo = 'propagacion' AND c.detalle ? 'componente'), 'infinity'::timestamptz) <= limite.en)`;
   const zona = zonaHoraria();
   const medidas: MedicionParaPlazo[] = filas.flatMap((f) => {
     const clave = f.periodo as string;
