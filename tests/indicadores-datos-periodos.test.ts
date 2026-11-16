@@ -599,7 +599,11 @@ describe("un dato con dimensión cuyo periodo nace sin categorías (puesta en ma
       expect([Number(b.usuario_id), b.entidad]).toEqual([admin.usuarioId, "dato_compartido"]);
       expect(b.detalle).toEqual({ nombre: NOMBRE, periodo: "2026-10", periodoId: octubre, agregadas: ["Sede norte", "Sede sur"] });
       expect(describirEvento({ accion: "dato_categorias_actualizadas", entidad: "dato_compartido", entidadId: datoId, detalle: b.detalle })).toBe(
-        `Actualizó las categorías de el dato compartido «${NOMBRE}», octubre de 2026: añadió Sede norte, Sede sur`,
+        `Actualizó las categorías del dato compartido «${NOMBRE}», octubre de 2026: añadió Sede norte, Sede sur`,
+      );
+      // Sin el nombre en el detalle, la frase sigue en pie.
+      expect(describirEvento({ accion: "dato_categorias_actualizadas", entidad: "dato_compartido", entidadId: datoId, detalle: {} })).toBe(
+        "Actualizó las categorías de un dato compartido",
       );
       expect(nombreDeAccion("dato_categorias_actualizadas")).toBe("Actualizó las categorías de un periodo de un dato compartido");
 

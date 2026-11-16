@@ -883,7 +883,7 @@ export function describirEvento(e: EventoAuditoria): string {
       return `Quitó el soporte «${texto(d.archivo) ?? "?"}» ${delPeriodoDelDato(nombre, d.periodo)}${d.sinResponsable === true ? " (sin nadie más que pudiera reportarlo)" : ""}`;
     case "dato_categorias_actualizadas": {
       const agregadas = Array.isArray(d.agregadas) ? d.agregadas.filter((n): n is string => typeof n === "string") : [];
-      return `Actualizó las categorías de ${periodoDelDato(nombre, d.periodo)}${agregadas.length > 0 ? `: añadió ${agregadas.join(", ")}` : ""}`;
+      return `Actualizó las categorías ${delPeriodoDelDato(nombre, d.periodo)}${agregadas.length > 0 ? `: añadió ${agregadas.join(", ")}` : ""}`;
     }
     // ── Indicadores (14C): la reapertura en cascada y «Cerrar de nuevo» de un periodo de un dato
     case "dato_reabierto": {
