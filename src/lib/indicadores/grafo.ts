@@ -66,7 +66,10 @@ export function alcanza(aristas: Aristas, desde: number, destinos: ReadonlySet<n
 
 /**
  * Los indicadores que dependen de las `fuentes`, nivel a nivel: quienes las toman, después quienes toman a esos, hasta
- * `MAXIMO_NIVELES` y sin repetir. Cada nivel va en orden ascendente.
+ * `MAXIMO_NIVELES` y sin repetir. Cada nivel va en orden ascendente. El nivel de un indicador es el de su primer camino
+ * (el más corto) desde las fuentes: en un diamante, el que toma una fuente y también a otro que la toma queda en el mismo
+ * nivel que ese otro, del que depende. Sirve para juntar el conjunto de los que dependen; el orden de cálculo es el de
+ * `nivelesBajo`, ascendente (primero quien solo toma indicadores simples).
  */
 export function porNiveles(aristas: Aristas, fuentes: readonly number[]): number[][] {
   const vistos = new Set<number>(fuentes);

@@ -50,10 +50,16 @@ const MOTIVO_DE_RECALCULO: Readonly<Record<string, string>> = {
 
 /**
  * «El sistema actualizó «Total facturado»: de 1284300000 a 40000000»: lo que cambió de cada fuente de la propagación
- * (`detalle.fuentes`, anexo 14C §3.3), con el nombre de su variable; varias, separadas por «;». Sin fuentes (solo cambió su
- * «No aplica»), «El sistema actualizó un valor».
+ * (`detalle.fuentes`, anexo 14C §3.3), con el nombre de su variable; varias, separadas por «;». Si el evento pone o quita el
+ * «No aplica» del sistema (nada que medir, §3.4, o el contagio de un componente, §6.3), «El sistema marcó «No aplica»» o «El
+ * sistema quitó «No aplica»»: su motivo y los valores van en los cambios. Sin fuentes, «El sistema actualizó un valor».
  */
 function queActualizo(e: EventoDeMedicion, nombres: Readonly<Record<string, string>>): string {
+  const antes = objeto(e.detalle.antes);
+  const despues = objeto(e.detalle.despues);
+  if (typeof despues.noAplica === "boolean" && antes.noAplica !== despues.noAplica) {
+    return despues.noAplica ? "El sistema marcó «No aplica»" : "El sistema quitó «No aplica»";
+  }
   const fuentes = Array.isArray(e.detalle.fuentes) ? e.detalle.fuentes.map(objeto) : [];
   if (fuentes.length === 0) return "El sistema actualizó un valor";
   const cada = fuentes.map((f) => {

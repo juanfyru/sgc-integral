@@ -518,13 +518,17 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   la propagación pasan por ella, con la fila bloqueada. **No refresca valores por sí misma:** calcula
   con los que la medición tiene, y los que nadie digita los escriben solo `tomarFotos` y
   `volverACalcular` (`fotos.ts`) y `propagar` (`propagacion.ts`: el valor de un dato compartido,
-  juntado a la periodicidad del indicador; anexo 14C, §3.2 y §3.3), en `medicion_valores` y sin
+  juntado a la periodicidad del indicador, y el de un componente, su resultado o su cumplimiento, o
+  su acumulado si es más fino, `valorDeComponente`; anexo 14C, §3.2, §3.3 y §6.3), en `medicion_valores` y sin
   usuario (`reportado_por` nulo). Cada escritor toca lo suyo: el de la persona, solo sus variables
   propias (en un histórico, todas); la propagación, solo las ajenas. El valor que copia el sistema
   va con cuatro decimales y, si no cabe exacto en ellos, también con su fracción (`valor_exacto`,
   «n/d»), que solo escribe el sistema y el cálculo prefiere (`elegirValores`). La propagación es una
   pasada idempotente con la forma de `tomarFotos` (compara lo copiado con la fuente y solo escribe
-  si difiere; una transacción por medición, y la que falla se registra y se reintenta) que corre en
+  si difiere; una transacción por medición, y la que falla se registra y se reintenta; por nivel de
+  dependencia, `nivelesBajo` ascendente, así un compuesto de compuestos queda al día en una
+  llamada; si un componente no aplicó, el compuesto queda «No aplica» con
+  `MOTIVO_COMPONENTE_NO_APLICA`, y la propagación lo quita cuando vuelve a aplicar) que corre en
   tres momentos: justo después de la acción que cambia una fuente (`propagarSinFallar`, fuera de su
   transacción), en la pasada de vencimientos (después de las fotos y de abrir los periodos de los
   datos) y, antes de clasificar, en el resumen y el cierre del mes (`abrirPeriodosDelCierre`). La
