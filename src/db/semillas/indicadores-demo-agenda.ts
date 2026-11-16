@@ -637,9 +637,10 @@ export const REJILLAS: { filas: FilaDeRejilla[]; esperado: Semaforo; enCritico: 
  * desde el mes cerrado) y las consultas del trimestre (trimestral, sin variables propias, desde `trimestreCompleto`).
  * `consulta` reporta cada mes del dato el día 4 del siguiente, salvo el pendiente y los tardíos (ayer); el del mes cerrado
  * llega bajo y `lider.cex` lo corrige antes del cierre, con lo que el uso de la agenda pasa de Atención a Bien. `lider.cex`
- * reporta lo suyo del uso de la agenda el día 5. La desagregada por sede se aprueba en `meses[3]` y se mide desde
- * `meses[2]` (`REJILLAS`). Los dos compuestos del SGC los aprueba Gerencia en el último trimestre sembrado, después de sus
- * componentes y antes de que termine; `lider.cex` hace seguimiento del restringido.
+ * reporta lo suyo del uso de la agenda el día 5. La desagregada por sede se aprueba en `meses[3]`, se mide desde
+ * `meses[2]` (`REJILLAS`) y la coordinadora le hace seguimiento. Los dos compuestos del SGC los aprueba Gerencia en el
+ * último trimestre sembrado, después de sus componentes y antes de que termine; `lider.cex` hace seguimiento del
+ * restringido.
  */
 function de14C(cal: CalendarioDeIndicadores, ahora: Date, zona: string, en: En): void {
   const plan = planDe14C(ahora, zona);
@@ -674,6 +675,8 @@ function de14C(cal: CalendarioDeIndicadores, ahora: Date, zona: string, en: En):
 
   crearYEnviar(en, enDia(m[3], 19, 9), CEX_HIPERTENSION, m[2].clave, "liderCex");
   en(enDia(m[3], 20, 10), { tipo: "aprobar", quien: "liderCex", codigos: [CEX_HIPERTENSION.codigo] });
+  // La coordinadora hace seguimiento: le llega el aviso de la sede en Crítico con el total en Bien (quien reporta no lo recibe).
+  en(enDia(m[3], 20, 11), { tipo: "seguimiento", codigo: CEX_HIPERTENSION.codigo, quien: "coordinadora" });
   [m[2], m[1]].forEach((mes, i) =>
     en(enDia(elSiguienteMes(mes, zona), 3, 11), { tipo: "rejilla", quien: "liderCex", codigo: CEX_HIPERTENSION.codigo, periodo: mes.clave, ...REJILLAS[i] }),
   );

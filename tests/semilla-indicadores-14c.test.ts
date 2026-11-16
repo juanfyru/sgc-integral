@@ -228,6 +228,11 @@ describe("la demo de la 14C", () => {
     const conCritica = await medicion(CEX_HIPERTENSION.codigo, cal.meses[2].clave);
     expect(conCritica).toMatchObject({ semaforo: "bien", cumple: true, categorias_en_critico: 1 });
     expect((await desgloseDe(sql, Number(conCritica.id)))?.enCritico).toEqual([SEDE.categorias[3]]);
+    // El aviso de la sede en Crítico con el total en Bien, a quien hace seguimiento (quien reportó no lo recibe), sin leer.
+    const avisos = await sql`SELECT u.usuario, n.titulo, n.leida_en FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
+      WHERE n.tipo = 'indicadores.alerta' AND n.entidad = 'medicion' AND n.entidad_id = ${conCritica.id}`;
+    expect(avisos.map((a) => [a.usuario, a.leida_en])).toEqual([["coordinadora.sgc", null]]);
+    expect(avisos[0].titulo).toContain(`Bien. En Crítico: ${SEDE.categorias[3]} (55 %).`);
 
     const otra = await medicion(CEX_HIPERTENSION.codigo, cal.meses[1].clave);
     expect(otra).toMatchObject({ semaforo: "bien", categorias_en_critico: 0 });
