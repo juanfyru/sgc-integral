@@ -242,6 +242,29 @@ describe("lo que ya no se pide y lo que hace quien administra", () => {
       expect(html).toContain(`href="/indicadores/datos/${datoId}/soportes/${Number(archivo.id)}"`);
     }));
 
+  it("un pendiente viejo que se conserva por su soporte no decide el estado: con un periodo reportado después, «Reportado»", () =>
+    enTransaccion(async (tx) => {
+      const { responsable, datoId, general, restringido } = await entorno(tx);
+      const septiembre = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-09", ahora: OCT_6 });
+      await tx`INSERT INTO archivos (version_id, contexto, contexto_id, rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256)
+        VALUES (NULL, 'dato_compartido', ${septiembre}, 'evidencia', ${`datos-compartidos/${septiembre}/cierre.pdf`}, 'cierre.pdf', 'pdf',
+          'application/pdf', 4, ${"e".repeat(64)})`;
+      const octubre = await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-10", ahora: OCT_9 });
+      await reportarDato(responsable, { periodoId: octubre, valor: "1284300000", confirmado: true }, { sql: tx, ahora: OCT_9 });
+      const admin = await sesionAdmin(tx);
+      for (const i of [general, restringido]) {
+        await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${admin.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide'
+          WHERE id = ${i.id}`;
+      }
+
+      const html = await lista(responsable);
+      expect(html).toContain(">Reportado<");
+      expect(html).not.toContain("Ya no se pide");
+      expect(html).toContain("1.284.300.000");
+      // En la página, septiembre sí dice que ya no se pide.
+      expect(await pagina(responsable, datoId)).toContain("Ya no se pide");
+    }));
+
   it("quien administra activa o desactiva el dato y lo borra desde su página; quien no administra, no", () =>
     enTransaccion(async (tx) => {
       const { responsable, datoId } = await entorno(tx);

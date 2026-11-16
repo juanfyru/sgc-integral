@@ -281,7 +281,8 @@ function aPeriodo(f: Record<string, unknown>): PeriodoDeDato {
     reporto: texto(f.reporto),
     reportadoEn: (f.reportado_en as Date | null) ?? null,
     corregido: f.corregido === true,
-    sePide: f.se_pide === true,
+    // El alias calculado, no la columna cruda `se_pide`: un periodo reportado tiene la columna en verdadero.
+    sePide: f.pedido === true,
   };
 }
 
@@ -293,7 +294,7 @@ export async function periodosDeDato(
 ): Promise<PeriodoDeDato[] | null> {
   const sql = opciones?.sql ?? obtenerSql();
   if (!Number.isInteger(datoId) || datoId <= 0 || !(await puedeVerDato(datoId, sesion, { sql }))) return null;
-  const filas = await sql`SELECT vv.*, u.nombre AS reporto, ${periodoQueSePide(sql)} AS se_pide
+  const filas = await sql`SELECT vv.*, u.nombre AS reporto, ${periodoQueSePide(sql)} AS pedido
     FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
     WHERE vv.variable_id = ${datoId}
     ORDER BY vv.desde DESC, vv.id DESC`;

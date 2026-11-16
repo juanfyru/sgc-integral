@@ -27,14 +27,15 @@ const deDondeEs = (d: DatoCompartido) =>
   [d.proceso, CONSOLIDACION[d.consolidacion].toLowerCase(), d.dimension ? `por ${d.dimension.toLowerCase()}` : null].filter(Boolean).join(" · ");
 
 /**
- * El estado de un dato en la lista (maqueta 11): el periodo que se pide con la fecha límite más próxima, por reportar o
- * vencido; sin ninguno que se pida, «Ya no se pide» si conserva un pendiente que ninguna medición necesita, «Reportado» si ya
- * tiene algún valor y, si no, que aún no se pide (ningún indicador lo ha necesitado).
+ * El estado de un dato en la lista (maqueta 11), en este orden: el periodo que se pide con la fecha límite más próxima, por
+ * reportar o vencido; si no se pide nada, «Reportado» si tiene algún valor; «Ya no se pide» si su periodo más reciente es un
+ * pendiente que ninguna medición necesita (un pendiente viejo que se conserva por su soporte no decide); y, sin periodos, que
+ * aún no se pide.
  */
 function Estado({ resumen, ahora }: { resumen: ResumenDeDato | undefined; ahora: Date }) {
   if (resumen?.porReportar) return <InsigniaPorReportar venceEn={resumen.porReportar.venceEn} ahora={ahora} />;
-  if (resumen?.yaNoSePide) return <Insignia variante="sin-dato">Ya no se pide</Insignia>;
   if (resumen?.ultimo) return <Insignia variante="neutra">Reportado</Insignia>;
+  if (resumen?.yaNoSePide) return <Insignia variante="sin-dato">Ya no se pide</Insignia>;
   return <Insignia variante="sin-dato">Aún no se pide</Insignia>;
 }
 

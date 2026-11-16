@@ -30,12 +30,14 @@ vi.mock("@/lib/indicadores/periodos", async (original) => {
 });
 
 import { obtenerSql } from "@/db/cliente";
+import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { asegurarPeriodosDeDatos, historialDeDato, periodosDeDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import { pestanaDeDatos, resumenDeDatos } from "@/db/consultas/indicadores/datos";
 import { datosVencidos } from "@/db/consultas/indicadores/datos-vencidos";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { EsquemaReporteDeDato, juntarValoresDeDato } from "@/lib/esquemas/indicadores-datos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
@@ -640,6 +642,32 @@ describe("la tarea de reportar el dato", () => {
       // Idempotente: otra pasada no lo mueve.
       expect(await asegurar(tx, datoId, DIC_5)).toEqual({ abiertos: 0, quitados: 0 });
       expect((await marcas()).vence_en).toEqual(fechaLimite(DIC_5, 10, zona));
+    }));
+
+  it("la pasada entera pone al día lo que se pide antes de avisar: tras el cambio mayor que quita el dato, nadie recibe aviso por él", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const { procesoId, responsable, datoId } = await entorno(tx);
+      const admin = await sesionAdmin(tx);
+      const ind = await usado(tx, procesoId, datoId);
+      await asegurarMediciones({ sql: tx, ahora: NOV_20, indicadorId: ind.id });
+      expect(await asegurar(tx, datoId, NOV_20)).toEqual({ abiertos: 10, quitados: 0 });
+      const septiembre = (await periodos(tx, datoId)).find((f) => f.periodo === "2026-09")!;
+      await archivoDeDato(tx, septiembre.id);
+      // Desde enero rige una versión que ya no cita el dato; nadie llama `asegurarPeriodosDeDatos` a mano: lo hace la pasada.
+      await cambioMayor(tx, { indicadorId: ind.id, usuarioId: admin.usuarioId, rigeDesde: "2026-01", aprobadaEn: NOV_20, datoId: null });
+
+      const config = { ...CONFIG_DOCUMENTAL_DEFECTO, escalamientoDias: 3 };
+      // Los diez vencen el 30 de noviembre: el 10 de diciembre tocaría el vencido y el 10 de enero, el escalamiento.
+      for (const ahora of [new Date("2026-12-10T15:00:00Z"), new Date("2027-01-10T15:00:00Z")]) {
+        await revisarVencimientosDeIndicadores({ sql: tx, ahora, config });
+      }
+      const avisos = await tx`SELECT tipo FROM notificaciones WHERE tipo LIKE 'indicadores.dato\\_%' AND (usuario_id = ${responsable.usuarioId}
+        OR entidad = 'usuario' AND entidad_id = ${responsable.usuarioId})`;
+      expect(avisos).toEqual([]);
+      expect((await periodos(tx, datoId)).map((f) => f.periodo)).toEqual(["2026-09"]);
+      const [p] = await tx`SELECT se_pide, aviso_previo_en, aviso_vencido_en, escalado_en FROM variable_valores WHERE id = ${septiembre.id}`;
+      expect(p).toEqual({ se_pide: false, aviso_previo_en: null, aviso_vencido_en: null, escalado_en: null });
     }));
 
   it("más de cinco se agrupan en «Datos compartidos por reportar», que lleva a la pestaña", () => {

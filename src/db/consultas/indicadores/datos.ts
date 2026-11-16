@@ -216,7 +216,8 @@ export async function indicadoresQueLoUsan(
 
 /**
  * Lo que la lista de «Datos compartidos» dice de un dato: su último valor, el periodo que se pide con la fecha más próxima y si
- * conserva algún pendiente que ya no se pide (`periodoQueSePide`).
+ * su periodo más reciente es un pendiente que ya no se pide (`periodoQueSePide`). Un pendiente viejo que se conserva por su
+ * soporte no cuenta: no lo puede limpiar nadie desde la interfaz.
  */
 export type ResumenDeDato = {
   ultimo: { periodo: string; valor: string; categorias: number | null; reporto: string | null; reportadoEn: Date | null } | null;
@@ -244,8 +245,10 @@ export async function resumenDeDatos(
       FROM variable_valores vv
       WHERE ${deLosDatos} AND ${periodoQueSePide(sql)}
       ORDER BY vv.variable_id, vv.vence_en, vv.desde, vv.id`,
-    sql`SELECT DISTINCT vv.variable_id FROM variable_valores vv
-      WHERE ${deLosDatos} AND vv.estado = 'pendiente' AND NOT ${periodoQueSePide(sql)}`,
+    sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, (vv.estado = 'pendiente' AND NOT ${periodoQueSePide(sql)}) AS ya_no
+      FROM variable_valores vv
+      WHERE ${deLosDatos}
+      ORDER BY vv.variable_id, vv.desde DESC, vv.id DESC`,
   ]);
   const de = (id: number): ResumenDeDato => {
     const actual = salida.get(id) ?? { ultimo: null, porReportar: null, yaNoSePide: false };
@@ -262,7 +265,7 @@ export async function resumenDeDatos(
     };
   }
   for (const f of pedidos) de(Number(f.variable_id)).porReportar = { periodo: f.periodo as string, venceEn: f.vence_en as Date };
-  for (const f of sinPedir) de(Number(f.variable_id)).yaNoSePide = true;
+  for (const f of sinPedir) if (f.ya_no === true) de(Number(f.variable_id)).yaNoSePide = true;
   return salida;
 }
 
@@ -298,21 +301,30 @@ export async function opcionesDeDato(
 /**
  * La pestaña «Datos compartidos» de Indicadores: la ve quien administra indicadores y quien ve algún dato (`filtroDatos`);
  * su número son los periodos que la persona tiene por reportar, los mismos de «Mis tareas» (`tareasDeDatos`). Se comparte por
- * petición (`React.cache`). Si no se puede saber, se registra y la página sigue: la ve quien administra, sin número.
+ * petición (`React.cache`). Lo que falla se registra y la página sigue: sin la cuenta, la pestaña se queda sin número; sin
+ * saber si ve algún dato, la ve solo quien administra.
  */
 export const pestanaDeDatos = cache(
   async (sesion: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<{ visible: boolean; porReportar: number }> => {
     const sql = opciones?.sql ?? obtenerSql();
     const administra = puede(sesion, "indicadores.administrar");
+    let visible = administra;
     try {
-      const [ve] = administra
-        ? [{ si: true }]
-        : await sql`SELECT EXISTS (SELECT 1 FROM variables_compartidas d WHERE ${filtroDatos(sql, sesion)}) AS si`;
-      if (ve.si !== true) return { visible: false, porReportar: 0 };
-      return { visible: true, porReportar: (await tareasDeDatos(sql, sesion)).length };
+      if (!administra) {
+        const [ve] = await sql`SELECT EXISTS (SELECT 1 FROM variables_compartidas d WHERE ${filtroDatos(sql, sesion)}) AS si`;
+        visible = ve.si === true;
+      }
     } catch (err) {
-      console.error("No se pudo saber qué datos compartidos ve la persona ni cuántos tiene por reportar:", err);
+      console.error("No se pudo saber si la persona ve algún dato compartido:", err);
       return { visible: administra, porReportar: 0 };
+    }
+    if (!visible) return { visible, porReportar: 0 };
+    try {
+      return { visible, porReportar: (await tareasDeDatos(sql, sesion)).length };
+    } catch (err) {
+      // La visibilidad ya se sabe: la pestaña se queda, sin número.
+      console.error("No se pudo contar los datos compartidos que la persona tiene por reportar:", err);
+      return { visible, porReportar: 0 };
     }
   },
 );
