@@ -1330,7 +1330,8 @@ async function planDeRejilla(
  * resultado que validar ni salto que confirmar, pero el soporte obligatorio se pide igual. Si lo ajeno ya llegó, un
  * resultado fuera de los límites del indicador no bloquea a quien no puede cambiar ese valor: se le pide confirmar lo suyo,
  * como un salto grande (`confirmado`); la división por cero sigue rechazando, porque «No aplica» es su salida. En un
- * histórico se digitan y se exigen todas (§3.6), y el límite bloquea. `valores` trae solo las letras que la persona digita.
+ * histórico se digitan y se exigen todas (§3.6), y el límite bloquea; la tomada de otro indicador, sin las reglas de captura
+ * (su valor es el que tuvo la fuente, también si es negativo). `valores` trae solo las letras que la persona digita.
  *
  * Una medición con lista de categorías se reporta por su rejilla (`planDeRejilla`, en `rejilla`); unas filas para una que no
  * la tiene son otro formulario (`FICHA_CAMBIO`).
@@ -1352,7 +1353,13 @@ export async function planDeReporte(
     const digitado = d.valores[v.letra];
     if (!digita.includes(v) && typeof digitado === "string" && digitado.trim() !== "") throw new ErrorIndicador(noSeDigita(v));
   }
-  const { valores, errores } = leerValores(digita, d.valores);
+  // En un histórico se digita también la variable tomada de otro indicador (§3.6): su valor es el que tuvo la fuente, así que
+  // no pasa por «admite negativos» ni por límites de captura (la ficha la firma sin negativos ni límites porque nadie la
+  // digita en un periodo ordinario). La de un dato compartido conserva las reglas del dato.
+  const { valores, errores } = leerValores(
+    digita.map((v) => (v.origen === "indicador" ? { ...v, capturaMin: null, capturaMax: null, admiteNegativos: true } : v)),
+    d.valores,
+  );
   const primerError = digita.map((v) => errores[v.letra]).find((e) => e !== undefined);
   if (primerError) throw new ErrorIndicador(primerError);
   if (d.parcial) {

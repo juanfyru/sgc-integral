@@ -555,6 +555,40 @@ describe("históricos del componente", () => {
     }));
 });
 
+describe("los históricos de un compuesto (ola final, O16)", () => {
+  it("una variable tomada admite un valor negativo y fuera de límites: es el que tuvo su fuente; la propia sigue con sus reglas", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const ABRIL = new Date("2026-04-05T15:00:00Z");
+      const procesoId = await procesoNuevo(tx);
+      const { ind: x } = await componente(tx, procesoId, { inicioMedicion: "2026-01", aprobadaEn: new Date("2026-03-10T15:00:00Z") });
+      // C toma en A el valor de X («Variación del gasto», que puede ser negativa) y digita B. Aprobado en marzo: enero es histórico.
+      const c = await indicadorDePrueba(tx, {
+        procesoId,
+        periodicidad: "mensual",
+        inicioMedicion: "2026-01",
+        aprobadaEn: new Date("2026-03-15T15:00:00Z"),
+        formula: "A + B",
+        variables: { A: { indicadorOrigenId: x.id, toma: "valor", nombre: "Variación del gasto" }, B: { nombre: "Ajuste", capturaMax: "50" } },
+      });
+      await abrir(tx, ABRIL, c);
+      const enero = await medicionDe(tx, c.id, "2026-01");
+      expect((await fila(tx, enero)).historica).toBe(true);
+      // Lo que la ficha firma de la variable tomada no cambia: sin negativos y sin límites.
+      const [firmada] = await tx`SELECT admite_negativos, captura_min, captura_max FROM indicador_variables WHERE id = ${c.variables.A}`;
+      expect([firmada.admite_negativos, firmada.captura_min, firmada.captura_max]).toEqual([false, null, null]);
+
+      const registrar = (valores: Record<string, string>) =>
+        registrarHistoricos(admin, { indicadorId: c.id, filas: [{ periodo: "2026-01", valores }] }, { sql: tx, ahora: ABRIL });
+      expect(await registrar({ A: "-4,2", B: "10" })).toEqual({ registrados: 1 });
+      expect((await valores(tx, enero)).A).toMatchObject({ valor: "-4.2" });
+      expect((await fila(tx, enero)).resultado_exacto).toBe("29/5");
+      // La variable propia sigue con sus reglas de captura.
+      await expect(registrar({ A: "-4,2", B: "-1" })).rejects.toThrow("Enero de 2026: «Ajuste» no puede ser negativo");
+      await expect(registrar({ A: "-4,2", B: "60" })).rejects.toThrow("Enero de 2026: «Ajuste» no puede pasar de 50");
+    }));
+});
+
 describe("el contagio del «No aplica»", () => {
   it("los tres meses de X «No aplica»: el compuesto queda «No aplica» con el motivo del sistema y el id de X; al aplicar X, se desmarca y se calcula", () =>
     revertida(sql, async (tx) => {
