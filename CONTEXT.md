@@ -382,6 +382,41 @@ de los indicadores que ya exigían soporte); dieciocho en total (`drizzle/0000` 
 soporte obligatorio es dato de operación, fuera de lo firmado). Las decisiones de la ejecución **esperan el visto bueno del
 usuario** («Decisiones adicionales (complemento de la 14C)»).
 
+**Verificación de cierre (2026-11-17; la hizo quien coordinó la ejecución).** La cabeza del código es `11ae567`; lo
+confirmado después son solo documentos.
+
+- **Pruebas:** `SEMILLA_RECIEN=1 npm test`, con la demo recién sembrada y la máquina quieta, sobre `11ae567`: **280
+  archivos, 7065 pruebas en verde y 1 saltada** (la de `tests/ratificaciones.test.ts`, la de la línea base), salida 0, unos
+  455 s. La línea base de `main` (`07cb1e6`) era 276 archivos y 6987. Una corrida anterior, sobre `e375936` y con la
+  revisión final leyendo a la vez, terminó con error sin ninguna prueba fallida: un proceso de Vitest se cayó a mitad de
+  `tests/indicadores-objetivos.test.ts` («Worker exited unexpectedly», 8 pruebas sin correr), la misma caída que se vio al
+  cerrar la 14C; ese archivo pasó solo tres veces seguidas y la corrida de cierre salió limpia.
+- **`npm run lint`** limpio y **`npm run build`** sin `DATABASE_URL` en verde, sobre `11ae567` (con el aviso de Turbopack
+  de `src/lib/almacen.ts` de siempre).
+- **La `0017` sobre una copia de la base `sgc`** (leída una sola vez con `pg_dump`, restaurada en `sgc_f14c_copia`, migrada
+  solo con `db:migrate` y borrada al terminar): `sgc` ya tenía las diecisiete migraciones (la `0015` y la `0016` aplicadas);
+  de 17 a 18; las 84 tablas conservan sus filas y la huella de cada fila (14 indicadores, 16 versiones, 32 variables, 35
+  mediciones, 64 valores, 64 eventos y 44 firmas), comparadas sobre sus columnas de antes; dos columnas nuevas
+  (`indicadores.soporte_obligatorio_desde` y `mediciones.debe_soporte`); la huella firmada, recalculada con el código de la
+  rama, coincide en las 15 versiones firmadas (queda un borrador sin firma). En `sgc` **ningún indicador exige soporte**: el
+  relleno no puso ninguna fecha, ninguna medición quedó marcada, **ninguna quedaría con un estado viejo** (en ninguna de las
+  dos direcciones) y **ninguna tiene un cambio de plazo posterior** a una fecha de activación (la decisión 2 no alcanza a
+  nadie).
+- **El recorrido en el navegador** de «Qué probar y cómo (complemento de la 14C)», pasos 1 a 5, con `coordinadora.sgc`,
+  `lider.cex` y `consulta`, sobre la demo sembrada el 16 de noviembre y recorrida el 17: todo como dice cada paso (la lista
+  dijo «Vencido hace 7 días» porque era un día después). Al reactivar el soporte en el paso 4, septiembre (reportado, con
+  su plazo contado otra vez para el análisis) no lo debe: es la decisión 3. La consola, sin errores ni avisos. **Solo por
+  pruebas, sin verlo en el navegador:** la campana del paso 2, el paso 6 (el periodo de un dato sin categorías) y el
+  escalamiento (en la demo nadie ocupa el cargo superior de `lider.cex`).
+- **La revisión:** cada una de las siete tareas pasó su revisión (con rondas de corrección en las tareas 1, 2, 4 y 6); la
+  revisión final de toda la rama (de solo lectura) no halló nada crítico, ni fugas, ni una migración inaplicable, y pidió
+  una ola de corrección (cinco confirmaciones: la fecha que cuenta al activar el soporte, el nombre de la variable en el
+  límite de captura, «Quién debía» en pasado y con el dato, una prueba que de verdad detecta una re-decisión al cambiar el
+  plazo y once textos de los documentos), revisada después sin roturas Críticas ni Importantes. Lo que quedó, en «Deuda
+  técnica (complemento de la 14C)».
+- **Lo que no se tocó:** el código de `F:\sgc-integral`, su `next dev` del 3002 y la base `sgc`, que solo se leyó esa vez.
+  La base `sgc_f14c` quedó con la demo recién sembrada.
+
 ### Hecho (complemento de la 14C)
 
 - **El punto de miles (Tareas 1 y 2):** una sola regla para todo el módulo (`tienePuntoDeMiles`,
@@ -393,7 +428,7 @@ usuario** («Decisiones adicionales (complemento de la 14C)»).
   y sobre la tabla de históricos, asociada a cada campo) y en el valor de un dato compartido (como en la 14C), en el
   dominio; y en todas las cifras de la ficha (meta, máximo del rango, límite de crítico, tolerancia, mínimo y máximo del
   resultado, línea base, rangos del semáforo, límites de captura, con el nombre de su variable, y valores de la prueba), en
-  las metas programadas y en los límites de captura de un dato, estas tres **solo en las Server Actions** (decisión 1). La
+  las metas programadas y en los límites de captura de un dato, estos tres **solo en las Server Actions** (decisión 1). La
   importación usa la misma expresión con su propio mensaje («La
   meta «1.500» es ambigua…»): «0.125» ya no se marca. Los formularios devuelven lo guardado escrito con coma y el editor de
   rangos envía lo escrito, así que un valor que nadie tocó vuelve sin rechazarse (probado campo por campo).
@@ -450,8 +485,8 @@ usuario** («Decisiones adicionales (complemento de la 14C)»).
 
 Para una persona del hospital, con la clave común de la demo (`Demo-SGC-2026-clave`). Las fechas son las de una siembra del
 **16 de noviembre de 2026**; sembrada otro día, el soporte se activa el día 7 del mes de la siembra (o del anterior, en sus
-primeros diez días), y lo debe el mes anterior a ese y no el que lo precede. **No se ha recorrido en el navegador** (lo hace
-quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pruebas.
+primeros diez días), y lo debe el mes anterior a ese y no el que lo precede. Los pasos 1 a 5 se recorrieron en el navegador
+al cerrar (ver «Verificación de cierre», arriba); el 6 lo cubren las pruebas.
 
 0. **La base.** Como en el paso 0 de «Qué probar y cómo (Fase 14C)»: en el worktree, `bash
    .superpowers/sdd/2026-11-15-fase14c-datos-desagregacion-compuestos/con-f14c.sh npm run db:seed`, después `… npm run
@@ -573,7 +608,11 @@ y su base. El detalle está en el registro de la ejecución (`progress.md` del e
    análisis, y activar después dejaba debiendo el soporte a la que no cumple y no a la que cumple: deberlo dependía del
    resultado, lo que el anexo quería quitar (§1 y §4.4), y la misma historia daba otra marca que el relleno. **Cuesta** que
    una medición con su plazo contado otra vez para un análisis al activar no debe el soporte, aunque su fecha límite de ese
-   momento esté en el futuro. Base: Decisión del usuario 2.1 (anexo §1, §4.2 y §4.4).
+   momento esté en el futuro. **Y queda un caso estrecho** en que deberlo vuelve a depender del resultado: si el plazo del
+   indicador **sube** después de que el SGC le contó otra vez el plazo a una medición para su análisis y antes de activar
+   el soporte, la que no cumplió conserva la fecha de su reporte con el plazo viejo (queda perdonada) y la que cumplió pasa a
+   vencer con el plazo nuevo (lo debe). Arreglarlo pediría reescribir la fecha del reporte al cambiar el plazo, en un
+   historial de solo inserción. Base: Decisión del usuario 2.1 (anexo §1, §4.2 y §4.4).
 4. **Al activar el soporte, «ya reportado» exige que lo haya entregado una persona** (`reportada_por`). Porque el contagio
    de un componente «No aplica» le pone fecha de reporte a un mixto que quien mide no reportó; sin esto, al quitarse el
    contagio se aceptaría un reporte tardío sin el soporte. Es lo que dice el anexo («quien mide ya entregó lo suyo») y lo
@@ -620,6 +659,9 @@ de `src/db/consultas/indicadores/`):
   tres cosas (`mediciones.ts` y `tests/utiles/mixto.ts`).
 - `drizzle/0017_*.sql` no dice por qué el `CHECK` va después del relleno (solo lo dice la prueba): una regeneración podría
   devolverlo al orden de drizzle-kit.
+- El caso estrecho de la decisión 3 (el plazo que sube entre el recuento por análisis y la activación) no tiene prueba, y el
+  comentario de `recalcularPorSoporte` (`en-curso.ts`), `AGENTS.md` y el manual (§6.4) dicen sin esa salvedad que deber el
+  soporte no depende del resultado.
 - Comentarios: el encabezado de `src/lib/esquemas/indicadores-datos.ts` todavía dice que lo que el esquema devuelve vale
   otra vez como entrada (ya no vale para la instancia de la persona), y el de `EditorDeRangos.tsx` (~:103) tiene un desliz
   («lo rechazaría como punto de miles un valor bien escrito»).
