@@ -5,6 +5,7 @@
 // Las de la configuración viven en `src/app/admin/acciones-mejoramiento.ts`.
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import {
   aceptarHallazgo,
@@ -32,11 +33,15 @@ import {
   EsquemaCambioDeProceso,
   EsquemaCorreccion,
   EsquemaDevolucion,
+  EsquemaFormularioAnalisis,
   EsquemaFormularioArbitraje,
+  EsquemaFormularioCausas,
   EsquemaFormularioDecision,
+  EsquemaFormularioPreguntas,
   EsquemaHallazgo,
   EsquemaOcurrencia,
   EsquemaPasoDelHallazgo,
+  EsquemaQuitarAnalisis,
   EsquemaRechazo,
   EsquemaReclasificacion,
   EsquemaSostener,
@@ -238,5 +243,43 @@ export async function devolverCorreccionAccion(_previo: EstadoAccion, formData: 
     const d = parsearFormulario(datos, EsquemaDevolucion);
     await devolverCorreccion(sesion, d);
     return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El análisis de causa raíz (spec 15 §9). Quien formula es quien actúa por el proceso; lo comprueba cada función del
+// dominio dentro de su transacción. Guardar no redirige: la página se vuelve a leer y la persona sigue donde estaba.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Guarda un análisis de la ronda (nuevo, o `analisisId` para reemplazar uno). El contenido lo valida el esquema del método. */
+export async function guardarAnalisisAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioAnalisis);
+    await guardarAnalisis(sesion, d);
+  });
+}
+
+/** Quita un análisis de la ronda en curso. */
+export async function quitarAnalisisAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaQuitarAnalisis);
+    await quitarAnalisis(sesion, d);
+  });
+}
+
+/** Reemplaza la lista de causas raíz de la ronda. */
+export async function guardarCausasAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioCausas);
+    // `causas` llega como JSON sin validar: `guardarCausas` lo lee con `EsquemaCausas` antes de escribir.
+    await guardarCausas(sesion, d as Parameters<typeof guardarCausas>[1]);
+  });
+}
+
+/** Las dos preguntas de cierre del análisis. */
+export async function responderPreguntasAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioPreguntas);
+    await responderPreguntas(sesion, d);
   });
 }

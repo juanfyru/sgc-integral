@@ -18,6 +18,7 @@ import {
   validarCorreccionAccion,
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
+import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
@@ -38,6 +39,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
+import { puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import type { DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import {
@@ -49,6 +51,7 @@ import {
 } from "@/db/consultas/mejoramiento/opciones";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { diaCorto } from "@/lib/mejoramiento/formato";
+import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
@@ -169,7 +172,13 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
     conFormulario &&
     sigue.paso === "aceptar" &&
     (await ofreceRechazo(obtenerSql(), sesion, { registradoPor: h.registradoPorId, procesoId: h.procesoId, origen: h.origen }));
-  const formulario = !conFormulario ? null : sigue.paso === "aceptar" ? (
+  // «Por formular» no tiene formulario aquí: la causa raíz y el plan se formulan en su propia página.
+  const formulaAqui = completo && h.estado === "por_formular" && (await puedeFormular(obtenerSql(), sesion, { procesoId: h.procesoId }));
+  const formulario = formulaAqui ? (
+    <Link href={rutaDeFormular(h.id)} className={claseBoton("primario")}>
+      Formular el análisis y el plan
+    </Link>
+  ) : !conFormulario ? null : sigue.paso === "aceptar" ? (
     <PasoAceptar
       key={`paso-${clave}`}
       hallazgoId={h.id}
@@ -261,6 +270,18 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
               ) : null}
             </SeccionCorreccion>
           ) : null}
+          {completo
+            ? h.rondas
+                .filter((r) => r.analisis.length > 0 || r.causas.length > 0 || r.similares !== null || (r.numero === h.ronda && h.estado === "por_formular"))
+                .map((r) => (
+                  <AnalisisEnLectura
+                    key={`causa-${r.id}`}
+                    ronda={r}
+                    titulo={r.numero === h.ronda ? "3. Causa raíz" : `3. Causa raíz (ronda ${r.numero})`}
+                    abierta={r.numero === h.ronda && h.estado === "por_formular"}
+                  />
+                ))
+            : null}
           {completo ? (
             <Ocurrencias
               key={`ocurrencias-${h.ocurrencias.length}`}

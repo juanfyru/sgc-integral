@@ -299,6 +299,9 @@ export type RondaDeDetalle = {
   fechaEvaluacion: string | null;
   cierrePrevisto: Date | null;
   resultado: string | null;
+  similares: boolean | null;
+  similaresDetalle: string | null;
+  cambios: { documentos: boolean; riesgos: boolean; controles: boolean; descripcion: string | null } | null;
   analisis: Array<{ id: number; orden: number; metodo: string; equipo: string | null; observaciones: string | null; contenido: unknown }>;
   causas: Array<{ id: number; orden: number; texto: string; sinAccionPorque: string | null }>;
   acciones: AccionDeDetalle[];
@@ -464,6 +467,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
 
   const [rondas, analisis, causas, acciones, vinculos, actividades, ajustes] = await Promise.all([
     sql`SELECT id, numero, estado_plan, formular_antes_de, enviado_en, aprobado_en, aprobado_rol, resultado, cierre_previsto,
+        similares, similares_detalle, cambios,
         to_char(fecha_evaluacion, 'YYYY-MM-DD') AS fecha_evaluacion
       FROM mejora_rondas WHERE hallazgo_id = ${id} ORDER BY numero`,
     sql`SELECT id, ronda_id, orden, metodo, equipo, observaciones, contenido FROM mejora_analisis WHERE hallazgo_id = ${id} ORDER BY orden, id`,
@@ -491,6 +495,9 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     fechaEvaluacion: (r.fecha_evaluacion as string | null) ?? null,
     cierrePrevisto: (r.cierre_previsto as Date | null) ?? null,
     resultado: (r.resultado as string | null) ?? null,
+    similares: (r.similares as boolean | null) ?? null,
+    similaresDetalle: (r.similares_detalle as string | null) ?? null,
+    cambios: (r.cambios as RondaDeDetalle["cambios"]) ?? null,
     analisis: analisis
       .filter((x) => Number(x.ronda_id) === Number(r.id))
       .map((x) => ({

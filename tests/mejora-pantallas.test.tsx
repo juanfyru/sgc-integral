@@ -7,6 +7,11 @@ import { describe, expect, it, vi } from "vitest";
 import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { resolverPanelDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
+import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
+import { CausasRaiz } from "@/componentes/mejoramiento/analisis/CausasRaiz";
+import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
+import { PestanasDeMetodo } from "@/componentes/mejoramiento/analisis/PestanasDeMetodo";
+import { PreguntasDeCierre } from "@/componentes/mejoramiento/analisis/PreguntasDeCierre";
 import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazgo";
 import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
@@ -431,5 +436,48 @@ describe("los pasos del recorrido hasta el plan (Tarea 10)", () => {
     expect(historial).toContain("Réplica: Sí corresponde");
     expect(historial).toContain("Acta del Comité: 12, del 19 de nov de 2026");
     expect(historial).toContain("Validó el cierre sin acción");
+  });
+});
+
+describe("el análisis de causa raíz (maqueta 4)", () => {
+  const accion = async () => null;
+  const guardado = { id: 7, metodo: "ishikawa", equipo: "Enfermería", observaciones: null, contenido: { causas: [{ categoria: "metodo", texto: "No hay lista de chequeo", confirmada: true, impacto: "alto", requiereAccion: true }] } };
+
+  it("una pestaña por análisis, con el aviso de pacientes y las seis categorías de Ishikawa", () => {
+    const vacio = renderToStaticMarkup(<PestanasDeMetodo hallazgoId={1} analisis={[]} guardar={accion} quitar={accion} />);
+    expect(vacio).toContain("5 porqués · sin guardar");
+    expect(vacio).toContain("No siempre hacen falta los cinco porqués");
+    expect(vacio).toContain("Añadir otro análisis");
+    expect(vacio).toContain(AVISO_SIN_PACIENTES);
+    const conIshikawa = renderToStaticMarkup(<PestanasDeMetodo hallazgoId={1} analisis={[guardado]} guardar={accion} quitar={accion} />);
+    for (const categoria of ["Mano de obra", "Método", "Máquina o equipo", "Material", "Medición", "Medio ambiente"]) {
+      expect(conIshikawa).toContain(categoria);
+    }
+    expect(conIshikawa).toContain("Quitar este análisis");
+    expect(conIshikawa).toContain("No hay lista de chequeo");
+  });
+
+  it("las causas y las dos preguntas llevan su aviso; la vez pasada y la lectura muestran lo guardado", () => {
+    expect(renderToStaticMarkup(<CausasRaiz hallazgoId={1} causas={[]} guardar={accion} />)).toContain(AVISO_SIN_PACIENTES);
+    const preguntas = renderToStaticMarkup(
+      <PreguntasDeCierre hallazgoId={1} respuestas={{ similares: true, similaresDetalle: "Urgencias", cambios: null }} guardar={accion} />,
+    );
+    expect(preguntas).toContain("¿Hay no conformidades similares en otros procesos?");
+    expect(preguntas).toContain("¿Se requieren cambios en documentos, riesgos o controles?");
+    expect(preguntas).toContain("Urgencias");
+    const vez = renderToStaticMarkup(<LaVezPasada codigo="HZ-2026-003" causas={["Sin lista de chequeo"]} acciones={[]} />);
+    expect(vez).toContain("La vez pasada (HZ-2026-003)");
+    expect(vez).toContain("Sin lista de chequeo");
+    const ronda = {
+      id: 1, numero: 1, estadoPlan: "borrador", formularAntesDe: null, enviadoEn: null, aprobadoEn: null, aprobadoRol: null,
+      fechaEvaluacion: null, cierrePrevisto: null, resultado: null, similares: true, similaresDetalle: "Urgencias",
+      cambios: { documentos: true, riesgos: false, controles: false, descripcion: "Actualizar el procedimiento" },
+      analisis: [guardado], causas: [{ id: 1, orden: 1, texto: "No hay lista de chequeo", sinAccionPorque: null }], acciones: [], ajustes: [],
+    } as unknown as Parameters<typeof AnalisisEnLectura>[0]["ronda"];
+    const lectura = renderToStaticMarkup(<AnalisisEnLectura ronda={ronda} abierta />);
+    expect(lectura).toContain("3. Causa raíz");
+    expect(lectura).toContain("Confirmada · impacto alto · requiere acción");
+    expect(lectura).toContain("Sí: Urgencias");
+    expect(lectura).toContain("Sí (documentos): Actualizar el procedimiento");
   });
 });

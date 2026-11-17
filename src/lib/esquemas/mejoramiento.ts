@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
-import { CLASES, CRITICIDADES, ORIGENES_HALLAZGO } from "@/lib/mejoramiento/tipos";
+import { CLASES, CRITICIDADES, METODOS_ANALISIS, ORIGENES_HALLAZGO } from "@/lib/mejoramiento/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
 /** Un entero llega como texto del formulario o como número de la consulta. */
@@ -377,3 +377,130 @@ export const EsquemaFormularioDecision = z
   .strict()
   .superRefine(actaCompleta)
   .transform(conActa);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El análisis de causa raíz (spec 15 §9)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un campo que el formulario manda como JSON en un solo texto: la forma la valida el esquema del método, nunca se da por buena. */
+const jsonEnTexto = (mensaje: string) =>
+  z
+    .union([z.string({ error: mensaje }), z.record(z.string(), z.unknown()), z.array(z.unknown())], { error: mensaje })
+    .transform((v, ctx) => {
+      if (typeof v !== "string") return v;
+      try {
+        return JSON.parse(v) as unknown;
+      } catch {
+        ctx.addIssue({ code: "custom", message: mensaje });
+        return z.NEVER;
+      }
+    });
+
+const idDeAnalisis = z
+  .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "El análisis no es válido" })
+  .transform(Number)
+  .refine((n) => Number.isSafeInteger(n) && n > 0, "El análisis no es válido");
+
+/** El formulario de un análisis: el método, el equipo, las observaciones y el contenido del método (JSON que valida `leerContenido`). */
+export const EsquemaFormularioAnalisis = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    analisisId: idOpcional("El análisis no es válido"),
+    metodo: z.enum(METODOS_ANALISIS, { error: "Elija el método del análisis" }),
+    equipo: textoOpcional("El equipo", 500),
+    observaciones: textoOpcional("Las observaciones", 2000),
+    contenido: jsonEnTexto("El contenido del análisis no es válido"),
+  })
+  .strict();
+
+export const EsquemaQuitarAnalisis = z.object({ hallazgoId: idDeHallazgo, analisisId: idDeAnalisis }).strict();
+
+const causaDeLaRonda = z
+  .object({
+    id: idOpcional("La causa no es válida"),
+    texto: textoAcotado("La causa", 3, 500),
+    sinAccionPorque: z
+      .string({ error: "La justificación no es un texto válido" })
+      .trim()
+      .max(1000, "La justificación no puede pasar de 1000 caracteres")
+      .nullish()
+      .transform((v) => v || null),
+  })
+  .strict();
+
+/** La lista de causas de la ronda: de 1 a 20, cada una en una frase. */
+export const EsquemaCausas = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    causas: z.array(causaDeLaRonda, { error: "Escriba las causas raíz" }).min(1, "Escriba al menos una causa raíz").max(20, "Son veinte causas como máximo"),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const ids = d.causas.flatMap((x) => (x.id ? [x.id] : []));
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["causas"], message: "Una causa aparece dos veces" });
+  });
+
+export const EsquemaFormularioCausas = z
+  .object({ hallazgoId: idDeHallazgo, causas: jsonEnTexto("Las causas no son válidas") })
+  .strict();
+
+const bandera = z.boolean({ error: "Marque los cambios que se requieren" });
+
+/** Las dos preguntas de cierre de la ronda, ya en su forma de dominio. */
+export const EsquemaPreguntasDeCierre = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    similares: siONo("Diga si hay no conformidades similares en otros procesos"),
+    similaresDetalle: textoOpcional("Las no conformidades similares", 1000),
+    cambios: z
+      .object({ documentos: bandera, riesgos: bandera, controles: bandera, descripcion: textoOpcional("La descripción de los cambios", 1000) })
+      .strict(),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    if (d.similares && d.similaresDetalle === null) ctx.addIssue({ code: "custom", path: ["similaresDetalle"], message: "Diga cuáles" });
+    const hay = d.cambios.documentos || d.cambios.riesgos || d.cambios.controles;
+    if (hay && d.cambios.descripcion === null) {
+      ctx.addIssue({ code: "custom", path: ["cambios"], message: "Describa los cambios que se requieren" });
+    }
+  })
+  .transform((d) => {
+    const hay = d.cambios.documentos || d.cambios.riesgos || d.cambios.controles;
+    return {
+      hallazgoId: d.hallazgoId,
+      similares: d.similares,
+      similaresDetalle: d.similares ? d.similaresDetalle : null,
+      cambios: { ...d.cambios, descripcion: hay ? d.cambios.descripcion : null },
+    };
+  });
+
+const marca = z.enum(["si"]).optional();
+
+/** El formulario plano de las preguntas: un «sí/no» por pregunta y una casilla por cambio. */
+export const EsquemaFormularioPreguntas = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    similares: siONo("Diga si hay no conformidades similares en otros procesos"),
+    similaresDetalle: textoOpcional("Las no conformidades similares", 1000),
+    hayCambios: siONo("Diga si se requieren cambios en documentos, riesgos o controles"),
+    cambiosDocumentos: marca,
+    cambiosRiesgos: marca,
+    cambiosControles: marca,
+    cambiosDescripcion: textoOpcional("La descripción de los cambios", 1000),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const marcados = [d.cambiosDocumentos, d.cambiosRiesgos, d.cambiosControles].some((x) => x === "si");
+    if (d.hayCambios && !marcados) ctx.addIssue({ code: "custom", path: ["cambiosDocumentos"], message: "Marque qué cambios se requieren" });
+  })
+  .transform((d) => ({
+    hallazgoId: d.hallazgoId,
+    similares: d.similares,
+    similaresDetalle: d.similaresDetalle,
+    cambios: {
+      documentos: d.hayCambios && d.cambiosDocumentos === "si",
+      riesgos: d.hayCambios && d.cambiosRiesgos === "si",
+      controles: d.hayCambios && d.cambiosControles === "si",
+      descripcion: d.hayCambios ? d.cambiosDescripcion : null,
+    },
+  }));

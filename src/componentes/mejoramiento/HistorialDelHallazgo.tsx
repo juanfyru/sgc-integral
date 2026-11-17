@@ -56,6 +56,10 @@ const FRASE: Record<string, string> = {
   ocurrencia: "Añadió una ocurrencia",
   editado: "Editó la identificación",
   proceso_cambiado: "Cambió el proceso",
+  analisis_guardado: "Guardó un análisis de causa raíz",
+  analisis_quitado: "Quitó un análisis de causa raíz",
+  causas_guardadas: "Guardó las causas raíz",
+  preguntas_respondidas: "Respondió las preguntas de cierre del análisis",
 };
 
 /** La frase del evento; algunas dependen de su detalle (el cierre sin acción, el «no» que se cambió por «sí»). */
