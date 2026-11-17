@@ -465,7 +465,8 @@ quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pru
    **Reportar** dice «Plazo hasta el 10 de noviembre de 2026 (vencido)» y, en **Soportes**, «Este indicador exige un
    soporte: adjúntelo antes de reportar.». Bajo la variable A está **Soportes del dato**, con el PDF que subió `consulta`
    con el dato: **ese no cuenta**, porque el soporte que se debe es el de la medición. Al entrar, la campana trae «Tiene 1
-   indicador por reportar con el plazo vencido» (unos días después, el aviso a su jefe, que no nombra el indicador).
+   indicador por reportar con el plazo vencido». El aviso a su jefe no llega en la demo: el cargo superior de `lider.cex`
+   (Subgerente Científico) no lo ocupa nadie (comprobado con pasadas hasta cuatro días después).
    Adjunte un PDF en **Soportes**: octubre queda **Reportada**, la tarea se va y la lista deja de decir vencido.
 3. **El mes que no lo debe.** En la misma tabla, septiembre está en **Falta un dato**, sin vencido ni **Reportar**, y su
    pantalla de reportar no dice que el soporte sea obligatorio. Haga el paso 2 de «Qué probar y cómo (Fase 14C)» (`consulta`
@@ -482,7 +483,8 @@ quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pru
    escriba **1.830** en B: el cálculo en vivo y el servidor dicen ««Consultas ofertadas en la agenda»: Escriba el valor sin
    puntos de miles (1731); para decimales use la coma (1,731)», y bajo el campo está «Sin puntos de miles; use la coma para
    los decimales.»; **1830** (el valor que tiene) sí se lee. Como `coordinadora.sgc`, en `GRF-IND-01` (borrador) → **Editar ficha**, escriba la
-   meta **1.500** y guarde: «La meta: Escriba el valor sin puntos de miles…», junto al campo; **1500** o **1,5** sí. En
+   meta **1.500** y guarde: «La meta: Escriba el valor sin puntos de miles…», junto al campo; sin el punto ya no sale ese
+   mensaje (si la meta queda fuera de los rangos de la ficha, el SGC lo dice con el suyo). En
    **Programar metas** de un indicador activo, **1.500** también se rechaza. Abra un borrador con cifras guardadas y pulse
    **Guardar borrador** sin tocar nada: se guarda. Las pantallas de los indicadores siguen mostrando las cifras sin punto
    de miles («1830»); solo las del dato lo llevan.
@@ -494,11 +496,11 @@ quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pru
    (anexo §5.6, caso 1). Debe verse: la campana de cada Administrador del SGC con «El periodo octubre de 2026 del dato «…»
    no tiene categorías: actualícelas para que se pueda reportar» y, en **Mis tareas**, «Actualizar las categorías de …,
    octubre de 2026», sin fecha; quien responde por el dato, sin tarea ni aviso, con «Espera sus categorías» en la página y
-   en la lista; **Actualizar categorías** (en la fila de octubre) le pasa el periodo con el plazo completo desde hoy; y, si
-   antes desactiva todas las categorías, la tarea dice «Su dimensión no tiene categorías activas: créelas o actívelas
-   primero». Antes de actualizarlo, **Cierre del mes** → **Cerrar hasta** octubre → **Ver el resumen** debe decir, en «No
-   se cierran», «1 periodo de un dato compartido espera que se actualicen sus categorías: queda para el siguiente cierre.»
-   (no hace falta cerrar).
+   en la lista; y **Actualizar categorías** (en la fila de octubre) le pasa el periodo con el plazo completo desde hoy.
+   Antes de actualizarlo, **Cierre del mes** → **Cerrar hasta** octubre → **Ver el resumen** debe decir, en «No se
+   cierran», «1 periodo de un dato compartido espera que se actualicen sus categorías: queda para el siguiente cierre.» (no
+   hace falta cerrar). Una dimensión sin categorías activas no se arma así (la que usa una ficha vigente no puede quedarse
+   sin ellas): ese caso, con su tarea y su cierre «Sin dato», lo cubren las pruebas.
 
 ### Avisos para el usuario (complemento de la 14C)
 
@@ -517,8 +519,8 @@ quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pru
   fecha de su última activación en la bitácora o la de su creación. El periodo de un dato que nace sin categorías ya no es
   tarea de su responsable: le llega a usted.
 - **La demo cambia:** `CEX-ID-001` exige soporte; `lider.cex` tiene una tarea vencida más (octubre) y, al entrar, el aviso
-  de vencido, y su jefe recibirá el escalamiento. El paso 1 de «Qué probar y cómo (Fase 14C)» sigue igual (septiembre no
-  es tarea de nadie).
+  de vencido (sin escalamiento: su cargo superior no lo ocupa nadie en la demo). El paso 1 de «Qué probar y cómo (Fase
+  14C)» sigue igual (septiembre no es tarea de nadie).
 - **Para decidir antes de fusionar** (de la revisión de la Tarea 6, ver «Deuda técnica»): «Quién debía» dice en presente
   «Su dimensión no tiene categorías activas» también de un periodo que cerró un cierre anterior y cuya dimensión pudo
   volver a tener categorías; y «Cerrar de nuevo» un periodo vacío reabierto lo cierra «Sin dato» aunque su dimensión tenga
