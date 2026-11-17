@@ -50,3 +50,10 @@ export async function cerradosDelProceso(
     WHERE proceso_id = ${procesoId} AND estado = 'cerrado' AND id <> ${excluirId} ORDER BY cerrado_en DESC NULLS LAST, id DESC LIMIT 100`;
   return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string }));
 }
+
+/** Los usuarios activos, para elegir el responsable de una corrección (spec 15 §8.4). */
+export async function usuariosActivos(opciones?: { sql?: Cliente }): Promise<Array<{ id: number; nombre: string }>> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT id, nombre FROM usuarios WHERE activo ORDER BY nombre, id`;
+  return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string }));
+}

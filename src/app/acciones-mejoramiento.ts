@@ -7,6 +7,17 @@
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import {
+  aceptarHallazgo,
+  arbitrarHallazgo,
+  decidirAccionCorrectiva,
+  devolverCorreccion,
+  rechazarHallazgo,
+  registrarCorreccion,
+  retirarHallazgo,
+  sostenerHallazgo,
+  validarCorreccion,
+} from "@/db/consultas/mejoramiento/recorrido";
+import {
   anularHallazgo,
   cambiarProceso,
   editarHallazgo,
@@ -19,9 +30,16 @@ import {
 import {
   EsquemaAnulacion,
   EsquemaCambioDeProceso,
+  EsquemaCorreccion,
+  EsquemaDevolucion,
+  EsquemaFormularioArbitraje,
+  EsquemaFormularioDecision,
   EsquemaHallazgo,
   EsquemaOcurrencia,
+  EsquemaPasoDelHallazgo,
+  EsquemaRechazo,
   EsquemaReclasificacion,
+  EsquemaSostener,
   RELACION_DE_REGISTRO,
 } from "@/lib/esquemas/mejoramiento";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
@@ -115,5 +133,110 @@ export async function cambiarProcesoAccion(_previo: EstadoAccion, formData: Form
 export async function quitarArchivoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
     await quitarArchivoDeMejora(sesion, idNumerico(datos, "archivoId"));
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El recorrido hasta el plan (spec 15 §8.3 a §8.5). La condición de persona la comprueba cada función del dominio dentro de
+// su transacción. Un acto que dan dos roles con permisos distintos de la matriz tiene una acción por permiso, y las dos
+// llaman la misma función.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** El líder del proceso acepta el hallazgo (o el Admin SGC, si el proceso no tiene líder). */
+export async function aceptarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaPasoDelHallazgo);
+    await aceptarHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** El líder del proceso lo rechaza, con justificación. */
+export async function rechazarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaRechazo);
+    await rechazarHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Quien lo registró (o el Admin SGC en su lugar) lo retira tras el rechazo. */
+export async function retirarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaPasoDelHallazgo);
+    await retirarHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Quien lo registró (o el Admin SGC en su lugar) lo sostiene con su réplica: pasa a arbitraje. */
+export async function sostenerHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaSostener);
+    await sostenerHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** El arbitraje, como Admin SGC. */
+export async function arbitrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioArbitraje);
+    await arbitrarHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** El arbitraje, como Gerencia: cuando un Admin SGC registró el hallazgo o lo sostuvo (spec §8.3). */
+export async function arbitrarHallazgoGerenciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.aprobar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioArbitraje);
+    await arbitrarHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** El líder del proceso registra la corrección (o el Admin SGC, si el proceso no tiene líder). */
+export async function registrarCorreccionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaCorreccion);
+    await registrarCorreccion(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** El Admin SGC decide si requiere acción correctiva, o exige la acción después de un «no». */
+export async function decidirAccionCorrectivaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioDecision);
+    await decidirAccionCorrectiva(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Gerencia exige la acción correctiva después de un «no» (spec §8.5, literal c del SGC-PR-03 §5.2). */
+export async function decidirAccionCorrectivaGerenciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.aprobar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioDecision);
+    await decidirAccionCorrectiva(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Valida la corrección, o el cierre sin acción. */
+export async function validarCorreccionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.verificar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaPasoDelHallazgo);
+    await validarCorreccion(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Devuelve la corrección con una nota: vuelve a «Por corregir». */
+export async function devolverCorreccionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.verificar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaDevolucion);
+    await devolverCorreccion(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
   });
 }

@@ -1,15 +1,38 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { anularHallazgoAccion, cambiarProcesoAccion, reclasificarHallazgoAccion, registrarOcurrenciaAccion } from "@/app/acciones-mejoramiento";
+import {
+  aceptarHallazgoAccion,
+  anularHallazgoAccion,
+  arbitrarHallazgoAccion,
+  arbitrarHallazgoGerenciaAccion,
+  cambiarProcesoAccion,
+  decidirAccionCorrectivaAccion,
+  decidirAccionCorrectivaGerenciaAccion,
+  devolverCorreccionAccion,
+  rechazarHallazgoAccion,
+  reclasificarHallazgoAccion,
+  registrarCorreccionAccion,
+  registrarOcurrenciaAccion,
+  retirarHallazgoAccion,
+  sostenerHallazgoAccion,
+  validarCorreccionAccion,
+} from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
 import { Ocurrencias } from "@/componentes/mejoramiento/Ocurrencias";
+import { PasoAceptar } from "@/componentes/mejoramiento/pasos/PasoAceptar";
+import { PasoArbitrar } from "@/componentes/mejoramiento/pasos/PasoArbitrar";
+import { PasoCorregir } from "@/componentes/mejoramiento/pasos/PasoCorregir";
+import { PasoDecidir } from "@/componentes/mejoramiento/pasos/PasoDecidir";
+import { PasoTrasRechazo } from "@/componentes/mejoramiento/pasos/PasoTrasRechazo";
+import { PasoValidar } from "@/componentes/mejoramiento/pasos/PasoValidar";
 import { Recorrido, type PasoDeRecorrido } from "@/componentes/mejoramiento/Recorrido";
 import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
 import { InsigniasDelHallazgo } from "@/componentes/mejoramiento/InsigniasDelHallazgo";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
+import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
@@ -17,9 +40,17 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import type { DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
-import { cerradosDelProceso, documentosVigentesVisibles, normasQueRigen, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
+import {
+  cerradosDelProceso,
+  documentosVigentesVisibles,
+  normasQueRigen,
+  procesosDelAlcance,
+  usuariosActivos,
+} from "@/db/consultas/mejoramiento/opciones";
+import { puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { diaCorto } from "@/lib/mejoramiento/formato";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
+import { esExterno } from "@/lib/mejoramiento/origenes";
 import { TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
@@ -33,14 +64,17 @@ export const metadata: Metadata = { title: "Hallazgo" };
 
 /** Estados en que el hallazgo todavía espera su aceptación: la identificación queda abierta. */
 const ESPERA_ACEPTACION = new Set(["por_aceptar", "rechazo", "arbitraje"]);
+/** Estados en que la corrección (y su decisión) es la etapa en curso: «2. Corrección» queda abierta. */
+const EN_LA_CORRECCION = new Set(["por_corregir", "por_decidir", "por_validar"]);
 
 /** Los pasos del recorrido con la fecha de lo ya ocurrido que el historial permite decir. */
 function pasosConFechas(h: DetalleDeHallazgo, zona: string): PasoDeRecorrido[] {
   const cuando = (tipo: string) => h.eventos.find((e) => e.tipo === tipo)?.cuando;
   const fechas: Record<string, Date | undefined> = {
     registro: h.registradoEn,
-    aceptado: cuando("aceptar"),
-    correccion: cuando("corregir"),
+    aceptado: cuando("aceptar") ?? cuando("confirmar_hallazgo"),
+    correccion: h.correccion.registradaEn ?? undefined,
+    decision: h.decision.decididaEn ?? undefined,
     cierre: h.cierre.cerradoEn ?? undefined,
   };
   return pasosDelRecorrido({
@@ -63,16 +97,29 @@ function pasosConFechas(h: DetalleDeHallazgo, zona: string): PasoDeRecorrido[] {
   });
 }
 
+/** El texto que un evento guarda en esa clave de su detalle (la justificación del rechazo, la réplica, la nota). */
+function textoDelEvento(e: DetalleDeHallazgo["eventos"][number] | undefined, clave: string): string | null {
+  const d = e?.detalle;
+  if (typeof d !== "object" || d === null) return null;
+  const v = (d as Record<string, unknown>)[clave];
+  return typeof v === "string" && v !== "" ? v : null;
+}
+
+/** El último evento de alguno de esos tipos. */
+const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((e) => tipos.includes(e.tipo));
+
 /**
- * La página de un hallazgo (spec 15 §16.2, maqueta 2): el recorrido, la identificación, lo que sigue y el historial. Las
- * demás secciones (corrección, causa raíz, plan, ejecución, verificación, eficacia y cierre) las añaden las tareas 10 a 17.
- * Quien no lo ve recibe «no encontrado». Quien lo ve solo por una actividad (`ve: "actividad"`) no recibe el historial.
+ * La página de un hallazgo (spec 15 §16.2, maqueta 2): el recorrido, la identificación, la corrección, lo que sigue (con el
+ * formulario del paso a quien puede darlo) y el historial. Las demás secciones (causa raíz, plan, ejecución, verificación,
+ * eficacia y cierre) las añaden las tareas 11 a 17. Quien no lo ve recibe «no encontrado». Quien lo ve solo por una
+ * actividad (`ve: "actividad"`) no recibe el historial ni los archivos.
  */
 export default async function PaginaHallazgo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
   const { id } = await params;
   const h = await exigirHallazgo(sesion, id);
   const zona = zonaHoraria();
+  const hoy = fechaEnZona(new Date(), zona);
   const completo = h.ve === "completo";
   const terminado = TERMINALES.includes(h.estado);
   const gestiona = completo && !terminado && puede(sesion, "mejora.gestionar");
@@ -88,17 +135,80 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   // Las notas que se añadieron al reclasificar: la descripción no se reescribe.
   const notas = completo
     ? h.eventos.flatMap((e) => {
-        const nota = e.tipo === "reclasificar" && typeof e.detalle === "object" && e.detalle !== null ? (e.detalle as { nota?: unknown }).nota : undefined;
-        return typeof nota === "string" && nota !== "" ? [{ cuando: e.cuando, nota }] : [];
+        const nota = e.tipo === "reclasificar" ? textoDelEvento(e, "nota") : null;
+        return nota ? [{ cuando: e.cuando, nota }] : [];
       })
     : [];
   const clave = `${h.estado}-${h.eventos.length}`;
-  // Los archivos de la identificación (rol `evidencia`): solo para quien ve el hallazgo completo; el servidor decide cada subida.
+
+  // Los archivos del hallazgo: solo para quien lo ve completo; el servidor decide cada subida.
   const sqlArchivos = obtenerSql();
   const dueno = { contexto: "mejora_hallazgo", contextoId: h.id } as const;
-  const evidencias = completo ? (await archivosDe(sqlArchivos, sesion, dueno)).filter((a) => a.rol === "evidencia") : [];
+  const archivos = completo ? await archivosDe(sqlArchivos, sesion, dueno) : [];
+  const evidencias = archivos.filter((a) => a.rol === "evidencia");
   const puedeSubirEvidencia = completo && (await autorizarSubida(sesion, { contexto: "mejora_hallazgo", id: h.id, rol: "evidencia" })).ok;
   const quitables = await archivosQuitables(sqlArchivos, sesion, evidencias, dueno);
+
+  // «2. Corrección», desde que la no conformidad está por corregir (las etapas que faltan no aparecen). Una corrección ya
+  // registrada se sigue viendo aunque el hallazgo deje de ser no conformidad: queda como historia (spec §7.6).
+  const conCorreccion = h.correccion.requerida !== null || (h.clase === "no_conformidad" && h.estado === "por_corregir");
+  const correcciones = archivos.filter((a) => a.rol === "correccion");
+  const puedeSubirCorreccion =
+    completo && h.estado === "por_corregir" && (await autorizarSubida(sesion, { contexto: "mejora_hallazgo", id: h.id, rol: "correccion" })).ok;
+  const quitablesDeCorreccion = conCorreccion ? await archivosQuitables(sqlArchivos, sesion, correcciones, dueno) : [];
+  const ultimaDeLaCorreccion = ultimoDe(h, ["corregir", "devolver_correccion"]);
+  const devuelta =
+    h.estado === "por_corregir" && ultimaDeLaCorreccion?.tipo === "devolver_correccion" ? textoDelEvento(ultimaDeLaCorreccion, "nota") : null;
+
+  // El formulario del paso, a quien puede darlo (la regla del acto la repite el servidor).
+  const sigue = h.loQueSigue;
+  const puedeExigir = completo && puedeExigirLaAccion(sesion, h);
+  const conFormulario = completo && !terminado && (sigue.puede || puedeExigir);
+  const usuarios = conFormulario && sigue.paso === "corregir" ? await usuariosActivos() : [];
+  const comoGerencia = sesion.rol === "gerencia";
+  const formulario = !conFormulario ? null : sigue.paso === "aceptar" ? (
+    <PasoAceptar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      puedeRechazar={sesion.rol === "lider_proceso" && !esExterno(h.origen)}
+      aceptar={aceptarHallazgoAccion}
+      rechazar={rechazarHallazgoAccion}
+    />
+  ) : sigue.paso === "tras_rechazo" ? (
+    <PasoTrasRechazo
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      justificacion={textoDelEvento(ultimoDe(h, ["rechazar"]), "justificacion")}
+      enSuLugar={h.registradoPorId !== sesion.usuarioId}
+      retirar={retirarHallazgoAccion}
+      sostener={sostenerHallazgoAccion}
+    />
+  ) : sigue.paso === "arbitrar" ? (
+    <PasoArbitrar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      justificacion={textoDelEvento(ultimoDe(h, ["rechazar"]), "justificacion")}
+      replica={textoDelEvento(ultimoDe(h, ["sostener"]), "replica")}
+      hoy={hoy}
+      accion={comoGerencia ? arbitrarHallazgoGerenciaAccion : arbitrarHallazgoAccion}
+    />
+  ) : sigue.paso === "corregir" ? (
+    <PasoCorregir key={`paso-${clave}`} hallazgoId={h.id} usuarios={usuarios} hoy={hoy} accion={registrarCorreccionAccion} />
+  ) : sigue.paso === "decidir" ? (
+    <PasoDecidir key={`paso-${clave}`} hallazgoId={h.id} hoy={hoy} accion={decidirAccionCorrectivaAccion} />
+  ) : sigue.paso === "validar" ? (
+    <PasoValidar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      sinAccion={h.correccion.requerida === false}
+      puedeValidar={sigue.puede}
+      puedeExigir={puedeExigir}
+      hoy={hoy}
+      validar={validarCorreccionAccion}
+      devolver={devolverCorreccionAccion}
+      exigir={comoGerencia ? decidirAccionCorrectivaGerenciaAccion : decidirAccionCorrectivaAccion}
+    />
+  ) : null;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -128,13 +238,33 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
               />
             ) : null}
           </SeccionIdentificacion>
+          {conCorreccion ? (
+            <SeccionCorreccion
+              correccion={h.correccion}
+              decision={h.decision}
+              zona={zona}
+              abierta={EN_LA_CORRECCION.has(h.estado)}
+              archivos={correcciones.length}
+              devuelta={devuelta}
+            >
+              {completo ? (
+                <ArchivosDe
+                  archivos={correcciones}
+                  quitables={quitablesDeCorreccion}
+                  direccionDeSubida={puedeSubirCorreccion ? `/api/mejoramiento/hallazgos/${h.id}/archivos?rol=correccion` : null}
+                  nombre="Zona de carga de la evidencia de la corrección"
+                  vacio="Sin evidencia de la corrección."
+                />
+              ) : null}
+            </SeccionCorreccion>
+          ) : null}
           {completo ? (
             <Ocurrencias
               key={`ocurrencias-${h.ocurrencias.length}`}
               hallazgoId={h.id}
               ocurrencias={h.ocurrencias}
               puedeAnadir={!terminado && puede(sesion, "mejora.registrar")}
-              hoy={fechaEnZona(new Date(), zona)}
+              hoy={hoy}
               accion={registrarOcurrenciaAccion}
             />
           ) : null}
@@ -184,7 +314,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
           ) : null}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          <LoQueSigue texto={h.loQueSigue} />
+          <LoQueSigue texto={sigue.turno}>{formulario}</LoQueSigue>
           {completo ? <HistorialDelHallazgo eventos={h.eventos} zona={zona} /> : null}
         </div>
       </div>

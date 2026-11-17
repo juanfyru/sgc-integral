@@ -1,20 +1,29 @@
-import { fechaYHora } from "@/lib/mejoramiento/formato";
+import { fechaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
 
 type Evento = { id: number; tipo: string; ronda: number; quien: string | null; cuando: Date; detalle?: unknown };
 
-/** Lo que un evento dice por escrito: la justificación, la nota o el motivo que trae su detalle, con su rótulo. */
+/** Lo que un evento dice por escrito: la justificación, la réplica, la nota o el motivo que trae su detalle, con su rótulo. */
 const TEXTOS_DEL_DETALLE: ReadonlyArray<readonly [clave: string, rotulo: string]> = [
   ["justificacion", "Justificación"],
+  ["replica", "Réplica"],
   ["nota", "Nota"],
   ["motivo", "Motivo"],
 ];
 
+const comoObjeto = (detalle: unknown): Record<string, unknown> =>
+  typeof detalle === "object" && detalle !== null ? (detalle as Record<string, unknown>) : {};
+
 function textosDe(detalle: unknown): Array<{ rotulo: string; texto: string }> {
-  if (typeof detalle !== "object" || detalle === null) return [];
-  const d = detalle as Record<string, unknown>;
-  return TEXTOS_DEL_DETALLE.flatMap(([clave, rotulo]) =>
+  const d = comoObjeto(detalle);
+  const textos = TEXTOS_DEL_DETALLE.flatMap(([clave, rotulo]) =>
     typeof d[clave] === "string" && d[clave].trim() !== "" ? [{ rotulo, texto: d[clave] as string }] : [],
   );
+  // El acta del Comité que citó el acto (spec §8.5): número y fecha, que pone el motor.
+  const acta = comoObjeto(d.acta);
+  if (typeof acta.numero === "string" && typeof acta.fecha === "string") {
+    textos.push({ rotulo: "Acta del Comité", texto: `${acta.numero}, del ${fechaDeDia(acta.fecha)}` });
+  }
+  return textos;
 }
 
 /** Lo que cada acción del hallazgo dice en el historial: en pasado, sin nombres (quién va aparte). */
@@ -22,8 +31,8 @@ const FRASE: Record<string, string> = {
   registrar: "Registró el hallazgo",
   aceptar: "Aceptó el hallazgo",
   rechazar: "Rechazó el hallazgo",
-  retirar: "Retiró el rechazo",
-  sostener: "Sostuvo el rechazo",
+  retirar: "Retiró el hallazgo tras el rechazo",
+  sostener: "Sostuvo el hallazgo ante el rechazo",
   confirmar_hallazgo: "Confirmó el hallazgo en el arbitraje",
   confirmar_rechazo: "Confirmó el rechazo en el arbitraje",
   corregir: "Registró la corrección",
@@ -49,6 +58,15 @@ const FRASE: Record<string, string> = {
   proceso_cambiado: "Cambió el proceso",
 };
 
+/** La frase del evento; algunas dependen de su detalle (el cierre sin acción, el «no» que se cambió por «sí»). */
+function fraseDe(e: Evento): string {
+  const d = comoObjeto(e.detalle);
+  if (e.tipo === "validar_correccion" && d.resultado === "sin_accion") return "Validó el cierre sin acción";
+  if (e.tipo === "corregir" && d.requerida === false) return "Registró que no requiere corrección inmediata";
+  if (e.tipo === "decidir_si" && "antes" in d) return "Exigió la acción correctiva después de un «no»";
+  return FRASE[e.tipo] ?? e.tipo;
+}
+
 /** El historial del hallazgo, del más antiguo al más reciente (spec 15 §16.2). Solo lo ve quien ve el hallazgo completo. */
 export function HistorialDelHallazgo({ eventos, zona }: { eventos: readonly Evento[]; zona: string }) {
   return (
@@ -63,7 +81,7 @@ export function HistorialDelHallazgo({ eventos, zona }: { eventos: readonly Even
           {eventos.map((e) => (
             <li key={e.id} className="border-l-2 border-mod-planes pl-3 text-sm">
               <span className="block font-medium">
-                {FRASE[e.tipo] ?? e.tipo}
+                {fraseDe(e)}
                 {e.ronda > 1 ? ` (ronda ${e.ronda})` : ""}
               </span>
               {textosDe(e.detalle).map((t) => (

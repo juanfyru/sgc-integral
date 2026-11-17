@@ -883,3 +883,39 @@ export async function puedeAbrirArchivoDeMejora(
     WHERE actividad_id = ${archivo.contextoId} AND registrado_por = ${sujeto.usuarioId} LIMIT 1`;
   return s !== undefined;
 }
+
+/**
+ * Quienes pueden validar la corrección de un hallazgo, o su cierre sin acción (spec 15 §6.1 y §8.5): los Admin SGC y
+ * Control Interno activos que no registraron la corrección ni son su responsable y, si no hubo corrección
+ * (`correccion_requerida` falso), tampoco decidieron el «no». Gerencia, con las mismas exclusiones, solo si ninguno de
+ * ellos puede (el respaldo de §11.1). Sin excepción de «único administrador»: si nadie cumple, la lista queda vacía.
+ * Una sola regla: la usan el turno (`quienTieneElTurno`), la página y la validación dentro de su transacción.
+ */
+export async function validadoresDeCorreccion(hallazgoId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
+  if (!Number.isSafeInteger(hallazgoId) || hallazgoId <= 0) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`
+    WITH h AS (
+      SELECT correccion_registrada_por, correccion_responsable_id, correccion_requerida, accion_decidida_por
+      FROM mejora_hallazgos WHERE id = ${hallazgoId}),
+    cumplen AS (
+      SELECT u.id, u.rol FROM usuarios u CROSS JOIN h
+      WHERE u.activo AND u.rol IN ('admin_sgc', 'control_interno', 'gerencia')
+        AND u.id IS DISTINCT FROM h.correccion_registrada_por
+        AND u.id IS DISTINCT FROM h.correccion_responsable_id
+        AND (h.correccion_requerida IS DISTINCT FROM false OR u.id IS DISTINCT FROM h.accion_decidida_por))
+    SELECT id FROM cumplen
+    WHERE rol <> 'gerencia' OR NOT EXISTS (SELECT 1 FROM cumplen WHERE rol <> 'gerencia')
+    ORDER BY id`;
+  return filas.map((f) => Number(f.id));
+}
+
+/** Si la persona puede validar la corrección (o el cierre sin acción) de ese hallazgo: `validadoresDeCorreccion`. */
+export async function puedeValidarCorreccion(
+  hallazgoId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  if (!puede(sujeto, "mejora.verificar")) return false;
+  return (await validadoresDeCorreccion(hallazgoId, opciones)).includes(sujeto.usuarioId);
+}

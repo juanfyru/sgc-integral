@@ -7,6 +7,7 @@ import type { Cliente } from "@/db/cliente";
 import { avisarA, type Destinatario } from "@/db/consultas/avisos-vencimiento";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
+import { validadoresDeCorreccion } from "@/lib/alcance";
 import { turnoDe, type Turno } from "@/lib/mejoramiento/estados";
 import type { EstadoHallazgo, HallazgoBase } from "@/lib/mejoramiento/tipos";
 import type { Rol } from "@/lib/roles";
@@ -38,6 +39,24 @@ export async function lideresOAdmins(tx: Cliente, procesoId: number): Promise<nu
   return lideres.length > 0 ? lideres : adminsActivos({ sql: tx });
 }
 
+/**
+ * Quienes arbitran un rechazo sostenido (spec §8.3, F15-DC13: no arbitra quien ya tomó parte): los Admin SGC activos; los
+ * de Gerencia si un Admin SGC lo registró o lo sostuvo en lugar de quien lo registró. Si le toca a Gerencia y no hay
+ * ninguna activa, los Admin SGC activos que no lo registraron ni lo sostuvieron. Quién lo sostuvo lo dice el último evento
+ * `sostener` (su `usuario_id`). Una sola regla: la usan el turno y el arbitraje dentro de su transacción.
+ */
+export async function arbitrosDe(tx: Cliente, h: Pick<HallazgoBase, "id" | "registradoPor">): Promise<number[]> {
+  const [registro] = await tx`SELECT rol FROM usuarios WHERE id = ${h.registradoPor}`;
+  const [sostuvo] = await tx`SELECT e.usuario_id, u.rol FROM mejora_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
+    WHERE e.hallazgo_id = ${h.id} AND e.tipo = 'sostener' ORDER BY e.id DESC LIMIT 1`;
+  const admins = await adminsActivos({ sql: tx });
+  if (registro?.rol !== "admin_sgc" && sostuvo?.rol !== "admin_sgc") return admins;
+  const gerencia = await activosDeRol(tx, ["gerencia"]);
+  if (gerencia.length > 0) return gerencia;
+  const tomaronParte = [h.registradoPor, sostuvo ? Number(sostuvo.usuario_id) : null];
+  return admins.filter((u) => !tomaronParte.includes(u));
+}
+
 /** Cómo se resuelve cada turno a usuarios activos. Un solo lugar: las tareas 10, 13 y 16 lo refinan aquí. */
 const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>> = {
   lideres: (tx, h) => lideresOAdmins(tx, h.procesoId),
@@ -45,15 +64,7 @@ const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>
     const [u] = await tx`SELECT id FROM usuarios WHERE id = ${h.registradoPor} AND activo`;
     return u ? [Number(u.id)] : adminsActivos({ sql: tx });
   },
-  // Arbitra el Admin SGC; si lo registró un Admin SGC, Gerencia (spec §8.3). Sin Gerencia activa, el Admin SGC.
-  arbitro: async (tx, h) => {
-    const [u] = await tx`SELECT rol FROM usuarios WHERE id = ${h.registradoPor}`;
-    if (u?.rol === "admin_sgc") {
-      const gerencia = await activosDeRol(tx, ["gerencia"]);
-      if (gerencia.length > 0) return gerencia;
-    }
-    return adminsActivos({ sql: tx });
-  },
+  arbitro: (tx, h) => arbitrosDe(tx, h),
   admin: (tx) => adminsActivos({ sql: tx }),
   gerencia: (tx) => activosDeRol(tx, ["gerencia"]),
   // Los responsables activos de las actividades sin terminar de la ronda en curso (acción → ronda).
@@ -68,7 +79,8 @@ const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>
     return filas.map((f) => Number(f.id));
   },
   verificadores: (tx) => activosDeRol(tx, ["admin_sgc", "control_interno"]),
-  validadores: (tx) => activosDeRol(tx, ["admin_sgc", "control_interno"]),
+  // Quien registró la corrección o es su responsable no la valida; en el cierre sin acción, tampoco quien decidió el «no».
+  validadores: (tx, h) => validadoresDeCorreccion(h.id, { sql: tx }),
 };
 
 /** Quienes pueden verificar un hallazgo (Admin SGC y Control Interno activos): la Tarea 16 lo afina. */
@@ -83,13 +95,13 @@ export async function quienTieneElTurno(tx: Cliente, h: HallazgoBase): Promise<n
 }
 
 /** Lo que el turno le pide a quien lo recibe, con el código (spec §14.1); el cuerpo del aviso es el título del hallazgo. */
-const LO_QUE_SIGUE: Partial<Record<EstadoHallazgo, (codigo: string) => string>> = {
+const LO_QUE_SIGUE: Partial<Record<EstadoHallazgo, (codigo: string, h: HallazgoBase) => string>> = {
   por_aceptar: (c) => `Aceptar o rechazar ${c}`,
   rechazo: (c) => `Decidir sobre el rechazo de ${c}`,
   arbitraje: (c) => `Arbitrar el rechazo de ${c}`,
   por_corregir: (c) => `Registrar la corrección de ${c}`,
   por_decidir: (c) => `Decidir si ${c} requiere acción correctiva`,
-  por_validar: (c) => `Validar la corrección de ${c}`,
+  por_validar: (c, h) => (h.correccionRequerida === false ? `Validar el cierre sin acción de ${c}` : `Validar la corrección de ${c}`),
   por_formular: (c) => `Formular la causa raíz y el plan de ${c}`,
   en_revision: (c) => `Revisar el plan de ${c}`,
   en_aprobacion: (c) => `Aprobar el plan de ${c}`,
@@ -127,7 +139,7 @@ export async function avisarDelTurno(
   const destinos = (await quienTieneElTurno(tx, h)).filter((u) => u !== actorId);
   await avisarDeMejora(
     tx,
-    { tipo: "mejora.turno", titulo: texto(h.codigo), hallazgoId: h.id },
+    { tipo: "mejora.turno", titulo: texto(h.codigo, h), hallazgoId: h.id },
     destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo })),
   );
   return destinos;

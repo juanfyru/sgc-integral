@@ -581,7 +581,10 @@ const FRASES_DE_MEJORA: Record<AccionHallazgo, (h: HallazgoEnFrase) => string> =
 
 function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): string {
   const codigo = texto(d.codigo);
-  const frase = FRASES_DE_MEJORA[accion](codigo ? { el: `el hallazgo ${codigo}`, del: `del hallazgo ${codigo}` } : SIN_CODIGO);
+  const h = codigo ? { el: `el hallazgo ${codigo}`, del: `del hallazgo ${codigo}` } : SIN_CODIGO;
+  // Sin corrección y sin acción correctiva se validan las dos justificaciones, no una corrección (spec 15 §8.5).
+  const frase =
+    accion === "validar_correccion" && d.resultado === "sin_accion" ? `Validó el cierre sin acción ${h.del}` : FRASES_DE_MEJORA[accion](h);
   const titulo = accion === "registrar" || accion === "cargar" ? texto(d.titulo) : null;
   return `${frase}${titulo ? ` — ${titulo}` : ""}${conMotivo(d.justificacion)}`;
 }

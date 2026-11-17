@@ -311,9 +311,11 @@ describe("el detalle", () => {
       expect(d.rondas).toHaveLength(1);
       expect(d.rondas[0].acciones[0].actividades[0].descripcion).toBe("Actividad de prueba");
       expect(d.eventos.length).toBeGreaterThan(0);
-      expect(d.loQueSigue).toMatch(/usted/i);
+      expect(d.loQueSigue).toMatchObject({ paso: "aceptar", puede: true });
+      expect(d.loQueSigue.turno).toMatch(/usted/i);
       const dAdmin = (await leerHallazgo(b.admin, a.id, opt(tx)))!;
-      expect(dAdmin.loQueSigue).toMatch(/líder del proceso/i);
+      expect(dAdmin.loQueSigue).toMatchObject({ paso: "aceptar", puede: false });
+      expect(dAdmin.loQueSigue.turno).toMatch(/líder del proceso/i);
     });
   });
 

@@ -21,6 +21,7 @@ import {
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { activosDeRol, quienTieneElTurno } from "./avisos";
+import { pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -97,8 +98,9 @@ async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<
   // Quién tiene el turno depende solo de esto: el proceso, quien registró, el hallazgo o nada.
   const clave =
     turno === "lideres" ? `lideres:${h.procesoId}`
-    : turno === "registrador" || turno === "arbitro" ? `${turno}:${h.registradoPor}`
-    : turno === "responsables" ? `responsables:${h.id}`
+    : turno === "registrador" ? `registrador:${h.registradoPor}`
+    // El árbitro depende también de quién lo sostuvo; los validadores, de quién registró la corrección y decidió.
+    : turno === "responsables" || turno === "arbitro" || turno === "validadores" ? `${turno}:${h.id}`
     : turno;
   const ids = await recordar(m, clave, () => quienTieneElTurno(tx, h));
   switch (turno) {
@@ -350,6 +352,9 @@ export type DetalleDeHallazgo = {
     responsable: string | null;
     implementadaEn: string | null;
     registradaEn: Date | null;
+    /** Quién validó la corrección (o el cierre sin acción), y cuándo. */
+    validadaPor: string | null;
+    validadaEn: Date | null;
   };
   decision: { accionRequerida: boolean | null; justificacion: string | null; decididaEn: Date | null };
   cierre: { resultado: ResultadoCierre | null; cerradoEn: Date | null; lecciones: string | null; anuladoMotivo: string | null };
@@ -357,13 +362,19 @@ export type DetalleDeHallazgo = {
   ocurrencias: Array<{ id: number; fecha: string; descripcion: string; origen: string; quien: string }>;
   eventos: Array<{ id: number; tipo: string; ronda: number; detalle: unknown; quien: string | null; cuando: Date; fuera: boolean }>;
   turno: string;
-  loQueSigue: string;
+  loQueSigue: LoQueSigueDelHallazgo;
 };
+
+/**
+ * «Lo que sigue» (spec §16.2): el paso del estado (el formulario que pinta la página), si quien mira puede darlo y la frase
+ * que lo dice («A usted le toca…» o quién tiene el turno). `paso` es nulo en los estados cuyo formulario llega en otra tarea.
+ */
+export type LoQueSigueDelHallazgo = { paso: PasoDelRecorrido | null; puede: boolean; turno: string };
 
 /** Lo que le toca a quien tiene el turno, por estado. */
 const LE_TOCA: Partial<Record<EstadoHallazgo, string>> = {
   por_aceptar: "aceptar el hallazgo o rechazarlo",
-  rechazo: "decidir si retira el rechazo o lo sostiene",
+  rechazo: "decidir si retira el hallazgo o lo sostiene",
   arbitraje: "arbitrar el rechazo",
   por_corregir: "registrar la corrección",
   por_decidir: "decidir si lleva acción correctiva",
@@ -381,14 +392,32 @@ export function fraseDeLoQueSigue(h: Pick<HallazgoBase, "estado" | "resultadoCie
   if (esTerminal(h.estado)) return "El hallazgo está " + etiquetaDeEstado(h).toLowerCase() + ": no tiene pasos pendientes.";
   if (h.estado === "en_espera") return "Espera el momento de evaluar la eficacia de las acciones.";
   const quien = turno.charAt(0).toLowerCase() + turno.slice(1);
-  const toca = LE_TOCA[h.estado];
+  const toca = h.estado === "por_validar" && h.correccionRequerida === false ? "validar el cierre sin acción" : LE_TOCA[h.estado];
   if (!toca) return "Tiene el turno: " + quien + ".";
   return mio ? "A usted le toca " + toca + "." : "Tiene el turno: " + quien + ", para " + toca + ".";
 }
 
-async function loQueSigue(tx: Cliente, h: HallazgoBase, usuarioId: number, turno: string): Promise<string> {
-  if (esTerminal(h.estado) || h.estado === "en_espera" || !LE_TOCA[h.estado]) return fraseDeLoQueSigue(h, turno, false);
-  return fraseDeLoQueSigue(h, turno, (await quienTieneElTurno(tx, h)).includes(usuarioId));
+/** Cuando nadie cumple la regla de quién valida (§8.5 y §11.1): el acto se rechaza y la pantalla dice por qué. */
+const NADIE_VALIDA =
+  "Nadie puede validarla: quien registró la corrección, su responsable y, en el cierre sin acción, quien decidió el «no» no " +
+  "validan. Dé el rol de Administrador del SGC o de Control Interno a otra persona.";
+
+/**
+ * El paso, si quien mira puede darlo (la regla del acto, `puedeDarElPaso`) y la frase. «A usted le toca…» sale de poder
+ * darlo, no de estar en el turno: tras un rechazo, el Admin SGC puede retirarlo o sostenerlo sin tener el turno; el turno
+ * de «Por aceptar» puede incluir a quien lo registró, que no lo acepta. Los pasos de las tareas siguientes, por el turno.
+ */
+async function loQueSigue(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, turno: string): Promise<LoQueSigueDelHallazgo> {
+  const paso = pasoDelEstado(h.estado);
+  if (esTerminal(h.estado) || h.estado === "en_espera" || !LE_TOCA[h.estado]) {
+    return { paso: null, puede: false, turno: fraseDeLoQueSigue(h, turno, false) };
+  }
+  if (!paso) return { paso, puede: false, turno: fraseDeLoQueSigue(h, turno, (await quienTieneElTurno(tx, h)).includes(sesion.usuarioId)) };
+  const puede = await puedeDarElPaso(tx, sesion, h);
+  if (!puede && h.estado === "por_validar" && (await quienTieneElTurno(tx, h)).length === 0) {
+    return { paso, puede, turno: NADIE_VALIDA };
+  }
+  return { paso, puede, turno: fraseDeLoQueSigue(h, turno, puede) };
 }
 
 /**
@@ -402,13 +431,14 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   const ve = await participacionEnHallazgo(id, sesion, { sql });
   if (ve === null) return null;
   const [f] = await sql`
-    SELECT h.*, p.nombre AS proceso, ur.nombre AS registrador, uc.nombre AS correccion_responsable,
+    SELECT h.*, p.nombre AS proceso, ur.nombre AS registrador, uc.nombre AS correccion_responsable, uv.nombre AS validador,
       to_char(h.detectado_en, 'YYYY-MM-DD') AS detectado, to_char(h.fecha_limite_ente, 'YYYY-MM-DD') AS limite_ente,
       to_char(h.correccion_implementada_en, 'YYYY-MM-DD') AS implementada
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
     JOIN usuarios ur ON ur.id = h.registrado_por
     LEFT JOIN usuarios uc ON uc.id = h.correccion_responsable_id
+    LEFT JOIN usuarios uv ON uv.id = h.validada_por
     WHERE h.id = ${id}`;
   if (!f) return null;
   const h = aBase(f);
@@ -559,6 +589,8 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       responsable: (f.correccion_responsable as string | null) ?? (f.correccion_responsable_nombre as string | null) ?? null,
       implementadaEn: (f.implementada as string | null) ?? null,
       registradaEn: (f.correccion_registrada_en as Date | null) ?? null,
+      validadaPor: (f.validador as string | null) ?? null,
+      validadaEn: (f.validada_en as Date | null) ?? null,
     },
     decision: {
       accionRequerida: h.accionRequerida,
@@ -589,6 +621,6 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       fuera: e.fuera === true,
     })),
     turno,
-    loQueSigue: await loQueSigue(sql, h, sesion.usuarioId, turno),
+    loQueSigue: await loQueSigue(sql, h, sesion, turno),
   };
 }

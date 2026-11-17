@@ -1,6 +1,7 @@
 /**
- * «Lo que sigue» (spec 15 §16.2): lo que le toca a quien mira, o quién tiene el turno. Las acciones de cada paso las
- * añaden las tareas 10 a 17 como hijos; sin ellas, el texto solo informa y no ofrece controles.
+ * «Lo que sigue» (spec 15 §16.2): lo que le toca a quien mira, o quién tiene el turno. A quien puede dar el paso, la página
+ * le pasa su formulario como hijo (según `loQueSigue.paso` y `loQueSigue.puede`, de `leerHallazgo`); a los demás no les
+ * pasa nada y el texto solo informa, sin controles.
  */
 export function LoQueSigue({ texto, children }: { texto: string; children?: React.ReactNode }) {
   return (
@@ -9,7 +10,7 @@ export function LoQueSigue({ texto, children }: { texto: string; children?: Reac
         Lo que sigue
       </h2>
       <p className="mt-2 text-sm">{texto}</p>
-      {children ? <div className="mt-3 flex flex-wrap gap-2">{children}</div> : null}
+      {children ? <div className="mt-3 flex min-w-0 flex-col gap-3">{children}</div> : null}
     </section>
   );
 }

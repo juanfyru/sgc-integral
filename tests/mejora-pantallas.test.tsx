@@ -11,6 +11,13 @@ import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazg
 import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
 import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
+import { PasoAceptar } from "@/componentes/mejoramiento/pasos/PasoAceptar";
+import { PasoArbitrar } from "@/componentes/mejoramiento/pasos/PasoArbitrar";
+import { PasoCorregir } from "@/componentes/mejoramiento/pasos/PasoCorregir";
+import { PasoDecidir } from "@/componentes/mejoramiento/pasos/PasoDecidir";
+import { PasoTrasRechazo } from "@/componentes/mejoramiento/pasos/PasoTrasRechazo";
+import { PasoValidar } from "@/componentes/mejoramiento/pasos/PasoValidar";
+import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
 import { Recorrido } from "@/componentes/mejoramiento/Recorrido";
 import type { FilaDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { SIN_AJUSTES } from "@/lib/dias-habiles";
@@ -311,5 +318,104 @@ describe("FormularioHallazgo en edición", () => {
     expect(html).toMatch(/<input[^>]*name="hallazgoId"[^>]*value="41"/);
     expect(html).not.toContain('name="relacion"');
     expect(html).not.toContain("Parecidos en");
+  });
+});
+
+describe("los pasos del recorrido hasta el plan (Tarea 10)", () => {
+  const accion = vi.fn(async () => null);
+  const aviso = (html: string) => html.split(AVISO_SIN_PACIENTES).length - 1;
+
+  it("cada formulario con texto libre lleva el aviso de datos de pacientes", () => {
+    expect(aviso(renderToStaticMarkup(<PasoAceptar hallazgoId={7} puedeRechazar aceptar={accion} rechazar={accion} />))).toBe(1);
+    expect(
+      aviso(renderToStaticMarkup(<PasoTrasRechazo hallazgoId={7} justificacion="No es" enSuLugar={false} retirar={accion} sostener={accion} />)),
+    ).toBe(1);
+    expect(aviso(renderToStaticMarkup(<PasoArbitrar hallazgoId={7} justificacion={null} replica={null} hoy="2026-11-18" accion={accion} />))).toBe(1);
+    expect(aviso(renderToStaticMarkup(<PasoCorregir hallazgoId={7} usuarios={[]} hoy="2026-11-18" accion={accion} />))).toBe(1);
+    expect(aviso(renderToStaticMarkup(<PasoDecidir hallazgoId={7} hoy="2026-11-18" accion={accion} />))).toBe(1);
+    const validar = renderToStaticMarkup(
+      <PasoValidar hallazgoId={7} sinAccion={false} puedeValidar puedeExigir hoy="2026-11-18" validar={accion} devolver={accion} exigir={accion} />,
+    );
+    // Devolver con su nota y exigir con su justificación: dos textos libres.
+    expect(aviso(validar)).toBe(2);
+  });
+
+  it("aceptar sin poder rechazar no ofrece el rechazo; con él, pide la justificación", () => {
+    const solo = renderToStaticMarkup(<PasoAceptar hallazgoId={7} puedeRechazar={false} aceptar={accion} rechazar={accion} />);
+    expect(solo).toContain("Aceptar el hallazgo");
+    expect(solo).not.toContain("Rechazar el hallazgo");
+    const con = renderToStaticMarkup(<PasoAceptar hallazgoId={7} puedeRechazar aceptar={accion} rechazar={accion} />);
+    expect(con).toMatch(/<textarea(?=[^>]*name="justificacion")(?=[^>]*minLength="10")/);
+  });
+
+  it("el arbitraje muestra las dos razones y su acta es opcional", () => {
+    const html = renderToStaticMarkup(
+      <PasoArbitrar hallazgoId={7} justificacion="No es del proceso" replica="Sí lo es" hoy="2026-11-18" accion={accion} />,
+    );
+    expect(html).toContain("Por qué se rechazó:</span> No es del proceso");
+    expect(html).toContain("Réplica de quien lo registró:</span> Sí lo es");
+    expect(html).toContain('name="actaNumero"');
+    expect(html).not.toMatch(/<input[^>]*name="actaNumero"[^>]*required/);
+  });
+
+  it("validar dice si es la corrección o el cierre sin acción, y exigir manda «sí»", () => {
+    const sin = renderToStaticMarkup(
+      <PasoValidar hallazgoId={7} sinAccion puedeValidar puedeExigir={false} hoy="2026-11-18" validar={accion} devolver={accion} exigir={accion} />,
+    );
+    expect(sin).toContain("Validar el cierre sin acción");
+    expect(sin).not.toContain("Exigir la acción correctiva");
+    const exigir = renderToStaticMarkup(
+      <PasoValidar hallazgoId={7} sinAccion={false} puedeValidar={false} puedeExigir hoy="2026-11-18" validar={accion} devolver={accion} exigir={accion} />,
+    );
+    expect(exigir).not.toContain("Validar la corrección");
+    expect(exigir).toMatch(/<input[^>]*name="requiere"[^>]*value="si"/);
+  });
+
+  it("«2. Corrección» resume lo hecho y la decisión; el historial muestra la réplica y el acta", () => {
+    const correccion = {
+      requerida: true, descripcion: "Se reubicaron 40 dosis", responsable: "M. Cuéllar", implementadaEn: "2026-11-05",
+      registradaEn: new Date("2026-11-05T15:00:00Z"), validadaPor: null, validadaEn: null,
+    };
+    const html = renderToStaticMarkup(
+      <SeccionCorreccion
+        correccion={correccion}
+        decision={{ accionRequerida: false, justificacion: "Hecho aislado", decididaEn: new Date("2026-11-06T15:00:00Z") }}
+        zona="America/Bogota"
+        abierta={false}
+        archivos={1}
+      />,
+    );
+    expect(html).toContain("2. Corrección");
+    expect(html).toContain("Se reubicaron 40 dosis · M. Cuéllar, 5 de nov de 2026 · 1 archivo");
+    expect(html).toContain("Hecho aislado");
+    const sinCorreccion = renderToStaticMarkup(
+      <SeccionCorreccion
+        correccion={{ ...correccion, requerida: false, descripcion: "Nada que contener" }}
+        decision={{ accionRequerida: null, justificacion: null, decididaEn: null }}
+        zona="America/Bogota"
+        abierta
+        archivos={0}
+      />,
+    );
+    expect(sinCorreccion).toContain("No requirió corrección inmediata");
+    expect(sinCorreccion).not.toContain("M. Cuéllar");
+
+    const historial = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        eventos={[
+          { id: 1, tipo: "sostener", ronda: 1, quien: "Ana", cuando: new Date("2026-11-18T15:00:00Z"), detalle: { replica: "Sí corresponde" } },
+          {
+            id: 2, tipo: "confirmar_hallazgo", ronda: 1, quien: "Luis", cuando: new Date("2026-11-19T15:00:00Z"),
+            detalle: { nota: "Se confirma", acta: { numero: "12", fecha: "2026-11-19" } },
+          },
+          { id: 3, tipo: "validar_correccion", ronda: 1, quien: "Eva", cuando: new Date("2026-11-20T15:00:00Z"), detalle: { resultado: "sin_accion" } },
+        ]}
+      />,
+    );
+    expect(historial).toContain("Sostuvo el hallazgo ante el rechazo");
+    expect(historial).toContain("Réplica: Sí corresponde");
+    expect(historial).toContain("Acta del Comité: 12, del 19 de nov de 2026");
+    expect(historial).toContain("Validó el cierre sin acción");
   });
 });

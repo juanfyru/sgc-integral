@@ -261,3 +261,119 @@ export const EsquemaCambioDeProceso = z
 
 /** La salida que quien registra eligió ante los parecidos: `ocurrencia:<id>`, `reincidencia:<id>` o `distinto`. */
 export const RELACION_DE_REGISTRO = /^(?:(ocurrencia|reincidencia):(\d{1,15})|distinto)$/;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El recorrido hasta el plan (spec 15 §8.3 a §8.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un «sí» o un «no»: llega como booleano del dominio o como `si`/`no` de un formulario. */
+const siONo = (mensaje: string) =>
+  z.union([z.boolean(), z.enum(["si", "no"])], { error: mensaje }).transform((v) => v === true || v === "si");
+
+const fechaDelDia = (mensaje: string) =>
+  z.string({ error: mensaje }).regex(/^\d{4}-\d{2}-\d{2}$/, mensaje).refine(esFechaReal, mensaje);
+
+/** El acta del Comité que cita un acto (spec §8.5 y §19.1): número y fecha, o nada. Que no sea futura lo mira el dominio. */
+const acta = z
+  .object({
+    numero: z
+      .string({ error: "Escriba el número del acta" })
+      .trim()
+      .min(1, "Escriba el número del acta")
+      .max(50, "El número del acta no puede pasar de 50 caracteres"),
+    fecha: fechaDelDia("Escriba una fecha válida del acta"),
+  })
+  .strict()
+  .nullable()
+  .optional()
+  .transform((v) => v ?? null);
+
+/** Un acto sobre el hallazgo que no lleva más datos: aceptar, retirar y validar. */
+export const EsquemaPasoDelHallazgo = z.object({ hallazgoId: idDeHallazgo }).strict();
+
+export const EsquemaRechazo = z.object({ hallazgoId: idDeHallazgo, justificacion }).strict();
+
+export const EsquemaSostener = z.object({ hallazgoId: idDeHallazgo, replica: textoAcotado("La réplica", 10, 1000) }).strict();
+
+const camposDelArbitraje = {
+  hallazgoId: idDeHallazgo,
+  confirma: z.enum(["hallazgo", "rechazo"], { error: "Elija qué confirma el arbitraje: el hallazgo o el rechazo" }),
+  nota: textoAcotado("La nota del arbitraje", 10, 1000),
+};
+export const EsquemaArbitraje = z.object({ ...camposDelArbitraje, acta }).strict();
+
+const camposDeLaDecision = { hallazgoId: idDeHallazgo, requiere: siONo("Diga si requiere acción correctiva"), justificacion };
+export const EsquemaDecision = z.object({ ...camposDeLaDecision, acta }).strict();
+
+export const EsquemaDevolucion = z.object({ hallazgoId: idDeHallazgo, nota: textoAcotado("La nota", 10, 1000) }).strict();
+
+/**
+ * La corrección (spec §8.4). «Sí requirió corrección»: qué se hizo, el responsable (un usuario o, si no tiene cuenta, su
+ * nombre; uno de los dos) y la fecha en que se implementó. «No requiere corrección inmediata»: la justificación va en
+ * `descripcion`, y el responsable y la fecha se descartan. La evidencia y que la fecha no sea futura los mira el dominio.
+ */
+export const EsquemaCorreccion = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    requerida: siONo("Diga si requirió corrección"),
+    descripcion: z
+      .string({ error: "La descripción no es un texto válido" })
+      .trim()
+      .max(4000, "La descripción no puede pasar de 4000 caracteres")
+      .optional()
+      .transform((v) => v ?? ""),
+    responsableId: idOpcional("El responsable elegido no es válido"),
+    responsableNombre: textoOpcional("El nombre del responsable", 150),
+    implementadaEn: fechaOpcional("Escriba una fecha válida en que se implementó la corrección"),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const falta = (campo: string, message: string) => ctx.addIssue({ code: "custom", path: [campo], message });
+    if (!d.requerida) {
+      if (d.descripcion.length < 10) falta("descripcion", "La justificación debe tener al menos 10 caracteres");
+      return;
+    }
+    if (d.descripcion.length < 10) falta("descripcion", "Describa la corrección que se hizo: al menos 10 caracteres");
+    if (d.responsableId === null && d.responsableNombre === null) {
+      falta("responsableId", "Elija el responsable de la corrección o escriba su nombre");
+    }
+    if (d.responsableId !== null && d.responsableNombre !== null) {
+      falta("responsableNombre", "Elija un responsable o escriba su nombre, no los dos");
+    }
+    if (d.implementadaEn === null) falta("implementadaEn", "Escriba la fecha en que se implementó la corrección");
+  })
+  .transform((d) =>
+    d.requerida ? d : { ...d, responsableId: null, responsableNombre: null, implementadaEn: null },
+  );
+export type CorreccionValidada = z.output<typeof EsquemaCorreccion>;
+
+/** Los dos campos del acta en un formulario: los dos, o ninguno. */
+const camposDelActa = {
+  actaNumero: textoOpcional("El número del acta", 50),
+  actaFecha: fechaOpcional("Escriba una fecha válida del acta"),
+};
+
+function conActa<T extends { actaNumero: string | null; actaFecha: string | null }>(d: T) {
+  const { actaNumero, actaFecha, ...resto } = d;
+  return { ...resto, acta: actaNumero && actaFecha ? { numero: actaNumero, fecha: actaFecha } : null };
+}
+
+const actaCompleta = (d: { actaNumero: string | null; actaFecha: string | null }, ctx: z.RefinementCtx) => {
+  if ((d.actaNumero === null) !== (d.actaFecha === null)) {
+    ctx.addIssue({ code: "custom", path: ["actaNumero"], message: "Escriba el número y la fecha del acta, o ninguno de los dos" });
+  }
+};
+
+/** El formulario del arbitraje: los campos de `EsquemaArbitraje`, con el acta en dos campos planos. */
+export const EsquemaFormularioArbitraje = z
+  .object({ ...camposDelArbitraje, ...camposDelActa })
+  .strict()
+  .superRefine(actaCompleta)
+  .transform(conActa);
+
+/** El formulario de la decisión (y de «exigir la acción correctiva»): los de `EsquemaDecision`, con el acta en dos campos. */
+export const EsquemaFormularioDecision = z
+  .object({ ...camposDeLaDecision, ...camposDelActa })
+  .strict()
+  .superRefine(actaCompleta)
+  .transform(conActa);
