@@ -407,7 +407,8 @@ usuario** («Decisiones adicionales (complemento de la 14C)»).
   orden de drizzle-kit la migración fallaría en una base con indicadores que ya exigen soporte.
 - **La marca de cada medición (Tarea 4):** `debe_soporte` se decide una sola vez: al nacer la medición (`abrirPeriodos`, el
   único `INSERT` de mediciones; una histórica nunca) y al activar el soporte (`recalcularPorSoporte`: la deben todas las en
-  curso salvo las que quien mide ya había reportado, con su persona, y con su fecha límite pasada). Nada más la cambia.
+  curso salvo las que quien mide ya había reportado, con su persona, y con la fecha límite de su reporte pasada, la misma
+  del relleno y de «Reportes a tiempo»; decisión 3). Nada más la cambia.
   `seDebeElSoporte` es la regla única de `recalcularMedicion` (venga de quien venga el recálculo) y del rechazo «Este
   indicador exige un soporte: adjúntelo antes de reportar»; se retiraron `esperabaElDato` y la excepción de la racha y de la
   fuente para lo ya reportado.
@@ -476,8 +477,9 @@ quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pru
 4. **Quitarlo y volver a pedirlo.** Como `coordinadora.sgc`: `CEX-ID-001` → **Administrar** → **Datos de operación** →
    desmarque **Pedir un soporte (archivo) con cada reporte** y guarde: la ficha técnica dice «No» y octubre, si no le
    adjuntó el soporte, queda **Reportada** (nadie lo debe). Márquelo otra vez: la fecha pasa a ser la de hoy y el SGC decide
-   de nuevo con ella. Octubre, reportado con su plazo vencido, **ya no lo debe** (anexo §4.5, caso 5). Si hizo el paso 3,
-   septiembre **sí lo debe ahora**: su fecha límite se contó otra vez desde que llegó el dato y sigue en plazo (decisión 3).
+   de nuevo con ella. Octubre, reportado con su plazo vencido, **ya no lo debe** (anexo §4.5, caso 5). Septiembre
+   **tampoco**, haya hecho o no el paso 3: lo suyo se reportó y la fecha límite de su reporte (el 10 de octubre) ya pasó;
+   el plazo que el SGC le contó otra vez para el análisis no cuenta (decisión 3).
    La **Bitácora** guarda cada cambio con lo que había y lo que quedó.
 5. **El punto de miles en los indicadores.** Como `lider.cex`, en la pantalla **Reportar** de octubre de `CEX-ID-001`
    escriba **1.830** en B: el cálculo en vivo y el servidor dicen ««Consultas ofertadas en la agenda»: Escriba el valor sin
@@ -557,11 +559,14 @@ y su base. El detalle está en el registro de la ejecución (`progress.md` del e
    sin cerrar, alguna podría quedar debiendo un soporte que no se le pedía (si el plazo subió) o sin deber uno que sí (si
    bajó). La prueba sobre la copia de `sgc` cuenta esos casos; si hay alguno, se le dice antes de fusionar, y se corrige con
    una reapertura o quitando y volviendo a pedir el soporte. Base: Práctica (no hay instalaciones en producción, Fase 20).
-3. **Al activar el soporte, la fecha límite que cuenta es la que la medición tiene en ese momento** (anexo §4.2), aunque el
-   relleno de la `0017` use la del reporte. Solo difieren cuando, al activarlo, la medición tiene su plazo contado otra vez
-   por un análisis (el dato llegó tarde): entonces la debe, pero su fecha está en el futuro y no deja a nadie vencido (lo
-   muestra el paso 4 de «Qué probar y cómo»). Base: Decisión del usuario 2.1 (anexo §4.2 y la regla de una sola fecha
-   límite por medición).
+3. **Al activar el soporte, la fecha límite que cuenta es la del reporte**: el `venceAntes` del primer evento que lo lleve
+   o, sin ninguno, `vence_en`, la misma de «Reportes a tiempo» y del relleno de la `0017`, que ahora juzgan igual. El
+   `vence_en` que nombra el anexo §4.2 se lee como esa fecha, el «plazo de reporte» de la respuesta 2.1. Porque con el
+   `vence_en` del momento, cuando el dato llega tarde y el resultado no cumple, el SGC cuenta otra vez la fecha para el
+   análisis, y activar después dejaba debiendo el soporte a la que no cumple y no a la que cumple: deberlo dependía del
+   resultado, lo que el anexo quería quitar (§1 y §4.4), y la misma historia daba otra marca que el relleno. **Cuesta** que
+   una medición con su plazo contado otra vez para un análisis al activar no debe el soporte, aunque su fecha límite de ese
+   momento esté en el futuro. Base: Decisión del usuario 2.1 (anexo §1, §4.2 y §4.4).
 4. **Al activar el soporte, «ya reportado» exige que lo haya entregado una persona** (`reportada_por`). Porque el contagio
    de un componente «No aplica» le pone fecha de reporte a un mixto que quien mide no reportó; sin esto, al quitarse el
    contagio se aceptaría un reporte tardío sin el soporte. Es lo que dice el anexo («quien mide ya entregó lo suyo») y lo

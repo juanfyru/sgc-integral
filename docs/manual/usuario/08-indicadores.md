@@ -616,7 +616,9 @@ aún no llega, el aviso de vencido se vuelve a mandar cuando venza.
 técnica y su impreso la dicen: «Sí: cada reporte lleva su soporte, desde el 12 de octubre de 2026»;
 la bitácora guarda quién lo cambió y cuándo). Al **pedirlo**, decide una vez, para cada periodo
 abierto, si lo debe: lo deben todos salvo los que quien mide ya había reportado con su fecha límite
-pasada; los que terminan después nacen debiéndolo, y los cerrados y los históricos no lo deben.
+pasada (la de su reporte: si un dato llegó tarde y el SGC le dio otro plazo para el análisis, cuenta
+la primera, así que no depende de si el resultado cumple); los que terminan después nacen debiéndolo,
+y los cerrados y los históricos no lo deben.
 Ejemplo: septiembre vence el 10 de octubre y quien mide lo reportó el 3 sin soporte. Si usted lo
 pide el 5 de octubre, septiembre lo debe (vuelve a **Por reportar** y la tarea de quien mide dice
 «Falta el soporte obligatorio»); si lo pide el 12, no lo debe. Si el 12 septiembre seguía sin

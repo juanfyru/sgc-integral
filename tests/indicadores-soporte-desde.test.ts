@@ -515,6 +515,28 @@ describe("la marca de cada medición", () => {
       expect([m.analisis, m.estado, m.debe_soporte]).toEqual([ANALISIS, "reportada", false]);
     }));
 
+  // Que se deba el soporte no depende del resultado (anexo §1 y §4.4): al activar, «fecha límite pasada» es la del reporte
+  // (el `venceAntes` del primer evento que lo lleve o `vence_en`), la de «Reportes a tiempo» y del relleno de la 0017.
+  it.each([
+    ["no cumple, y el análisis recuenta su fecha límite al 30", CRITICO, ["critico", "abierta", false]],
+    ["cumple", CUMPLE, ["bien", "reportada", false]],
+  ] as const)("al activar cuenta la fecha límite del reporte: lo propio el 5, el dato el 20 que %s; activado el 22, no lo debe", (_, valor, esperado) =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", valor, dia("2026-10-20"));
+      await propagarA(tx, dia("2026-10-20"), [x.ind.id]);
+      const vence = (await fila(tx, x.medicion)).vence_en as Date;
+      // Con el crítico, la fecha límite de la medición el 22 ya es la del análisis (el 30); con el que cumple, la del reporte.
+      expect(vence).toEqual(valor === CRITICO ? fechaLimite(dia("2026-10-20"), 10, ZONA) : fechaLimiteDeReporte(periodoDe("2026-09", ZONA)!, 10, ZONA));
+
+      await activarSoporte(tx, x.ind.id, dia("2026-10-22"));
+      const m = await fila(tx, x.medicion);
+      expect([m.semaforo, m.estado, m.debe_soporte]).toEqual(esperado);
+      expect(m.vence_en).toEqual(vence);
+    }),
+  );
+
   it("caso 3: activado el 6, dentro del plazo: lo debe aunque el dato llegue el 20 y cumpla", () =>
     revertida(sql, async (tx) => {
       const x = await mixto(tx);

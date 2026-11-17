@@ -29,8 +29,11 @@ export const enCurso = (tx: TransactionSql, indicadorId: number) =>
 /**
  * «Soporte obligatorio» cambió. Al **activarlo** decide la marca de las mediciones en curso (`debe_soporte`, anexo del
  * complemento de la 14C §4.2; las cerradas y las históricas no se tocan): la deben todas salvo las que quien mide ya había
- * reportado (`reportada_en`, también en un mixto que espera su dato) con su fecha límite anterior a `ahora`, la que tienen
- * en ese momento (`cambiarOperacion` mueve antes las fechas si cambió el plazo). El reporte es de quien mide si lleva
+ * reportado (`reportada_en`, también en un mixto que espera su dato) con la fecha límite **de su reporte** anterior a
+ * `ahora`: el `venceAntes` del primer evento que lo lleve o, sin ninguno, `vence_en` (la de «Reportes a tiempo»,
+ * `reportesDelPeriodo` de `calculos.ts`, y la del relleno de la `0017`). No la que la medición tiene si el sistema la contó
+ * otra vez para un análisis (un dato que llegó tarde y no cumple): con ella, deber el soporte dependería del resultado. Sin
+ * `venceAntes`, es `vence_en`, que `cambiarOperacion` ya movió si cambió el plazo. El reporte es de quien mide si lleva
  * `reportada_por`: el que pone el sistema (el contagio de un componente «No aplica», la foto, lo que nadie mide) no lo
  * lleva, y la medición que quien mide no reportó lo debe. Volver a activarlo la decide otra vez; desactivarlo no la toca,
  * porque el indicador ya no lo exige. Después, en los dos casos, las recalcula todas (evento `recalculo`, la misma persona
@@ -48,8 +51,10 @@ export async function recalcularPorSoporte(
   const versiones = await versionesAprobadas(tx, indicadorId);
   const filas = await enCurso(tx, indicadorId);
   if (c.activado && filas.length > 0) {
-    await tx`UPDATE mediciones SET debe_soporte = NOT (reportada_en IS NOT NULL AND reportada_por IS NOT NULL AND vence_en < ${c.ahora})
-      WHERE id IN ${tx(filas.map((m) => Number(m.id)))}`;
+    await tx`UPDATE mediciones m SET debe_soporte = NOT (m.reportada_en IS NOT NULL AND m.reportada_por IS NOT NULL
+        AND coalesce((SELECT (a.detalle ->> 'venceAntes')::timestamptz FROM medicion_eventos a
+          WHERE a.medicion_id = m.id AND a.detalle ? 'venceAntes' ORDER BY a.id LIMIT 1), m.vence_en) < ${c.ahora})
+      WHERE m.id IN ${tx(filas.map((f) => Number(f.id)))}`;
   }
   let recalculadas = 0;
   for (const m of filas) {

@@ -722,9 +722,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   que decide es la marca de cada medición** (`mediciones.debe_soporte`), que se decide **una sola vez**:
   al nacer (`abrirPeriodos`, el único `INSERT` de mediciones: la ordinaria nace marcada si el indicador lo
   exige; la histórica, nunca) o al activarse (`recalcularPorSoporte`, `en-curso.ts`: en las en curso, sin
-  cerradas ni históricas, `debe_soporte = NOT (reportada_en IS NOT NULL AND reportada_por IS NOT NULL AND
-  vence_en < ahora)`; la deben todas salvo las que quien mide ya había reportado, con su fecha límite de
-  ese momento ya pasada; el reporte que pone el sistema, sin `reportada_por`, no cuenta). Volver a
+  cerradas ni históricas, la deben todas salvo las que quien mide ya había reportado con la **fecha límite
+  de su reporte** ya pasada; el reporte que pone el sistema, sin `reportada_por`, no cuenta). Esa fecha es
+  la de «Reportes a tiempo» y la del relleno de la `0017`: el `venceAntes` del primer evento que lo lleve
+  o, sin ninguno, `vence_en` (`reportesDelPeriodo`, `calculos.ts`), no la que el sistema contó otra vez
+  para un análisis: con ella, deber el soporte dependería de si el resultado cumple. Volver a
   activarlo la decide otra vez, con la hora nueva; desactivarlo no la toca. **Nada más la cambia:** ni un
   cambio del plazo, ni una fuente que llega, ni la racha, ni un análisis, ni una corrección, ni la
   reapertura. **La regla única** es `seDebeElSoporte` (`mediciones.ts`, pura: el indicador lo exige, la
