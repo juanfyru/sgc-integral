@@ -11,6 +11,7 @@ import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramien
 import { Recorrido } from "@/componentes/mejoramiento/Recorrido";
 import type { FilaDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { SIN_AJUSTES } from "@/lib/dias-habiles";
+import { fraseDeLoQueSigue } from "@/db/consultas/mejoramiento/lectura";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
@@ -147,6 +148,22 @@ describe("FormularioHallazgo", () => {
     expect(html).toContain("Auditoría interna");
   });
 
+  it("en una no conformidad ofrece norma y documento y no obliga a escribir la cláusula (basta uno de los tres)", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        {...props}
+        normas={[{ id: 9, nombre: "Resolución 3100 de 2019", titulo: "Habilitación" }]}
+        documentos={[{ id: 4, codigo: "FAR-PR-04", titulo: "Cadena de frío" }]}
+        valores={{ clase: "no_conformidad", requisitoNormaId: "9" }}
+      />,
+    );
+    expect(html).toContain("Resolución 3100 de 2019");
+    expect(html).toContain("FAR-PR-04");
+    expect(html).toContain("Indique al menos uno");
+    const clausula = html.match(/<input[^>]*name="requisitoClausula"[^>]*>/)![0];
+    expect(clausula).not.toContain("required");
+  });
+
   it("repuebla lo escrito tras un rechazo", () => {
     expect(pintar({ titulo: "Un título escrito", descripcion: "Descripción larga escrita" })).toContain("Un título escrito");
   });
@@ -157,6 +174,14 @@ describe("LoQueSigue", () => {
     const html = renderToStaticMarkup(<LoQueSigue texto="Tiene el turno: la líder del proceso, para aceptar el hallazgo o rechazarlo." />);
     expect(html).toContain("Tiene el turno: la líder del proceso");
     expect(html).not.toMatch(/<(button|a)[\s>]/);
+  });
+});
+
+describe("fraseDeLoQueSigue (el armador real)", () => {
+  it("el turno va en minúscula tras los dos puntos", () => {
+    const h = { estado: "por_aceptar" as const, resultadoCierre: null, correccionRequerida: null };
+    expect(fraseDeLoQueSigue(h, "La líder del proceso", false)).toBe("Tiene el turno: la líder del proceso, para aceptar el hallazgo o rechazarlo.");
+    expect(fraseDeLoQueSigue(h, "La líder del proceso", true)).toBe("A usted le toca aceptar el hallazgo o rechazarlo.");
   });
 });
 

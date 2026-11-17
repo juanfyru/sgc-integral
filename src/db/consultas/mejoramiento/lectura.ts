@@ -373,13 +373,19 @@ const LE_TOCA: Partial<Record<EstadoHallazgo, string>> = {
   por_cerrar: "cerrar el hallazgo",
 };
 
-async function loQueSigue(tx: Cliente, h: HallazgoBase, usuarioId: number, turno: string): Promise<string> {
+/** La frase de «Lo que sigue» (pura): el turno va en minúscula tras los dos puntos («Tiene el turno: la líder del proceso»). */
+export function fraseDeLoQueSigue(h: Pick<HallazgoBase, "estado" | "resultadoCierre" | "correccionRequerida">, turno: string, mio: boolean): string {
   if (esTerminal(h.estado)) return "El hallazgo está " + etiquetaDeEstado(h).toLowerCase() + ": no tiene pasos pendientes.";
   if (h.estado === "en_espera") return "Espera el momento de evaluar la eficacia de las acciones.";
+  const quien = turno.charAt(0).toLowerCase() + turno.slice(1);
   const toca = LE_TOCA[h.estado];
-  if (!toca) return "Tiene el turno: " + turno + ".";
-  const mio = (await quienTieneElTurno(tx, h)).includes(usuarioId);
-  return mio ? "A usted le toca " + toca + "." : "Tiene el turno: " + turno + ", para " + toca + ".";
+  if (!toca) return "Tiene el turno: " + quien + ".";
+  return mio ? "A usted le toca " + toca + "." : "Tiene el turno: " + quien + ", para " + toca + ".";
+}
+
+async function loQueSigue(tx: Cliente, h: HallazgoBase, usuarioId: number, turno: string): Promise<string> {
+  if (esTerminal(h.estado) || h.estado === "en_espera" || !LE_TOCA[h.estado]) return fraseDeLoQueSigue(h, turno, false);
+  return fraseDeLoQueSigue(h, turno, (await quienTieneElTurno(tx, h)).includes(usuarioId));
 }
 
 /**

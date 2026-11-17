@@ -5,7 +5,7 @@ import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazg
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
-import { procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
+import { documentosVigentesVisibles, normasQueRigen, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -18,7 +18,12 @@ export default async function PaginaNuevoHallazgo() {
   const sesion = await exigirSesion();
   if (!puede(sesion, "mejora.registrar")) notFound();
   const ahora = new Date();
-  const [procesos, contexto] = await Promise.all([procesosDelAlcance(sesion), contextoDeMejora(obtenerSql(), ahora)]);
+  const [procesos, normas, documentos, contexto] = await Promise.all([
+    procesosDelAlcance(sesion),
+    normasQueRigen(),
+    documentosVigentesVisibles(sesion),
+    contextoDeMejora(obtenerSql(), ahora),
+  ]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -30,6 +35,8 @@ export default async function PaginaNuevoHallazgo() {
       <FormularioHallazgo
         accion={registrarHallazgoAccion}
         procesos={procesos}
+        normas={normas}
+        documentos={documentos}
         hoy={fechaEnZona(ahora, contexto.zona)}
         diasParaAceptar={contexto.config.plazos.aceptar}
       />

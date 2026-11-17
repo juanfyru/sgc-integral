@@ -14,6 +14,9 @@ type Props = {
   accion: (estado: EstadoAccion, formData: FormData) => Promise<EstadoAccion>;
   /** Solo los procesos que quien registra alcanza (`procesosDelAlcance`). */
   procesos: ReadonlyArray<{ id: number; nombre: string }>;
+  /** Las normas vigentes o modificadas del normograma y los documentos vigentes que quien registra ve. */
+  normas?: ReadonlyArray<{ id: number; nombre: string; titulo: string }>;
+  documentos?: ReadonlyArray<{ id: number; codigo: string; titulo: string }>;
   /** Hoy en la zona de la instalación (`yyyy-mm-dd`): el tope de la fecha de detección. */
   hoy: string;
   /** El plazo de aceptar, en días hábiles, de la configuración. */
@@ -36,7 +39,7 @@ const NOTA = "rounded-md border border-border bg-muted px-3 py-2 text-sm";
  * y del origen aparece y desaparece (la criticidad, la referencia del caso, la fecha límite al ente) y las notas dicen lo
  * que ese hallazgo llevará. Los nombres de los campos son los de `EsquemaHallazgo`, que es estricto.
  */
-export function FormularioHallazgo({ accion, procesos, hoy, diasParaAceptar, valores, lateral }: Props) {
+export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const v = estado?.valores ?? valores;
   const [clase, setClase] = useState<string>(texto(v, "clase"));
@@ -126,13 +129,33 @@ export function FormularioHallazgo({ accion, procesos, hoy, diasParaAceptar, val
         <Campo etiqueta="Descripción, con la evidencia objetiva" nombre="descripcion" ayuda={AVISO_SIN_PACIENTES}>
           <textarea required minLength={10} maxLength={4000} rows={5} defaultValue={texto(v, "descripcion")} className={claseControl} />
         </Campo>
-        <Campo
-          etiqueta={esNc ? "Requisito incumplido" : "Requisito incumplido (opcional)"}
-          nombre="requisitoClausula"
-          ayuda="La cláusula o el requisito, por ejemplo «ISO 9001: 8.5.1»."
-        >
-          <input type="text" required={esNc} maxLength={200} defaultValue={texto(v, "requisitoClausula")} autoComplete="off" className={claseControl} />
+        <fieldset className="flex flex-col gap-3 rounded-md border border-border p-3">
+          <legend className="px-1 text-sm font-medium">{esNc ? "Requisito incumplido" : "Requisito incumplido (opcional)"}</legend>
+          {esNc ? <p className="text-xs text-muted-foreground">Indique al menos uno: la cláusula, una norma o un documento interno.</p> : null}
+        <Campo etiqueta="Cláusula o requisito" nombre="requisitoClausula" ayuda="Por ejemplo «ISO 9001: 8.5.1».">
+          <input type="text" maxLength={200} defaultValue={texto(v, "requisitoClausula")} autoComplete="off" className={claseControl} />
         </Campo>
+        <Campo etiqueta="Norma del normograma" nombre="requisitoNormaId">
+          <select defaultValue={texto(v, "requisitoNormaId")} className={claseControl}>
+            <option value="">Ninguna</option>
+            {normas.map((n) => (
+              <option key={n.id} value={n.id}>
+                {n.nombre}
+              </option>
+            ))}
+          </select>
+        </Campo>
+        <Campo etiqueta="Documento interno" nombre="requisitoDocumentoId">
+          <select defaultValue={texto(v, "requisitoDocumentoId")} className={claseControl}>
+            <option value="">Ninguno</option>
+            {documentos.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.codigo} · {d.titulo}
+              </option>
+            ))}
+          </select>
+        </Campo>
+        </fieldset>
         <Campo etiqueta="Riesgo asociado (opcional)" nombre="riesgo">
           <input type="text" maxLength={200} defaultValue={texto(v, "riesgo")} autoComplete="off" className={claseControl} />
         </Campo>
