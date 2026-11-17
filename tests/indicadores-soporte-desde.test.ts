@@ -574,7 +574,7 @@ describe("la marca de cada medición", () => {
       expect((await fila(tx, x.medicion)).estado).toBe("reportada");
     }));
 
-  it("caso 7: activado el 12; el 1 de noviembre el plazo sube a 15 días: la marca no cambia, y corregir lo propio no pide el soporte", () =>
+  it("caso 7: activado el 12; el 1 de noviembre el plazo sube a 45 días: la marca no cambia, y corregir lo propio no pide el soporte", () =>
     revertida(sql, async (tx) => {
       const x = await mixto(tx);
       await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
@@ -585,13 +585,14 @@ describe("la marca de cada medición", () => {
 
       await cambiarOperacion(
         await sesionAdmin(tx),
-        { indicadorId: x.ind.id, plazoReporteDias: 15, inicioMedicion: "2026-09", soporteObligatorio: true, nivelAcceso: "general" },
+        { indicadorId: x.ind.id, plazoReporteDias: 45, inicioMedicion: "2026-09", soporteObligatorio: true, nivelAcceso: "general" },
         { sql: tx, ahora: dia("2026-11-01") },
       );
-      // La fecha límite nueva queda después de la activación; la marca, decidida el 12, no cambia con ella.
+      // Con 45 días la fecha límite nueva (el 14 de noviembre) queda después del cambio del 1: decidir la marca otra vez al
+      // cambiar el plazo la dejaría en verdadero. La marca, decidida el 12, no cambia con ella.
       const m = await fila(tx, x.medicion);
-      expect(m.vence_en).toEqual(fechaLimiteDeReporte(periodoDe("2026-09", ZONA)!, 15, ZONA));
-      expect(m.vence_en.getTime()).toBeGreaterThan(dia("2026-10-12").getTime());
+      expect(m.vence_en).toEqual(fechaLimiteDeReporte(periodoDe("2026-09", ZONA)!, 45, ZONA));
+      expect(m.vence_en.getTime()).toBeGreaterThan(dia("2026-11-01").getTime());
       expect([m.estado, m.debe_soporte]).toEqual(["reportada", false]);
 
       // Quien mide corrige lo suyo sin soporte el 2: no se le pide, y sigue reportada.
