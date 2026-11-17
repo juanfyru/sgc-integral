@@ -19,7 +19,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
-import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion, duplicar } from "@/db/consultas/indicadores/operacion";
 import { reabrirEnCascada } from "@/db/consultas/indicadores/reapertura";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
@@ -38,6 +38,7 @@ import {
   fila,
   medicionDe,
   mixto,
+  procesoNuevo,
   propagarA,
   reportarElDato,
   reportarLoMio,
@@ -571,6 +572,42 @@ describe("la marca de cada medición", () => {
 
       await adjuntarSoporte(tx, x.medicion);
       expect(await reportarLoMio(tx, x.mide, x.medicion, LO_MIO, dia("2026-10-20"))).toMatchObject({ ok: true });
+    }));
+
+  it("caso 8 con el contagio: el reporte que puso el sistema no es de quien mide; al activarse lo debe, y al quitarse el contagio reportarlo tarde sin soporte se rechaza", () =>
+    revertida(sql, async (tx) => {
+      // X mensual y el compuesto mixto C: A toma el valor de X y B la digita quien mide C, que no reportó septiembre.
+      const procesoId = await procesoNuevo(tx);
+      const mideX = await usuarioDePrueba(tx, { rol: "consulta" });
+      const mideC = await usuarioDePrueba(tx, { rol: "consulta" });
+      const comun = { procesoId, periodicidad: "mensual" as const, inicioMedicion: "2026-09", aprobadaEn: APROBADA };
+      const x = await indicadorDePrueba(tx, { ...comun, mide: [mideX.usuarioId] });
+      const c = await indicadorDePrueba(tx, {
+        ...comun,
+        mide: [mideC.usuarioId],
+        variables: { A: { indicadorOrigenId: x.id, toma: "valor" }, B: { nombre: "Casos evaluados" } },
+      });
+      for (const i of [x, c]) await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: i.id });
+      const [deX, deC] = [await medicionDe(tx, x.id, "2026-09"), await medicionDe(tx, c.id, "2026-09")];
+
+      // El 11, con septiembre ya vencido, X no aplica: el contagio da a C por reportado, sin persona.
+      await marcarNoAplica(mideX, { medicionId: deX, motivo: "Sin casos en el mes" }, { sql: tx, ahora: dia("2026-10-11") });
+      await propagarA(tx, dia("2026-10-11"), [x.id]);
+      let m = await fila(tx, deC);
+      expect([m.no_aplica, m.reportada_en, m.reportada_por]).toEqual([true, dia("2026-10-11"), null]);
+
+      // El 12 se activa el soporte: quien mide C no había entregado lo suyo, así que lo debe.
+      await activarSoporte(tx, c.id, dia("2026-10-12"));
+      expect(await marcaDe(tx, deC)).toBe(true);
+
+      // El 20 X aplica: el contagio se quita y le devuelve el reporte a quien mide C, vencido (llegó tarde: la fecha no se mueve).
+      await quitarNoAplica(mideX, deX, { sql: tx, ahora: dia("2026-10-20") });
+      await reportar(mideX, { medicionId: deX, valores: { A: "60", B: "100" }, parcial: false, confirmado: true }, { sql: tx, ahora: dia("2026-10-20") });
+      await propagarA(tx, dia("2026-10-20"), [x.id]);
+      m = await fila(tx, deC);
+      expect([m.no_aplica, m.reportada_en, m.debe_soporte]).toEqual([false, null, true]);
+      expect(m.vence_en.getTime()).toBeLessThan(dia("2026-10-21").getTime());
+      await rechaza(reportar(mideC, { medicionId: deC, valores: { B: "100" }, parcial: false, confirmado: true }, { sql: tx, ahora: dia("2026-10-21") }), EXIGE);
     }));
 
   it("nace marcada: con el soporte activo, la medición que abre asegurarMediciones lo debe; una histórica, no", () =>

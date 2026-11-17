@@ -30,13 +30,14 @@ export const enCurso = (tx: TransactionSql, indicadorId: number) =>
  * «Soporte obligatorio» cambió. Al **activarlo** decide la marca de las mediciones en curso (`debe_soporte`, anexo del
  * complemento de la 14C §4.2; las cerradas y las históricas no se tocan): la deben todas salvo las que quien mide ya había
  * reportado (`reportada_en`, también en un mixto que espera su dato) con su fecha límite anterior a `ahora`, la que tienen
- * en ese momento (`cambiarOperacion` mueve antes las fechas si cambió el plazo). Volver a activarlo la decide otra vez;
- * desactivarlo no la toca, porque el indicador ya no lo exige. Después, en los dos casos, las recalcula todas (evento
- * `recalculo`, la misma persona y la misma hora, recálculo de sistema `"soporte"`: con la versión con que se calcularon):
- * una ya reportada que lo debe vuelve a abierta para pedirlo y, al desactivarlo, una que solo esperaba el soporte queda
- * reportada. Las de otra periodicidad no se calculan. Devuelve cuántas cambiaron. Quien llama tiene el indicador
- * `FOR UPDATE` y ya escribió el valor nuevo en `indicadores` (`recalcularMedicion` lo lee de ahí): `cambiarOperacion` y
- * `alPublicarVersion`.
+ * en ese momento (`cambiarOperacion` mueve antes las fechas si cambió el plazo). El reporte es de quien mide si lleva
+ * `reportada_por`: el que pone el sistema (el contagio de un componente «No aplica», la foto, lo que nadie mide) no lo
+ * lleva, y la medición que quien mide no reportó lo debe. Volver a activarlo la decide otra vez; desactivarlo no la toca,
+ * porque el indicador ya no lo exige. Después, en los dos casos, las recalcula todas (evento `recalculo`, la misma persona
+ * y la misma hora, recálculo de sistema `"soporte"`: con la versión con que se calcularon): una ya reportada que lo debe
+ * vuelve a abierta para pedirlo y, al desactivarlo, una que solo esperaba el soporte queda reportada. Las de otra
+ * periodicidad no se calculan. Devuelve cuántas cambiaron. Quien llama tiene el indicador `FOR UPDATE` y ya escribió el
+ * valor nuevo en `indicadores` (`recalcularMedicion` lo lee de ahí): `cambiarOperacion` y `alPublicarVersion`.
  */
 export async function recalcularPorSoporte(
   tx: TransactionSql,
@@ -47,7 +48,7 @@ export async function recalcularPorSoporte(
   const versiones = await versionesAprobadas(tx, indicadorId);
   const filas = await enCurso(tx, indicadorId);
   if (c.activado && filas.length > 0) {
-    await tx`UPDATE mediciones SET debe_soporte = NOT (reportada_en IS NOT NULL AND vence_en < ${c.ahora})
+    await tx`UPDATE mediciones SET debe_soporte = NOT (reportada_en IS NOT NULL AND reportada_por IS NOT NULL AND vence_en < ${c.ahora})
       WHERE id IN ${tx(filas.map((m) => Number(m.id)))}`;
   }
   let recalculadas = 0;
