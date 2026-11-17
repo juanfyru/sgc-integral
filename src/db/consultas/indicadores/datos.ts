@@ -218,11 +218,14 @@ export async function indicadoresQueLoUsan(
  * Lo que la lista de «Datos compartidos» dice de un dato: su último valor, el periodo que se pide con la fecha más próxima y si
  * su periodo más reciente es un pendiente que ya no se pide (`periodoQueSePide`). Un pendiente viejo que se conserva por su
  * soporte no cuenta: no lo puede limpiar nadie desde la interfaz. El que no tiene categorías no está «por reportar»: nadie
- * puede reportarlo y no se le vence a su responsable (`periodoSinCategorias`, complemento de la 14C §5.3).
+ * puede reportarlo y no se le vence a su responsable (`periodoSinCategorias`, complemento de la 14C §5.3); que se pida alguno
+ * así lo dice `esperaCategorias`.
  */
 export type ResumenDeDato = {
   ultimo: { periodo: string; valor: string; categorias: number | null; reporto: string | null; reportadoEn: Date | null } | null;
   porReportar: { periodo: string; venceEn: Date } | null;
+  /** Se pide algún periodo que no tiene categorías: espera a que quien administra las actualice. */
+  esperaCategorias: boolean;
   yaNoSePide: boolean;
 };
 
@@ -237,7 +240,7 @@ export async function resumenDeDatos(
   if (datoIds.length === 0) return salida;
   const deLosDatos = sql`vv.variable_id IN ${sql([...datoIds])}
     AND EXISTS (SELECT 1 FROM variables_compartidas d WHERE d.id = vv.variable_id AND ${filtroDatos(sql, sesion)})`;
-  const [ultimos, pedidos, sinPedir] = await Promise.all([
+  const [ultimos, pedidos, sinCategorias, sinPedir] = await Promise.all([
     sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, vv.periodo, vv.valor, vv.categorias, vv.reportado_en, u.nombre AS reporto
       FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
       WHERE ${deLosDatos} AND vv.valor IS NOT NULL
@@ -246,13 +249,15 @@ export async function resumenDeDatos(
       FROM variable_valores vv
       WHERE ${deLosDatos} AND ${periodoQueSePide(sql)} AND NOT ${periodoSinCategorias(sql)}
       ORDER BY vv.variable_id, vv.vence_en, vv.desde, vv.id`,
+    sql`SELECT DISTINCT vv.variable_id FROM variable_valores vv
+      WHERE ${deLosDatos} AND ${periodoQueSePide(sql)} AND ${periodoSinCategorias(sql)}`,
     sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, (vv.estado = 'pendiente' AND NOT ${periodoQueSePide(sql)}) AS ya_no
       FROM variable_valores vv
       WHERE ${deLosDatos}
       ORDER BY vv.variable_id, vv.desde DESC, vv.id DESC`,
   ]);
   const de = (id: number): ResumenDeDato => {
-    const actual = salida.get(id) ?? { ultimo: null, porReportar: null, yaNoSePide: false };
+    const actual = salida.get(id) ?? { ultimo: null, porReportar: null, esperaCategorias: false, yaNoSePide: false };
     salida.set(id, actual);
     return actual;
   };
@@ -266,6 +271,7 @@ export async function resumenDeDatos(
     };
   }
   for (const f of pedidos) de(Number(f.variable_id)).porReportar = { periodo: f.periodo as string, venceEn: f.vence_en as Date };
+  for (const f of sinCategorias) de(Number(f.variable_id)).esperaCategorias = true;
   for (const f of sinPedir) if (f.ya_no === true) de(Number(f.variable_id)).yaNoSePide = true;
   return salida;
 }

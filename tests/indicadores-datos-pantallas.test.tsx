@@ -56,7 +56,7 @@ import { preguntaVigente, ReportarElPendiente } from "@/componentes/indicadores/
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { DatoCompartido } from "@/db/consultas/indicadores/datos";
-import { actualizarCategoriasDelDato, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import { actualizarCategoriasDelDato, asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
 import type { SesionValida } from "@/lib/sesion";
 import { datoDePrueba, dimensionDePrueba, indicadorDePrueba, periodoDeDatoDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
@@ -260,6 +260,64 @@ describe("la página de un dato", () => {
       expect(despues).not.toContain("Corrigió:");
     }));
 
+  /**
+   * Complemento de la 14C, §5.3 y §5.5: mientras su lista siga vacía, el plazo del periodo no corre y nadie queda vencido por
+   * él; la lista de «Datos compartidos» no dice «Aún no se pide» ni «Reportado» de un dato que espera sus categorías.
+   */
+  it("el periodo vacío, aunque su fecha límite haya pasado, dice «Espera sus categorías» en su fila y en la lista, sin fecha ni «Vencido»", () =>
+    enTransaccion(async (tx) => {
+      consecutivo += 1;
+      const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}${consecutivo}`, ["Sede norte", "Sede sur"]);
+      await tx`UPDATE dimension_categorias SET creado_en = now() WHERE dimension_id = ${dimension.id}`;
+      const procesoId = await procesoNuevo(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const datoId = await datoDePrueba(tx, { procesoId, nombre: NOMBRE, dimensionId: dimension.id, responsables: [responsable.usuarioId] });
+      await indicadorDePrueba(tx, {
+        procesoId,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T4",
+        aprobadaEn: DIC_2025,
+        dimensionId: dimension.id,
+        variables: { B: { datoId } },
+      });
+      await asegurarPeriodosDeDatos({ sql: tx, datoIds: [datoId] });
+      // Su fecha límite ya pasó (como la del caso 2 del anexo, §5.6).
+      await tx`UPDATE variable_valores SET vence_en = '2020-01-11T04:59:59.999Z' WHERE variable_id = ${datoId} AND periodo = '2026-10'`;
+
+      const html = await pagina(responsable, datoId);
+      expect(html).toMatch(/<span data-variante="sin-dato"[^>]*>Espera sus categorías<\/span>/);
+      expect(html).not.toContain("Vencido");
+      expect(html).not.toContain("Por reportar · vence");
+
+      // La lista: ni «Aún no se pide» (se pide), ni la fecha.
+      const enLista = await lista(responsable);
+      expect(enLista).toMatch(/<span data-variante="sin-dato"[^>]*>Espera sus categorías<\/span>/);
+      expect(enLista).not.toContain("Aún no se pide");
+      expect(enLista).not.toContain("Vencido");
+      // Con un valor reportado antes, tampoco «Reportado»: algo espera.
+      await periodoDeDatoDePrueba(tx, { datoId, periodo: "2026-09", valor: "30", ahora: OCT_6 });
+      const conValor = await lista(responsable);
+      expect(conValor).toContain("Espera sus categorías");
+      expect(conValor).not.toMatch(/>Reportado<\/span>/);
+    }));
+
+  it("el formulario principal es el pendiente más antiguo que se puede reportar: el vacío, solo si no hay otro", () =>
+    enTransaccion(async (tx) => {
+      consecutivo += 1;
+      const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}${consecutivo}`, ["Sede norte", "Sede sur"]);
+      // Las sedes llegan a mediados de septiembre: de enero a agosto los periodos nacen vacíos; septiembre y octubre, no.
+      await tx`UPDATE dimension_categorias SET creado_en = '2026-09-15T15:00:00Z' WHERE dimension_id = ${dimension.id}`;
+      const procesoId = await procesoNuevo(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const datoId = await datoDePrueba(tx, { procesoId, nombre: NOMBRE, dimensionId: dimension.id, responsables: [responsable.usuarioId] });
+      await indicadorDePrueba(tx, { procesoId, aprobadaEn: DIC_2025, dimensionId: dimension.id, variables: { B: { datoId } } });
+
+      const html = await pagina(responsable, datoId);
+      expect(html).toMatch(/<h2 id="[^"]*-titulo" class="text-sm font-semibold">Reportar · septiembre de 2026<\/h2>/);
+      expect(html).not.toMatch(/<h2 id="[^"]*-titulo" class="text-sm font-semibold">Reportar · enero de 2026<\/h2>/);
+      expect(html).toContain("Valor de cada categoría");
+    }));
+
   it("a quien no ve el dato, y a un id que no es un número, «no encontrado»", () =>
     enTransaccion(async (tx) => {
       const { responsable, datoId } = await entorno(tx);
@@ -316,7 +374,17 @@ describe("el campo del valor y la pregunta de la variación (ola final, O7)", ()
 describe("el formulario del periodo pendiente sigue montado sin pendientes (ola final, O14)", () => {
   it("sin periodo y sin nada recién reportado no pinta nada; con periodo, el formulario de siempre", () => {
     expect(renderToStaticMarkup(<ReportarElPendiente datoId={7} periodo={null} soportes={[]} />)).toBe("");
-    const periodo = { id: 3, etiqueta: "octubre de 2026", vence: "10 de noviembre", vencido: false, reportado: false, valor: null, porCategoria: null, categorias: null };
+    const periodo = {
+      id: 3,
+      etiqueta: "octubre de 2026",
+      vence: "10 de noviembre",
+      vencido: false,
+      reportado: false,
+      valor: null,
+      porCategoria: null,
+      categorias: null,
+      sinCategorias: false,
+    };
     const html = renderToStaticMarkup(<ReportarElPendiente datoId={7} periodo={periodo} soportes={[]} />);
     expect(html).toContain("Reportar · octubre de 2026");
     expect(html).toContain("Reportar el dato");

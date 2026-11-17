@@ -88,6 +88,11 @@ export type PeriodoDeDato = {
   reabierto: boolean;
   /** Pendiente y se pide (`periodoQueSePide`): uno que ya nadie pide no es tarea de nadie ni está «por reportar». */
   sePide: boolean;
+  /**
+   * Su lista de categorías está vacía (`periodoSinCategorias`): nadie puede reportarlo y su plazo no corre hasta que quien
+   * administra la actualice (complemento de la 14C, §5.3).
+   */
+  sinCategorias: boolean;
 };
 
 export const PERIODO_NO_EXISTE = "El periodo del dato no existe";
@@ -343,6 +348,7 @@ function aPeriodo(f: Record<string, unknown>): PeriodoDeDato {
     reabierto: f.reabierto_en !== null && f.reabierto_en !== undefined,
     // El alias calculado, no la columna cruda `se_pide`: un periodo reportado tiene la columna en verdadero.
     sePide: f.pedido === true,
+    sinCategorias: f.sin_categorias === true,
   };
 }
 
@@ -354,7 +360,7 @@ export async function periodosDeDato(
 ): Promise<PeriodoDeDato[] | null> {
   const sql = opciones?.sql ?? obtenerSql();
   if (!Number.isInteger(datoId) || datoId <= 0 || !(await puedeVerDato(datoId, sesion, { sql }))) return null;
-  const filas = await sql`SELECT vv.*, u.nombre AS reporto, ${periodoQueSePide(sql)} AS pedido
+  const filas = await sql`SELECT vv.*, u.nombre AS reporto, ${periodoQueSePide(sql)} AS pedido, ${periodoSinCategorias(sql)} AS sin_categorias
     FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
     WHERE vv.variable_id = ${datoId}
     ORDER BY vv.desde DESC, vv.id DESC`;

@@ -53,8 +53,10 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
       if (lista) reaperturas.set(p.id, lista);
     }
   }
-  // Del más reciente al más viejo: el último que se pide es el más antiguo.
-  const pedido = (periodos ?? []).filter((p) => p.sePide).at(-1) ?? null;
+  // Del más reciente al más viejo: el último que se pide es el más antiguo. Primero el que se puede reportar; el que espera sus
+  // categorías (complemento de la 14C, §5.3), solo si no hay otro.
+  const pedidos = (periodos ?? []).filter((p) => p.sePide);
+  const pedido = pedidos.filter((p) => !p.sinCategorias).at(-1) ?? pedidos.at(-1) ?? null;
   const ahora = new Date();
 
   return (

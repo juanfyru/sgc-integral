@@ -9,7 +9,7 @@ import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import { rutaDeSoporteDeDato } from "@/lib/indicadores/rutas";
 import { cuenta } from "@/lib/plural";
 import { fechaHoraLarga } from "@/lib/zona-horaria";
-import { cifraDeDato, diaCorto, etiquetaDePeriodo, InsigniaPorReportar, paraReportar } from "./comun";
+import { cifraDeDato, diaCorto, ESPERA_SUS_CATEGORIAS, etiquetaDePeriodo, InsigniaPorReportar, paraReportar } from "./comun";
 import { AccionDelPeriodo } from "./ReportarDato";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -76,10 +76,14 @@ function fraseDelEvento(e: EventoDeDato, nombres: Map<string, string>): string {
   }
 }
 
-/** El estado de un periodo en la tabla: el texto lleva el estado, el color no es la única señal. */
+/**
+ * El estado de un periodo en la tabla: el texto lleva el estado, el color no es la única señal. El que se pide sin categorías
+ * espera a quien administra, sin fecha: su plazo no corre (complemento de la 14C, §5.3 y §5.5).
+ */
 function Estado({ periodo, ahora }: { periodo: PeriodoDeDato; ahora: Date }) {
   if (periodo.estado === "cerrado") return <Insignia variante="sin-dato">{periodo.valor === null ? "Cerrado sin dato" : "Cerrado"}</Insignia>;
   if (periodo.estado === "reportado") return <Insignia variante="neutra">{periodo.corregido ? "Corregido" : "Reportado"}</Insignia>;
+  if (periodo.sePide && periodo.sinCategorias) return <Insignia variante="sin-dato">{ESPERA_SUS_CATEGORIAS}</Insignia>;
   if (periodo.sePide) return <InsigniaPorReportar venceEn={periodo.venceEn} ahora={ahora} />;
   return <Insignia variante="sin-dato">Ya no se pide</Insignia>;
 }

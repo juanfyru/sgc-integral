@@ -85,7 +85,8 @@ export const FALTA_UN_COMPONENTE = "Falta un dato de un componente.";
  * El aviso de «Falta un dato» de una variable ajena que aún no llega (anexo 14C, §3.1, maqueta 14); `null` si ya llegó o si
  * la variable es propia. Con `mide` (quien mide y aún no reportó lo suyo), le dice que ya puede reportarlo. La de un
  * componente que la persona no ve, `FALTA_UN_COMPONENTE`. Del dato dice cuándo vence su periodo pendiente o, si esa fecha ya
- * pasó a `ahora`, que venció.
+ * pasó a `ahora`, que venció; si sus únicos pendientes no tienen categorías (`esperaCategorias`), que espera a quien administra,
+ * sin fecha (complemento de la 14C, §5.3).
  */
 export function avisoDeFalta(v: VariableDeReporte, mide: boolean, ahora: Date = new Date()): string | null {
   const a = v.ajena;
@@ -93,9 +94,11 @@ export function avisoDeFalta(v: VariableDeReporte, mide: boolean, ahora: Date = 
   if (!a || a.valor !== null) return null;
   if (a.clase === "indicador") return `Falta un dato. Sale de ${deIndicador(a)}, que aún no tiene resultado.`;
   const vencio = a.venceEn !== null && new Date(a.venceEn).getTime() < ahora.getTime();
-  const quien = a.proceso
-    ? `«${a.nombre}» lo reporta ${a.proceso}${a.venceEl ? `; ${vencio ? "venció" : "vence"} el ${a.venceEl}` : ""}.`
-    : `«${a.nombre}» aún no se reporta.`;
+  const quien = a.esperaCategorias
+    ? `«${a.nombre}» espera que el Administrador del SGC actualice sus categorías.`
+    : a.proceso
+      ? `«${a.nombre}» lo reporta ${a.proceso}${a.venceEl ? `; ${vencio ? "venció" : "vence"} el ${a.venceEl}` : ""}.`
+      : `«${a.nombre}» aún no se reporta.`;
   const despues = mide
     ? "Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue."
     : "El resultado se calcula solo cuando el dato llegue.";

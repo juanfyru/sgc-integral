@@ -30,6 +30,7 @@ vi.mock("@/lib/indicadores/periodos", async (original) => {
 });
 
 import { obtenerSql } from "@/db/cliente";
+import { avisoDeFalta } from "@/componentes/indicadores/medicion/DatosDelSistema";
 import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import {
@@ -44,6 +45,7 @@ import {
 } from "@/db/consultas/indicadores/datos-periodos";
 import { pestanaDeDatos, resumenDeDatos } from "@/db/consultas/indicadores/datos";
 import { datosVencidos } from "@/db/consultas/indicadores/datos-vencidos";
+import { medicionParaReportar } from "@/db/consultas/indicadores/lectura";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { propagar } from "@/db/consultas/indicadores/propagacion";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
@@ -758,9 +760,37 @@ describe("un dato con dimensión cuyo periodo nace sin categorías (puesta en ma
         expect(deDatos(await tareasDeIndicadores(responsable, { sql: tx, ahora: NOV_16 }))).toEqual([]);
         expect((await tareasDeIndicadores(responsable, { sql: tx, ahora: DIC_20 })).vencidas).toBe(0);
         expect(await pestanaDeDatos(responsable, { sql: tx })).toEqual({ visible: true, porReportar: 0 });
-        expect((await resumenDeDatos(responsable, [datoId], { sql: tx })).get(datoId)?.porReportar ?? null).toBeNull();
-        // La página del dato lo sigue mostrando como lo que se pide, con el aviso en lugar del formulario.
-        expect((await periodosDeDato(responsable, datoId, { sql: tx }))!.find((p) => p.id === octubre)).toMatchObject({ sePide: true, categorias: [] });
+        // En la lista, «Espera sus categorías» (`esperaCategorias`), no «por reportar».
+        expect((await resumenDeDatos(responsable, [datoId], { sql: tx })).get(datoId)).toMatchObject({ porReportar: null, esperaCategorias: true });
+        // La página del dato lo sigue mostrando como lo que se pide, con el aviso en lugar del formulario (`sinCategorias`).
+        expect((await periodosDeDato(responsable, datoId, { sql: tx }))!.find((p) => p.id === octubre)).toMatchObject({
+          sePide: true,
+          categorias: [],
+          sinCategorias: true,
+        });
+      }));
+
+    it("en enero, con noviembre y diciembre reportados, quien mide el trimestral lee que el dato espera sus categorías, sin «venció» (complemento 14C, §5.3)", () =>
+      revertida(sql, async (tx) => {
+        await silenciarIndicadores(tx);
+        const ENERO = new Date("2027-01-05T15:00:00Z");
+        const { dimension, responsable, mide, datoId, ind, octubre } = await puestaEnMarcha(tx, NOV_16);
+        const [norte, sur] = dimension.categorias.map(String);
+        await asegurarMediciones({ sql: tx, ahora: ENERO, indicadorId: ind.id });
+        await asegurar(tx, datoId, ENERO);
+        const [, noviembre, diciembre] = await periodos(tx, datoId);
+        for (const p of [noviembre, diciembre]) {
+          expect((p.categorias as unknown[]).length).toBe(2);
+          await reportarCon(tx, responsable, p.id, { porCategoria: { [norte]: "1", [sur]: "2" }, confirmado: true }, ENERO);
+        }
+        expect((await periodos(tx, datoId)).find((p) => p.id === octubre)).toMatchObject({ estado: "pendiente", categorias: [] });
+
+        const datos = await medicionParaReportar(mide, ind.codigo, "2026-T4", { sql: tx, ahora: ENERO });
+        const b = datos!.variables.find((v) => v.letra === "B")!;
+        expect(b.ajena).toMatchObject({ clase: "dato", valor: null, venceEn: null, venceEl: null, esperaCategorias: true });
+        expect(avisoDeFalta(b, true, ENERO)).toBe(
+          `Falta un dato. «${NOMBRE}» espera que el Administrador del SGC actualice sus categorías. Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue.`,
+        );
       }));
 
     it("caso 2: pasado el 26 sin actualizarlas, el responsable no recibe aviso previo, vencido ni escalamiento", () =>

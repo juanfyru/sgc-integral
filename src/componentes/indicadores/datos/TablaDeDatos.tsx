@@ -6,7 +6,7 @@ import { CONSOLIDACION } from "@/lib/indicadores/ficha-en-texto";
 import { rutaDeDato, rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { ETIQUETA_PERIODICIDAD } from "@/lib/indicadores/tipos";
 import { cuenta } from "@/lib/plural";
-import { cifraDeDato, diaCorto, etiquetaDePeriodo, InsigniaPorReportar } from "./comun";
+import { cifraDeDato, diaCorto, ESPERA_SUS_CATEGORIAS, etiquetaDePeriodo, InsigniaPorReportar } from "./comun";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const ENLACE = `rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`;
@@ -27,13 +27,15 @@ const deDondeEs = (d: DatoCompartido) =>
   [d.proceso, CONSOLIDACION[d.consolidacion].toLowerCase(), d.dimension ? `por ${d.dimension.toLowerCase()}` : null].filter(Boolean).join(" · ");
 
 /**
- * El estado de un dato en la lista (maqueta 11), en este orden: el periodo que se pide con la fecha límite más próxima, por
- * reportar o vencido; si no se pide nada, «Reportado» si tiene algún valor; «Ya no se pide» si su periodo más reciente es un
+ * El estado de un dato en la lista (maqueta 11), en este orden: el periodo que su responsable puede reportar con la fecha
+ * límite más próxima, por reportar o vencido; si se pide alguno sin categorías, «Espera sus categorías», sin fecha (complemento
+ * de la 14C, §5.3); si no se pide nada, «Reportado» si tiene algún valor; «Ya no se pide» si su periodo más reciente es un
  * pendiente que ninguna medición necesita (un pendiente viejo que se conserva por su soporte no decide); y, sin periodos, que
  * aún no se pide.
  */
 function Estado({ resumen, ahora }: { resumen: ResumenDeDato | undefined; ahora: Date }) {
   if (resumen?.porReportar) return <InsigniaPorReportar venceEn={resumen.porReportar.venceEn} ahora={ahora} />;
+  if (resumen?.esperaCategorias) return <Insignia variante="sin-dato">{ESPERA_SUS_CATEGORIAS}</Insignia>;
   if (resumen?.ultimo) return <Insignia variante="neutra">Reportado</Insignia>;
   if (resumen?.yaNoSePide) return <Insignia variante="sin-dato">Ya no se pide</Insignia>;
   return <Insignia variante="sin-dato">Aún no se pide</Insignia>;

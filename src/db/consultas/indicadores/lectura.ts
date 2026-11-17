@@ -71,6 +71,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { fichaDeVersion, operacionDeIndicador, versionVigente, type FichaLeida, type OperacionLeida } from "./aprobacion";
 import { desgloseDe, type Desglose } from "./categorias";
 import { componentesOcultos, letrasOcultas, nombresDeComponentes } from "./componentes";
+import { periodoSinCategorias } from "./datos-periodos";
 import { indicadorPorCodigo } from "./fichas";
 import { obtenerParametros } from "./maestros";
 import {
@@ -135,6 +136,11 @@ export type VariableAjena = {
   llego?: boolean;
   /** La clave del primer periodo que entró al acumulado de un componente más fino, si empieza después (`acumulanDesde`). */
   acumulaDesde?: string;
+  /**
+   * De un dato cuyos únicos pendientes no tienen categorías (`periodoSinCategorias`, complemento de la 14C §5.3): espera a quien
+   * administra, sin fecha límite (`venceEn` nulo), porque su plazo no corre.
+   */
+  esperaCategorias?: true;
 };
 
 export type VariableDeReporte = {
@@ -432,12 +438,15 @@ async function ajenasDeReporte(
     const gruesa = periodicidadDe(periodo);
     const fina = v.datoPeriodicidad ?? gruesa;
     const claves = gruesa && fina && contiene(gruesa, fina) ? clavesFinas(periodo, fina) : [periodo];
-    const periodos = await sql`SELECT vv.estado, vv.vence_en, vv.reportado_en, u.nombre AS reporto
+    const periodos = await sql`SELECT vv.estado, vv.vence_en, vv.reportado_en, u.nombre AS reporto, ${periodoSinCategorias(sql)} AS sin_categorias
       FROM variable_valores vv LEFT JOIN usuarios u ON u.id = vv.reportado_por
       WHERE vv.variable_id = ${v.datoId!} AND vv.categoria_id IS NULL AND vv.periodo IN ${sql(claves)}`;
     const instante = (x: unknown) => new Date(x as string).getTime();
     const ultimo = periodos.filter((x) => x.reportado_en !== null).sort((a, b) => instante(b.reportado_en) - instante(a.reportado_en))[0];
-    const pendiente = periodos.filter((x) => x.estado === "pendiente").sort((a, b) => instante(a.vence_en) - instante(b.vence_en))[0];
+    // La fecha es la del pendiente que se puede reportar: el que no tiene categorías no tiene un plazo que corra.
+    const pendientes = periodos.filter((x) => x.estado === "pendiente");
+    const pendiente = pendientes.filter((x) => x.sin_categorias !== true).sort((a, b) => instante(a.vence_en) - instante(b.vence_en))[0];
+    const esperaCategorias = !pendiente && pendientes.some((x) => x.sin_categorias === true);
     const reportadoEn = ultimo ? new Date(ultimo.reportado_en as string) : null;
     const venceEn = pendiente ? new Date(pendiente.vence_en as string) : null;
     salida.set(v.letra, {
@@ -452,6 +461,7 @@ async function ajenasDeReporte(
       reportadoEl: reportadoEn ? diaEnPalabras(reportadoEn) : null,
       venceEn,
       venceEl: venceEn ? diaEnPalabras(venceEn) : null,
+      ...(esperaCategorias ? { esperaCategorias: true as const } : {}),
     });
   }
   return salida;

@@ -1195,6 +1195,16 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     expect(formulario(conDato({ venceEn: new Date("2020-01-11T04:59:59.999Z"), venceEl: "10 de enero de 2020" }))).toContain("; venció el 10 de enero de 2020.");
   });
 
+  it("un dato cuyo único pendiente no tiene categorías espera a quien administra: sin fecha y sin «venció» (complemento 14C, §5.3)", () => {
+    const [, variable] = conDato({ venceEn: null, venceEl: null, esperaCategorias: true }).variables;
+    expect(avisoDeFalta(variable, true, new Date("2027-01-05T15:00:00Z"))).toBe(
+      "Falta un dato. «Total facturado en el mes» espera que el Administrador del SGC actualice sus categorías. Usted ya puede reportar lo suyo: el resultado se calcula solo cuando el dato llegue.",
+    );
+    expect(avisoDeFalta(variable, false)).toBe(
+      "Falta un dato. «Total facturado en el mes» espera que el Administrador del SGC actualice sus categorías. El resultado se calcula solo cuando el dato llegue.",
+    );
+  });
+
   it("con lo propio ya reportado y el dato sin llegar: el aviso no le pide que reporte lo suyo", () => {
     const html = formulario({ ...conDato(), reportada: true });
     expect(html).toContain(

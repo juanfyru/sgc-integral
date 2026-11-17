@@ -22,8 +22,15 @@ export function paraReportar(p: PeriodoDeDato, ahora: Date): PeriodoParaReportar
     valor: p.valor,
     porCategoria: p.porCategoria,
     categorias: p.categorias?.map((c) => ({ id: c.id, nombre: c.nombre })) ?? null,
+    sinCategorias: p.sinCategorias,
   };
 }
+
+/**
+ * El estado de un periodo que se pide y no tiene categorías, en la lista y en la página del dato (complemento de la 14C, §5.3):
+ * sin fecha, porque su plazo no corre mientras quien administra no las actualice.
+ */
+export const ESPERA_SUS_CATEGORIAS = "Espera sus categorías";
 
 /** «-1234,5» → «-1.234,5»: el punto de miles en la parte entera de una cifra ya escrita con coma decimal. */
 export function conPuntoDeMiles(cifra: string): string {

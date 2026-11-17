@@ -202,7 +202,7 @@ const NO_COINCIDE = "Lo copiado de sus fuentes aún no está al día";
  * Un periodo de un dato que se cierra: con valor, o sin él (`sinDato`); `sinCategoriasActivas`, sin él porque no tiene
  * categorías y su dimensión no tiene ninguna activa con que actualizarlo.
  */
-type DatoQueSeCierra = { id: number; datoId: number; estado: string; sinDato: boolean; sinCategoriasActivas: boolean };
+type DatoQueSeCierra = { id: number; estado: string; sinDato: boolean; sinCategoriasActivas: boolean };
 
 /** Quién debía el dato de una medición que se cierra «Sin dato» porque su periodo no tenía categorías con que reportarse. */
 const SIN_CATEGORIAS_ACTIVAS = "Su dimensión no tiene categorías activas";
@@ -251,7 +251,7 @@ function grupoDe(m: Record<string, unknown>): Grupo {
  * razón (`sinCategoriasActivas`). La dimensión se lee en una subconsulta: el cierre no toma la fila del dato.
  */
 async function periodosDeDatosDelCierre(sql: Cliente, hasta: Date, ahora: Date, bloquear: boolean): Promise<Clasificacion["datos"]> {
-  const filas = await sql`SELECT vv.id, vv.variable_id, vv.estado, vv.se_pide, vv.vence_en, ${periodoSinCategorias(sql)} AS sin_categorias,
+  const filas = await sql`SELECT vv.id, vv.estado, vv.se_pide, vv.vence_en, ${periodoSinCategorias(sql)} AS sin_categorias,
       EXISTS (SELECT 1 FROM variables_compartidas d JOIN dimension_categorias dc ON dc.dimension_id = d.dimension_id
         WHERE d.id = vv.variable_id AND dc.activo) AS hay_activas
     FROM variable_valores vv WHERE vv.hasta <= ${hasta} AND vv.estado <> 'cerrado'
@@ -264,7 +264,7 @@ async function periodosDeDatosDelCierre(sql: Cliente, hasta: Date, ahora: Date, 
     const sinCategorias = !reportado && p.sin_categorias === true;
     if (sinCategorias && p.hay_activas === true) salida.esperanCategorias += 1;
     else if (new Date(p.vence_en as string).getTime() >= ahora.getTime()) salida.esperan += 1;
-    else salida.cierran.push({ id, datoId: Number(p.variable_id), estado: p.estado as string, sinDato: !reportado, sinCategoriasActivas: sinCategorias });
+    else salida.cierran.push({ id, estado: p.estado as string, sinDato: !reportado, sinCategoriasActivas: sinCategorias });
   }
   return salida;
 }
@@ -442,9 +442,11 @@ async function nombresDe(sql: Cliente, ids: number[]): Promise<string[]> {
  * Quién debía lo que falta a las alcanzadas que se cierran «Sin dato» (anexo 14C, §3.5), con la regla única de «Falta un
  * dato» (`esperaUnDato`): si la medición esperaba un valor que no digita quien la mide, el sistema (un automático) o quienes
  * debían las fuentes que faltan («Los responsables del dato «…»», «El indicador …»); si no, quienes la miden (faltó lo
- * propio). Sin fuentes que falten, también quienes la miden: un caso que no debería darse. Un dato cuyo periodo se cierra
- * «Sin dato» porque no tenía categorías y su dimensión no tiene ninguna activa (complemento de la 14C, §5.4) no lo debían sus
- * responsables: «Su dimensión no tiene categorías activas»; si además otro de sus periodos venció sin reportarse, también ellos.
+ * propio). Sin fuentes que falten, también quienes la miden: un caso que no debería darse. Un dato con algún periodo de los
+ * que usa la medición sin valor y con la lista de categorías vacía (complemento de la 14C, §5.4), se cierre en este cierre o
+ * lo haya cerrado uno anterior, no lo debían sus responsables: «Su dimensión no tiene categorías activas» (un vacío solo llega
+ * al cierre sin ninguna activa con que actualizarlo); si además otro de esos periodos quedó sin valor teniendo categorías,
+ * también ellos. Se decide con las filas de los periodos, no con lo que cierra este cierre.
  */
 async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, string[]>> {
   const salida = new Map<number, string[]>();
@@ -458,17 +460,26 @@ async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, s
   const codigoDe = new Map(
     indicadores.length === 0 ? [] : (await sql`SELECT id, codigo FROM indicadores WHERE id IN ${sql([...new Set(indicadores)])}`).map((f) => [Number(f.id), f.codigo as string]),
   );
-  const seCierra = new Map(c.datos.cierran.map((d) => [d.id, d]));
-  /** Quién debía la fuente que falta a la medición `a`: de un dato, según cómo se cierran sus periodos que la medición usa. */
+  // Los periodos de los datos que usan las que quedan sin dato, cerrados o no: si les faltó el valor y si su lista está vacía.
+  const entradas = datos.length === 0 ? [] : [...new Set(sinDato.flatMap((a) => c.revisiones.get(a.id)?.datos ?? []))];
+  const deEntrada = new Map(
+    entradas.length === 0
+      ? []
+      : (
+          await sql`SELECT vv.id, vv.variable_id, vv.valor IS NULL AS sin_valor, ${periodoSinCategorias(sql)} AS sin_categorias
+            FROM variable_valores vv WHERE vv.id IN ${sql(entradas)}`
+        ).map((f) => [Number(f.id), { datoId: Number(f.variable_id), sinValor: f.sin_valor === true, sinCategorias: f.sin_categorias === true }]),
+  );
+  /** Quién debía la fuente que falta a la medición `a`: de un dato, según sus periodos que la medición usa y quedaron sin valor. */
   const deLaFuente = (f: FuenteQueFalta, a: Alcanzada): string[] => {
     if (f.clase === "indicador") return [`El indicador ${codigoDe.get(f.indicadorId) ?? "?"}`];
     const responsables = `Los responsables del dato «${nombreDeDato.get(f.datoId) ?? "?"}»`;
-    const suyos = (c.revisiones.get(a.id)?.datos ?? []).flatMap((id) => {
-      const d = seCierra.get(id);
-      return d && d.datoId === f.datoId ? [d] : [];
+    const sinValor = (c.revisiones.get(a.id)?.datos ?? []).flatMap((id) => {
+      const p = deEntrada.get(id);
+      return p && p.datoId === f.datoId && p.sinValor ? [p] : [];
     });
-    if (!suyos.some((d) => d.sinCategoriasActivas)) return [responsables];
-    return suyos.some((d) => d.sinDato && !d.sinCategoriasActivas) ? [SIN_CATEGORIAS_ACTIVAS, responsables] : [SIN_CATEGORIAS_ACTIVAS];
+    if (!sinValor.some((p) => p.sinCategorias)) return [responsables];
+    return sinValor.some((p) => !p.sinCategorias) ? [SIN_CATEGORIAS_ACTIVAS, responsables] : [SIN_CATEGORIAS_ACTIVAS];
   };
   const quienesMiden = new Map<number, string[]>();
   for (const a of sinDato) {

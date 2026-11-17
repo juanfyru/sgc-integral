@@ -41,6 +41,8 @@ export type PeriodoParaReportar = {
   porCategoria: Record<string, string> | null;
   /** Las categorías que pide el periodo; `null` sin dimensión. */
   categorias: { id: number; nombre: string }[] | null;
+  /** Nació sin categorías (`PeriodoDeDato.sinCategorias`): nadie puede reportarlo hasta que quien administra las actualice. */
+  sinCategorias: boolean;
 };
 
 const conComa = (v: string | null | undefined) => (v === null || v === undefined ? "" : v.replace(".", ","));
@@ -207,7 +209,7 @@ export function ReportarDato({
   );
 
   // Un periodo que nació sin categorías no tiene qué digitar: en vez de un formulario sin campos, lo que hay que hacer.
-  if (periodo.categorias !== null && periodo.categorias.length === 0) {
+  if (periodo.sinCategorias) {
     return (
       <section aria-labelledby={alReportar ? undefined : `${prefijo}-titulo`} className={CAJA}>
         {encabezado}
