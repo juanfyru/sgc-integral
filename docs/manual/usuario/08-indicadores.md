@@ -287,8 +287,15 @@ de cada mes.
 
 1. Pulse la tarea (o **Reportar el tercer trimestre de 2026** en la página del indicador). Se abre
    la pantalla **Reportar**, pensada también para el celular.
-2. Escriba cada dato en su campo. Debajo de cada uno están su descripción y su **Fuente**. Puede
-   usar coma o punto para los decimales.
+2. Escriba cada dato en su campo. Debajo de cada uno están su descripción, su **Fuente** y el
+   recordatorio «Sin puntos de miles; use la coma para los decimales.». Escriba **1600**, no
+   «1.600»: el SGC rechaza el punto de miles (««Auditorías ejecutadas»: Escriba el valor sin puntos
+   de miles (1731); para decimales use la coma (1,731)»), para que no se guarde 1,6 sin que nadie lo
+   note. Los decimales van con coma («1,6», «1600,5»); un punto decimal que no parece de miles
+   («1.6», «0.125») también se lee bien, pero un decimal de tres cifras con parte entera de 1 a 999
+   se escribe siempre con coma («2,375»). La misma regla vale en la rejilla por categoría (sección
+   12.3), en los históricos (sección 3.6), en la ficha y las metas (secciones 6.1 y 6.5) y en el
+   valor de un dato compartido (sección 11.2). Lo que ya estaba guardado no cambia.
 3. Mientras escribe, a la derecha (o debajo, en el celular) aparecen el **Resultado**, su color y su
    frase. Si no cumple, avisa que después de reportar el análisis es obligatorio.
 4. Pulse **Reportar**. Si todavía no tiene todos los datos, **Guardar sin reportar** los conserva y
@@ -327,10 +334,26 @@ que no es una hoja de cálculo se rechaza. Si un Excel verdadero se rechazara (p
 algunos archivos de hojas muy grandes que generan otros programas), ábralo y guárdelo de nuevo con
 Excel, o adjúntelo como PDF.
 
-Si la ficha marca **soporte obligatorio**, no se puede reportar sin al menos uno. Mientras la
-medición no esté cerrada, **Quitar** retira un soporte (queda registrado). Los soportes solo los
-ven el Administrador del SGC, Gerencia, Control Interno, los líderes del proceso y las personas
-designadas en el indicador; siempre se descargan, nunca se abren en el navegador.
+**Soporte obligatorio.** Si el indicador exige soporte, su ficha técnica dice desde cuándo («Sí: cada
+reporte lleva su soporte, desde el 7 de noviembre de 2026»). No todos sus periodos lo deben: lo deben
+los que seguían abiertos cuando se activó (en plazo, o vencidos y todavía sin reportar) y todos los
+que terminan después; no lo deben uno que usted ya había reportado con su plazo vencido cuando se
+activó, uno cerrado ni un histórico (sección 6.4). Eso se decide una vez por periodo y nada más lo
+cambia: ni un cambio del plazo, ni un análisis, ni una corrección. En
+un periodo que lo debe, la pantalla **Reportar** dice «Este indicador exige un soporte: adjúntelo
+antes de reportar» y el SGC no deja reportar sin al menos uno; si usted ya lo había reportado, el
+periodo vuelve a **Por reportar** hasta que lo adjunte, y su tarea dice «Falta el soporte
+obligatorio». En uno que no lo debe, el soporte es opcional y la pantalla no lo pide.
+
+Los recordatorios son de la medición, no de cada persona: si a usted ya le llegó el aviso previo por
+el soporte y después el resultado pide análisis dentro del plazo, a quien analiza no le llega otro
+aviso previo; y si a la medición le faltan a la vez el análisis y el soporte, los avisos de vencido y
+al jefe van a quien analiza, y usted conserva su tarea vencida «Falta el soporte obligatorio» sin un
+aviso propio.
+
+Mientras la medición no esté cerrada, **Quitar** retira un soporte (queda registrado). Los soportes
+solo los ven el Administrador del SGC, Gerencia, Control Interno, los líderes del proceso y las
+personas designadas en el indicador; siempre se descargan, nunca se abren en el navegador.
 
 ### 3.5 Corregir
 
@@ -513,6 +536,14 @@ En **Indicadores**, pulse **Nuevo indicador**.
 7. Al pie, **Enviar a aprobación**: la ventana muestra el indicador, la versión, el tipo y la huella
    de la ficha; firme con su clave. Queda la firma «Elaboró» y la ficha pasa a **Por aprobar**.
 
+**Las cifras de la ficha** (la meta, el máximo del rango, el límite de crítico, la tolerancia, el
+mínimo y el máximo del resultado, la línea base, los rangos del semáforo, los límites de captura de
+cada variable y los valores de la prueba) se escriben **sin puntos de miles**, con coma para los
+decimales: «1.500» se rechaza al guardar, junto al campo («La meta: Escriba el valor sin puntos de
+miles (1731); para decimales use la coma (1,731)»), para que una meta de mil quinientos no se firme
+como 1,5. Debajo de cada cifra no hay recordatorio: basta el mensaje al rechazar. Al abrir un
+borrador o un cambio, lo guardado vuelve escrito con coma («2,375») y se guarda sin tocarlo.
+
 En **Quién mide**, «(el líder del proceso)» deja que midan los líderes; en un proceso sin líder,
 elija a alguien, o las tareas le llegarán a usted con «Sin responsable». Los cargos responsables
 nacen con el cargo de la persona elegida.
@@ -579,11 +610,24 @@ con lo que había y lo que quedó, y la ficha impresa los muestra aparte. Correr
 medición hacia adelante quita los periodos abiertos sin ningún dato anteriores a él; si alguno ya
 tiene datos, no deja. Los cambios alcanzan también los periodos que siguen abiertos (no los
 cerrados ni los históricos): con otro **plazo de reporte** cambia su fecha límite, y si la nueva
-aún no llega, el aviso de vencido se vuelve a mandar cuando venza. El **soporte** rige hacia
-adelante: al quitarlo, un periodo que solo esperaba el archivo queda reportado y deja de ser tarea;
-al pedirlo, solo lo exige a los periodos que siguen en su plazo (uno de ellos ya reportado sin
-archivo vuelve a pedirlo), y lo que se reportó a tiempo y ya venció se queda como está, sin volverse
-vencido.
+aún no llega, el aviso de vencido se vuelve a mandar cuando venza.
+
+**El soporte obligatorio rige desde que se pide.** El SGC guarda la fecha en que lo activó (la ficha
+técnica y su impreso la dicen: «Sí: cada reporte lleva su soporte, desde el 12 de octubre de 2026»;
+la bitácora guarda quién lo cambió y cuándo). Al **pedirlo**, decide una vez, para cada periodo
+abierto, si lo debe: lo deben todos salvo los que quien mide ya había reportado con su fecha límite
+pasada; los que terminan después nacen debiéndolo, y los cerrados y los históricos no lo deben.
+Ejemplo: septiembre vence el 10 de octubre y quien mide lo reportó el 3 sin soporte. Si usted lo
+pide el 5 de octubre, septiembre lo debe (vuelve a **Por reportar** y la tarea de quien mide dice
+«Falta el soporte obligatorio»); si lo pide el 12, no lo debe. Si el 12 septiembre seguía sin
+reportar, lo debe, y reportarlo exige adjuntarlo. **Después, nada lo cambia:** ni otro plazo de
+reporte, ni un dato que llega tarde, ni un análisis, ni una corrección, ni una reapertura. Al
+**quitarlo**, nadie lo debe, la fecha se borra y un periodo que solo esperaba el archivo queda
+reportado y deja de ser tarea; si lo vuelve a pedir, la fecha es la nueva y el SGC decide otra vez
+con ella. Un indicador que calcula el sistema o que no tiene variables propias no lleva soporte:
+al aprobarse una versión así, el SGC lo quita. Los que ya lo exigían antes de esta función tomaron
+como fecha la de la última activación que guardó la bitácora o, sin rastro, la de su creación, y
+sus periodos abiertos quedaron con la regla de arriba aplicada a esa fecha (los cerrados, sin deberlo).
 
 ### 6.5 Programar metas
 
@@ -603,6 +647,9 @@ bitácora.
   del periodo» si ya terminó, sin ellas en un histórico y no disponible en uno cerrado. La medición se
   recalcula y la bitácora guarda la meta que tenía. A un indicador sin meta no se le programan metas.
 
+La meta y el máximo se escriben sin puntos de miles, como las cifras de la ficha («La meta: Escriba
+el valor sin puntos de miles (1731); para decimales use la coma (1,731)»).
+
 Con los rangos escritos, la meta programada tiene que caer dentro de Bien («La meta debe quedar
 dentro del rango de Bien»): los rangos no se mueven con la meta del periodo, y otros rangos piden un
 cambio mayor de la ficha. En una ficha aprobada con la regla anterior, una meta que deje el límite
@@ -621,8 +668,9 @@ cerrado; nunca uno que no ha terminado) y pulse **Ver el resumen**:
 - el resumen **Por proceso** y las observaciones que siguen sin respuesta (no impiden el cierre);
 - **No se cierran**: las mediciones que siguen dentro de su plazo de reporte (cerrar el 1 de abril
   no deja sin dato lo que tenía plazo hasta el 10), los históricos sin registrar, los periodos de
-  datos compartidos que siguen en plazo y las **mediciones que esperan una fuente** (con lo que
-  esperan).
+  datos compartidos que siguen en plazo, los que **esperan que se actualicen sus categorías** («2
+  periodos de datos compartidos esperan que se actualicen sus categorías: quedan para el siguiente
+  cierre.»; sección 11.4) y las **mediciones que esperan una fuente** (con lo que esperan).
 
 **Una medición cerrada tiene cerradas sus entradas.** Si usa un dato compartido o el resultado de
 otro indicador, el cierre la cierra solo si lo que usó también está cerrado o se cierra en este
@@ -640,6 +688,12 @@ cierre lo deja escrito: «Se cerró septiembre de 2026: 16 mediciones cerradas y
 compartidos.». En **Mediciones que quedarán sin dato**,
 la columna **Quién debía** nombra a quien mide, a los responsables del dato que faltó o el
 indicador cuyo resultado faltó.
+
+**Un periodo de un dato que nació sin categorías** (sección 11.4) no se cierra «Sin dato» mientras
+siga vacío: el cierre lo espera, aunque su fecha límite haya pasado, y las mediciones que lo usan
+esperan con él. Solo si su dimensión no tiene ninguna categoría activa (no hay con qué actualizarlo)
+el cierre lo cierra «Sin dato», el resumen dice por qué («…; su dimensión no tiene categorías
+activas: queda sin dato.») y **Quién debía** dice «Su dimensión no tiene categorías activas».
 
 Pulse **Cerrar …** y confirme con **Cerrar el mes**. No pide clave: es una rutina mensual. Después
 del cierre, los datos, el resultado, el análisis y los soportes de esas mediciones no cambian (sí
@@ -736,7 +790,9 @@ lo hace quien administra indicadores.
    orden de las columnas (hasta 500 filas). Lo que la matriz trae junto se separa: la fórmula va
    en **Variable A** y **Variable B**, y la forma y el factor salen de la unidad. El proceso va
    por su sigla; el subproceso, por el nombre del mapa (si no coincide, se resuelve después). La
-   meta va en la unidad del indicador: **95, no 0,95**, y sin separador de miles. **Cómo se junta
+   meta va en la unidad del indicador: **95, no 0,95**, y sin separador de miles (una meta como
+   «1.500» queda con el problema «La meta «1.500» es ambigua: escríbala sin separador de miles (1500)
+   o con coma decimal»; «0.125» sí se lee como decimal). **Cómo se junta
    A** y **B** se llena para una población, un inventario o un total del Listado Maestro (algo que
    se cuenta en un momento): **Último valor**; vacío, se suma. **Estado** es **Aprobado** (ya
    aprobado antes de SGC Integral) o **Propuesto** (entra como borrador y sigue el camino de
@@ -890,8 +946,9 @@ Documentos con revisión vencida es un conteo: cero vencidos es una cifra (y bue
 Es el estado de una medición que espera la foto del sistema, un dato compartido (sección 11) o el
 resultado de otro indicador (sección 13), con lo propio ya reportado si lo tiene. **No es tarea de
 nadie:** no da la tarea de reportar, ni recordatorios, ni el aviso de vencido, ni el aviso al jefe,
-y nunca se muestra «Vencida» por eso. Cuando llega lo que espera se calcula el resultado, salen las
-alertas y, si no cumple, la tarea de analizar.
+y nunca se muestra «Vencida» por eso. La única excepción es el soporte obligatorio que debe un
+indicador mixto (sección 11.3): ese sí es tarea de quien mide mientras tanto, y vence. Cuando llega
+lo que espera se calcula el resultado, salen las alertas y, si no cumple, la tarea de analizar.
 
 Quien analiza puede abrir el periodo con **Ver** en la tabla del año: la pantalla dice «Este
 indicador lo calcula el sistema. Nadie digita sus datos.», cuándo se calculó o se calculará y, ya
@@ -1168,10 +1225,14 @@ Administrador del SGC por falta de responsable no se avisa a ningún jefe).
    **Sí, el valor es correcto** y pulse otra vez. La confirmación vale para el valor por el que se
    preguntó: si cambia el valor, la pregunta se va y, si hace falta, el SGC pregunta de nuevo.
 
-Si el recuadro dice **«Este periodo no tiene categorías: pida al Administrador del SGC que las
-actualice»**, el periodo terminó antes de que existieran las categorías de su dimensión y no hay
-qué digitar todavía (sección 11.4). Al reportar el último periodo pendiente, el recuadro se va y
-queda el aviso «Se reportó el dato. No queda ningún periodo por reportar.».
+Si el recuadro dice **«Este periodo no tiene categorías: el Administrador del SGC debe
+actualizarlas antes de reportarlo»**, el periodo terminó antes de que existieran las categorías de
+su dimensión y no hay qué digitar todavía. **No es tarea suya** mientras siga así: no le llegan la
+tarea ni los recordatorios, no se le vence ni se avisa a su jefe, y en **Periodos del dato** y en la
+lista **Datos compartidos** dice **Espera sus categorías**. El Administrador del SGC ya tiene el aviso
+y la tarea (sección 11.4); cuando las actualiza, el periodo le llega a usted con su plazo completo
+contado desde ese día. Al reportar el último periodo pendiente, el recuadro se va y queda el aviso
+«Se reportó el dato. No queda ningún periodo por reportar.».
 
 En cuanto usted lo reporta, el SGC lo lleva a cada indicador que lo usa: el que ya tenía lo demás
 queda calculado, con su color y su alerta, igual que si lo hubiera reportado quien lo mide. Un dato
@@ -1212,11 +1273,15 @@ compartidos o de otros indicadores». No se le suben soportes: su evidencia son 
 su pantalla tiene **Soportes** con ellos («La evidencia de este indicador son los soportes de sus
 datos compartidos.»).
 
-Si a un indicador mixto le activan **soporte obligatorio** mientras espera el dato, quien lo mide
-tiene la tarea **Reportar …** con «Falta el soporte obligatorio» mientras la medición siga en plazo.
-Si el dato llega con el plazo ya vencido, la medición no queda vencida pidiendo ese soporte: lo suyo
-entró cuando no se pedía. (Si después alguien la corrige o escribe su análisis, el SGC aplica la
-regla de siempre y, si el soporte sigue siendo obligatorio, lo pide entonces.)
+**Soporte obligatorio en un mixto.** Si el periodo lo debe (sección 3.4: lo debe salvo que usted ya
+hubiera reportado lo suyo con el plazo vencido cuando se activó), es tarea suya aunque el dato no
+haya llegado: puede adjuntarlo sin el dato, la tarea **Reportar …** dice «Falta el soporte
+obligatorio», la lista lo cuenta **Por reportar** (o **Vencido hace N días**), la tabla del año dice
+«Falta un dato · falta el soporte», y vence con la fecha límite de la medición: pasada, la pasada le
+avisa y, días después, a su jefe. Si no lo debe, nada se lo pide, tampoco cuando el dato llega tarde
+ni si después alguien escribe un análisis. Una medición tiene una sola fecha límite: si el dato llega
+tarde y el resultado pide análisis, el plazo cuenta otra vez desde ese día y lo que falte, el soporte
+incluido, vence con la fecha nueva.
 
 Un indicador trimestral (o de otra periodicidad más larga que la del dato) toma el dato **juntado**
 con la regla del dato: la suma de sus meses, el último valor o el promedio. Mientras falte alguno
@@ -1253,6 +1318,30 @@ sede registrada tarde no está en los periodos ya abiertos. En la fila de un per
 pulse **Actualizar categorías**: añade al final las que hoy están activas y faltaban, y no quita
 ninguna («Se añadieron 4 categorías.»). Queda en el historial del periodo («Se actualizaron las
 categorías: se añadieron …»). Un periodo ya reportado o cerrado no se actualiza.
+
+**Un periodo que nace sin categorías es tarea suya, no de su responsable.** Por ejemplo: las sedes se
+crean el 15 de noviembre y un indicador trimestral por sede, aprobado el 16, pide el dato de octubre,
+que nace vacío ese día (con fecha límite el 26: no nace vencido).
+
+- Usted (cada Administrador del SGC activo) recibe una vez el aviso **El periodo octubre de 2026 del
+  dato «…» no tiene categorías: actualícelas para que se pueda reportar**, con el enlace a la página
+  del dato, y tiene en **Mis tareas** **Actualizar las categorías de …, octubre de 2026** («Nadie
+  puede reportarlo hasta que tenga categorías»). No vence ni se avisa a ningún jefe: es
+  configuración. El aviso y la tarea nombran el dato y el periodo, nunca un indicador, y un periodo
+  que ya ningún indicador necesita no los da.
+- Su responsable no tiene nada mientras siga vacío: ni tarea, ni recordatorios, ni vencido, ni
+  aviso a su jefe, aunque pase el 26. La fila del periodo y la lista **Datos compartidos** dicen
+  **Espera sus categorías**, y la pantalla de reportar de un indicador que lo usa, «Falta un dato.
+  «…» espera que el Administrador del SGC actualice sus categorías.», sin fecha.
+- Cuando usted pulsa **Actualizar categorías** (por ejemplo, el 30), el periodo pasa a su
+  responsable con su plazo completo contado desde ese día (diez días: hasta el 10 de diciembre) y
+  sus recordatorios empiezan de nuevo; su tarea desaparece. La fecha nueva queda en el historial.
+- El cierre del mes no lo cierra «Sin dato» mientras siga vacío: lo espera, con las mediciones que
+  lo usan (sección 6.6).
+- Si la dimensión **no tiene ninguna categoría activa**, la tarea lo dice («Su dimensión no tiene
+  categorías activas: créelas o actívelas primero»), **Actualizar categorías** no añade nada y el
+  cierre lo cierra «Sin dato» con esa razón. Cree o active las categorías en **Dimensiones**
+  (sección 12.1) y vuelva a pulsar **Actualizar categorías**.
 
 **Qué periodos se piden.** Solo los que necesita algún indicador activo, desde el periodo en curso
 al aprobarse su ficha (un indicador anual aprobado en noviembre pide los meses de ese año). Un
@@ -1487,11 +1576,12 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 
 | Mensaje | Qué significa | Qué hacer |
 |---|---|---|
-| Vencido hace N días | Pasó la fecha límite sin reporte (o sin análisis) | Repórtelo cuanto antes; si no hubo casos, márquelo «No aplica» |
+| Vencido hace N días | Pasó la fecha límite sin reporte (o sin análisis, o sin el soporte que el periodo debe) | Repórtelo cuanto antes; si no hubo casos, márquelo «No aplica» |
 | «…» no puede ser negativo / no puede pasar de … / debe ser un número | Un dato no sirve | Corrija el dato |
 | El resultado baja N puntos frente a … ¿Los datos son correctos? | Cambió mucho frente al periodo anterior | Revise y marque **Sí, los datos son correctos** |
 | No se puede calcular: división por cero. Si no hubo casos, marque «No aplica en este periodo». | El denominador es cero | Si no hubo casos, use **No aplica en este periodo** |
-| Este indicador exige un soporte: adjúntelo antes de reportar | La ficha pide soporte | Adjunte el archivo en **Soportes** |
+| Este indicador exige un soporte: adjúntelo antes de reportar | El indicador exige soporte y este periodo lo debe (sección 3.4) | Adjunte el archivo en **Soportes** |
+| Falta el soporte obligatorio (en **Mis tareas**) | Ya reportó (o espera un dato) y el periodo debe el soporte | Adjúntelo en **Soportes**: se puede sin el dato |
 | El soporte debe ser PDF, imagen (PNG, JPG, WebP) o Excel (.xlsx) | El archivo no es de un tipo admitido o su contenido no coincide | Guárdelo como PDF o `.xlsx` |
 | La medición está cerrada: pida al Administrador del SGC que la reabra | El mes ya se cerró | Pida la reapertura |
 | Ese periodo es histórico: regístrelo en la tabla del año | Es anterior a la aprobación de la ficha | Use **Registrar históricos de AAAA** |
@@ -1527,9 +1617,16 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 | Este «No aplica» lo puso el sistema: se quita solo cuando cambie el dato | Se intentó quitar un «No aplica» que puso el SGC | Nada: se quita solo |
 | La medición ya se reportó: corrija los datos y pulse «Reportar» | Se pulsó **Guardar sin reportar** en una medición ya reportada | Corrija y pulse **Reportar** |
 | Esta medición no tiene categorías: pida al Administrador del SGC que las actualice | La lista del periodo quedó vacía | Pida **Actualizar categorías** |
-| Este periodo no tiene categorías: pida al Administrador del SGC que las actualice | El periodo del dato terminó antes de existir las categorías de su dimensión | Pida **Actualizar categorías** en la página del dato (sección 11.4) |
+| Este periodo no tiene categorías: el Administrador del SGC debe actualizarlas antes de reportarlo | El periodo del dato terminó antes de existir las categorías de su dimensión | Nada: no es tarea suya; el Administrador del SGC ya tiene el aviso y la tarea (sección 11.2) |
+| Espera sus categorías | Un periodo del dato nació sin categorías | Nada, si responde por el dato; si administra, **Actualizar categorías** (sección 11.4) |
+| Falta un dato. «…» espera que el Administrador del SGC actualice sus categorías. | El dato que usa el indicador solo tiene pendientes sin categorías | Nada: llegará cuando se actualicen y se reporte |
+| El periodo … del dato «…» no tiene categorías: actualícelas para que se pueda reportar | Aviso al Administrador del SGC: un periodo nació vacío | Pulse **Actualizar categorías** en la página del dato |
+| Actualizar las categorías de …, … (en **Mis tareas**) | La tarea de ese periodo vacío; no vence | La misma: **Actualizar categorías** |
+| Su dimensión no tiene categorías activas: créelas o actívelas primero | No hay con qué actualizar el periodo | Cree o active categorías en **Dimensiones** |
+| … esperan que se actualicen sus categorías: quedan para el siguiente cierre | El cierre del mes espera esos periodos vacíos | Actualice sus categorías antes del siguiente cierre |
 | Solo se actualizan las categorías de un periodo que aún no se ha reportado | Se pidió **Actualizar categorías** en un periodo del dato ya reportado o cerrado | Nada: su lista ya no cambia |
-| Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731) | En el valor de un dato se escribió un punto de miles («1.600») | Escríbalo sin puntos; la coma es para los decimales |
+| Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731) | Se escribió un punto de miles («1.600») en lo que se reporta, en una cifra de la ficha o de una meta, o en un dato compartido (con el nombre del campo o de la variable delante: «La meta: …») | Escríbalo sin puntos; la coma es para los decimales |
+| La meta «…» es ambigua: escríbala sin separador de miles (…) o con coma decimal | En la plantilla de importación, una meta con punto de miles | Corríjala en la plantilla y cree otra importación |
 | Cambie antes el indicador que lo usa | Un compuesto activo usa este indicador | Cambie o retire antes el compuesto |
 | Esta ficha cerraría un ciclo entre indicadores / Un indicador compuesto admite hasta cinco niveles | La cadena de compuestos no es válida | Tome otro indicador |
 | Su fuente sigue abierta: ciérrela primero | Se pidió **Cerrar de nuevo** con un dato o un componente aún abierto | Cierre primero la fuente |

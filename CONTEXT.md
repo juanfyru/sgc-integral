@@ -1,6 +1,9 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-16**, al terminar de construir la **Fase 14C — Datos
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-16**, al terminar de construir el **complemento de la
+> 14C** (el punto de miles en los indicadores, el soporte obligatorio con su fecha y el periodo de un dato sin categorías;
+> rama `f14c-complemento`, sobre `main` en `07cb1e6`, en el worktree `F:\sgc-integral-f14c` y contra la base aparte
+> `sgc_f14c`; **sin fusionar**; ver su sección, arriba de la de la 14C). Antes, la **Fase 14C — Datos
 > compartidos, desagregación y compuestos** (rama `fase-14c-datos-desagregacion-compuestos`, sobre `main` en `44d8b9f`, en el
 > worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **fusionada en `main` el 2026-11-16 por decisión del
 > usuario, por avance rápido, sin publicar en `origin`**, con su visto bueno a las 57 decisiones de la ejecución; ver su sección, arriba de la de la
@@ -26,7 +29,18 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 14C — Datos compartidos, desagregación y compuestos** está terminada y **fusionada en
+1. **Dónde quedamos:** el **complemento de la 14C** está construido (las siete tareas de su plan) en la rama
+   `f14c-complemento` (sale de `main` en `07cb1e6`), en el worktree `F:\sgc-integral-f14c` y contra la base `sgc_f14c`,
+   **sin fusionar**. Construye las tres entregas que el usuario aprobó al cerrar la 14C: el punto de miles se rechaza
+   también en los formularios de los indicadores (lo que se reporta, la ficha, las metas y los límites de un dato); el
+   indicador guarda desde cuándo exige soporte y cada medición, si lo debe, decidido una vez; y el periodo de un dato que
+   nace sin categorías avisa a quien administra, es su tarea y el cierre lo espera. **Sin dependencias npm nuevas.** Una
+   migración, la `0017`; dieciocho en total (`drizzle/0000` a `drizzle/0017`). Detalle en «Hecho (complemento de la
+   14C)»; el recorrido, en «Qué probar y cómo (complemento de la 14C)»; las decisiones, en «Decisiones adicionales
+   (complemento de la 14C)»; el manual, en el capítulo 8. **Falta:** la verificación de cierre (la hace quien coordina:
+   la suite completa con la demo recién sembrada, el build, la `0017` sobre una copia de `sgc` y el recorrido en el
+   navegador), el visto bueno del usuario a las seis decisiones de la ejecución y su decisión de fusionar.
+   **Antes, la Fase 14C — Datos compartidos, desagregación y compuestos** está terminada y **fusionada en
    `main`** (el 2026-11-16, por decisión del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se
    construyó (las dieciocho tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (salía de `main` en
    `44d8b9f`), en el worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **la rama, el worktree y esa base
@@ -41,9 +55,9 @@
    residuos. **El usuario dio su visto bueno a las 57 decisiones de la ejecución el 2026-11-16** («las 57 quedan»: las 39
    de la ejecución, las 3 de la Tarea 18 y las 15 de la revisión final) y respondió las cuatro preguntas (1 sí, 2 sí, 3
    sí, 4 dejar). **Falta:** aplicar la `0015` y la `0016` a la base `sgc` (`npm run db:preparar` en `F:\sgc-integral` y
-   reiniciar `next dev`; lo hace el usuario: hasta entonces las páginas de indicadores fallan ahí), publicar `main` cuando
-   el usuario lo pida y las tres entregas que aprobó (punto 2). **Mientras se construyó, `F:\sgc-integral` no se tocó, y
-   la base `sgc` del usuario solo se leyó.**
+   reiniciar `next dev`; lo hace el usuario: hasta entonces las páginas de indicadores fallan ahí) y publicar `main` cuando
+   el usuario lo pida; las tres entregas que aprobó son el complemento, arriba. **Mientras se construyó, `F:\sgc-integral`
+   no se tocó, y la base `sgc` del usuario solo se leyó.**
    **Antes, la Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada y **fusionada en `main`**
    (rama `fase-14b-automaticos-regulatorios`: 45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección,
    sobre `main` en `f04b70b`; anexo
@@ -169,12 +183,12 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) de la **14C**, ya fusionada: aplicar la `0015` y la `0016` a la base `sgc` («Avisos para el
-   usuario (Fase 14C)»), el recorrido del usuario («Qué probar y cómo (Fase 14C)») y lo que **el usuario aprobó el
-   2026-11-16** al cerrar la fase («Decisiones adicionales (Fase 14C)», al final): rechazar el punto de miles también en
-   los formularios de los indicadores (una entrega pequeña aparte: toca el lector de números de la 14A), guardar desde
-   cuándo es obligatorio el soporte de un indicador (una columna y una migración, la `0017`) y avisar a quien administra
-   cuando un periodo de un dato nace sin categorías. Con la 14C fusionada se cierra la Fase 14 del diseño maestro. (b) el
+2. **Lo que sigue:** (a) del **complemento de la 14C**: su verificación de cierre (quien coordina), el visto bueno del
+   usuario a sus seis decisiones de la ejecución y a lo que su «Deuda técnica» marca «para el usuario» (dos, candidatas a
+   arreglarse antes de fusionar), su recorrido («Qué probar y cómo (complemento de la 14C)»), la decisión de fusionarlo
+   y, después, aplicar la `0017` a la base `sgc` con la `0015` y la `0016` («Avisos para el usuario (complemento de la
+   14C)»); de la **14C**, ya fusionada, el recorrido del usuario («Qué probar y cómo (Fase 14C)»). Con la 14C fusionada
+   se cerró la Fase 14 del diseño maestro. (b) el
    recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)»); (c) si no se hicieron, los recorridos
    del usuario de la 14A y de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); y
    (d) la **Fase 15 — Planes de mejoramiento**. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
@@ -305,6 +319,11 @@
    `CEX-IND-01`: lo ve `lider.cex` (le hace seguimiento) sin ver `GTH-IND-01`, y `consulta` no lo ve. El detalle está en «Qué
    probar y cómo (Fase 14C)», paso 0. **La base de desarrollo NO se resembró en la 14C**: la demo se sembró y se probó en la
    base aparte `sgc_f14c`.
+   **Desde el complemento de la 14C** (la agenda, con `cambiarOperacion` y `ahora` inyectado): `CEX-ID-001` exige soporte
+   desde el día 7 del mes de la siembra (o del anterior, en sus primeros diez días), activado a mitad del plazo de reporte
+   del mes anterior a ese, que lo debe; el que lo precede, reportado y vencido, no. Es el único indicador de la demo con
+   soporte obligatorio. El detalle está en «Qué probar y cómo (complemento de la 14C)», paso 0. Tampoco se resembró la base
+   de desarrollo.
    **La base de desarrollo se resembró en la 13B** (Tarea 15, con la demo de distribución; el recorrido de §18 la
    avanza otra vez). **También se resembró varias veces en la 13A** (Tareas 2 y 15, sus arreglos y el
    cierre): cada vez se pierden los datos de prueba manual y `admin` se recrea con la `ADMIN_CLAVE`
@@ -348,6 +367,262 @@
 9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
    preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
    base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
+
+## Complemento de la 14C — El punto de miles, el soporte obligatorio con su fecha y el periodo de un dato sin categorías
+
+Anexo: `docs/superpowers/specs/2026-11-16-fase14c-complemento-design.md` (amplía el anexo de la 14C y manda sobre él donde
+difieren; **el usuario lo aprobó el 2026-11-16** («aprobado»), con sus respuestas 1.2, 2.1, 3.1, 4.2 y 5.1 y, con él, las
+decisiones de su §8). Plan: `docs/superpowers/plans/2026-11-16-fase14c-complemento.md` (siete tareas, con subagentes).
+Construye las tres entregas que el usuario aprobó al cerrar la 14C (las preguntas 1 a 3 de «Decisiones adicionales (Fase
+14C)», al final). Rama `f14c-complemento` (sale de `main` en `07cb1e6`), en el worktree `F:\sgc-integral-f14c` y contra la
+base aparte `sgc_f14c`. **No está fusionada.** **Sin dependencias npm nuevas.** Una migración, la `0017`
+(`indicadores.soporte_obligatorio_desde` con su `CHECK` `indicadores_soporte_desde`, `mediciones.debe_soporte` y el relleno
+de los indicadores que ya exigían soporte); dieciocho en total (`drizzle/0000` a `drizzle/0017`). Solo añade (regla 11 de
+`AGENTS.md`): se aplica sobre una base de `sgc-suaza` y sobre la de la 14C, y no cambia la huella de ninguna ficha (el
+soporte obligatorio es dato de operación, fuera de lo firmado). Las decisiones de la ejecución **esperan el visto bueno del
+usuario** («Decisiones adicionales (complemento de la 14C)»).
+
+### Hecho (complemento de la 14C)
+
+- **El punto de miles (Tareas 1 y 2):** una sola regla para todo el módulo (`tienePuntoDeMiles`,
+  `src/lib/indicadores/miles.ts`: `^-?[1-9]\d{0,2}(\.\d{3})+$` sobre el texto sin los espacios de los extremos) y un solo
+  mensaje, «Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731)», con el nombre del campo o de
+  la variable delante cuando hay varios («La meta: …», ««Auditorías ejecutadas»: …»). Se rechaza en lo que se reporta cada
+  periodo (reportar, «Reportar lo mío», la rejilla por categoría, los históricos y el cálculo en vivo, todo por `leerValor`;
+  la ayuda «Sin puntos de miles; use la coma para los decimales.» va bajo cada campo de reportar y una vez sobre la rejilla
+  y sobre la tabla de históricos, asociada a cada campo), en el valor de un dato compartido (como en la 14C) y en todas las
+  cifras de la ficha (meta, máximo del rango, límite de crítico, tolerancia, mínimo y máximo del resultado, línea base,
+  rangos del semáforo, límites de captura y valores de la prueba), en las metas programadas y en los límites de captura de
+  un dato, **solo en las Server Actions** (decisión 1). La importación usa la misma expresión con su propio mensaje («La
+  meta «1.500» es ambigua…»): «0.125» ya no se marca. Los formularios devuelven lo guardado escrito con coma y el editor de
+  rangos envía lo escrito, así que un valor que nadie tocó vuelve sin rechazarse (probado campo por campo).
+- **La fecha del soporte obligatorio y la `0017` (Tarea 3):** el indicador guarda desde cuándo exige soporte: activarlo
+  pone la hora (en «Datos de operación», en un borrador, al crear y al duplicar), desactivarlo la borra, guardar sin
+  cambiarlo no la toca (ni sus microsegundos) y `alPublicarVersion` la borra cuando apaga el soporte. La `0017` la rellena
+  con la última fila de la bitácora que lo deja exigiéndolo (`indicador_operacion`, `indicador_creado` o
+  `indicador_borrador_guardado`; `indicador_duplicado` no trae la operación) o, sin rastro, con la creación del indicador; y
+  marca las mediciones en curso con la regla del anexo §4.3, contra la fecha límite del reporte (el `venceAntes` del primer
+  evento que lo lleve o `vence_en`), contando como primer reporte de quien mide su primer `reporte` o `no_aplica` con
+  persona, como «Reportes a tiempo». Las cerradas no se tocan. El `CHECK` va en el archivo después de los dos `UPDATE`: en el
+  orden de drizzle-kit la migración fallaría en una base con indicadores que ya exigen soporte.
+- **La marca de cada medición (Tarea 4):** `debe_soporte` se decide una sola vez: al nacer la medición (`abrirPeriodos`, el
+  único `INSERT` de mediciones; una histórica nunca) y al activar el soporte (`recalcularPorSoporte`: la deben todas las en
+  curso salvo las que quien mide ya había reportado, con su persona, y con su fecha límite pasada). Nada más la cambia.
+  `seDebeElSoporte` es la regla única de `recalcularMedicion` (venga de quien venga el recálculo) y del rechazo «Este
+  indicador exige un soporte: adjúntelo antes de reportar»; se retiraron `esperabaElDato` y la excepción de la racha y de la
+  fuente para lo ya reportado.
+- **Lo que se ve (Tarea 5):** las tareas, la lista, la pasada, la tabla del año, el Excel y la pantalla de reportar (también
+  la rejilla y la zona de soportes, que solo dicen que el soporte es obligatorio cuando esa medición lo debe) preguntan lo
+  mismo. El soporte que se debe mientras la medición espera su dato es tarea de quien mide («Falta el soporte obligatorio»):
+  vence con la fecha límite de la medición, la pasada avisa y escala, la lista lo cuenta «Por reportar» o «Vencido hace N
+  días» (decisión 5), la tabla dice «Falta un dato · falta el soporte» y la pantalla de reportar, «(vencido)». La ficha
+  técnica, su impreso y su Excel dicen «Sí: cada reporte lleva su soporte, desde el 7 de noviembre de 2026». Una medición
+  abierta solo por un soporte que ya no debe y con su resultado (el estado viejo que pudo dejar la `0017`) no es tarea de
+  nadie, ni vence, y la lista y la tabla la dan por reportada; una reportada **sin** resultado sigue siendo tarea de quien
+  mide. La tarea de una medición ya reportada que no debe el soporte dice su proceso, no «Falta el soporte obligatorio».
+- **El periodo de un dato que nace sin categorías (Tarea 6):** al nacer avisa a cada Administrador del SGC activo
+  (`indicadores.dato_sin_categorias`: «El periodo octubre de 2026 del dato «…» no tiene categorías: actualícelas para que
+  se pueda reportar», una vez por periodo, solo quien lo insertó) y es su tarea («Actualizar las categorías de {dato},
+  {periodo}», sin fecha límite; si la dimensión no tiene ninguna activa, «Su dimensión no tiene categorías activas: créelas
+  o actívelas primero»). A su responsable no le da tarea, recordatorio, vencido ni escalamiento: la fila del periodo y la
+  lista «Datos compartidos» dicen «Espera sus categorías», el recuadro «Este periodo no tiene categorías: el Administrador
+  del SGC debe actualizarlas antes de reportarlo» y la pantalla de reportar de un indicador que lo usa, ««{dato}» espera que
+  el Administrador del SGC actualice sus categorías.», sin fecha. El formulario principal de la página del dato es el
+  pendiente más antiguo que se puede reportar. Al actualizar, el periodo cuenta su plazo completo desde ese día y sus avisos
+  empiezan de nuevo. El cierre lo espera («n periodos de datos compartidos esperan que se actualicen sus categorías: quedan
+  para el siguiente cierre.»), con las mediciones que lo usan; sin ninguna categoría activa lo cierra «Sin dato», el
+  resumen dice por qué y «Quién debía» dice «Su dimensión no tiene categorías activas» (decidido con la fila del periodo,
+  también si lo cerró un cierre anterior).
+- **Demo y documentos (Tarea 7):** la agenda de la semilla activa el soporte obligatorio de `CEX-ID-001` a mitad del plazo
+  de un mes, con `cambiarOperacion` y la hora inyectada (ver «Qué probar y cómo», paso 0, y la decisión 6), y la semilla no
+  sigue si las marcas no quedan como deben; `tests/semilla-indicadores-14c.test.ts` afirma la fecha y las dos marcas detrás
+  de su guarda (que nota si se adjunta el soporte o deja de exigirse) y `tests/semilla-indicadores-calendario.test.ts`, que
+  la activación cae así en los días donde cambia el calendario, durante trece meses. Ningún test de semilla cambió lo que
+  afirmaba. El capítulo 8 del manual (secciones 3.2, 3.4, 6.1, 6.4, 6.5, 6.6, 6.10, 7.4, 11.2, 11.3, 11.4 y 16),
+  `AGENTS.md` («El punto de miles», «El soporte obligatorio», el periodo sin categorías en los datos compartidos y en el
+  cierre, la demo y las dieciocho migraciones), este archivo y `PLAN.md`.
+
+### Qué probar y cómo (complemento de la 14C)
+
+Para una persona del hospital, con la clave común de la demo (`Demo-SGC-2026-clave`). Las fechas son las de una siembra del
+**16 de noviembre de 2026**; sembrada otro día, el soporte se activa el día 7 del mes de la siembra (o del anterior, en sus
+primeros diez días), y lo debe el mes anterior a ese y no el que lo precede. **No se ha recorrido en el navegador** (lo hace
+quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pruebas.
+
+0. **La base.** Como en el paso 0 de «Qué probar y cómo (Fase 14C)»: en el worktree, `bash
+   .superpowers/sdd/2026-11-15-fase14c-datos-desagregacion-compuestos/con-f14c.sh npm run db:seed`, después `… npm run
+   admin:asegurar`, y el servidor en otro puerto (`… npx next dev -p 3014`). Lo nuevo de la demo: `CEX-ID-001` **Uso de la
+   agenda de medicina general** (mixto: A es el dato compartido y B la digita `lider.cex`) exige soporte **desde el 7 de
+   noviembre de 2026**, a las 10:00: lo activó `coordinadora.sgc` cuando `lider.cex` ya había reportado lo suyo de octubre
+   (el 5) y antes de que octubre venciera (el 10). **Octubre lo debe:** el dato llegó ayer (95,6 %, Bien) y está abierto,
+   sin soporte y vencido. **Septiembre no lo debe:** lo suyo se reportó el 5 de octubre y su plazo venció el 10, antes de
+   activarlo; sigue en «Falta un dato», esperando el dato pendiente. Es el único indicador de la demo que exige soporte.
+1. **La ficha dice desde cuándo.** `CEX-ID-001` → **Ficha técnica**: en los datos de operación, «Sí: cada reporte lleva su
+   soporte, desde el 7 de noviembre de 2026»; lo mismo en **Imprimir ficha** y en la hoja «Ficha» del **Excel**.
+2. **El mes que lo debe.** Como `lider.cex`: **Mis tareas** trae «Reportar CEX-ID-001 Uso de la agenda de medicina general,
+   octubre de 2026», «Falta el soporte obligatorio», vencida. En **Indicadores**, la columna **Reporte** de `CEX-ID-001`
+   dice «Vencido hace 6 días» (decisión 5); en la tabla del año, octubre está **Por reportar**, vencido. Su pantalla
+   **Reportar** dice «Plazo hasta el 10 de noviembre de 2026 (vencido)» y, en **Soportes**, «Este indicador exige un
+   soporte: adjúntelo antes de reportar.». Bajo la variable A está **Soportes del dato**, con el PDF que subió `consulta`
+   con el dato: **ese no cuenta**, porque el soporte que se debe es el de la medición. Al entrar, la campana trae «Tiene 1
+   indicador por reportar con el plazo vencido» (unos días después, el aviso a su jefe, que no nombra el indicador).
+   Adjunte un PDF en **Soportes**: octubre queda **Reportada**, la tarea se va y la lista deja de decir vencido.
+3. **El mes que no lo debe.** En la misma tabla, septiembre está en **Falta un dato**, sin vencido ni **Reportar**, y su
+   pantalla de reportar no dice que el soporte sea obligatorio. Haga el paso 2 de «Qué probar y cómo (Fase 14C)» (`consulta`
+   reporta el dato de septiembre: **1600**): septiembre queda en 87,9 %, Atención, y pide el análisis con el plazo contado
+   otra vez desde hoy, **sin pedir el soporte** (anexo §4.5, caso 1). Como `lider.cex`, escriba el análisis: queda
+   **Reportada**, sin soporte.
+4. **Quitarlo y volver a pedirlo.** Como `coordinadora.sgc`: `CEX-ID-001` → **Administrar** → **Datos de operación** →
+   desmarque **Pedir un soporte (archivo) con cada reporte** y guarde: la ficha técnica dice «No» y octubre, si no le
+   adjuntó el soporte, queda **Reportada** (nadie lo debe). Márquelo otra vez: la fecha pasa a ser la de hoy y el SGC decide
+   de nuevo con ella. Octubre, reportado con su plazo vencido, **ya no lo debe** (anexo §4.5, caso 5). Si hizo el paso 3,
+   septiembre **sí lo debe ahora**: su fecha límite se contó otra vez desde que llegó el dato y sigue en plazo (decisión 3).
+   La **Bitácora** guarda cada cambio con lo que había y lo que quedó.
+5. **El punto de miles en los indicadores.** Como `lider.cex`, en la pantalla **Reportar** de octubre de `CEX-ID-001`
+   escriba **1.830** en B: el cálculo en vivo y el servidor dicen ««Consultas ofertadas en la agenda»: Escriba el valor sin
+   puntos de miles (1731); para decimales use la coma (1,731)», y bajo el campo está «Sin puntos de miles; use la coma para
+   los decimales.»; **1830** (el valor que tiene) sí se lee. Como `coordinadora.sgc`, en `GRF-IND-01` (borrador) → **Editar ficha**, escriba la
+   meta **1.500** y guarde: «La meta: Escriba el valor sin puntos de miles…», junto al campo; **1500** o **1,5** sí. En
+   **Programar metas** de un indicador activo, **1.500** también se rechaza. Abra un borrador con cifras guardadas y pulse
+   **Guardar borrador** sin tocar nada: se guarda. Las pantallas de los indicadores siguen mostrando las cifras sin punto
+   de miles («1830»); solo las del dato lo llevan.
+6. **El periodo de un dato sin categorías.** La demo no lo trae (anexo §8: exige una dimensión creada a destiempo; lo cubren
+   `tests/indicadores-datos-periodos.test.ts`, `tests/indicadores-cierre-entradas.test.ts` y
+   `tests/indicadores-datos-pantallas.test.tsx`). Para verlo, como `coordinadora.sgc`: una dimensión nueva con sus
+   categorías (se crean hoy), un dato mensual con esa **Desagregación** y un indicador **trimestral** por esa dimensión que
+   use el dato, aprobado hoy: el trimestre en curso pide octubre, que terminó antes de existir las categorías y nace vacío
+   (anexo §5.6, caso 1). Debe verse: la campana de cada Administrador del SGC con «El periodo octubre de 2026 del dato «…»
+   no tiene categorías: actualícelas para que se pueda reportar» y, en **Mis tareas**, «Actualizar las categorías de …,
+   octubre de 2026», sin fecha; quien responde por el dato, sin tarea ni aviso, con «Espera sus categorías» en la página y
+   en la lista; **Actualizar categorías** (en la fila de octubre) le pasa el periodo con el plazo completo desde hoy; y, si
+   antes desactiva todas las categorías, la tarea dice «Su dimensión no tiene categorías activas: créelas o actívelas
+   primero». Antes de actualizarlo, **Cierre del mes** → **Cerrar hasta** octubre → **Ver el resumen** debe decir, en «No
+   se cierran», «1 periodo de un dato compartido espera que se actualicen sus categorías: queda para el siguiente cierre.»
+   (no hace falta cerrar).
+
+### Avisos para el usuario (complemento de la 14C)
+
+- **La rama no está fusionada.** Mientras se construyó, `F:\sgc-integral`, su base `sgc` y su `next dev` del 3002 no se
+  tocaron. Al fusionar, hay que aplicar la `0017` a la base `sgc` (con la `0015` y la `0016`, si aún no se aplicaron: `npm
+  run db:preparar` en `F:\sgc-integral` y reiniciar `next dev`). La prueba de la `0017` sobre una copia de `sgc` la hace
+  quien coordina al cerrar: cuenta cuántas mediciones de los indicadores que ya exigen soporte quedarían con un estado viejo
+  (abiertas solo por un soporte que ya no deben, o reportadas sin el que deben). **Migrar no recalcula:** cada una se ajusta
+  la próxima vez que algo la recalcule.
+- **Las seis decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (complemento de la 14C)»). Las
+  que más pesan: dónde se aplica la regla del punto de miles (1), el relleno ante un cambio de plazo posterior (2) y lo que
+  dice la lista de un soporte que se debe (5).
+- **Lo que cambia para las personas:** en los formularios de los indicadores, «1.500» se rechaza (antes se guardaba 1,5);
+  «1.6» y «0.125» siguen valiendo, pero un decimal de tres cifras exactas como 2,375 se escribe con coma. «012.500» no
+  tiene la forma de la regla del anexo y se lee como 12,5 (ver «Deuda técnica»). Un indicador que ya exigía soporte toma la
+  fecha de su última activación en la bitácora o la de su creación. El periodo de un dato que nace sin categorías ya no es
+  tarea de su responsable: le llega a usted.
+- **La demo cambia:** `CEX-ID-001` exige soporte; `lider.cex` tiene una tarea vencida más (octubre) y, al entrar, el aviso
+  de vencido, y su jefe recibirá el escalamiento. El paso 1 de «Qué probar y cómo (Fase 14C)» sigue igual (septiembre no
+  es tarea de nadie).
+- **Para decidir antes de fusionar** (de la revisión de la Tarea 6, ver «Deuda técnica»): «Quién debía» dice en presente
+  «Su dimensión no tiene categorías activas» también de un periodo que cerró un cierre anterior y cuya dimensión pudo
+  volver a tener categorías; y «Cerrar de nuevo» un periodo vacío reabierto lo cierra «Sin dato» aunque su dimensión tenga
+  categorías activas, sin esperar ni advertirlo.
+
+### Decisiones adicionales (complemento de la 14C)
+
+**Las del anexo (su §8), aprobadas por el usuario el 2026-11-16 con el anexo:** una sola regla y un solo mensaje para el
+punto de miles, y la importación con la misma expresión y su propio mensaje (Práctica); la ayuda «Sin puntos de miles…»
+bajo lo que se reporta cada periodo, no bajo cada cifra de la ficha (Práctica); desactivar borra la fecha y reactivar pone
+otra, sin intervalos (Práctica); las mediciones cerradas antes de la migración quedan sin marca (ISO 7.5.3); migrar no
+recalcula y la prueba sobre la copia cuenta los estados viejos (Práctica); un soporte que se debe mientras falta el dato
+vence y escala como cualquier soporte (Práctica); una sola fecha límite por medición (Práctica); al actualizar las
+categorías, el plazo completo cuenta desde ese día (F14C-DC42, por analogía); sin categorías activas, el cierre cierra el
+periodo «Sin dato» con su razón (Práctica); la ficha técnica dice desde cuándo se exige el soporte (ISO 7.5.3); la tarea de
+quien administra no vence ni escala (Práctica); el texto de la página del dato dice que quien administra ya lo tiene
+pendiente (Práctica); el resumen del cierre cuenta aparte los periodos que esperan categorías (Práctica); y la demo trae
+un indicador con soporte activado a mitad de un plazo, no un dato por sede con un periodo vacío (Práctica).
+
+**Las de la ejecución: pendientes del visto bueno del usuario.** Las tomó quien coordinó la ejecución cuando el anexo o el
+plan callaban o un revisor halló un defecto (la sexta, quien implementó la demo). Cada una dice qué se decidió, porque qué
+y su base. El detalle está en el registro de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
+
+1. **La regla del punto de miles se aplica en las Server Actions, no en el dominio.** Los esquemas de la persona
+   (`EsquemaFichaDeLaPersona`, `EsquemaDatoDeLaPersona` y `EsquemaMeta`) rechazan «1.500»; los que vuelve a pasar el
+   dominio al guardar (`leer` de la ficha, `validar` del dato) y la importación usan la instancia canónica de la misma
+   fábrica, que acepta «2.375». Porque lo que el sistema guarda y pasa entre sus partes usa punto decimal: aplicada en el
+   dominio, la regla rechazaría «2,375» bien escrito (llega ahí como «2.375») y rompería guardar una ficha, un dato o
+   importar. Cuesta un esquema más por fábrica. Base: Práctica (anexo §3.3: lo normalizado no debe llegar a la regla).
+2. **El relleno de la `0017` no reconstruye la fecha límite que tenía una medición al activarse el soporte** si el plazo
+   del indicador cambió después: juzga con la que la medición tiene (la del reporte). Porque reconstruirla pediría repetir
+   en SQL el cálculo de la fecha límite y la historia de los plazos. **Lo que deja:** en un indicador que exigía soporte
+   antes de la migración, con un cambio de plazo posterior a la activación y mediciones reportadas antes de activarlo aún
+   sin cerrar, alguna podría quedar debiendo un soporte que no se le pedía (si el plazo subió) o sin deber uno que sí (si
+   bajó). La prueba sobre la copia de `sgc` cuenta esos casos; si hay alguno, se le dice antes de fusionar, y se corrige con
+   una reapertura o quitando y volviendo a pedir el soporte. Base: Práctica (no hay instalaciones en producción, Fase 20).
+3. **Al activar el soporte, la fecha límite que cuenta es la que la medición tiene en ese momento** (anexo §4.2), aunque el
+   relleno de la `0017` use la del reporte. Solo difieren cuando, al activarlo, la medición tiene su plazo contado otra vez
+   por un análisis (el dato llegó tarde): entonces la debe, pero su fecha está en el futuro y no deja a nadie vencido (lo
+   muestra el paso 4 de «Qué probar y cómo»). Base: Decisión del usuario 2.1 (anexo §4.2 y la regla de una sola fecha
+   límite por medición).
+4. **Al activar el soporte, «ya reportado» exige que lo haya entregado una persona** (`reportada_por`). Porque el contagio
+   de un componente «No aplica» le pone fecha de reporte a un mixto que quien mide no reportó; sin esto, al quitarse el
+   contagio se aceptaría un reporte tardío sin el soporte. Es lo que dice el anexo («quien mide ya entregó lo suyo») y lo
+   que hace el relleno. Base: Decisión del usuario 2.1.
+5. **La lista de indicadores muestra un soporte que se debe bajo «Falta un dato» como «Por reportar» o «Vencido hace N
+   días»**, como cualquier soporte que se debe, no con el texto «Falta el soporte obligatorio» que nombra el anexo §4.4; ese
+   texto lo llevan la tarea y la pantalla de reportar, y la tabla del año dice «falta el soporte». Porque la columna de la
+   lista es el estado del reporte y nunca tuvo ese texto. **Cuesta** que quien mira la lista no ve que lo que falta es el
+   soporte hasta abrir la tarea o la medición. Si lo prefiere con su texto, es un cambio pequeño. Base: Práctica.
+6. **La demo activa el soporte en `CEX-ID-001`** (el uso de la agenda, mixto), y no en `CNT-ID-001`. Porque es el caso del
+   anexo (un mixto que espera su dato: el mes que no lo debe muestra el caso 1 al llegar el dato) y no cambia lo que
+   afirmaba ningún test de semilla; en `CNT-ID-001` el test de su «periodo que cumple» dejaba de verlo reportado. Cuesta una
+   tarea vencida más para `lider.cex` en la demo. Base: Práctica.
+
+### Deuda técnica (complemento de la 14C)
+
+Los menores de la ejecución que no se arreglaron y siguen siendo verdad en la cabeza (comprobados; un archivo sin carpeta es
+de `src/db/consultas/indicadores/`):
+
+- **Para el usuario:** un indicador anual aprobado tarde con varios meses vacíos da un aviso y una tarea por periodo y
+  administrador, sin agrupar (`categorias-dato:` no está en `GRUPOS` de `src/lib/tareas.ts`).
+- **Para el usuario:** `cerrarDeNuevoElDato` cierra «Sin dato» un periodo vacío reabierto aunque su dimensión tenga
+  categorías activas, saltándose la espera de §5.4, sin advertirlo.
+- **Para el usuario, candidato a arreglar antes de fusionar:** «Quién debía» dice en presente «Su dimensión no tiene
+  categorías activas» también de un periodo que cerró un cierre anterior (las sedes pudieron reactivarse; también los
+  cerrados con la regla de la 14C), y «Su» no tiene antecedente en la fila de un indicador. Texto que propuso el
+  re-revisor: «El dato «{nombre}», {periodo}, no tuvo categorías con que reportarse». El comentario de `cierre.ts` (~:447,
+  «un vacío solo llega al cierre sin ninguna activa…») también es falso por esos caminos.
+- «012.500» no tiene la forma de la regla (empieza por cero) y se lee como 12,5, también en la meta de la importación, que
+  antes la marcaba ambigua: pasa sin aviso (comprobado con `fraccion`).
+- El aviso del periodo vacío dice «actualícelas para que se pueda reportar» también cuando la dimensión no tiene categorías
+  activas (la tarea sí lo distingue).
+- La marca del soporte no deja rastro en la medición: activar sin cambio de estado no escribe evento; para reconstruir por
+  qué una medición lo debe hacen falta la bitácora (`indicador_operacion`) y la historia de su `vence_en`.
+- «(vencido)» sale en la pantalla de reportar de una medición en estado viejo (o de cualquier reportada con el plazo pasado;
+  viene de antes): `lectura.ts` (~:313) no mira el estado.
+- Lo que el manual ya dice (§3.4) y el código hace así: la marca de aviso es de la medición, así que el aviso previo del
+  soporte bajo «Falta un dato» deja sin aviso previo a quien analiza si el dato llega en plazo y pide análisis; y con el
+  análisis y el soporte pendientes a la vez, la pasada solo avisa a quien analiza.
+- Dos constantes `SIN_CATEGORIAS_ACTIVAS` con textos distintos (`cierre.ts` ~:208 y `datos-periodos.ts` ~:712) y el `EXISTS
+  … dimension_categorias … activo` escrito dos veces; el estado viejo, dos veces (`lista.ts` ~:192 y `tareas.ts` ~:126); el
+  fragmento `CASE` de la fecha, dos veces (`operacion.ts` ~:330 y `fichas.ts` ~:914); dos funciones `numeroCanonico`
+  distintas (`src/lib/esquemas/indicadores.ts` ~:120 y `src/lib/indicadores/importacion/revisar.ts` ~:163); el formato
+  «{día} de {mes} de {año}», en cuatro sitios; `datos-periodos.ts` comprueba el punto de miles y después `leerValor` lo
+  repite; `conSoporte` significa tres cosas (`mediciones.ts` y `tests/utiles/mixto.ts`).
+- `drizzle/0017_*.sql` no dice por qué el `CHECK` va después del relleno (solo lo dice la prueba): una regeneración podría
+  devolverlo al orden de drizzle-kit.
+- Comentarios: el encabezado de `src/lib/esquemas/indicadores-datos.ts` todavía dice que lo que el esquema devuelve vale
+  otra vez como entrada (ya no vale para la instancia de la persona), y el de `EditorDeRangos.tsx` (~:103) tiene un desliz
+  («lo rechazaría como punto de miles un valor bien escrito»).
+- «Los valores de la prueba: …» no coincide con ningún patrón de `campoDelError` y va al pie del formulario (como «… deben
+  ser números»).
+- Pruebas que faltan: el render de la ayuda de `EdicionDeHistoricos`; `campoDelError` con «Los rangos del semáforo: …»; que
+  la racha respete una marca en verdadero y que desactivar no toque la marca; un caso 7 que detecte una re-decisión al
+  cambiar el plazo; las exclusiones de `seDebeElSoporte` dentro de `recalcularMedicion` y la función pura sola; el
+  escalamiento y el aviso previo del soporte bajo «Falta un dato»; el «· falta el soporte» en el Excel; que los avisos del
+  periodo actualizado «empiezan de nuevo»; el control negativo del aviso (un periodo con categorías o un dato sin dimensión
+  no avisan); y la rama mixta de «Quién debía» (`cierre.ts` ~:482). En las pruebas, `tests/indicadores-miles-ficha.test.ts`
+  repite un caso y `adjuntarSoporte` (`tests/indicadores-soporte-desde.test.ts`) repite `soporte(tx, id)`.
+- `tests/indicadores-soporte-desde.test.ts` corre el relleno de la `0017` sin filtro dentro de su transacción revertida:
+  con la demo nueva, ahí le pone a `CEX-ID-001` la fecha de su bitácora (la hora del reloj de la siembra, no la del 7 de
+  noviembre: `registrarAuditoria` no recibe otra) y deja sus marcas como estaban, y bloquea esas filas mientras dura. Se
+  revierte y la prueba sigue en verde.
 
 ## Fase 14C — Datos compartidos, desagregación y compuestos
 
@@ -513,7 +788,9 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
    - `CEX-ID-001` **Uso de la agenda de medicina general** (mensual, mixto: A es el dato y B, «Consultas ofertadas en la
      agenda», la digita `lider.cex`; meta 90 %): agosto cerrado en 94,3 %, Bien (pasó de Atención a Bien con la corrección
      del dato, y a `lider.cex` le llegó la «Corrección»); septiembre en **Falta un dato** (lo suyo ya reportado, sin tarea
-     ni vencido); octubre en 95,6 %, Bien.
+     ni vencido); octubre en 95,6 %, Bien. **Desde el complemento de la 14C** exige soporte desde el 7 de noviembre:
+     octubre lo debe (abierto y vencido hasta que se adjunte) y septiembre no (ver «Qué probar y cómo (complemento de la
+     14C)»).
    - `CEX-ID-002` **Consultas de medicina general del trimestre** (trimestral, sin variables propias: nadie lo mide; meta
      5000): segundo trimestre cerrado en 5178, Bien; **tercer trimestre en Falta un dato**, esperando septiembre. (Las
      pantallas del dato escriben sus cifras con punto de miles, decisión 3; las de los indicadores, no.)
@@ -625,7 +902,9 @@ pendiente es el último que cierra un trimestre después del mes cerrado; si no 
   periodo «Sin dato» que se reabre escala a su jefe en la pasada siguiente, porque reabrir no mueve su fecha (decisión
   6); el plazo que el sistema recuenta cuando un valor ajeno deja una medición pidiendo análisis puede recontarse más de
   una vez si el dato se corrige de ida y vuelta (queda en el historial); y una medición reportada antes de volverse
-  obligatorio el soporte vuelve a pedirlo, ya vencida, si alguien le escribe un análisis (viene de la 14A).
+  obligatorio el soporte vuelve a pedirlo, ya vencida, si alguien le escribe un análisis (viene de la 14A). **El
+  complemento de la 14C cambia tres de esas cosas** (ver su sección): el punto de miles se rechaza también en los
+  indicadores, el periodo sin categorías le llega a quien administra y el soporte se decide con su fecha, por medición.
 - **La demo nueva cambia lo que ven algunas cuentas:** `consulta` responde por el dato compartido (su **Mis tareas** trae
   el de septiembre), `lider.cex` hace seguimiento de `SGC-ID-004` y `coordinadora.sgc` de `CEX-ID-003`. «Reportes a tiempo»
   del SGC no cuenta los dos compuestos del SGC: nadie los mide.
@@ -786,10 +1065,15 @@ de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
     «corrección» del historial del dato (`variable_eventos`), con su propia frase, para no hacer una migración más.
     **Consecuencia:** ese periodo sigue siendo tarea de su responsable, que no puede reportarlo hasta que quien administra
     actualice; le recuerda, vence y escala, y a quien administra nadie le avisa. Base: ISO 9.1.1 y anexo §5.7.
+    **Reemplazada en esa consecuencia por el complemento de la 14C** (su anexo, §5): el periodo vacío avisa a quien
+    administra y es su tarea, no la de su responsable, y el cierre lo espera. Sigue lo demás: no se reporta vacío y quien
+    administra lo actualiza.
 45. **El formulario de un dato rechaza un valor escrito con punto de miles** («1.600»); la pantalla lo sigue mostrando con
     punto de miles (decisión 3). Porque «1.731» se guardaba como 1,731 sin avisar. Cuesta que un decimal de tres cifras
     exactas se escribe con coma («2,375»). **Los formularios de los indicadores no cambiaron** (pregunta 1, abajo). Base:
-    ISO 9.1.1 (resultados válidos).
+    ISO 9.1.1 (resultados válidos). **Reemplazada en eso por el complemento de la 14C** (su anexo, §3): el mismo rechazo,
+    con la misma regla y el mismo mensaje, vale ya en lo que se reporta cada periodo, en la ficha, en las metas programadas
+    y en los límites de captura de un dato.
 46. **La confirmación «¿Es correcto?» de una variación grande vale solo para el valor por el que se preguntó.** Base:
     Decisión del usuario 2.1 (se confirma lo que se ve), por analogía.
 47. **«Reportes a tiempo» juzga cada reporte contra la fecha límite que tenía el reporte**, no contra la que el sistema
@@ -810,6 +1094,9 @@ de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
     quedó reportada, vuelve a pedir el soporte y aparece vencida, que es como la 14A trata a toda medición reportada antes
     de volverse obligatorio el soporte (`analizar` recalcula igual en `main`); y un soporte que sí se debía se perdona si
     el dato llega tarde y cumple. Base: la regla de la 14A «el soporte obligatorio rige hacia adelante» (F14A-R52).
+    **Reemplazada por el complemento de la 14C** (su anexo, §4): el indicador guarda desde cuándo exige soporte y cada
+    medición, si lo debe, decidido una vez al activarlo o al nacer; ya no lo deciden el plazo ni el resultado, un análisis
+    no lo vuelve a pedir y lo que sí se debía no se perdona. Mientras falta el dato, el soporte que se debe vence y escala.
 50. **Los soportes de un dato se ven desde el indicador que lo usa:** junto a la variable en la pantalla de reportar de un
     mixto, en «Soportes» de un indicador sin variables propias y en la columna «Soportes» de la tabla del año. Solo para
     quien ve los soportes de ese indicador y solo de los datos que el indicador toma directamente, nunca los de un
@@ -835,7 +1122,8 @@ de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
     incorrecto ni una fuga. Base: Práctica.
 
 **Lo que el usuario decidió aparte el 2026-11-16** («P1 sí, P2 sí, P3 sí, P4 dejar»; cada pregunta iba con la
-recomendación de quien coordinó, y las tres primeras quedan por construir):
+recomendación de quien coordinó; **las tres primeras quedaron construidas en el complemento de la 14C**, ver su sección,
+arriba de esta):
 
 1. **¿El mismo rechazo del punto de miles en los formularios de los indicadores?** Hoy «1.731» se lee ahí como 1,731,
    desde la 14A. Recomendación: sí, en una entrega pequeña aparte, porque toca el lector de números que comparte todo el
@@ -896,6 +1184,7 @@ Lo que la revisión final de toda la rama dejó con nombre y la ola final no arr
   periodo ya reportado sigue dejando su fila del indicador «No aplica: El dato no trae esta categoría».
 - No queda guardado cuándo se activó «soporte obligatorio»: para una medición que esperaba un dato se decide con su plazo
   (si el dato llega con el plazo vencido, no se le pide el soporte; ver `recalcularMedicion` y `debeElSoporte`).
+  **Resuelto en el complemento de la 14C** (la fecha y la marca de cada medición).
 
 Lo que dejó la re-revisión de la ola final (tres frentes; nada Crítico ni Importante):
 
@@ -906,7 +1195,7 @@ Lo que dejó la re-revisión de la ola final (tres frentes; nada Crítico ni Imp
   después de reportar, o quitado por quien mide) se perdona si el dato llega tarde; y `esperabaElDato` (`mediciones.ts`)
   no distingue «nunca tuvo resultado» de «lo perdió». La tabla del año dice «Falta un dato» mientras la tarea dice
   «Reportar», y la pantalla de reportar dice siempre «Este indicador exige un soporte». La salida es guardar desde cuándo
-  es obligatorio (una columna, como `ente_desde`).
+  es obligatorio (una columna, como `ente_desde`). **Resuelto en el complemento de la 14C.**
 - **Lo copiado de otra fuente:** en una rejilla, la celda vieja no se limpia hasta la siguiente escritura de esa celda (no
   se lee, pero la cuentan «en uso» `dimensiones.ts` y `conDatos`); `columnasDePendiente` (`con_valor`, `tareas.ts`) no
   mira la fuente de la fila, y por eso la propagación quita las de otra fuente; una pasada que solo limpia cuenta como
@@ -916,7 +1205,7 @@ Lo que dejó la re-revisión de la ola final (tres frentes; nada Crítico ni Imp
   del reporte con reporte previo y sin `venceAntes` (solo por caminos rebuscados: marcar y quitar «No aplica» antes del
   contagio) se juzga contra la fecha nueva.
 - Un periodo de un dato que nació sin categorías sigue siendo tarea de su responsable, que no puede reportarlo: le
-  recuerda, vence y escala, y a quien administra nadie le avisa (decisión 44).
+  recuerda, vence y escala, y a quien administra nadie le avisa (decisión 44). **Resuelto en el complemento de la 14C.**
 - Los soportes del dato no salen en la pantalla de reportar de un mixto **cerrado** (sí en la tabla del año).
 - El periodo que va después de « · » en un título visible sigue con mayúscula («Corregir · Octubre de 2026», «Registrar el
   envío · …»); la etiqueta de un mes sale de dos fuentes, una en minúscula y otra con mayúscula.

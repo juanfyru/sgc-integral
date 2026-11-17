@@ -209,7 +209,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   vive en `app/(app)/indicadores`, `app/acciones-indicadores.ts` (las de sus maestros y
   parámetros, en `app/admin/acciones-indicadores.ts`), `src/db/consultas/indicadores/`,
   `src/lib/indicadores/` (reglas puras: fórmula, periodos, semáforo, textos, acumulado, estados,
-  la foto y los objetivos; el registro de los diez cálculos automáticos, en
+  la foto, los objetivos y el punto de miles, `miles.ts`; el registro de los diez cálculos automáticos, en
   `src/lib/indicadores/calculos/`) y `src/componentes/indicadores/`; su configuración, en
   `app/(app)/admin/(panel)/indicadores`. Lo de la 14B, en `src/db/consultas/indicadores/`:
   `calculos.ts` (el camino de sistema, `tomarCalculo`), `fotos.ts` (`tomarFotos` y `volverACalcular`),
@@ -224,7 +224,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `constancias-vencidas.ts`, `pasada.ts` (el paso genérico de las pasadas de avisos, `correrPaso`) e
   `impactos.ts` (también liviano: lo importan el normograma, `publicacion.ts` y `operacion.ts`).
   Lo de la 14C, en el mismo directorio: `datos.ts` (el catálogo de datos compartidos),
-  `datos-periodos.ts` (sus periodos, reportarlos y su tarea), `datos-soporte.ts`, `datos-vencidos.ts`
+  `datos-periodos.ts` (sus periodos, reportarlos, su tarea y la del periodo sin categorías, con su
+  aviso), `datos-soporte.ts`, `datos-vencidos.ts`
   (su pasada de avisos), `dimensiones.ts` (el maestro de dimensiones y categorías), `categorias.ts`
   (el desglose por categoría y «Actualizar categorías»), `componentes.ts` (los orígenes de una ficha,
   quién toma a quién y lo que se oculta de un compuesto), `propagacion.ts` (lo que se copia de las
@@ -266,9 +267,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `<html>` solo tras validar el hex estricto y el contraste P1/P2 (`src/lib/marca.ts`).
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
-  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de esta entrega son diecisiete
-  (`drizzle/0000` a `drizzle/0016`); la `0015` alteró en su sitio las tablas vacías de la 14C y la `0016`
-  añade `variable_valores.se_pide` (el periodo de un dato que alguna medición necesita).
+  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre del complemento de la 14C son
+  dieciocho (`drizzle/0000` a `drizzle/0017`); la `0015` alteró en su sitio las tablas vacías de la 14C, la
+  `0016` añade `variable_valores.se_pide` (el periodo de un dato que alguna medición necesita) y la `0017`,
+  `indicadores.soporte_obligatorio_desde` y `mediciones.debe_soporte` con su relleno (el `CHECK`
+  `indicadores_soporte_desde` va a mano después de los dos `UPDATE` marcados `-- relleno 0017`: en el orden
+  de drizzle-kit fallaría en una base con indicadores que ya exigen soporte).
 - **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
   dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
   `(app)`, `(cuenta)` y `(app)/admin/(panel)`): nunca se prerenderiza, y el build de CI no
@@ -525,6 +529,28 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Fórmulas:** una fórmula de indicador solo se evalúa con el intérprete de
   `src/lib/indicadores/formula/` (gramática cerrada, fracciones exactas con `bigint`, límites de
   longitud, profundidad y cifras); nunca `eval`, `Function` ni SQL armado con texto del usuario.
+- **El punto de miles** (complemento de la 14C, §3): una cifra **escrita por una persona** con forma de
+  miles con punto se rechaza, con una sola regla para todo el módulo (`tienePuntoDeMiles`,
+  `src/lib/indicadores/miles.ts`: `^-?[1-9]\d{0,2}(\.\d{3})+$` sobre el texto sin los espacios de los
+  extremos) y un solo mensaje (`SIN_PUNTOS_DE_MILES`, «Escriba el valor sin puntos de miles (1731); para
+  decimales use la coma (1,731)», precedido del nombre del campo o de la variable cuando hay varios).
+  «1600», «1,6», «1.6», «0.125», «1600.5» y «1,731» siguen valiendo; un decimal de tres cifras exactas
+  con parte entera de 1 a 999 se escribe con coma. **Dónde se aplica:** lo que se reporta cada periodo,
+  en `leerValor` (`src/lib/indicadores/reporte.ts`: reportar, la rejilla, los históricos y el cálculo en
+  vivo, con la ayuda `AYUDA_SIN_MILES` bajo esos campos) y en `reportarDato`; y la ficha, las metas
+  programadas y los límites de captura de un dato **solo en las Server Actions**, con los esquemas de la
+  persona (`EsquemaFichaDeLaPersona`, `EsquemaDatoDeLaPersona` y `EsquemaMeta`, que lee `numero(mensaje,
+  campo)`). Cada esquema que el dominio vuelve a validar se arma una vez con una fábrica que da también
+  la instancia canónica (`esquemasDeFicha(estricto)` → `EsquemaFicha`; `esquemaDeDato(lector)` →
+  `EsquemaDato`, con `numeroCanonico`): la usan `leer` (`fichas.ts`), `validar` (`datos.ts`) y la
+  importación (`EsquemaFichaImportada`). **No va en el dominio** porque lo que el sistema guarda y pasa
+  entre sus partes usa punto decimal («2.375» guardado es 2,375): la regla miraría texto ya normalizado y
+  rechazaría un valor bueno. Por eso los formularios rellenan con coma lo guardado (`conComa`), el
+  editor de rangos envía lo escrito (`rangosParaEnviar`) y un valor que nadie tocó vuelve sin rechazarse.
+  La importación usa la misma expresión con su propio mensaje («La meta «…» es ambigua…», `revisar.ts`);
+  los rangos que escribe el sistema (`rangosEquivalentes`, `rangosDeLaRegla`) y la meta normalizada de la
+  importación nunca pasan por la regla. Nada guardado se reinterpreta, el intérprete de fórmulas no
+  cambia y las pantallas de los indicadores siguen sin punto de miles (solo las del dato lo muestran).
 - **Lo que calcula el sistema** (anexo 14B, §4 y §5): los cálculos automáticos son la lista fija del
   registro (`CALCULOS`, `src/lib/indicadores/calculos/registro.ts`, diez); el formulario manda una
   clave y un alcance y el servidor los valida contra él y pone la forma, la fórmula, las variables y
@@ -537,10 +563,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   (`puedeVerIndicador`); a quien no, el mismo mensaje sin el código. **Un automático no lo
   digita nadie:** reportar, «no aplica», históricos y soportes rechazan una medición cuya versión que
   rige es automática; al aprobarse una versión automática se quitan los designados «mide» y se apaga
-  el soporte obligatorio. Mientras espera su valor está en **«Falta un dato»**: no es tarea de nadie,
-  no avisa, no vence ni escala (`esperaUnDato` de `src/lib/indicadores/origen.ts`, la regla única, que
-  vale también para lo que espera un valor ajeno; `queFalta`, `tareas.ts`; los pasos de
-  `vencimientos.ts`). **La foto**
+  el soporte obligatorio (y se borra su fecha). Mientras espera su valor está en **«Falta un dato»**: no
+  es tarea de nadie, no avisa, no vence ni escala (`esperaUnDato` de `src/lib/indicadores/origen.ts`, la
+  regla única, que vale también para lo que espera un valor ajeno; `queFalta`, `tareas.ts`; los pasos de
+  `vencimientos.ts`), salvo el soporte que quien mide un mixto debe mientras tanto (`debeElSoporte`, ver
+  «El soporte obligatorio»). **La foto**
   (`fotos.ts`): la de un cálculo de estado, al terminar el periodo y solo del más reciente que
   terminó; la de flujo, al vencer el plazo de reporte; la histórica de un cálculo que se llena hacia
   atrás, sin esperar (`cuandoSeToma`, `src/lib/indicadores/fotos.ts`). La toman la pasada de
@@ -560,7 +587,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   cumplimiento, `porcentajeDeCumplimiento`). **Un indicador sin variables propias no lo mide nadie**
   (`alguienMide`): sin cargo ni designados «mide», sin tarea de reportar, sin soporte obligatorio ni
   soportes, sin prueba al enviarlo y fuera de «Reportes a tiempo», como un automático; al aprobarse
-  una versión así se quitan los «mide» y se apaga el soporte obligatorio, y sí se analiza. Lo propio
+  una versión así se quitan los «mide» y se apaga el soporte obligatorio (y su fecha), y sí se analiza. Lo propio
   de un mixto se reporta sin esperar lo ajeno («Reportar lo mío», que cuenta como reporte), y una
   variable ajena no se digita: el servidor rechaza su valor por su letra (`noSeDigitaDesdeAqui`).
   `revisarOrigenes` (`componentes.ts`) es la única revisión de los orígenes, al guardar, al enviar y
@@ -588,16 +615,19 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   **Se pide** el periodo terminado del dato que cae en un periodo ordinario sin cerrar de un
   indicador activo cuya versión que rige lo cita, también el del periodo del indicador que sigue en
   curso (`asegurarPeriodosDeDatos`: la pasada de vencimientos, el cierre y las páginas del dato). Lo
-  que se pide es `periodoQueSePide` (pendiente y `se_pide`), el mismo fragmento para la tarea, sus
-  avisos (`datos-vencidos.ts`), el número de la pestaña y el cierre: un periodo que ya nadie pide no
-  es tarea de nadie ni lo cierra el cierre. Un periodo no nace vencido: si su fecha límite ya pasó al
+  que se pide es `periodoQueSePide` (pendiente y `se_pide`), el mismo fragmento para la página del dato,
+  la tarea, sus avisos (`datos-vencidos.ts`), el número de la pestaña y el cierre: un periodo que ya nadie
+  pide no es tarea de nadie ni lo cierra el cierre. Lo que se le pide a su **responsable** es además un
+  periodo con categorías: la tarea (`tareasDeDatos`), sus avisos y el «por reportar» de la lista
+  (`resumenDeDatos`) usan `periodoQueSePide AND NOT periodoSinCategorias` (ver abajo). Un periodo no
+  nace vencido: si su fecha límite ya pasó al
   abrirlo, cuenta desde ese día. Lo reportan y lo corrigen (antes del cierre, sin justificación) sus
   responsables y los líderes del proceso dueño, y el Admin SGC solo si no hay ninguno
   (`puedeReportarDato`, con `indicadores.medir`, comprobado dentro de la transacción); cada cambio deja
   su antes y su después en `variable_eventos` (regla 5). El valor de un dato se escribe **sin punto de
-  miles**: las pantallas del dato lo muestran («1.749») y el intérprete compartido leería «1.600» como
-  1,6, así que `reportarDato` lo rechaza antes (`SIN_PUNTOS_DE_MILES`; el intérprete de
-  `src/lib/indicadores/reporte.ts` no se toca). La confirmación de la variación vale para el valor por
+  miles**, como toda cifra que escribe una persona en el módulo (ver «El punto de miles»): las pantallas
+  del dato lo muestran («1.749»), y `reportarDato` lo rechaza con su propio mensaje, sin el nombre de la
+  variable salvo en un dato por categoría. La confirmación de la variación vale para el valor por
   el que se preguntó (`confirmadoValor`, que el formulario devuelve con la casilla). Un dato con
   dimensión fija la lista de categorías de cada periodo al abrirlo, como una medición; uno que nació sin
   ninguna no se reporta vacío (`PERIODO_SIN_CATEGORIAS`), y en un periodo **pendiente** quien administra
@@ -605,7 +635,22 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   el periodo `FOR UPDATE` y el maestro `FOR KEY SHARE`). Su evento es un `correccion` con
   `detalle.categorias.agregadas` y sin antes ni después de valor (el `CHECK` de `variable_eventos` no
   tiene otro tipo): quien lea los `correccion` de un dato los distingue por esa clave
-  (`HistorialDelDato`). **Quien abre mediciones en una lectura les
+  (`HistorialDelDato`). **El periodo que nace sin categorías** (complemento de la 14C, §5;
+  `periodoSinCategorias`: con dimensión y la lista vacía) es de quien administra, no de su responsable.
+  Al nacer (`asegurarDe`, solo la transacción que lo insertó: `RETURNING`, así dos pasadas a la vez avisan
+  una vez) avisa a cada Admin SGC activo (`indicadores.dato_sin_categorias`, «El periodo {periodo} del
+  dato «{dato}» no tiene categorías: actualícelas para que se pueda reportar», con enlace a la página del
+  dato); mientras siga vacío es su tarea (`tareasDeCategoriasPendientes`: «Actualizar las categorías de
+  {dato}, {periodo}», sin fecha límite ni escalamiento; si la dimensión no tiene ninguna categoría activa,
+  el detalle lo dice). El aviso y la tarea nombran el dato y el periodo, nunca un indicador, y un periodo
+  que ya nadie pide no los da. A su responsable no le da tarea, recordatorio, vencido ni escalamiento: la
+  página del dato y la lista dicen «Espera sus categorías» (`ESPERA_SUS_CATEGORIAS`), el recuadro de
+  reportar, `PERIODO_SIN_CATEGORIAS` («…: el Administrador del SGC debe actualizarlas antes de
+  reportarlo»), y la pantalla de reportar de un indicador que lo usa, ««{dato}» espera que el
+  Administrador del SGC actualice sus categorías.», sin fecha (`esperaCategorias`, `avisoDeFalta`). Cuando
+  «Actualizar categorías» añade alguna a un periodo vacío, su fecha límite cuenta el plazo completo del
+  dato desde ese día, sus marcas de aviso se borran y el evento lleva la fecha nueva (`detalle.venceEn`).
+  **Quien abre mediciones en una lectura les
   lleva lo de sus fuentes** (`asegurarMedicionesConFuentes`, `propagacion.ts`: la página del
   indicador, la de reportar, la lista, la matriz y el impreso), y una acción que cambia una fuente
   propaga en cuanto confirma lo suyo.
@@ -647,7 +692,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   solo la pasan a `cerrada` (`src/db/consultas/indicadores/cierre.ts`). Cuando cambia el semáforo o
   el resultado de una medición ordinaria, ella misma recalcula la racha de las n − 1 siguientes
   medidas sin cerrar (`recalcularSiguientes`, evento `recalculo`, F14A-R53), y cambiar el plazo o
-  «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52). **El plazo que
+  «soporte obligatorio» llega a las mediciones en curso (`cambiarOperacion`, F14A-R52: su fecha límite, o
+  la marca del soporte al activarlo y su recálculo). **El plazo que
   mueve una fuente** (`plazoPorLaFuente`, `mediciones.ts`; anexo 14C §3.4): la medición que un cambio
   ajeno deja pidiendo el análisis con su fecha ya pasada la cuenta otra vez desde ese día, y su evento
   guarda la nueva (`venceEn`) y la que tenía (`venceAntes`); lo mismo cada siguiente a la que la racha
@@ -659,18 +705,43 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   ninguno, `vence_en` (`reportesDelPeriodo`, `calculos.ts`). Un
   recálculo que no nace de un cambio en la medición (esos dos y la propagación) es de sistema
   (`sistema: "racha"`, `"soporte"` o `"fuente"`): no la mueve de la versión con que se congeló al
-  reportarla (el de una fuente, solo si ya tenía resultado: `versionesDeCalculo`), su evento dice qué
-  pasó con la marca, y el de la racha o el de una fuente no reabre por falta de soporte lo ya
-  reportado. **El soporte
-  obligatorio rige hacia adelante:** activarlo solo alcanza las mediciones aún en plazo. No queda
-  guardado cuándo se activó, así que para la medición que esperaba un dato con lo propio ya entregado
-  decide su plazo: si el dato llega con el plazo vencido, cuenta como ya reportada y no se le pide; si
-  llega en plazo, se debe. Mientras espera el dato y sigue en plazo, quien mide tiene la tarea del
-  soporte y la lista dice «Por reportar» (`debeElSoporte`, `tareas.ts`); vencido el plazo, bajo «Falta
-  un dato» nada se pide ni vence. También
+  reportarla (el de una fuente, solo si ya tenía resultado: `versionesDeCalculo`) y su evento dice qué
+  pasó con la marca del incumplimiento. Si la medición debe el soporte lo dice su `debe_soporte`, igual
+  en todo recálculo, venga de quien venga (ver «El soporte obligatorio»). También
   escribe `cumple`: alcanzar la meta no es lo mismo que estar en Bien, porque con rangos escritos
   (forma B, spec 14A §3) Bien puede empezar antes de la meta; una medición anterior a la `0012`
   tiene `cumple` nulo y se lee como antes (Bien ⇔ cumple, `cumpleDeFila`).
+- **El soporte obligatorio** (complemento de la 14C, §4; rige hacia adelante desde la 14A, F14A-R52, ahora
+  decidido al activar y guardado). **El indicador guarda desde cuándo lo exige**
+  (`indicadores.soporte_obligatorio_desde`, nula si no lo exige y con fecha si lo exige: `CHECK`
+  `indicadores_soporte_desde`): activarlo pone la hora del cambio (`cambiarOperacion`, `guardarBorrador`,
+  crear y duplicar), desactivarlo la borra, volver a activarlo pone la nueva (sin intervalos), guardar sin
+  cambiarlo no la toca (en SQL, con `coalesce`, para no perder sus microsegundos) y `alPublicarVersion` la
+  borra cuando apaga el soporte. Es lo que se muestra («Sí: cada reporte lleva su soporte, desde el 12 de
+  octubre de 2026», `soporteEnTexto`, en la ficha técnica, el impreso y el Excel) y lo que se audita; **lo
+  que decide es la marca de cada medición** (`mediciones.debe_soporte`), que se decide **una sola vez**:
+  al nacer (`abrirPeriodos`, el único `INSERT` de mediciones: la ordinaria nace marcada si el indicador lo
+  exige; la histórica, nunca) o al activarse (`recalcularPorSoporte`, `en-curso.ts`: en las en curso, sin
+  cerradas ni históricas, `debe_soporte = NOT (reportada_en IS NOT NULL AND reportada_por IS NOT NULL AND
+  vence_en < ahora)`; la deben todas salvo las que quien mide ya había reportado, con su fecha límite de
+  ese momento ya pasada; el reporte que pone el sistema, sin `reportada_por`, no cuenta). Volver a
+  activarlo la decide otra vez, con la hora nueva; desactivarlo no la toca. **Nada más la cambia:** ni un
+  cambio del plazo, ni una fuente que llega, ni la racha, ni un análisis, ni una corrección, ni la
+  reapertura. **La regla única** es `seDebeElSoporte` (`mediciones.ts`, pura: el indicador lo exige, la
+  medición está marcada y no es histórica, ni «No aplica», ni de una versión que nadie mide): la usan
+  `recalcularMedicion`, el rechazo «Este indicador exige un soporte: adjúntelo antes de reportar»
+  (`exigirElSoporte`, al reportar y en la rejilla), las tareas (`queFalta`), la lista, la pasada, la tabla
+  del año y el Excel («Falta un dato · falta el soporte», `estadoEnTexto`) y la pantalla de reportar
+  (`debeSoporte`, `lectura.ts`, que solo entonces dice que es obligatorio). El soporte que se debe
+  mientras la medición espera su dato es tarea de quien mide como cualquier soporte (`debeElSoporte`,
+  `tareas.ts`: la tarea dice «Falta el soporte obligatorio» y la lista, «Por reportar» o «Vencido hace N
+  días»): vence con la fecha límite de la medición y la pasada avisa y escala. Una medición abierta solo
+  por un soporte que ya no debe, con su resultado (un estado viejo que pudo dejar la `0017`), no es tarea
+  de nadie y la lista y la tabla la dan por reportada hasta su próximo recálculo (`queFalta`, `lista.ts`).
+  La `0017` puso la fecha a los que ya lo exigían (la de la última fila de la bitácora que lo deja
+  exigiéndolo o, sin rastro, `indicadores.creado_en`) y marcó sus mediciones en curso con la misma regla
+  aplicada a esa fecha, contra la fecha límite del reporte (`venceAntes` o `vence_en`); las cerradas
+  quedaron sin marca y no recalculó ninguna medición.
 - **La medición desagregada** (anexo 14C, §5; `mediciones.ts` y `categorias.ts`): cada medición ordinaria de
   una versión con dimensión congela al abrirse su lista de categorías (`mediciones.categorias`:
   `listaDelPeriodo`, con el maestro leído `FOR KEY SHARE` en la transacción que la guarda, porque el `jsonb`
@@ -714,7 +785,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   ahora`, la regla de las mediciones): cierra los reportados, aunque ya no se pidan, y los pendientes que
   se piden, sin valor («Sin dato»), unos y otros ya vencidos; no los que siguen en plazo, **tampoco si ya
   están reportados** (hasta el cierre se corrigen sin justificación, y las mediciones que los usan
-  esperan con ellos), ni los pendientes que ya nadie pide (`se_pide` falso). El resumen que el cierre
+  esperan con ellos), ni los pendientes que ya nadie pide (`se_pide` falso), ni el pendiente que se pide
+  **sin categorías** mientras su dimensión tenga alguna activa, aunque haya vencido (complemento de la
+  14C, §5.4: lo espera, con las mediciones que lo usan, y el resumen lo cuenta aparte, `esperanCategorias`,
+  «… esperan que se actualicen sus categorías: quedan para el siguiente cierre.»); si la dimensión no
+  tiene ninguna activa, lo cierra «Sin dato» como a un vencido y el resumen dice por qué
+  (`sinCategoriasActivas`, «su dimensión no tiene categorías activas»). El resumen que el cierre
   guarda y su bitácora llevan cuántos periodos de datos cerró (`datos`: un cierre no se modifica, y uno
   anterior a esa cuenta no la trae: quien lo lee no dice nada). Y **no cierra («espera»)** la medición con una entrada que no está cerrada ni se
   cierra en ese mismo cierre, ni la de un indicador activo cuyo valor copiado ya no coincide con su fuente.
@@ -722,7 +798,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   antes del `UPDATE`), y el resumen la dice (`esperanEntrada`, `datos`). Quién debía lo que quedó «Sin
   dato» sale de la regla única de «Falta un dato» (`esperaUnDato`, `src/lib/indicadores/origen.ts`, la
   misma de la lectura, la lista y las tareas): quienes miden, los responsables del dato o el indicador
-  componente. «Cerrar de nuevo» una medición no la cierra con su fuente abierta ni, en un indicador activo,
+  componente; por un periodo de un dato sin valor y con la lista vacía, decidido con su fila aunque lo haya
+  cerrado un cierre anterior, «Su dimensión no tiene categorías activas» (`quienDebia`). «Cerrar de nuevo» una medición no la cierra con su fuente abierta ni, en un indicador activo,
   con lo copiado distinto de su fuente (propaga antes lo de su indicador); un periodo reabierto de un dato
   se cierra de nuevo con `cerrarDeNuevoElDato`. **La reapertura en cascada** (`reabrirEnCascada`;
   `reabrirMedicion` delega en ella cuando la medición tiene dependientes cerradas): reabrir un periodo
@@ -893,7 +970,13 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   1.º a las 00:30 y a las 10:00, el 2, 9, 10, 11, 12, 16 y el último de cada mes), durante trece meses,
   más los `CASOS`; la
   guarda de `tests/semilla-indicadores.test.ts` cuenta dos restringidos (`GTH-IND-01` y el compuesto
-  `SGC-ID-004`).
+  `SGC-ID-004`). Desde el complemento de la 14C, la agenda activa el soporte obligatorio de `CEX-ID-001`
+  con `cambiarOperacion` y la hora inyectada (el hecho `soporte`, `soporteDelComplemento`: el día 7 de
+  `meses[0]`, con lo suyo de `meses[1]` ya reportado), así que `meses[1]` lo debe y `meses[2]` no; lo
+  comprueban la semilla, su test (detrás de la guarda, que compara la fecha) y el calendario. Es el único
+  indicador de la demo que exige soporte: `tests/indicadores-soporte-desde.test.ts` corre el relleno de la
+  `0017` sin filtro dentro de su transacción revertida, y ahí le pone la fecha de su bitácora (la hora del
+  reloj de la siembra, porque `registrarAuditoria` no recibe otra) sin cambiar sus marcas.
 
 ## Comandos
 
