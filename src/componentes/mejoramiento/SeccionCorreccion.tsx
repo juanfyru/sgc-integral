@@ -72,6 +72,9 @@ export function SeccionCorreccion({
         {devuelta ? (
           <p className="whitespace-pre-line break-words border-l-2 border-mod-planes pl-3 text-sm">
             <span className="font-medium">Se devolvió la corrección:</span> {devuelta}
+            <span className="mt-1 block text-muted-foreground">
+              Si la registra otra vez con corrección, adjunte evidencia nueva: la anterior se devolvió con ella.
+            </span>
           </p>
         ) : null}
         {c.requerida === null ? (

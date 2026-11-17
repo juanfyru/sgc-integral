@@ -47,10 +47,9 @@ import {
   procesosDelAlcance,
   usuariosActivos,
 } from "@/db/consultas/mejoramiento/opciones";
-import { puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
+import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { diaCorto } from "@/lib/mejoramiento/formato";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
-import { esExterno } from "@/lib/mejoramiento/origenes";
 import { TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
@@ -166,11 +165,15 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   const conFormulario = completo && !terminado && (sigue.puede || puedeExigir);
   const usuarios = conFormulario && sigue.paso === "corregir" ? await usuariosActivos() : [];
   const comoGerencia = sesion.rol === "gerencia";
+  const rechaza =
+    conFormulario &&
+    sigue.paso === "aceptar" &&
+    (await ofreceRechazo(obtenerSql(), sesion, { registradoPor: h.registradoPorId, procesoId: h.procesoId, origen: h.origen }));
   const formulario = !conFormulario ? null : sigue.paso === "aceptar" ? (
     <PasoAceptar
       key={`paso-${clave}`}
       hallazgoId={h.id}
-      puedeRechazar={sesion.rol === "lider_proceso" && !esExterno(h.origen)}
+      puedeRechazar={rechaza}
       aceptar={aceptarHallazgoAccion}
       rechazar={rechazarHallazgoAccion}
     />

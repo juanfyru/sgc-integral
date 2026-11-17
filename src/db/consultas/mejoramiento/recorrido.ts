@@ -36,6 +36,8 @@ import { bloquearHallazgo, legible, NO_EXISTE, transicionarHallazgo } from "./fl
 
 export const EXTERNO_NO_SE_RECHAZA = "Un hallazgo de origen externo no se rechaza: se responde";
 export const SIN_EVIDENCIA = "Adjunte la evidencia de la corrección";
+export const EVIDENCIA_DEVUELTA = "Adjunte la evidencia nueva de la corrección: la anterior se devolvió";
+export const SIN_EVIDENCIA_AL_VALIDAR = "La corrección ya no tiene evidencia: devuélvala";
 
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 type Acta = { numero: string; fecha: string } | null;
@@ -69,13 +71,25 @@ async function puedeAceptar(tx: Cliente, p: Persona, h: HallazgoBase): Promise<b
  * Rechaza solo un líder activo del proceso que no lo registró: un rechazo solo existe en un proceso con líder (§8.3), y
  * F15-DC3 extiende al Admin SGC aceptar, no rechazar. Quien puede aceptar y es líder, puede rechazar.
  */
-async function puedeRechazar(tx: Cliente, p: Persona, h: HallazgoBase): Promise<boolean> {
+async function puedeRechazar(tx: Cliente, p: Persona, h: Pick<HallazgoBase, "registradoPor" | "procesoId">): Promise<boolean> {
   return (
     puede(p, "mejora.formular") &&
     p.rol === "lider_proceso" &&
     h.registradoPor !== p.usuarioId &&
     (await lideresDeProceso(h.procesoId, { sql: tx })).includes(p.usuarioId)
   );
+}
+
+/**
+ * Si a la persona se le ofrece rechazar el hallazgo: puede rechazar (`puedeRechazar`) y el origen es interno (los externos se
+ * responden). Lo usan la página, «Lo que sigue» («aceptar el hallazgo o rechazarlo», o solo «aceptar el hallazgo»).
+ */
+export async function ofreceRechazo(
+  tx: Cliente,
+  p: Persona,
+  h: Pick<HallazgoBase, "registradoPor" | "procesoId" | "origen">,
+): Promise<boolean> {
+  return !esExterno(h.origen) && (await puedeRechazar(tx, p, h));
 }
 
 /** Retira o sostiene quien lo registró, o un Admin SGC en su lugar (spec §6.1). */
@@ -173,6 +187,25 @@ async function contarDeNuevoElPlazoDeFormular(tx: TransactionSql, h: HallazgoBas
 }
 
 const enLugarDe = (p: Persona, h: HallazgoBase) => (h.registradoPor !== p.usuarioId ? { enLugarDeQuienRegistro: true } : {});
+
+/** Los archivos de la corrección del hallazgo, por id (el orden en que se subieron). */
+async function evidenciaDeLaCorreccion(tx: TransactionSql, id: number): Promise<number[]> {
+  const filas = await tx`SELECT id FROM archivos
+    WHERE contexto = 'mejora_hallazgo' AND contexto_id = ${id} AND rol = 'correccion' AND version_id IS NULL ORDER BY id`;
+  return filas.map((f) => Number(f.id));
+}
+
+/**
+ * La evidencia que se devolvió con la corrección la última vez (`evidenciaDevuelta` del último `devolver_correccion`), o
+ * nada si nunca se devolvió. Lo que se sube después tiene un id mayor: el id dice «después» sin depender de dos relojes
+ * (`archivos.creado_en` es la hora de la base al subir; la del evento, la de `ahora`).
+ */
+async function evidenciaDevuelta(tx: TransactionSql, id: number): Promise<number[]> {
+  const [e] = await tx`SELECT detalle FROM mejora_eventos
+    WHERE hallazgo_id = ${id} AND tipo = 'devolver_correccion' ORDER BY id DESC LIMIT 1`;
+  const lista = (e?.detalle as { evidenciaDevuelta?: unknown } | undefined)?.evidenciaDevuelta;
+  return Array.isArray(lista) ? lista.map(Number).filter(Number.isSafeInteger) : [];
+}
 
 /** La decisión que había, para el evento del acto que la reemplaza o la borra. */
 async function decisionAnterior(tx: TransactionSql, id: number) {
@@ -303,10 +336,12 @@ export async function registrarCorreccion(
         const [u] = await tx`SELECT 1 FROM usuarios WHERE id = ${v.responsableId} AND activo`;
         if (!u) throw new ErrorMejora("Elija un responsable activo, o escriba el nombre de quien hizo la corrección");
       }
-      // Después del candado: una subida en curso espera al hallazgo bloqueado, o ya está confirmada y se cuenta.
-      const [archivo] = await tx`SELECT 1 FROM archivos
-        WHERE contexto = 'mejora_hallazgo' AND contexto_id = ${h.id} AND rol = 'correccion' AND version_id IS NULL LIMIT 1`;
-      if (!archivo) throw new ErrorMejora(SIN_EVIDENCIA);
+      // Después del candado: una subida en curso espera al hallazgo bloqueado, o ya está confirmada y se cuenta. Tras una
+      // devolución, la evidencia devuelta no basta: hace falta al menos un archivo subido después.
+      const evidencia = await evidenciaDeLaCorreccion(tx, h.id);
+      if (evidencia.length === 0) throw new ErrorMejora(SIN_EVIDENCIA);
+      const devuelta = await evidenciaDevuelta(tx, h.id);
+      if (devuelta.length > 0 && !evidencia.some((a) => a > Math.max(...devuelta))) throw new ErrorMejora(EVIDENCIA_DEVUELTA);
     }
     const obligada = accionObligada(h);
     await tx`UPDATE mejora_hallazgos SET correccion_requerida = ${v.requerida}, correccion_descripcion = ${v.descripcion},
@@ -385,6 +420,10 @@ export async function validarCorreccion(sesion: SesionFlujo, d: { hallazgoId: nu
   await conElHallazgo(v.hallazgoId, opciones, async (tx, h, c) => {
     if (!(await puedeValidarCorreccion(h.id, sesion, { sql: tx }))) await negar(tx, sesion, h.id);
     exigirEstado(h, "validar_correccion");
+    // No se cierra con corrección sin evidencia (PC-02): se vuelve a contar aquí, con el hallazgo bloqueado.
+    if (h.correccionRequerida === true && (await evidenciaDeLaCorreccion(tx, h.id)).length === 0) {
+      throw new ErrorMejora(SIN_EVIDENCIA_AL_VALIDAR);
+    }
     const resultado = h.correccionRequerida === false ? "sin_accion" : "con_correccion";
     await tx`UPDATE mejora_hallazgos SET validada_por = ${sesion.usuarioId}, validada_en = ${c.ahora},
         resultado_cierre = ${resultado}, cerrado_en = ${c.ahora}, cerrado_por = ${sesion.usuarioId}
@@ -408,9 +447,18 @@ export async function devolverCorreccion(
     if (!(await puedeValidarCorreccion(h.id, sesion, { sql: tx }))) await negar(tx, sesion, h.id);
     exigirEstado(h, "devolver_correccion");
     const antes = await decisionAnterior(tx, h.id);
+    // La evidencia que se devuelve: registrar la corrección otra vez pedirá un archivo subido después.
+    const devuelta = await evidenciaDeLaCorreccion(tx, h.id);
     await tx`UPDATE mejora_hallazgos SET accion_requerida = NULL, accion_justificacion = NULL, accion_decidida_por = NULL,
         accion_decidida_en = NULL
       WHERE id = ${h.id}`;
-    await transicionarHallazgo(tx, sesion, h, "devolver_correccion", { detalle: { nota: v.nota, decision: { antes } } }, c);
+    await transicionarHallazgo(
+      tx,
+      sesion,
+      h,
+      "devolver_correccion",
+      { detalle: { nota: v.nota, decision: { antes }, evidenciaDevuelta: devuelta } },
+      c,
+    );
   });
 }

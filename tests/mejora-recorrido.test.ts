@@ -23,13 +23,14 @@ import {
   arbitrarHallazgo,
   decidirAccionCorrectiva,
   devolverCorreccion,
+  ofreceRechazo,
   rechazarHallazgo,
   registrarCorreccion,
   retirarHallazgo,
   sostenerHallazgo,
   validarCorreccion,
 } from "@/db/consultas/mejoramiento/recorrido";
-import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { cambiarProceso, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { puedeValidarCorreccion } from "@/lib/alcance";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
@@ -133,8 +134,38 @@ describe("aceptar o rechazar", () => {
       await expect(
         rechazarHallazgo(b.admin, { hallazgoId: otro.id, justificacion: JUSTIFICACION }, c(LUEGO, tx)),
       ).rejects.toBeInstanceOf(ErrorPermiso);
+      // Quien no puede rechazar no lee «o rechazarlo», ni se le ofrece.
+      expect((await leerHallazgo(b.admin, otro.id, { sql: tx }))?.loQueSigue).toEqual({
+        paso: "aceptar",
+        puede: true,
+        turno: "A usted le toca aceptar el hallazgo.",
+      });
+      expect((await leerHallazgo(b.control, otro.id, { sql: tx }))?.loQueSigue.turno).toBe(
+        "Tiene el turno: administrador del SGC, para aceptar el hallazgo.",
+      );
+      expect(await ofreceRechazo(tx, b.admin, otro)).toBe(false);
       await aceptarHallazgo(b.admin, { hallazgoId: otro.id }, c(LUEGO, tx));
       expect((await fila(tx, otro.id)).estado).toBe("por_corregir");
+    }));
+
+  it("el aviso a quien acepta sin poder rechazar dice «Aceptar», y el rechazo se ofrece solo al líder en un origen interno", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_aceptar");
+      const turno = (id: number) =>
+        tx`SELECT usuario_id, titulo FROM notificaciones WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND tipo = 'mejora.turno' ORDER BY id`;
+      expect((await turno(h.id)).map((a) => a.titulo)).toEqual([`Aceptar o rechazar ${h.codigo}`]);
+      expect(await ofreceRechazo(tx, b.lider, h)).toBe(true);
+      expect(await ofreceRechazo(tx, b.control, h)).toBe(false);
+
+      // En un proceso sin líder lo acepta el Admin SGC, que no rechaza: su aviso dice «Aceptar».
+      const sinLider = await procesoNuevo(tx);
+      await cambiarProceso(b.admin, { hallazgoId: h.id, procesoId: sinLider, justificacion: "El hecho ocurrió en otro servicio" }, c(LUEGO, tx));
+      const nuevos = (await turno(h.id)).slice(1);
+      expect(nuevos.length).toBeGreaterThan(0);
+      expect(new Set(nuevos.map((a) => a.titulo))).toEqual(new Set([`Aceptar ${h.codigo}`]));
+      expect(nuevos.map((a) => Number(a.usuario_id))).toEqual((await activos(tx, ["admin_sgc"])).filter((u) => u !== b.admin.usuarioId));
+      expect(await ofreceRechazo(tx, b.admin, await bloquearHallazgo(tx, h.id))).toBe(false);
     }));
 });
 
@@ -298,6 +329,21 @@ describe("la corrección", () => {
       expect(await formularAntes(tx, h.id)).toEqual(venceEn("formular", new Date(REGISTRO), await contexto(tx, REGISTRO)));
     }));
 
+  it("tras una devolución, «sí requirió» pide evidencia subida después de devolverla: la devuelta no basta", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_validar");
+      const [vieja] = await tx`SELECT id FROM archivos WHERE contexto = 'mejora_hallazgo' AND contexto_id = ${h.id} AND rol = 'correccion'`;
+      await devolverCorreccion(b.control, { hallazgoId: h.id, nota: "La foto no muestra los formatos diligenciados" }, c(LUEGO, tx));
+      expect((await ultimoEvento(tx, h.id)).detalle).toMatchObject({ evidenciaDevuelta: [Number(vieja.id)] });
+      await expect(registrarCorreccion(b.lider, corregida(h.id, b.lider.usuarioId), c(DESPUES, tx))).rejects.toThrow(
+        "Adjunte la evidencia nueva de la corrección: la anterior se devolvió",
+      );
+      await evidenciaDeCorreccion(tx, h.id, b.lider.usuarioId);
+      await registrarCorreccion(b.lider, corregida(h.id, b.lider.usuarioId), c(DESPUES, tx));
+      expect((await fila(tx, h.id)).estado).toBe("por_decidir");
+    }));
+
   it("sin acción obligada pasa a «Por decidir»; «no requiere corrección inmediata» pide su justificación", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
@@ -433,6 +479,20 @@ describe("la decisión y el camino corto", () => {
       await expect(validarCorreccion(b.admin, { hallazgoId: h.id }, c(DESPUES, tx))).rejects.toBeInstanceOf(ErrorPermiso);
       await validarCorreccion(b.gerencia, { hallazgoId: h.id }, c(DESPUES, tx));
       expect(await fila(tx, h.id)).toMatchObject({ estado: "cerrado", resultado_cierre: "sin_accion" });
+    }));
+
+  it("validar vuelve a contar la evidencia: una corrección que se quedó sin archivos no se valida, se devuelve", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_validar");
+      // Una evidencia que se perdió por fuera del dominio (a mano en la base, o antes de la regla de quitar).
+      await tx`DELETE FROM archivos WHERE contexto = 'mejora_hallazgo' AND contexto_id = ${h.id} AND rol = 'correccion'`;
+      await expect(validarCorreccion(b.control, { hallazgoId: h.id }, c(DESPUES, tx))).rejects.toThrow(
+        "La corrección ya no tiene evidencia: devuélvala",
+      );
+      expect((await fila(tx, h.id)).estado).toBe("por_validar");
+      await devolverCorreccion(b.control, { hallazgoId: h.id, nota: "La evidencia de la corrección ya no está" }, c(DESPUES, tx));
+      expect((await fila(tx, h.id)).estado).toBe("por_corregir");
     }));
 
   it("cambiar el «no» por «sí»: en «Por validar» Gerencia exige la acción y el plazo de formular se cuenta desde ese acto", () =>

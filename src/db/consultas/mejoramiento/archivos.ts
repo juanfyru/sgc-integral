@@ -261,6 +261,11 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   if (!esReporte && (TERMINALES as readonly string[]).includes(f.estado ?? "")) {
     return "El hallazgo ya terminó: sus archivos no se quitan";
   }
+  // La evidencia de la corrección es lo que se decide y se valida (SGC-PR-03, PC-02: no se cierra sin evidencia): pasada la
+  // corrección nadie la quita, tampoco el Admin SGC. Si hay que cambiarla, se devuelve la corrección.
+  if (a.contexto === "mejora_hallazgo" && a.rol === "correccion" && f.estado !== "por_corregir") {
+    return "La evidencia de la corrección solo se quita mientras está por corregir";
+  }
   const [subio] = await sql`SELECT usuario_id FROM auditoria
     WHERE accion = 'subir_archivo' AND entidad = 'archivo' AND entidad_id = ${a.id} ORDER BY id LIMIT 1`;
   const suyo = subio !== undefined && Number(subio.usuario_id) === sesion.usuarioId;
@@ -288,7 +293,8 @@ export async function archivosQuitables(
 
 /**
  * Quita un archivo: quien lo subió, mientras su paso sigue abierto, o el Admin SGC mientras el hallazgo no termine (un
- * reporte, mientras esté recibido); en un hallazgo terminado, nadie. Quien no abre el archivo recibe «no existe». Borra la
+ * reporte, mientras esté recibido); en un hallazgo terminado, nadie. La evidencia de la corrección, solo mientras está «Por
+ * corregir», tampoco el Admin SGC después. Quien no abre el archivo recibe «no existe». Borra la
  * fila y deja `eliminar_archivo` en la bitácora; el archivo del almacén se borra después de confirmar y uno ya ausente no
  * es un error.
  */

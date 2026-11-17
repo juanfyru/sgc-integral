@@ -21,7 +21,7 @@ import {
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { activosDeRol, quienTieneElTurno } from "./avisos";
-import { pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
+import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -388,11 +388,19 @@ const LE_TOCA: Partial<Record<EstadoHallazgo, string>> = {
 };
 
 /** La frase de «Lo que sigue» (pura): el turno va en minúscula tras los dos puntos («Tiene el turno: la líder del proceso»). */
-export function fraseDeLoQueSigue(h: Pick<HallazgoBase, "estado" | "resultadoCierre" | "correccionRequerida">, turno: string, mio: boolean): string {
+export function fraseDeLoQueSigue(
+  h: Pick<HallazgoBase, "estado" | "resultadoCierre" | "correccionRequerida">,
+  turno: string,
+  mio: boolean,
+  x?: { sinRechazo?: boolean },
+): string {
   if (esTerminal(h.estado)) return "El hallazgo está " + etiquetaDeEstado(h).toLowerCase() + ": no tiene pasos pendientes.";
   if (h.estado === "en_espera") return "Espera el momento de evaluar la eficacia de las acciones.";
   const quien = turno.charAt(0).toLowerCase() + turno.slice(1);
-  const toca = h.estado === "por_validar" && h.correccionRequerida === false ? "validar el cierre sin acción" : LE_TOCA[h.estado];
+  const toca =
+    h.estado === "por_validar" && h.correccionRequerida === false ? "validar el cierre sin acción"
+    : h.estado === "por_aceptar" && x?.sinRechazo ? "aceptar el hallazgo"
+    : LE_TOCA[h.estado];
   if (!toca) return "Tiene el turno: " + quien + ".";
   return mio ? "A usted le toca " + toca + "." : "Tiene el turno: " + quien + ", para " + toca + ".";
 }
@@ -417,7 +425,11 @@ async function loQueSigue(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, tur
   if (!puede && h.estado === "por_validar" && (await quienTieneElTurno(tx, h)).length === 0) {
     return { paso, puede, turno: NADIE_VALIDA };
   }
-  return { paso, puede, turno: fraseDeLoQueSigue(h, turno, puede) };
+  // «o rechazarlo», solo a quien puede rechazar; a los demás, sin él si el turno es del Admin SGC (proceso sin líder).
+  const sinRechazo =
+    h.estado === "por_aceptar" &&
+    (puede ? !(await ofreceRechazo(tx, sesion, h)) : (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0);
+  return { paso, puede, turno: fraseDeLoQueSigue(h, turno, puede, { sinRechazo }) };
 }
 
 /**

@@ -16,6 +16,7 @@ import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import {
   archivoServible,
   archivosDe,
+  archivosQuitables,
   autorizarSubida,
   exigirDestinoAbierto,
   quitarArchivoDeMejora,
@@ -317,23 +318,42 @@ describe("quitar", () => {
 });
 
 describe("quitar un archivo de corrección y exigirDestinoAbierto por rol", () => {
-  it("quien lo subió ya no puede cuando su paso se cerró; el Admin SGC sí, mientras el hallazgo no termine", () =>
+  it("la evidencia de la corrección solo se quita por corregir; después nadie, tampoco el Admin SGC (PC-02: no se cierra sin evidencia)", () =>
     revertida(sql, async (tx) => {
       const { b, h } = await escena(tx);
       await estado(tx, h.id, "por_corregir");
-      const { id: f1 } = await registrarArchivo(
-        {
-          versionId: null, rol: "correccion", ruta: `mejoramiento/hallazgos/${h.id}/${Date.now()}-c1.pdf`, nombreOriginal: "c1.pdf",
-          extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "e".repeat(64),
-          contexto: "mejora_hallazgo", contextoId: h.id,
-        },
-        b.lider.usuarioId,
-        { sql: tx },
-      );
-      await estado(tx, h.id, "por_decidir");
-      await expect(quitarArchivoDeMejora(b.lider, f1, { sql: tx })).rejects.toThrow("No puede quitar este archivo");
-      await quitarArchivoDeMejora(b.admin, f1, { sql: tx });
-      expect(await tx`SELECT 1 FROM archivos WHERE id = ${f1}`).toHaveLength(0);
+      const subir = async (nombre: string) =>
+        Number(
+          (
+            await registrarArchivo(
+              {
+                versionId: null, rol: "correccion", ruta: `mejoramiento/hallazgos/${h.id}/${Date.now()}-${nombre}`, nombreOriginal: nombre,
+                extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "e".repeat(64),
+                contexto: "mejora_hallazgo", contextoId: h.id,
+              },
+              b.lider.usuarioId,
+              { sql: tx },
+            )
+          ).id,
+        );
+      const f1 = await subir("c1.pdf");
+      const f2 = await subir("c2.pdf");
+      const f3 = await subir("c3.pdf");
+      // Por corregir: quien la subió y el Admin SGC la quitan.
+      await quitarArchivoDeMejora(b.lider, f2, { sql: tx });
+      await quitarArchivoDeMejora(b.admin, f3, { sql: tx });
+      expect(await tx`SELECT 1 FROM archivos WHERE id IN (${f2}, ${f3})`).toHaveLength(0);
+      const dueno = { contexto: "mejora_hallazgo", contextoId: h.id };
+      for (const e of ["por_decidir", "por_validar", "por_formular"]) {
+        await estado(tx, h.id, e);
+        for (const quien of [b.lider, b.admin]) {
+          await expect(quitarArchivoDeMejora(quien, f1, { sql: tx })).rejects.toThrow(
+            "La evidencia de la corrección solo se quita mientras está por corregir",
+          );
+          expect(await archivosQuitables(tx, quien, [{ id: f1 }], dueno)).toEqual([]);
+        }
+      }
+      expect(await tx`SELECT 1 FROM archivos WHERE id = ${f1}`).toHaveLength(1);
     }));
 
   it("exigirDestinoAbierto: corrección y análisis, y el rol es obligatorio donde hay roles", () =>

@@ -137,9 +137,11 @@ export async function avisarDelTurno(
   const texto = LO_QUE_SIGUE[h.estado];
   if (!texto) return [];
   const destinos = (await quienTieneElTurno(tx, h)).filter((u) => u !== actorId);
+  // Sin líder, lo acepta el Admin SGC, que no rechaza (un rechazo solo existe con líder, `puedeRechazar`): «Aceptar».
+  const sinRechazo = h.estado === "por_aceptar" && (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0;
   await avisarDeMejora(
     tx,
-    { tipo: "mejora.turno", titulo: texto(h.codigo, h), hallazgoId: h.id },
+    { tipo: "mejora.turno", titulo: sinRechazo ? `Aceptar ${h.codigo}` : texto(h.codigo, h), hallazgoId: h.id },
     destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo })),
   );
   return destinos;
