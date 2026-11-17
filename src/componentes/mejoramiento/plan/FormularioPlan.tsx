@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Boton } from "@/componentes/ui/Boton";
-import type { TipoAccion } from "@/lib/mejoramiento/tipos";
+import { MAXIMO_DE_ACCIONES, type TipoAccion } from "@/lib/mejoramiento/tipos";
 import type { AccionDeAnalisis } from "../analisis/Partes";
 import { TarjetaDeAccion, type AccionDelFormulario, type UsuarioAsignable } from "./TarjetaDeAccion";
 
@@ -102,9 +102,13 @@ export function FormularioPlan({
         />
       ))}
       <div className="flex flex-wrap items-center gap-3">
-        <Boton id={ANADIR} variante="secundario" onClick={anadir}>
-          {acciones.length + nuevas.length === 0 ? "Añadir una acción" : "Añadir otra acción"}
-        </Boton>
+        {acciones.length + nuevas.length < MAXIMO_DE_ACCIONES ? (
+          <Boton id={ANADIR} variante="secundario" onClick={anadir}>
+            {acciones.length + nuevas.length === 0 ? "Añadir una acción" : "Añadir otra acción"}
+          </Boton>
+        ) : (
+          <p className="text-sm text-muted-foreground">{`Un plan lleva hasta ${MAXIMO_DE_ACCIONES} acciones.`}</p>
+        )}
         <span role="status" className="text-sm text-muted-foreground">
           {aviso}
         </span>

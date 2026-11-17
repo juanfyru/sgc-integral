@@ -129,6 +129,21 @@ describe("alcance: casos negativos y seguimientos", () => {
     });
   });
 
+  it("quien figura solo en una actividad de un plan sin aprobar no ve el hallazgo ni lo recibe en la lista", async () => {
+    await revertida(sql, async (tx) => {
+      const { a } = await escena(tx);
+      const persona = await usuarioDePrueba(tx, { rol: "consulta" });
+      await actividadPorSql(tx, a.id, persona.usuarioId, { aprobada: false });
+      expect(await participacionEnHallazgo(a.id, persona, { sql: tx })).toBeNull();
+      expect(await puedeVerHallazgo(a.id, persona, { sql: tx })).toBe(false);
+      expect(await leerHallazgo(persona, a.id, opt(tx))).toBeNull();
+      expect(ids(await listarHallazgos(persona, {}, opt(tx)))).not.toContain(a.id);
+      // Con el plan aprobado (`fin_original`), sí.
+      await tx`UPDATE mejora_actividades SET fin_original = fin WHERE hallazgo_id = ${a.id}`;
+      expect(await participacionEnHallazgo(a.id, persona, { sql: tx })).toBe("actividad");
+    });
+  });
+
   it("quien registró un seguimiento ve el hallazgo como actividad", async () => {
     await revertida(sql, async (tx) => {
       const { b, a, x } = await escena(tx);
@@ -208,7 +223,7 @@ describe("la lista", () => {
       const enEspera = await mk("En espera");
       const sinPlan = await mk("Actividad sin plan aprobado");
       await actividadPorSql(tx, conActividad.id, b.lider.usuarioId, { fin: "2026-11-10", aprobada: true });
-      await actividadPorSql(tx, sinPlan.id, b.lider.usuarioId, { fin: "2026-11-10" });
+      await actividadPorSql(tx, sinPlan.id, b.lider.usuarioId, { fin: "2026-11-10", aprobada: false });
       await tx`UPDATE mejora_hallazgos SET vence_en = '2026-11-01T00:00:00Z' WHERE id = ${conPaso.id}`;
       await tx`UPDATE mejora_hallazgos SET estado = 'en_espera', ronda = 2, vence_en = NULL WHERE id = ${enEspera.id}`;
       const r = await listarHallazgos(b.lider, {}, opt(tx));

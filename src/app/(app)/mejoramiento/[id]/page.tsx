@@ -55,7 +55,7 @@ import {
 import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { puedeVerIndicador } from "@/lib/alcance";
-import { leerCriterios } from "@/lib/mejoramiento/eficacia";
+import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto } from "@/lib/mejoramiento/formato";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
@@ -294,12 +294,12 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
           {await Promise.all(
             h.rondas.map(async (r) => {
               const enCurso = r.numero === h.ronda;
-              const conAnalisis =
-                completo && (r.analisis.length > 0 || r.causas.length > 0 || r.similares !== null || (enCurso && h.estado === "por_formular"));
-              // El plan se lee en texto también por quien solo es responsable de una actividad (spec §6.3).
-              const conPlan = r.acciones.length > 0 || leerCriterios(r.criterios).length > 0 || (enCurso && h.estado === "por_formular");
-              // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí.
-              const adjuntos = conAnalisis
+              // La causa raíz y el plan se leen en texto también por quien solo es responsable de una actividad (spec §6.3).
+              const secciones = seccionesDeLaRonda(h, r);
+              const conAnalisis = secciones.causaRaiz;
+              const conPlan = secciones.plan;
+              // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí; solo quien ve completo.
+              const adjuntos = secciones.adjuntos
                 ? (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis")
                 : [];
               const evaluableDesde =

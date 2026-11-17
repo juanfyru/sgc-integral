@@ -57,6 +57,15 @@ export type PlanFirmado = {
     fechaLimiteEnte: string | null;
     /** El código del hallazgo del que es reincidencia. */
     reincidenteDe: string | null;
+    /** A qué se refiere (§7.1), por su id y por el nombre con que se firma: código y título del documento. */
+    documentoId: number | null;
+    documento: string | null;
+    /** Código y nombre de la ficha vigente del indicador. */
+    indicadorId: number | null;
+    indicador: string | null;
+    /** El periodo de la medición. */
+    medicionId: number | null;
+    medicion: string | null;
   };
   correccion: { requerida: boolean | null; descripcion: string | null; responsable: string | null; implementadaEn: string | null };
   analisis: Array<{ orden: number; metodo: string; equipo: string | null; observaciones: string | null; contenido: unknown }>;

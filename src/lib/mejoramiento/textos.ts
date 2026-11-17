@@ -34,3 +34,9 @@ export const ETIQUETA_ESTADO_ACTIVIDAD: Record<EstadoActividad, string> = {
   terminada: "Terminada",
   cancelada: "Cancelada",
 };
+
+/** Una sola frase por regla (la del guardado y la de las faltas del plan). */
+export const inicioDespuesDelFin = (actividad: string) => `El inicio de la actividad ${actividad} no puede ser posterior a su fin`;
+
+/** El indicador guardado en el criterio de eficacia ya no se puede elegir: lo dicen las faltas del plan y su formulario. */
+export const INDICADOR_YA_NO_SE_ENLAZA = "El indicador elegido ya no se puede enlazar";

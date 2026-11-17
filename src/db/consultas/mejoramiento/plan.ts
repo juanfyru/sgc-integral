@@ -10,31 +10,44 @@
  *
  * Orden de candados: el hallazgo `FOR UPDATE` y la ronda `FOR UPDATE` (`exigirBorrador`); después, las acciones y sus hijas.
  */
+import type { z } from "zod";
+import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import type { OpcionesFlujo, SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { filtroIndicadores } from "@/lib/alcance";
-import { EsquemaAccion, EsquemaCriterio, EsquemaQuitarAccion } from "@/lib/esquemas/mejoramiento";
+import { EsquemaAccion, EsquemaCriterio, EsquemaLugarDeLaAccion, EsquemaQuitarAccion, LA_ACTIVIDAD } from "@/lib/esquemas/mejoramiento";
 import { analisisCompleto, leerCambios } from "@/lib/mejoramiento/analisis";
 import { fechaMinimaDeEficacia, leerCriterios } from "@/lib/mejoramiento/eficacia";
 import { huellaDePlan, type AccionFirmada, type PlanFirmado } from "@/lib/mejoramiento/huellas";
-import { ErrorMejora, type Clase, type Criticidad, type Origen, type TipoAccion } from "@/lib/mejoramiento/tipos";
+import { INDICADOR_YA_NO_SE_ENLAZA, inicioDespuesDelFin } from "@/lib/mejoramiento/textos";
+import { ErrorMejora, MAXIMO_DE_ACCIONES, type Clase, type Criticidad, type Origen, type TipoAccion } from "@/lib/mejoramiento/tipos";
 import { requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { auditar, enBorrador, leer } from "./analisis";
 import type { ContextoMejora } from "./config";
 import { dejarEvento, NO_EXISTE } from "./flujo";
-import { indicadorDeEficacia } from "./indicador-de-eficacia";
+import { indicadorDeEficacia, indicadorElegible } from "./indicador-de-eficacia";
 
 export const ACCION_AJENA = "La acción no existe en esta ronda";
 export const ACTIVIDAD_AJENA = "Una de las actividades ya no existe: vuelva a cargar la página";
 export const CAUSA_AJENA = "Esa causa no es de este hallazgo";
 export const RESPONSABLE_INACTIVO = "El responsable debe ser un usuario activo";
 export const INDICADOR_NO_ELEGIBLE = "Ese indicador no se puede enlazar: elija uno activo que usted pueda ver";
+export const DEMASIADAS_ACCIONES = `Un plan lleva hasta ${MAXIMO_DE_ACCIONES} acciones`;
 
 /** «A1»: la etiqueta de una acción por su orden en la ronda. */
 export const etiquetaDeAccion = (orden: number) => `A${orden}`;
 /** «A1.2»: la de una actividad, por el orden de su acción y el suyo. */
 export const etiquetaDeActividad = (ordenAccion: number, orden: number) => `A${ordenAccion}.${orden}`;
+
+/** Un error de validación de una fila de actividades: su índice y el mensaje con la marca de la etiqueta. */
+function errorDeFila(issue: z.core.$ZodIssue): { indice: number; mensaje: string } | null {
+  const [lista, indice] = issue.path;
+  if (lista !== "actividades" || typeof indice !== "number" || !issue.message.includes(LA_ACTIVIDAD)) return null;
+  return { indice, mensaje: issue.message };
+}
+
+const siguienteOrden = async (tx: TransactionSql, rondaId: number) =>
+  Number((await tx`SELECT coalesce(max(orden), 0) + 1 AS orden FROM mejora_acciones WHERE ronda_id = ${rondaId}`)[0].orden);
 
 /**
  * Guarda una acción de la ronda en curso con sus actividades: una nueva, o `accionId` para reemplazar una de la ronda. Las
@@ -57,15 +70,26 @@ export async function guardarAccion(
   opciones?: OpcionesFlujo,
 ): Promise<{ id: number }> {
   requerirPermiso(sesion, "mejora.formular");
-  const v = leer(EsquemaAccion, d);
-  return enBorrador(sesion, v.hallazgoId, opciones, async (tx, h, rondaId, ahora) => {
+  const leido = EsquemaAccion.safeParse(d);
+  // El error de una fila dice cuál actividad («A1.2»): la etiqueta sale del orden de la acción, que se lee dentro de la
+  // transacción, después de comprobar a la persona (quien no ve el hallazgo no sabe cuántas acciones tiene).
+  const deFila = leido.success ? null : errorDeFila(leido.error.issues[0]);
+  if (!leido.success && !deFila) throw new ErrorMejora(leido.error.issues[0].message);
+  const lugar = leido.success ? leido.data : leer(EsquemaLugarDeLaAccion, d);
+  return enBorrador(sesion, lugar.hallazgoId, opciones, async (tx, h, rondaId, ahora) => {
     let accion: { id: number; orden: number } | null = null;
-    if (v.accionId) {
+    if (lugar.accionId) {
       const [a] = await tx`SELECT id, orden FROM mejora_acciones
-        WHERE id = ${v.accionId} AND hallazgo_id = ${h.id} AND ronda_id = ${rondaId} FOR UPDATE`;
+        WHERE id = ${lugar.accionId} AND hallazgo_id = ${h.id} AND ronda_id = ${rondaId} FOR UPDATE`;
       if (!a) throw new ErrorMejora(ACCION_AJENA);
       accion = { id: Number(a.id), orden: Number(a.orden) };
     }
+    if (!leido.success) {
+      const fila = deFila!;
+      const orden = accion?.orden ?? (await siguienteOrden(tx, rondaId));
+      throw new ErrorMejora(fila.mensaje.replaceAll(LA_ACTIVIDAD, etiquetaDeActividad(orden, fila.indice + 1)));
+    }
+    const v = leido.data;
     if (v.causaIds.length > 0) {
       const causas = await tx`SELECT id FROM mejora_causas WHERE ronda_id = ${rondaId} AND hallazgo_id = ${h.id} AND id = ANY(${v.causaIds})`;
       if (causas.length !== v.causaIds.length) throw new ErrorMejora(CAUSA_AJENA);
@@ -82,9 +106,10 @@ export async function guardarAccion(
           indicador_cumplimiento = ${v.indicadorCumplimiento}, meta = ${v.meta}
         WHERE id = ${accion.id}`;
     } else {
-      const [o] = await tx`SELECT coalesce(max(orden), 0) + 1 AS orden FROM mejora_acciones WHERE ronda_id = ${rondaId}`;
+      const [{ cuantas }] = await tx`SELECT count(*)::int AS cuantas FROM mejora_acciones WHERE ronda_id = ${rondaId}`;
+      if (Number(cuantas) >= MAXIMO_DE_ACCIONES) throw new ErrorMejora(DEMASIADAS_ACCIONES);
       const [nueva] = await tx`INSERT INTO mejora_acciones (hallazgo_id, ronda_id, orden, tipo, descripcion, recursos, indicador_cumplimiento, meta)
-        VALUES (${h.id}, ${rondaId}, ${Number(o.orden)}, ${v.tipo}, ${v.descripcion}, ${v.recursos}, ${v.indicadorCumplimiento}, ${v.meta})
+        VALUES (${h.id}, ${rondaId}, ${await siguienteOrden(tx, rondaId)}, ${v.tipo}, ${v.descripcion}, ${v.recursos}, ${v.indicadorCumplimiento}, ${v.meta})
         RETURNING id, orden`;
       accion = { id: Number(nueva.id), orden: Number(nueva.orden) };
     }
@@ -153,12 +178,8 @@ export async function guardarCriterio(
   requerirPermiso(sesion, "mejora.formular");
   const v = leer(EsquemaCriterio, d);
   await enBorrador(sesion, v.hallazgoId, opciones, async (tx, h, rondaId, ahora) => {
-    if (v.indicadorEficaciaId !== null) {
-      const [elegible] = await tx`SELECT 1 FROM indicadores i
-        WHERE i.id = ${v.indicadorEficaciaId} AND i.estado = 'activo'
-          AND EXISTS (SELECT 1 FROM indicador_versiones iv WHERE iv.indicador_id = i.id AND iv.estado = 'aprobada')
-          AND ${filtroIndicadores(tx, sesion)}`;
-      if (!elegible) throw new ErrorMejora(INDICADOR_NO_ELEGIBLE);
+    if (v.indicadorEficaciaId !== null && !(await indicadorElegible(tx, sesion, v.indicadorEficaciaId))) {
+      throw new ErrorMejora(INDICADOR_NO_ELEGIBLE);
     }
     const fechaEvaluacion = h.clase === "no_conformidad" ? null : v.fechaEvaluacion;
     await tx`UPDATE mejora_rondas SET criterios = ${tx.json(v.criterios as never)}, criterio_otro = ${v.criterioOtro},
@@ -200,7 +221,12 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
       p.nombre AS proceso, s.nombre AS subproceso,
       CASE WHEN n.id IS NOT NULL THEN concat_ws(' ', tn.nombre, n.numero, 'de', n.anio::text) END AS norma,
       CASE WHEN d.id IS NOT NULL THEN concat_ws(' ', d.codigo, d.titulo) END AS documento,
-      r.codigo AS reincidente
+      r.codigo AS reincidente,
+      h.documento_id, CASE WHEN dr.id IS NOT NULL THEN concat_ws(' ', dr.codigo, dr.titulo) END AS refiere_documento,
+      h.indicador_id, CASE WHEN ir.id IS NOT NULL THEN concat_ws(' ', ir.codigo, (
+        SELECT iv.nombre FROM indicador_versiones iv WHERE iv.indicador_id = ir.id AND iv.estado = 'aprobada' ORDER BY iv.numero DESC LIMIT 1
+      )) END AS refiere_indicador,
+      h.medicion_id, mr.periodo AS refiere_medicion
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
     LEFT JOIN subprocesos s ON s.id = h.subproceso_id
@@ -209,6 +235,9 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
     LEFT JOIN documentos d ON d.id = h.requisito_documento_id
     LEFT JOIN mejora_hallazgos r ON r.id = h.reincidente_de
     LEFT JOIN usuarios uc ON uc.id = h.correccion_responsable_id
+    LEFT JOIN documentos dr ON dr.id = h.documento_id
+    LEFT JOIN indicadores ir ON ir.id = h.indicador_id
+    LEFT JOIN mediciones mr ON mr.id = h.medicion_id
     WHERE h.id = ${hallazgoId}`;
   if (!f) throw new ErrorMejora(NO_EXISTE);
   const clase = f.clase as Clase;
@@ -281,6 +310,12 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
       riesgo: texto(f.riesgo),
       fechaLimiteEnte: texto(f.limite_ente),
       reincidenteDe: texto(f.reincidente),
+      documentoId: f.documento_id === null ? null : Number(f.documento_id),
+      documento: texto(f.refiere_documento),
+      indicadorId: f.indicador_id === null ? null : Number(f.indicador_id),
+      indicador: texto(f.refiere_indicador),
+      medicionId: f.medicion_id === null ? null : Number(f.medicion_id),
+      medicion: texto(f.refiere_medicion),
     },
     correccion: {
       requerida: (f.correccion_requerida as boolean | null) ?? null,
@@ -332,7 +367,7 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
     for (const x of suyas) {
       const actividad = etiquetaDeActividad(Number(a.orden), Number(x.orden));
       if (x.activo !== true) faltas.push(`El responsable de la actividad ${actividad} ya no está activo`);
-      if ((x.inicio as string) > (x.fin as string)) faltas.push(`La actividad ${actividad} empieza después de su fin`);
+      if ((x.inicio as string) > (x.fin as string)) faltas.push(inicioDespuesDelFin(actividad));
       if ((x.fin as string) < hoy) faltas.push(`La actividad ${actividad} termina en una fecha pasada`);
     }
   }
@@ -348,7 +383,7 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
   if (criterios.length === 0) faltas.push("Defina el criterio de eficacia");
   if (conIndicador) {
     if (r.indicador_eficacia_id === null) faltas.push("Elija el indicador");
-    else if (!indicador?.activo) faltas.push("El indicador elegido ya no está activo: elija otro");
+    else if (!indicador?.activo) faltas.push(INDICADOR_YA_NO_SE_ENLAZA);
   }
   if (criterios.includes("otro") && !texto(r.criterio_otro)?.trim()) faltas.push("Describa el otro criterio de eficacia");
 

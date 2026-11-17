@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { CONFIG_MEJORA_DEFECTO } from "@/db/consultas/mejoramiento/config";
+import { EsquemaCriterio, EsquemaDiaDeCalendario, EsquemaHallazgo } from "@/lib/esquemas/mejoramiento";
 import { SIN_AJUSTES } from "@/lib/dias-habiles";
 import { cierrePrevisto, fechaMinimaDeEficacia, venceLaEvaluacion } from "@/lib/mejoramiento/eficacia";
 import { huellaDePlan, type PlanFirmado } from "@/lib/mejoramiento/huellas";
@@ -38,7 +39,7 @@ describe("fechaMinimaDeEficacia (spec §11.3)", () => {
     expect(nc("2026-12-31")).toBe("2027-02-28");
   });
 
-  it("dos meses ganan cuando el indicador da antes (mensual, r el 30 de noviembre: el 30 de enero frente al 1 de febrero)", () => {
+  it("sin indicador: dos meses calendario desde r (el 30 de noviembre, el 30 de enero)", () => {
     expect(fechaMinimaDeEficacia({ clase: "no_conformidad", r: "2026-11-30", fechaEvaluacion: null, periodicidad: null }, ZONA)).toBe("2027-01-30");
   });
 
@@ -98,6 +99,12 @@ const PLAN: PlanFirmado = {
     riesgo: null,
     fechaLimiteEnte: null,
     reincidenteDe: null,
+    documentoId: null,
+    documento: null,
+    indicadorId: 3,
+    indicador: "FAR-ID-002 Registros de temperatura completos",
+    medicionId: null,
+    medicion: null,
   },
   correccion: { requerida: true, descripcion: "Se reubicaron las dosis", responsable: "L. Rojas", implementadaEn: "2026-11-05" },
   analisis: [{ orden: 1, metodo: "cinco_porques", equipo: null, observaciones: null, contenido: { niveles: [{ respuesta: "Nadie lo asignó" }] } }],
@@ -156,5 +163,26 @@ describe("huellaDePlan (spec §12.1)", () => {
     expect(otra((p) => (p.acciones[0].actividades[0].responsableId = 8))).not.toBe(original);
     expect(otra((p) => (p.acciones[0].actividades[0].responsable = "J. Perdomo"))).not.toBe(original);
     expect(otra((p) => (p.causas[0].texto = "El procedimiento no dice quién registra"))).not.toBe(original);
+  });
+});
+
+describe("las fechas de día que escribe una persona (2000 a 2100)", () => {
+  const FUERA = "La fecha debe estar entre el año 2000 y el 2100";
+  const mensaje = (r: { success: boolean; error?: { issues: Array<{ message: string }> } }) => (r.success ? null : r.error!.issues[0].message);
+
+  it("la fecha de evaluación, la del hallazgo y la del calendario rechazan 9999-12-31 y 1999-12-31", () => {
+    for (const fecha of ["9999-12-31", "1999-12-31", "2101-01-01"]) {
+      expect(mensaje(EsquemaCriterio.safeParse({ hallazgoId: 1, criterios: ["no_recurrencia"], fechaEvaluacion: fecha }))).toBe(FUERA);
+      expect(mensaje(EsquemaDiaDeCalendario.safeParse({ fecha, tipo: "no_habil", motivo: "Cierre institucional" }))).toBe(FUERA);
+      const hallazgo = EsquemaHallazgo.safeParse({
+        clase: "observacion", origen: "auditoria_interna", fuente: "Auditoría", detectadoEn: fecha, procesoId: 1,
+        titulo: "Un hallazgo", descripcion: "Una descripción suficiente",
+      });
+      expect(mensaje(hallazgo)).toBe(FUERA);
+    }
+    expect(EsquemaCriterio.safeParse({ hallazgoId: 1, criterios: [], fechaEvaluacion: "2100-12-31" }).success).toBe(true);
+    expect(EsquemaCriterio.safeParse({ hallazgoId: 1, criterios: [], fechaEvaluacion: "2000-01-01" }).success).toBe(true);
+    // Una fecha imposible sigue diciendo lo de siempre.
+    expect(mensaje(EsquemaCriterio.safeParse({ hallazgoId: 1, criterios: [], fechaEvaluacion: "2027-02-30" }))).toBe("Escriba una fecha de evaluación válida");
   });
 });

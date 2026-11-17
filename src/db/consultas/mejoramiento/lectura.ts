@@ -143,7 +143,8 @@ const ACTIVIDAD_VENCIDA = (sql: Cliente, hoy: string) => sql`EXISTS (
 
 /**
  * El avance (spec §10.3): el promedio de los avances de las acciones de la ronda en curso, y el de cada acción, el de sus
- * actividades no canceladas; entero, y nulo si no hay.
+ * actividades no canceladas; entero, y nulo si no hay. Las de un plan que nunca se aprobó (sin `fin_original`) no cuentan:
+ * sin plan aprobado la lista dice «—».
  */
 const AVANCE = (sql: Cliente) => sql`(
   SELECT round(avg(por_accion.promedio))::int FROM (
@@ -151,7 +152,7 @@ const AVANCE = (sql: Cliente) => sql`(
     FROM mejora_actividades aa
     JOIN mejora_acciones ac ON ac.id = aa.accion_id
     JOIN mejora_rondas ar ON ar.id = ac.ronda_id
-    WHERE aa.hallazgo_id = h.id AND ar.numero = h.ronda AND aa.estado <> 'cancelada'
+    WHERE aa.hallazgo_id = h.id AND ar.numero = h.ronda AND aa.estado <> 'cancelada' AND aa.fin_original IS NOT NULL
     GROUP BY ac.id) por_accion)`;
 
 /** `%` y `_` de la búsqueda se toman como texto, no como comodines. */

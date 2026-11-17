@@ -6,7 +6,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipos";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
-import { AVISO_SIN_PACIENTES, ETIQUETA_CRITERIO } from "@/lib/mejoramiento/textos";
+import { AVISO_SIN_PACIENTES, ETIQUETA_CRITERIO, INDICADOR_YA_NO_SE_ENLAZA } from "@/lib/mejoramiento/textos";
 import { CRITERIOS_EFICACIA, type Clase, type CriterioEficacia as Criterio } from "@/lib/mejoramiento/tipos";
 import { ErrorDeAnalisis, useGuardado, type AccionDeAnalisis } from "../analisis/Partes";
 
@@ -94,7 +94,7 @@ export function CriterioDeEficacia({
             ))}
           </select>
           {indicadorId !== null && elegido === null ? (
-            <p className="text-xs text-estado-atencion-texto">El indicador elegido ya no se puede enlazar: elija otro.</p>
+            <p className="text-xs text-estado-atencion-texto">{`${INDICADOR_YA_NO_SE_ENLAZA}.`}</p>
           ) : null}
           {indicadores.length === 0 ? <p className="text-xs text-muted-foreground">No hay indicadores activos que usted pueda enlazar.</p> : null}
         </div>

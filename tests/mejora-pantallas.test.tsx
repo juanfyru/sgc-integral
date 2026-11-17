@@ -33,6 +33,7 @@ import { SIN_AJUSTES } from "@/lib/dias-habiles";
 import { fraseDeLoQueSigue } from "@/db/consultas/mejoramiento/lectura";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
+import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 
@@ -653,8 +654,34 @@ describe("el plan de acción (maqueta 5)", () => {
     expect(obs).toContain("Fecha de evaluación");
     expect(obs).toContain('value="2027-01-15"');
     expect(obs).toContain("Auditoría de seguimiento");
-    expect(obs).not.toContain("FAR-ID-002 Registros de temperatura completos · mensual\" selected");
     expect(obs).toContain("aparece cuando el plan tenga actividades guardadas");
+    // Un indicador guardado que ya no se puede elegir: lo dice y no queda ninguno elegido.
+    const noElegible = renderToStaticMarkup(
+      <CriterioDeEficacia
+        hallazgoId={1}
+        clase="no_conformidad"
+        criterios={["mejora_indicador"]}
+        criterioOtro={null}
+        indicadorId={99}
+        fechaEvaluacion={null}
+        indicadores={indicadores}
+        evaluableDesde={null}
+        guardar={accion}
+      />,
+    );
+    expect(noElegible).toContain("El indicador elegido ya no se puede enlazar");
+    expect(noElegible).toContain('<option value="" selected="">Elija el indicador</option>');
+    expect(noElegible).not.toMatch(/<option value="5" selected="">/);
+  });
+
+  it("quien ve el hallazgo por una actividad lee «3. Causa raíz» y «4. Plan de acción», sin los adjuntos del análisis", () => {
+    const ronda = { numero: 1, analisis: [{}], causas: [{}], similares: false, acciones: [{}], criterios: ["no_recurrencia"] };
+    expect(seccionesDeLaRonda({ ve: "actividad", estado: "en_ejecucion", ronda: 1 }, ronda)).toEqual({ causaRaiz: true, plan: true, adjuntos: false });
+    expect(seccionesDeLaRonda({ ve: "completo", estado: "en_ejecucion", ronda: 1 }, ronda)).toEqual({ causaRaiz: true, plan: true, adjuntos: true });
+    // Una ronda en curso «Por formular» y vacía muestra las dos secciones; una anterior vacía, ninguna.
+    const vacia = { numero: 1, analisis: [], causas: [], similares: null, acciones: [], criterios: [] };
+    expect(seccionesDeLaRonda({ ve: "completo", estado: "por_formular", ronda: 1 }, vacia)).toEqual({ causaRaiz: true, plan: true, adjuntos: true });
+    expect(seccionesDeLaRonda({ ve: "completo", estado: "por_formular", ronda: 2 }, vacia)).toEqual({ causaRaiz: false, plan: false, adjuntos: false });
   });
 
   it("«4. Plan de acción» en lectura: acción, actividades, responsable, fin, avance y estado; el indicador solo a quien lo ve", () => {

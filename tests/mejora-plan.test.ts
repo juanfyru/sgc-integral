@@ -11,6 +11,7 @@ import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { NO_EXISTE } from "@/db/consultas/mejoramiento/flujo";
 import { indicadorDeEficacia, indicadoresElegibles } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
 import { examinarPlan, guardarAccion, guardarCriterio, quitarAccion, usuariosAsignables } from "@/db/consultas/mejoramiento/plan";
+import { listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { anularHallazgo, reclasificarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { fechaMinimaDeEficacia } from "@/lib/mejoramiento/eficacia";
 import { huellaDePlan } from "@/lib/mejoramiento/huellas";
@@ -19,7 +20,7 @@ import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { indicadorDePrueba } from "./utiles/indicadores";
 import { baseDeMejora, c, hallazgoEn, otroProcesoConLider, type BaseDeMejora } from "./utiles/mejoramiento";
-import { usuarioDePrueba } from "./utiles/tramites";
+import { documentoLibre, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -141,10 +142,20 @@ describe("guardarAccion", () => {
       await expect(guardarAccion(b.lider, { ...d, actividades: [] }, o)).rejects.toThrow("Toda acción lleva al menos una actividad");
       await expect(
         guardarAccion(b.lider, { ...d, actividades: [actividad(b.lider.usuarioId, { inicio: "2026-12-06", fin: "2026-12-05" })] }, o),
-      ).rejects.toThrow("El inicio no puede ser posterior al fin");
+      ).rejects.toThrow("El inicio de la actividad A1.1 no puede ser posterior a su fin");
       await expect(
         guardarAccion(b.lider, { ...d, actividades: [actividad(b.lider.usuarioId, { fin: "2026-02-30" })] }, o),
-      ).rejects.toThrow("Escriba una fecha válida de fin");
+      ).rejects.toThrow("Escriba una fecha válida de fin de la actividad A1.1");
+      await expect(
+        guardarAccion(b.lider, { ...d, actividades: [actividad(b.lider.usuarioId, { fin: "9999-12-31" })] }, o),
+      ).rejects.toThrow("La fecha de fin de la actividad A1.1 debe estar entre el año 2000 y el 2100");
+      await expect(
+        guardarAccion(
+          b.lider,
+          { ...d, actividades: [actividad(b.lider.usuarioId), { ...actividad(b.lider.usuarioId), responsableId: null as never }] },
+          o,
+        ),
+      ).rejects.toThrow("Elija el responsable de la actividad A1.2");
       const inactivo = await usuarioDePrueba(tx, { rol: "consulta" });
       await tx`UPDATE usuarios SET activo = false WHERE id = ${inactivo.usuarioId}`;
       await expect(guardarAccion(b.lider, { ...d, actividades: [actividad(inactivo.usuarioId)] }, o)).rejects.toThrow(
@@ -441,7 +452,8 @@ describe("examinarPlan (spec §8.6)", () => {
           tipo: "correctiva",
           descripcion: "Asignar el registro al turno de noche",
           causaIds: [causa],
-          actividades: [actividad(b.lider.usuarioId, { fin: "2026-11-30" }), actividad(b.lider.usuarioId, { fin: "2026-12-05" })],
+          // El mayor fin es el de la primera actividad: la fecha sale del mayor, no del último.
+          actividades: [actividad(b.lider.usuarioId, { fin: "2026-12-05" }), actividad(b.lider.usuarioId, { fin: "2026-11-30" })],
         },
         o,
       );
@@ -468,7 +480,7 @@ describe("examinarPlan (spec §8.6)", () => {
       await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${b.admin.usuarioId}, baja_en = now(), baja_motivo = 'Ya no se mide'
         WHERE id = ${ind.id}`;
       const retirado = await examinar(tx, h.id);
-      expect(retirado.faltas).toEqual(["El indicador elegido ya no está activo: elija otro"]);
+      expect(retirado.faltas).toEqual(["El indicador elegido ya no se puede enlazar"]);
       expect(retirado.evaluableDesde).toBe("2027-02-05");
     }));
 });
@@ -512,5 +524,125 @@ describe("los indicadores que se pueden enlazar", () => {
       expect(ids).toContain(activo.usuarioId);
       expect(ids).not.toContain(inactivo.usuarioId);
       expect(lista.find((u) => u.id === activo.usuarioId)).toMatchObject({ cargo: cargo ? cargo.nombre : null });
+    }));
+});
+
+describe("ronda 1 de la revisión", () => {
+  it("los errores de una actividad dicen cuál, también en una acción que ya existe", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { clase: "oportunidad", criticidad: null });
+      const o = c(AHORA, tx);
+      const d = { hallazgoId: h.id, tipo: "mejora" as const, descripcion: "Unificar el formato", causaIds: [] };
+      await guardarAccion(b.lider, { ...d, actividades: [actividad(b.lider.usuarioId)] }, o);
+      const a2 = await guardarAccion(b.lider, { ...d, actividades: [actividad(b.lider.usuarioId)] }, o);
+      await expect(
+        guardarAccion(b.lider, { ...d, accionId: a2.id, actividades: [actividad(b.lider.usuarioId, { descripcion: "x" })] }, o),
+      ).rejects.toThrow("La descripción de la actividad A2.1 debe tener al menos 3 caracteres");
+      await expect(
+        guardarAccion(b.lider, { ...d, accionId: a2.id, actividades: [actividad(b.lider.usuarioId, { inicio: "2026-13-01" })] }, o),
+      ).rejects.toThrow("Escriba una fecha válida de inicio de la actividad A2.1");
+      // Una acción nueva es la siguiente: la A3.
+      await expect(
+        guardarAccion(b.lider, { ...d, actividades: [actividad(b.lider.usuarioId, { inicio: "1999-12-31" })] }, o),
+      ).rejects.toThrow("La fecha de inicio de la actividad A3.1 debe estar entre el año 2000 y el 2100");
+      // Quien no ve el hallazgo no se entera de cuántas acciones tiene: «no existe».
+      const otro = await otroProcesoConLider(tx);
+      await expect(guardarAccion(otro.lider, { ...d, actividades: [actividad(b.lider.usuarioId, { descripcion: "x" })] }, o)).rejects.toThrow(
+        NO_EXISTE,
+      );
+    }));
+
+  it("un plan lleva hasta 20 acciones", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { clase: "oportunidad", criticidad: null });
+      const [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = 1`;
+      for (let orden = 1; orden <= 20; orden++) {
+        await tx`INSERT INTO mejora_acciones (hallazgo_id, ronda_id, orden, tipo, descripcion) VALUES (${h.id}, ${r.id}, ${orden}, 'mejora', 'Una acción')`;
+      }
+      const d = { hallazgoId: h.id, tipo: "mejora" as const, descripcion: "Una más", causaIds: [], actividades: [actividad(b.lider.usuarioId)] };
+      await expect(guardarAccion(b.lider, d, c(AHORA, tx))).rejects.toThrow("Un plan lleva hasta 20 acciones");
+      // Editar una de las veinte sí se puede.
+      const [primera] = await tx`SELECT id FROM mejora_acciones WHERE ronda_id = ${r.id} AND orden = 1`;
+      await expect(guardarAccion(b.lider, { ...d, accionId: Number(primera.id) }, c(AHORA, tx))).resolves.toMatchObject({ id: Number(primera.id) });
+    }));
+
+  it("examinarPlan: un Ishikawa sin causa confirmada no basta; una causa justificada no falta; el fin de hoy no es pasado", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      const o = c(AHORA, tx);
+      await guardarAnalisis(
+        b.lider,
+        { hallazgoId: h.id, metodo: "ishikawa", contenido: { causas: [{ categoria: "metodo", texto: "No hay lista de chequeo", confirmada: false }] } },
+        o,
+      );
+      await guardarCausas(
+        b.lider,
+        { hallazgoId: h.id, causas: [{ texto: "El formato no dice quién lo llena" }, { texto: "Falta un equipo", sinAccionPorque: "Ya se compró" }] },
+        o,
+      );
+      const [c1] = await causasDe(tx, h.id);
+      await guardarAccion(
+        b.lider,
+        { hallazgoId: h.id, tipo: "correctiva", descripcion: "Asignar el registro", causaIds: [c1], actividades: [actividad(b.lider.usuarioId, { inicio: "2026-11-18", fin: "2026-11-18" })] },
+        o,
+      );
+      const { faltas } = await examinar(tx, h.id);
+      expect(faltas).toContain("Falta el análisis de causa raíz");
+      expect(faltas).not.toContain("La causa 2 no tiene acción ni justificación");
+      expect(faltas).not.toContain("La causa 1 no tiene acción ni justificación");
+      expect(faltas).not.toContain("La actividad A1.1 termina en una fecha pasada");
+      // Un inicio posterior al fin que no pasó por el guardado: la misma frase que el guardado.
+      await tx`UPDATE mejora_actividades SET inicio = '2026-11-25' WHERE hallazgo_id = ${h.id}`;
+      expect((await examinar(tx, h.id)).faltas).toContain("El inicio de la actividad A1.1 no puede ser posterior a su fin");
+    }));
+
+  it("lo que se firma dice a qué se refiere el hallazgo: documento, indicador y medición, con su nombre", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      await tipoLibre(tx);
+      const doc = await documentoLibre(tx, { proceso: "GTH", tipo: TIPO_LIBRE, titulo: "Procedimiento de prueba" });
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const [m] = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en)
+        VALUES (${ind.id}, ${ind.versionId}, '2026-10', '2026-10-01T05:00:00Z', '2026-11-01T04:59:59.999Z', '2026-11-11T04:59:59.999Z')
+        RETURNING id`;
+      await tx`UPDATE mejora_hallazgos SET documento_id = ${doc.id}, indicador_id = ${ind.id}, medicion_id = ${m.id} WHERE id = ${h.id}`;
+      const { plan } = await examinar(tx, h.id);
+      expect(plan.identificacion).toMatchObject({
+        documentoId: doc.id,
+        documento: `${doc.codigo} Procedimiento de prueba`,
+        indicadorId: ind.id,
+        indicador: `${ind.codigo} Indicador de prueba ${ind.codigo}`,
+        medicionId: Number(m.id),
+        medicion: "2026-10",
+      });
+      const sin = await hallazgoEn(tx, b, "por_formular");
+      expect((await examinar(tx, sin.id)).plan.identificacion).toMatchObject({
+        documentoId: null, documento: null, indicadorId: null, indicador: null, medicionId: null, medicion: null,
+      });
+    }));
+
+  it("las actividades de un plan sin aprobar no dan avance ni avisos: la lista dice «—» y anular no avisa a sus responsables", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { clase: "oportunidad", criticidad: null });
+      const persona = await usuarioDePrueba(tx, { rol: "consulta" });
+      const o = c(AHORA, tx);
+      await guardarAccion(
+        b.lider,
+        { hallazgoId: h.id, tipo: "mejora", descripcion: "Unificar el formato", causaIds: [], actividades: [{ ...actividad(persona.usuarioId) }] },
+        o,
+      );
+      const fila = (await listarHallazgos(b.lider, { q: h.codigo }, { sql: tx, ahora: new Date(AHORA) })).filas.find((f) => f.id === h.id);
+      expect(fila?.avance).toBeNull();
+      // Figurar en un borrador no abre el hallazgo.
+      expect((await listarHallazgos(persona, {}, { sql: tx, ahora: new Date(AHORA) })).filas.map((f) => f.id)).not.toContain(h.id);
+      await anularHallazgo(b.admin, { hallazgoId: h.id, justificacion: "Se registró dos veces" }, o);
+      const avisados = await tx`SELECT usuario_id FROM notificaciones WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${h.id} AND tipo = 'mejora.anulado'`;
+      expect(avisados.map((f) => Number(f.usuario_id))).not.toContain(persona.usuarioId);
+      expect(avisados.map((f) => Number(f.usuario_id))).toContain(b.lider.usuarioId);
     }));
 });

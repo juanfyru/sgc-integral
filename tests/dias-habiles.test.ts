@@ -71,3 +71,17 @@ describe("restarDiasHabiles y diasHabilesEntre", () => {
     expect(diasHabilesEntre(dia("2026-11-04"), dia("2026-11-04"), SIN_AJUSTES, zona)).toBe(0);
   });
 });
+
+describe("un día fuera del calendario no deja el cálculo dando vueltas", () => {
+  it("un año 10000, un día imposible o uno de 1899 lanzan al instante", () => {
+    const antes = Date.now();
+    expect(() => restarDiasHabiles("10000-01-01", 3, SIN_AJUSTES)).toThrow("fuera del calendario");
+    expect(() => restarDiasHabiles("2026-02-30", 1, SIN_AJUSTES)).toThrow("fuera del calendario");
+    expect(() => restarDiasHabiles("1899-12-31", 1, SIN_AJUSTES)).toThrow("fuera del calendario");
+    // Del 31 de diciembre de 2200 hacia adelante se sale del calendario: lanza en lugar de iterar.
+    expect(() => sumarDiasHabiles(new Date("2200-12-31T15:00:00Z"), 5, SIN_AJUSTES, zona)).toThrow("fuera del calendario");
+    expect(() => sumarDiasHabiles(new Date("9999-12-31T15:00:00Z"), 5, SIN_AJUSTES, zona)).toThrow("fuera del calendario");
+    expect(() => diasHabilesEntre(dia("2026-11-04"), new Date("9999-12-31T15:00:00Z"), SIN_AJUSTES, zona)).toThrow("fuera del calendario");
+    expect(Date.now() - antes).toBeLessThan(1000);
+  });
+});

@@ -799,13 +799,16 @@ function liderDelProcesoDelHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
 const registroElHallazgo = (sql: Cliente, sujeto: SujetoVisibilidad) => sql`h.registrado_por = ${sujeto.usuarioId}`;
 
 function esResponsableEnElHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
-  return sql`(EXISTS (SELECT 1 FROM mejora_actividades hz_a WHERE hz_a.hallazgo_id = h.id AND hz_a.responsable_id = ${sujeto.usuarioId})
+  // Solo la actividad de un plan aprobado alguna vez (`fin_original`): figurar en un borrador no da alcance (spec §6.3).
+  return sql`(EXISTS (SELECT 1 FROM mejora_actividades hz_a
+      WHERE hz_a.hallazgo_id = h.id AND hz_a.responsable_id = ${sujeto.usuarioId} AND hz_a.fin_original IS NOT NULL)
     OR EXISTS (SELECT 1 FROM mejora_seguimientos hz_s WHERE hz_s.hallazgo_id = h.id AND hz_s.registrado_por = ${sujeto.usuarioId}))`;
 }
 
 /**
  * Qué hallazgos ve una persona, para un `WHERE` sobre `mejora_hallazgos h`: con `mejora.ver_todo`, todos; si no, los de sus
- * procesos activos (si lidera), los que registró y aquellos donde es responsable de una actividad o registró un seguimiento.
+ * procesos activos (si lidera), los que registró y aquellos donde es responsable de una actividad de un plan aprobado alguna
+ * vez o registró un seguimiento.
  */
 export function filtroHallazgos(sql: Cliente, sujeto: SujetoVisibilidad) {
   if (puede(sujeto, "mejora.ver_todo")) return sql`true`;

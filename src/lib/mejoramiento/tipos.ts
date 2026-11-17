@@ -40,6 +40,9 @@ export type ResultadoCierre = (typeof RESULTADOS_CIERRE)[number];
 export const TIPOS_ACCION = ["correctiva", "preventiva", "mejora"] as const;
 export type TipoAccion = (typeof TIPOS_ACCION)[number];
 
+/** Las acciones de un plan, por ronda (spec §10.1). */
+export const MAXIMO_DE_ACCIONES = 20;
+
 export const CRITERIOS_EFICACIA = ["no_recurrencia", "mejora_indicador", "reduccion_pqrs", "otro"] as const;
 export type CriterioEficacia = (typeof CRITERIOS_EFICACIA)[number];
 

@@ -1,7 +1,21 @@
 import { z } from "zod";
 import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
+import { inicioDespuesDelFin } from "@/lib/mejoramiento/textos";
 import { CLASES, CRITERIOS_EFICACIA, CRITICIDADES, METODOS_ANALISIS, ORIGENES_HALLAZGO, TIPOS_ACCION } from "@/lib/mejoramiento/tipos";
 import { textoAcotado } from "@/lib/validacion";
+
+/** Toda fecha de día que una persona escribe en el módulo va del año 2000 al 2100. */
+export const FECHA_FUERA_DE_RANGO = "La fecha debe estar entre el año 2000 y el 2100";
+
+/** `AAAA-MM-DD` de un día que existe en el calendario. */
+const esDiaReal = (f: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) return false;
+  const ms = Date.parse(`${f}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(f);
+};
+
+/** Del 2000 al 2100; un día mal escrito lo dice su propio mensaje, no este. */
+const enRango = (f: string) => !esDiaReal(f) || (f >= "2000-01-01" && f <= "2100-12-31");
 
 /** Un entero llega como texto del formulario o como número de la consulta. */
 const entero = (nombre: string, minimo: number, maximo: number) =>
@@ -85,10 +99,8 @@ export const EsquemaDiaDeCalendario = z
     fecha: z
       .string({ error: "Elija la fecha" })
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Elija una fecha válida")
-      .refine((f) => {
-        const ms = Date.parse(`${f}T00:00:00Z`);
-        return !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(f);
-      }, "Elija una fecha válida"),
+      .refine(esDiaReal, "Elija una fecha válida")
+      .refine(enRango, FECHA_FUERA_DE_RANGO),
     tipo: z.enum(["no_habil", "habil"], { error: "Elija si el día es no hábil o hábil" }),
     motivo: textoAcotado("El motivo", 1, 200),
   })
@@ -98,10 +110,7 @@ export const EsquemaDiaDeCalendario = z
 // El hallazgo (spec 15 §7.1)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const esFechaReal = (f: string) => {
-  const ms = Date.parse(`${f}T00:00:00Z`);
-  return !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(f);
-};
+const esFechaReal = esDiaReal;
 
 /** Un id elegido: llega como número o como texto del formulario; vacío o ausente es «ninguno». */
 const idOpcional = (mensaje: string) =>
@@ -126,7 +135,8 @@ const fechaOpcional = (mensaje: string) =>
     .nullable()
     .optional()
     .transform((v) => v?.trim() || null)
-    .refine((v) => v === null || (/^\d{4}-\d{2}-\d{2}$/.test(v) && esFechaReal(v)), mensaje);
+    .refine((v) => v === null || esFechaReal(v), mensaje)
+    .refine((v) => v === null || enRango(v), FECHA_FUERA_DE_RANGO);
 
 /**
  * La identificación de un hallazgo tal como la recibe `registrarHallazgo` (objeto del dominio o campos del formulario).
@@ -141,7 +151,8 @@ export const EsquemaHallazgo = z
     detectadoEn: z
       .string({ error: "Escriba la fecha en que se detectó" })
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Escriba una fecha válida en que se detectó")
-      .refine(esFechaReal, "Escriba una fecha válida en que se detectó"),
+      .refine(esFechaReal, "Escriba una fecha válida en que se detectó")
+      .refine(enRango, FECHA_FUERA_DE_RANGO),
     procesoId: z
       .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "Elija el proceso" })
       .transform(Number),
@@ -210,7 +221,8 @@ export const EsquemaOcurrencia = z
     fecha: z
       .string({ error: "Escriba la fecha de la ocurrencia" })
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Escriba una fecha válida de la ocurrencia")
-      .refine(esFechaReal, "Escriba una fecha válida de la ocurrencia"),
+      .refine(esFechaReal, "Escriba una fecha válida de la ocurrencia")
+      .refine(enRango, FECHA_FUERA_DE_RANGO),
     descripcion: textoAcotado("La descripción de la ocurrencia", 10, 4000),
     origen: z.enum(["registro", "reporte", "medicion"], { error: "El origen de la ocurrencia no es válido" }).optional(),
     reporteId: idOpcional("El reporte no es válido"),
@@ -270,8 +282,8 @@ export const RELACION_DE_REGISTRO = /^(?:(ocurrencia|reincidencia):(\d{1,15})|di
 const siONo = (mensaje: string) =>
   z.union([z.boolean(), z.enum(["si", "no"])], { error: mensaje }).transform((v) => v === true || v === "si");
 
-const fechaDelDia = (mensaje: string) =>
-  z.string({ error: mensaje }).regex(/^\d{4}-\d{2}-\d{2}$/, mensaje).refine(esFechaReal, mensaje);
+const fechaDelDia = (mensaje: string, fueraDeRango = FECHA_FUERA_DE_RANGO) =>
+  z.string({ error: mensaje }).regex(/^\d{4}-\d{2}-\d{2}$/, mensaje).refine(esFechaReal, mensaje).refine(enRango, fueraDeRango);
 
 /** El acta del Comité que cita un acto (spec §8.5 y §19.1): número y fecha, o nada. Que no sea futura lo mira el dominio. */
 const acta = z
@@ -550,18 +562,33 @@ const causasQueAtaca = z
   .max(20, "Una acción ataca veinte causas como máximo")
   .transform((ids) => [...new Set(ids)]);
 
+/**
+ * La marca que el dominio cambia por la etiqueta de la actividad («A1.2») en los mensajes de una fila: la etiqueta depende del
+ * orden de la acción en la ronda, que solo se sabe dentro de la transacción (`guardarAccion`).
+ */
+export const LA_ACTIVIDAD = "‹actividad›";
+
 const actividadDelPlan = z
   .object({
-    id: idOpcional("Una de las actividades no es válida"),
-    descripcion: textoAcotado("La descripción de la actividad", 3, 1000),
-    responsableId: idRequerido("Elija el responsable de cada actividad"),
-    inicio: fechaDelDia("Escriba una fecha válida de inicio"),
-    fin: fechaDelDia("Escriba una fecha válida de fin"),
+    id: idOpcional(`La actividad ${LA_ACTIVIDAD} no es válida`),
+    descripcion: textoAcotado(`La descripción de la actividad ${LA_ACTIVIDAD}`, 3, 1000),
+    responsableId: idRequerido(`Elija el responsable de la actividad ${LA_ACTIVIDAD}`),
+    inicio: fechaDelDia(
+      `Escriba una fecha válida de inicio de la actividad ${LA_ACTIVIDAD}`,
+      `La fecha de inicio de la actividad ${LA_ACTIVIDAD} debe estar entre el año 2000 y el 2100`,
+    ),
+    fin: fechaDelDia(
+      `Escriba una fecha válida de fin de la actividad ${LA_ACTIVIDAD}`,
+      `La fecha de fin de la actividad ${LA_ACTIVIDAD} debe estar entre el año 2000 y el 2100`,
+    ),
   })
   .strict()
   .superRefine((a, ctx) => {
-    if (a.inicio > a.fin) ctx.addIssue({ code: "custom", path: ["inicio"], message: "El inicio no puede ser posterior al fin" });
+    if (a.inicio > a.fin) ctx.addIssue({ code: "custom", path: ["inicio"], message: inicioDespuesDelFin(LA_ACTIVIDAD) });
   });
+
+/** Dónde va una acción (el hallazgo y, si ya existe, la acción), para leerlo aunque el resto no pase. */
+export const EsquemaLugarDeLaAccion = z.object({ hallazgoId: idDeHallazgo, accionId: idOpcional("La acción no es válida") });
 
 /**
  * Una acción del plan con sus actividades, tal como la guarda `guardarAccion`: al menos una actividad, cada una con su

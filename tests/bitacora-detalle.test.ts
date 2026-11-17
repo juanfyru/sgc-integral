@@ -430,7 +430,11 @@ const ACCIONES_ARMADAS = [
   "mejora_cargar",
   "mejora_reclasificar",
   "mejora_ajustar",
-  // mejoramiento/plan.ts: `auditar(tx, sesion, h, accion, …)` de analisis.ts.
+  // mejoramiento/analisis.ts y plan.ts: `auditar(tx, sesion, h, accion, …)`.
+  "mejora_analisis_guardado",
+  "mejora_analisis_quitado",
+  "mejora_causas_guardadas",
+  "mejora_preguntas_respondidas",
   "mejora_accion_guardada",
   "mejora_accion_quitada",
   "mejora_criterio_guardado",

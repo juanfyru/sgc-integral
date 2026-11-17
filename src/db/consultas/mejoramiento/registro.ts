@@ -598,7 +598,7 @@ export async function anularHallazgo(
       const c = await contextoDeMejora(tx, ahora);
       const [{ titulo }] = await tx`SELECT titulo FROM mejora_hallazgos WHERE id = ${h.id}`;
       const canceladas = await tx`UPDATE mejora_actividades SET estado = 'cancelada', cancelada_en = ${c.ahora}
-        WHERE hallazgo_id = ${h.id} AND estado IN ('abierta', 'en_proceso') RETURNING responsable_id`;
+        WHERE hallazgo_id = ${h.id} AND estado IN ('abierta', 'en_proceso') RETURNING responsable_id, fin_original`;
       await tx`UPDATE mejora_hallazgos SET anulado_motivo = ${r.justificacion} WHERE id = ${h.id}`;
       await transicionarHallazgo(
         tx,
@@ -608,9 +608,11 @@ export async function anularHallazgo(
         { detalle: { justificacion: r.justificacion, actividadesCanceladas: canceladas.length } },
         c,
       );
-      const responsables = canceladas.length
+      // Solo los responsables de un plan aprobado alguna vez: a quien figuraba en un borrador nunca se le entregó nada.
+      const entregadas = canceladas.filter((a) => a.fin_original !== null);
+      const responsables = entregadas.length
         ? (
-            await tx`SELECT id FROM usuarios WHERE activo AND id = ANY(${canceladas.map((a) => Number(a.responsable_id))}::bigint[])`
+            await tx`SELECT id FROM usuarios WHERE activo AND id = ANY(${entregadas.map((a) => Number(a.responsable_id))}::bigint[])`
           ).map((u) => Number(u.id))
         : [];
       const [aprobo] = await tx`SELECT 1 FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND aprobado_rol = 'gerencia' AND aprobado_en IS NOT NULL LIMIT 1`;

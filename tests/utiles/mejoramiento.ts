@@ -163,8 +163,9 @@ export async function hallazgoEn(
 }
 
 /**
- * Una actividad (de la ronda 1) por SQL: las acciones y actividades llegan en las Tareas 12 a 14. Con `accionDe` (el id de
- * otra actividad) cuelga de la misma acción; si no, de una acción nueva. `aprobada` pone `fin_original`: el plan aprobado.
+ * Una actividad (de la ronda 1) por SQL. Con `accionDe` (el id de otra actividad) cuelga de la misma acción; si no, de una
+ * acción nueva. Por omisión simula un plan aprobado (`fin_original = fin`); `aprobada: false` deja la de un borrador, que no
+ * da alcance, ni avance, ni avisos.
  */
 export async function actividadPorSql(
   tx: TransactionSql,
@@ -186,6 +187,6 @@ export async function actividadPorSql(
   const fin = cambios?.fin ?? "2026-12-31";
   const [a] = await tx`INSERT INTO mejora_actividades (hallazgo_id, accion_id, orden, descripcion, responsable_id, inicio, fin_original, fin, estado, avance)
     VALUES (${hallazgoId}, ${accionId}, 1, 'Actividad de prueba', ${responsableId}, '2026-11-01',
-      ${cambios?.aprobada ? fin : null}, ${fin}, ${cambios?.estado ?? "abierta"}, ${cambios?.avance ?? 0}) RETURNING id`;
+      ${cambios?.aprobada === false ? null : fin}, ${fin}, ${cambios?.estado ?? "abierta"}, ${cambios?.avance ?? 0}) RETURNING id`;
   return Number(a.id);
 }

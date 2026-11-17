@@ -91,11 +91,27 @@ export function esHabil(dia: string, ajustes: AjustesDeCalendario): boolean {
   return !esFestivo(dia) || ajustes.habiles.has(dia);
 }
 
+/** Los días que el cálculo admite: fuera de ellos, una cuenta lanza en lugar de iterar sin fin. */
+const PRIMER_DIA = "1900-01-01";
+const ULTIMO_DIA = "2200-12-31";
+
+const fueraDelCalendario = (dia: string) => new Error(`Día fuera del calendario de días hábiles: ${dia}`);
+
+/** Un día `AAAA-MM-DD` real, de 1900 a 2200; si no, lanza. */
+function exigirDia(dia: string): string {
+  const ms = aMs(dia);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || Number.isNaN(ms) || deMs(ms) !== dia || dia < PRIMER_DIA || dia > ULTIMO_DIA) {
+    throw fueraDelCalendario(dia);
+  }
+  return dia;
+}
+
 function mover(dia: string, n: number, sentido: 1 | -1, ajustes: AjustesDeCalendario): string {
-  let actual = dia;
+  let actual = exigirDia(dia);
   let faltan = n;
   while (faltan > 0) {
     actual = sumarDias(actual, sentido);
+    if (actual < PRIMER_DIA || actual > ULTIMO_DIA) throw fueraDelCalendario(actual);
     if (esHabil(actual, ajustes)) faltan--;
   }
   return actual;
@@ -122,8 +138,8 @@ export function diasHabilesEntre(
   ajustes: AjustesDeCalendario,
   zona: string,
 ): number {
-  const a = fechaEnZona(desde, zona);
-  const b = fechaEnZona(hasta, zona);
+  const a = exigirDia(fechaEnZona(desde, zona));
+  const b = exigirDia(fechaEnZona(hasta, zona));
   if (a === b) return 0;
   const [ini, fin, signo] = a < b ? [a, b, 1] : [b, a, -1];
   let cuenta = 0;
