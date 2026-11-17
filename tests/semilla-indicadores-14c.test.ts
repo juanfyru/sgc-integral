@@ -406,13 +406,15 @@ describe("la demo de la 14C", () => {
     expect(new Date(i.soporte_obligatorio_desde).getTime()).toBe(activacion.momento.getTime());
 
     // La marca de cada una, decidida al activar (anexo del complemento, §4.2): la que seguía en su plazo lo debe; la que
-    // quien mide ya había reportado, con la fecha límite pasada, no.
+    // quien mide ya había reportado, con la fecha límite de su reporte pasada, no.
     const debe = await medicion(CEX_AGENDA.codigo, activacion.debe);
     const noDebe = await medicion(CEX_AGENDA.codigo, activacion.noDebe);
     expect([debe.debe_soporte, noDebe.debe_soporte]).toEqual([true, false]);
     expect(new Date(debe.reportada_en).getTime()).toBeLessThan(activacion.momento.getTime());
     expect(new Date(debe.vence_en).getTime()).toBeGreaterThan(activacion.momento.getTime());
     expect(new Date(noDebe.reportada_en).getTime()).toBeLessThan(activacion.momento.getTime());
+    // Lo reportó quien mide, no el sistema: solo ese reporte la deja sin deberlo.
+    expect(noDebe.reportada_por).not.toBeNull();
     expect(new Date(noDebe.vence_en).getTime()).toBeLessThan(activacion.momento.getTime());
     // La que lo debe queda sin él, para el recorrido: es tarea de quien mide hasta que lo adjunte.
     const [{ n }] = await sql`SELECT count(*)::int AS n FROM archivos WHERE contexto = 'medicion' AND contexto_id = ${debe.id}`;

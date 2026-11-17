@@ -294,8 +294,9 @@ de cada mes.
    note. Los decimales van con coma («1,6», «1600,5»); un punto decimal que no parece de miles
    («1.6», «0.125») también se lee bien, pero un decimal de tres cifras con parte entera de 1 a 999
    se escribe siempre con coma («2,375»). La misma regla vale en la rejilla por categoría (sección
-   12.3), en los históricos (sección 3.6), en la ficha y las metas (secciones 6.1 y 6.5) y en el
-   valor de un dato compartido (sección 11.2). Lo que ya estaba guardado no cambia.
+   12.3), en los históricos (sección 3.6), en la ficha y las metas (secciones 6.1 y 6.5), en el
+   valor de un dato compartido (sección 11.2) y en sus límites de captura (sección 11.4). Lo que ya
+   estaba guardado no cambia.
 3. Mientras escribe, a la derecha (o debajo, en el celular) aparecen el **Resultado**, su color y su
    frase. Si no cumple, avisa que después de reportar el análisis es obligatorio.
 4. Pulse **Reportar**. Si todavía no tiene todos los datos, **Guardar sin reportar** los conserva y
@@ -694,7 +695,8 @@ indicador cuyo resultado faltó.
 **Un periodo de un dato que nació sin categorías** (sección 11.4) no se cierra «Sin dato» mientras
 siga vacío: el cierre lo espera, aunque su fecha límite haya pasado, y las mediciones que lo usan
 esperan con él. Solo si su dimensión no tiene ninguna categoría activa (no hay con qué actualizarlo)
-el cierre lo cierra «Sin dato», el resumen dice por qué («…; su dimensión no tiene categorías
+el cierre lo cierra «Sin dato» cuando vence (mientras sigue en plazo, lo espera como a cualquier otro
+periodo), el resumen dice por qué («…; su dimensión no tiene categorías
 activas: queda sin dato.») y **Quién debía** dice, del periodo vacío, «El dato «…», octubre de 2026, no
 tuvo categorías con que reportarse» (lo dice también si ese periodo lo cerró un cierre anterior).
 
@@ -1294,7 +1296,8 @@ de esos meses, está en **Falta un dato**.
 
 En **Datos compartidos**, pulse **Nuevo dato** y llene: **Proceso dueño**, **Nombre** (único en su
 proceso), **Qué incluye y qué excluye**, **Fuente**, **Unidad**, **Periodicidad**, **Cómo se
-junta** (se suma, último valor o promedio), **Mínimo de captura** y **Máximo de captura**, si admite
+junta** (se suma, último valor o promedio), **Mínimo de captura** y **Máximo de captura** (sin puntos
+de miles: «1500», no «1.500», que el SGC rechaza como en lo que se reporta, sección 3.2), si admite
 negativos, **Plazo de reporte (días)** (de 0 a 90) y, si se reporta por categoría, la
 **Desagregación** (sección 12). Pulse **Crear el dato**. En su página, **Designar personas** elige
 quiénes responden por él.
@@ -1343,7 +1346,8 @@ que nace vacío ese día (con fecha límite el 26: no nace vencido).
   lo usan (sección 6.6).
 - Si la dimensión **no tiene ninguna categoría activa**, la tarea lo dice («Su dimensión no tiene
   categorías activas: créelas o actívelas primero»), **Actualizar categorías** no añade nada y el
-  cierre lo cierra «Sin dato» con esa razón. Cree o active las categorías en **Dimensiones**
+  cierre lo cierra «Sin dato» con esa razón cuando vence (mientras sigue en plazo, lo espera como a
+  cualquier otro periodo). Cree o active las categorías en **Dimensiones**
   (sección 12.1) y vuelva a pulsar **Actualizar categorías**.
 
 **Qué periodos se piden.** Solo los que necesita algún indicador activo, desde el periodo en curso
@@ -1620,7 +1624,7 @@ puede ver; tampoco los de una constancia de envío o una revisión por cambio de
 | Este «No aplica» lo puso el sistema: se quita solo cuando cambie el dato | Se intentó quitar un «No aplica» que puso el SGC | Nada: se quita solo |
 | La medición ya se reportó: corrija los datos y pulse «Reportar» | Se pulsó **Guardar sin reportar** en una medición ya reportada | Corrija y pulse **Reportar** |
 | Esta medición no tiene categorías: pida al Administrador del SGC que las actualice | La lista del periodo quedó vacía | Pida **Actualizar categorías** |
-| Este periodo no tiene categorías: el Administrador del SGC debe actualizarlas antes de reportarlo | El periodo del dato terminó antes de existir las categorías de su dimensión | Nada: no es tarea suya; el Administrador del SGC ya tiene el aviso y la tarea (sección 11.2) |
+| Este periodo no tiene categorías: el Administrador del SGC debe actualizarlas antes de reportarlo | El periodo del dato terminó antes de existir las categorías de su dimensión | Nada: no es tarea suya; el Administrador del SGC ya tiene el aviso y la tarea (sección 11.4) |
 | Espera sus categorías | Un periodo del dato nació sin categorías | Nada, si responde por el dato; si administra, **Actualizar categorías** (sección 11.4) |
 | Falta un dato. «…» espera que el Administrador del SGC actualice sus categorías. | El dato que usa el indicador solo tiene pendientes sin categorías | Nada: llegará cuando se actualicen y se reporte |
 | El periodo … del dato «…» no tiene categorías: actualícelas para que se pueda reportar | Aviso al Administrador del SGC: un periodo nació vacío | Pulse **Actualizar categorías** en la página del dato |

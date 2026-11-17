@@ -540,10 +540,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   vivo, con la ayuda `AYUDA_SIN_MILES` bajo esos campos) y en `reportarDato`; y la ficha, las metas
   programadas y los límites de captura de un dato **solo en las Server Actions**, con los esquemas de la
   persona (`EsquemaFichaDeLaPersona`, `EsquemaDatoDeLaPersona` y `EsquemaMeta`, que lee `numero(mensaje,
-  campo)`). Cada esquema que el dominio vuelve a validar se arma una vez con una fábrica que da también
+  campo)`; en la ficha, un límite de captura dice de qué variable es: «El máximo de captura de «…»: …»).
+  Cada esquema que el dominio vuelve a validar se arma una vez con una fábrica que da también
   la instancia canónica (`esquemasDeFicha(estricto)` → `EsquemaFicha`; `esquemaDeDato(lector)` →
   `EsquemaDato`, con `numeroCanonico`): la usan `leer` (`fichas.ts`), `validar` (`datos.ts`) y la
-  importación (`EsquemaFichaImportada`). **No va en el dominio** porque lo que el sistema guarda y pasa
+  importación (`EsquemaFichaImportada`). **La ficha, las metas y los límites de un dato no van en el
+  dominio** (lo que se reporta cada periodo, sí: `leerValor` y `reportarDato`) porque lo que el sistema guarda y pasa
   entre sus partes usa punto decimal («2.375» guardado es 2,375): la regla miraría texto ya normalizado y
   rechazaría un valor bueno. Por eso los formularios rellenan con coma lo guardado (`conComa`), el
   editor de rangos envía lo escrito (`rangosParaEnviar`) y un valor que nadie tocó vuelve sin rechazarse.
@@ -791,8 +793,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   **sin categorías** mientras su dimensión tenga alguna activa, aunque haya vencido (complemento de la
   14C, §5.4: lo espera, con las mediciones que lo usan, y el resumen lo cuenta aparte, `esperanCategorias`,
   «… esperan que se actualicen sus categorías: quedan para el siguiente cierre.»); si la dimensión no
-  tiene ninguna activa, lo cierra «Sin dato» como a un vencido y el resumen dice por qué
-  (`sinCategoriasActivas`, «su dimensión no tiene categorías activas»). El resumen que el cierre
+  tiene ninguna activa, lo cierra «Sin dato» **cuando vence** (en plazo, lo espera como a cualquier otro)
+  y el resumen dice por qué (`sinCategoriasActivas`, «su dimensión no tiene categorías activas»). El resumen que el cierre
   guarda y su bitácora llevan cuántos periodos de datos cerró (`datos`: un cierre no se modifica, y uno
   anterior a esa cuenta no la trae: quien lo lee no dice nada). Y **no cierra («espera»)** la medición con una entrada que no está cerrada ni se
   cierra en ese mismo cierre, ni la de un indicador activo cuyo valor copiado ya no coincide con su fuente.
