@@ -17,7 +17,8 @@ const escribir = (fecha: string) =>
 
 export default async function PaginaConfiguracionMejoramiento() {
   await exigirPermiso("mejora.gestionar");
-  const [config, dias, documentos] = await Promise.all([obtenerConfigMejora(), listarDiasDeCalendario(), documentosParaFormato()]);
+  const [config, dias] = await Promise.all([obtenerConfigMejora(), listarDiasDeCalendario()]);
+  const documentos = await documentosParaFormato({ incluir: Object.values(config.formatos).filter((id): id is number => id !== null) });
   const anio = Number(fechaEnZona(new Date(), zonaHoraria()).slice(0, 4));
   const festivos = [anio, anio + 1].map((a) => ({
     anio: a,

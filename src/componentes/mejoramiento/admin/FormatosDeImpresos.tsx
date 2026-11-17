@@ -49,7 +49,7 @@ export function FormatosDeImpresos({ formatos, documentos }: { formatos: ConfigM
                 <option value="">Sin documento</option>
                 {documentos.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.codigo} · {d.titulo}
+                    {d.codigo} · {d.titulo}{d.sinVigente ? " (sin versión vigente)" : ""}
                   </option>
                 ))}
               </select>

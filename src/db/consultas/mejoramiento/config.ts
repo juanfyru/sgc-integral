@@ -148,15 +148,24 @@ export async function listarDiasDeCalendario(opciones?: Opciones): Promise<DiaDe
   return filas.map((f) => ({ id: Number(f.id), fecha: f.fecha as string, tipo: f.tipo as DiaDeCalendario["tipo"], motivo: f.motivo as string }));
 }
 
-export type DocumentoParaFormato = { id: number; codigo: string; titulo: string };
+export type DocumentoParaFormato = { id: number; codigo: string; titulo: string; sinVigente: boolean };
 
-/** Los documentos con una versión vigente, para elegir el formato de un impreso. */
-export async function documentosParaFormato(opciones?: Opciones): Promise<DocumentoParaFormato[]> {
+/**
+ * Los documentos con una versión vigente, para elegir el formato de un impreso. `incluir` son los ya elegidos:
+ * uno que perdió su versión vigente sigue en la lista, marcado, para que guardar sin tocarlo no lo borre.
+ */
+export async function documentosParaFormato(opciones?: Opciones & { incluir?: number[] }): Promise<DocumentoParaFormato[]> {
   const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT d.id, d.codigo, d.titulo FROM documentos d
-    WHERE EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
+  const incluir = opciones?.incluir ?? [];
+  const filas = await sql`SELECT d.id, d.codigo, d.titulo,
+      NOT EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente') AS sin_vigente
+    FROM documentos d
+    WHERE d.id = ANY(${incluir}::int[])
+      OR EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
     ORDER BY d.codigo`;
-  return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string }));
+  return filas.map((f) => ({
+    id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string, sinVigente: f.sin_vigente === true,
+  }));
 }
 
 const YA_ESTA = "Ese día ya está en la lista";

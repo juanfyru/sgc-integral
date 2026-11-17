@@ -15,6 +15,7 @@ import {
   calendarioDeMejora,
   CONFIG_MEJORA_DEFECTO,
   contextoDeMejora,
+  documentosParaFormato,
   guardarConfigMejora,
   obtenerConfigMejora,
   quitarDiaDeCalendario,
@@ -99,6 +100,25 @@ describe("guardarConfigMejora", () => {
   });
 });
 
+describe("documentosParaFormato", () => {
+  it("un formato guardado que perdió su versión vigente sigue en la lista, marcado", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const doc = await documentoLibre(tx, { proceso: "CEX", tipo: "FO" });
+      await guardarConfigMejora(admin, { ...CONFIG_MEJORA_DEFECTO, formatos: { ...CONFIG_MEJORA_DEFECTO.formatos, registro: doc.id } }, opc(tx));
+      const antes = await documentosParaFormato({ sql: tx, incluir: [doc.id] });
+      expect(antes.find((d) => d.id === doc.id)).toMatchObject({ sinVigente: false });
+      await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${doc.id}`;
+      expect((await documentosParaFormato({ sql: tx })).some((d) => d.id === doc.id)).toBe(false);
+      const con = await documentosParaFormato({ sql: tx, incluir: [doc.id] });
+      expect(con.find((d) => d.id === doc.id)).toMatchObject({ sinVigente: true });
+      // Guardar sin tocarlo lo conserva.
+      await guardarConfigMejora(admin, await obtenerConfigMejora({ sql: tx }), opc(tx));
+      expect((await obtenerConfigMejora({ sql: tx })).formatos.registro).toBe(doc.id);
+    });
+  });
+});
+
 describe("el calendario de la entidad", () => {
   it("sale de la tabla", async () => {
     await revertida(sql, async (tx) => {
@@ -168,5 +188,52 @@ describe("plazos en días hábiles", () => {
     const c = ctx();
     expect(quedanDiasHabiles(dia("2026-11-11"), { ...c, ahora: dia("2026-11-04") })).toBe(5);
     expect(quedanDiasHabiles(dia("2026-11-04"), { ...c, ahora: dia("2026-11-11") })).toBe(-5);
+  });
+
+  it("la fecha del ente en sábado o en festivo retrocede desde ese día", () => {
+    const c = ctx({ ...CONFIG_MEJORA_DEFECTO, plazos: { ...CONFIG_MEJORA_DEFECTO.plazos, revisar: 3, aprobar: 3 } });
+    const registrado = dia("2026-11-04");
+    // 2026-11-28 es sábado: hacia atrás, 27(1) 26(2) 25(3) 24(4) 23(5) 20(6).
+    expect(formularAntesDe({ registradoEn: registrado, fechaLimiteEnte: "2026-11-28" }, c).toISOString()).toBe(fin("2026-11-20"));
+    // 2026-11-16 es festivo (lunes): 13(1) 12(2) 11(3) 10(4) 9(5) 6(6).
+    expect(formularAntesDe({ registradoEn: registrado, fechaLimiteEnte: "2026-11-16" }, c).toISOString()).toBe(fin("2026-11-06"));
+  });
+
+  it("un día hábil que anula el festivo cuenta dentro de venceEn", () => {
+    const anulado = ctx(CONFIG_MEJORA_DEFECTO, { noHabiles: new Set(), habiles: new Set(["2026-11-16"]) });
+    expect(venceEn("formular", dia("2026-11-04"), anulado).toISOString()).toBe(fin("2026-11-18"));
+  });
+
+  it("una fecha del ente igual al día del registro o a pocos hábiles de él", () => {
+    const c = ctx({ ...CONFIG_MEJORA_DEFECTO, plazos: { ...CONFIG_MEJORA_DEFECTO.plazos, revisar: 3, aprobar: 3 } });
+    const registrado = dia("2026-11-04");
+    expect(formularAntesDe({ registradoEn: registrado, fechaLimiteEnte: "2026-11-04" }, c).toISOString()).toBe(fin("2026-11-04"));
+    // 2026-11-09 menos seis hábiles cae antes del registro: se queda en el día del registro.
+    expect(formularAntesDe({ registradoEn: registrado, fechaLimiteEnte: "2026-11-09" }, c).toISOString()).toBe(fin("2026-11-04"));
+    // 2026-11-12 menos seis hábiles: 11 10 9 6 5 4 -> el día del registro, sin pasarse.
+    expect(formularAntesDe({ registradoEn: registrado, fechaLimiteEnte: "2026-11-12" }, c).toISOString()).toBe(fin("2026-11-04"));
+  });
+
+  it("por la tabla: un día añadido después no mueve lo ya calculado y uno nuevo se corre un hábil", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const calcular = async () => venceEn("formular", dia("2026-11-04"), { config: CONFIG_MEJORA_DEFECTO, calendario: await calendarioDeMejora(tx), zona: ZONA });
+      const guardado = await calcular();
+      expect(guardado.toISOString()).toBe(fin("2026-11-19"));
+      await agregarDiaDeCalendario(admin, { fecha: "2026-11-18", tipo: "no_habil", motivo: "Cierre" }, opc(tx));
+      expect(guardado.toISOString()).toBe(fin("2026-11-19"));
+      expect((await calcular()).toISOString()).toBe(fin("2026-11-20"));
+    });
+  });
+
+  it("por la tabla: un día hábil sobre el festivo del 16 de noviembre adelanta el cálculo nuevo", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const calcular = async () => venceEn("formular", dia("2026-11-04"), { config: CONFIG_MEJORA_DEFECTO, calendario: await calendarioDeMejora(tx), zona: ZONA });
+      const guardado = await calcular();
+      await agregarDiaDeCalendario(admin, { fecha: "2026-11-16", tipo: "habil", motivo: "Se trabaja" }, opc(tx));
+      expect(guardado.toISOString()).toBe(fin("2026-11-19"));
+      expect((await calcular()).toISOString()).toBe(fin("2026-11-18"));
+    });
   });
 });
