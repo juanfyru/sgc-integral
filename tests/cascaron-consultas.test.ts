@@ -223,9 +223,10 @@ describe("el costo del cascarón por render", () => {
         // (`tests/cascaron-peticion.test.ts`), lo que este test no ve porque aquí `React.cache` no guarda nada. Con los
         // indicadores (Fase 14A), las de arriba; la 14B suma una para todos, la de las constancias de envío al ente, y otra
         // para el Admin SGC, la de las revisiones de indicadores por cambio de norma (Tarea 12). La 14C suma una para todos,
-        // la de los periodos de los datos compartidos a cargo de la persona (`tareasDeDatos`).
+        // la de los periodos de los datos compartidos a cargo de la persona (`tareasDeDatos`), y su complemento otra para el
+        // Admin SGC, la de los periodos de los datos que esperan sus categorías (`tareasDeCategoriasPendientes`).
         expect(Object.fromEntries(Object.entries(cuentas).map(([nombre, c]) => [nombre, c.total]))).toEqual({
-          "Admin SGC": 22,
+          "Admin SGC": 23,
           líder: 21,
           Gerencia: 15,
           "Control Interno": 14,

@@ -86,9 +86,10 @@ export const SIN_RESPONSABLE = "Sin responsable: designe a alguien";
 
 /**
  * Un periodo de un dato con dimensión que nació sin categorías (ninguna existía cuando terminó; anexo 14C, §5.7): no se
- * reporta vacío. Lo dicen el servidor y la pantalla de reportar.
+ * reporta vacío. Lo dicen el servidor y la pantalla de reportar; quien administra ya lo tiene en su aviso y su tarea
+ * (complemento de la 14C, §5.3).
  */
-export const PERIODO_SIN_CATEGORIAS = "Este periodo no tiene categorías: pida al Administrador del SGC que las actualice";
+export const PERIODO_SIN_CATEGORIAS = "Este periodo no tiene categorías: el Administrador del SGC debe actualizarlas antes de reportarlo";
 
 export const ORIGENES_VARIABLE = ["propia", "compartida", "automatica", "indicador"] as const;
 export type OrigenVariable = (typeof ORIGENES_VARIABLE)[number];

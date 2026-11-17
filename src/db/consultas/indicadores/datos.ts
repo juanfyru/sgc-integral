@@ -22,7 +22,7 @@ import { versionQueRigeEntre } from "@/lib/indicadores/periodos";
 import { ErrorIndicador, type Consolidacion, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { periodoQueSePide, tareasDeDatos } from "./datos-periodos";
+import { periodoQueSePide, periodoSinCategorias, tareasDeDatos } from "./datos-periodos";
 import { obtenerParametros } from "./maestros";
 import { texto, versionesAprobadas } from "./mediciones";
 
@@ -217,7 +217,8 @@ export async function indicadoresQueLoUsan(
 /**
  * Lo que la lista de «Datos compartidos» dice de un dato: su último valor, el periodo que se pide con la fecha más próxima y si
  * su periodo más reciente es un pendiente que ya no se pide (`periodoQueSePide`). Un pendiente viejo que se conserva por su
- * soporte no cuenta: no lo puede limpiar nadie desde la interfaz.
+ * soporte no cuenta: no lo puede limpiar nadie desde la interfaz. El que no tiene categorías no está «por reportar»: nadie
+ * puede reportarlo y no se le vence a su responsable (`periodoSinCategorias`, complemento de la 14C §5.3).
  */
 export type ResumenDeDato = {
   ultimo: { periodo: string; valor: string; categorias: number | null; reporto: string | null; reportadoEn: Date | null } | null;
@@ -243,7 +244,7 @@ export async function resumenDeDatos(
       ORDER BY vv.variable_id, vv.desde DESC, vv.id DESC`,
     sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, vv.periodo, vv.vence_en
       FROM variable_valores vv
-      WHERE ${deLosDatos} AND ${periodoQueSePide(sql)}
+      WHERE ${deLosDatos} AND ${periodoQueSePide(sql)} AND NOT ${periodoSinCategorias(sql)}
       ORDER BY vv.variable_id, vv.vence_en, vv.desde, vv.id`,
     sql`SELECT DISTINCT ON (vv.variable_id) vv.variable_id, (vv.estado = 'pendiente' AND NOT ${periodoQueSePide(sql)}) AS ya_no
       FROM variable_valores vv

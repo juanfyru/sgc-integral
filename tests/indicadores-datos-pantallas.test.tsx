@@ -237,7 +237,7 @@ describe("la página de un dato", () => {
 
       const html = await pagina(responsable, datoId);
       expect(html).toContain("Reportar · octubre de 2026");
-      expect(html).toContain("Este periodo no tiene categorías: pida al Administrador del SGC que las actualice");
+      expect(html).toContain("Este periodo no tiene categorías: el Administrador del SGC debe actualizarlas antes de reportarlo");
       expect(html).not.toContain("Valor de cada categoría");
       expect(html).not.toContain("Reportar el dato");
       // Actualizarlas es de quien administra.

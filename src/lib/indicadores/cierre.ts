@@ -53,11 +53,18 @@ export function esMesTerminado(mes: unknown, ahora: Date): mes is string {
 }
 
 /**
- * Las líneas de «No se cierran» (F14-DC3), con concordancia: lo que sigue en plazo, los históricos sin registrar y (anexo
- * 14C, §3.5) las mediciones que esperan una fuente y los periodos de los datos que siguen en plazo. Un grupo en cero no tiene
- * línea; sin ninguna, la caja no se muestra.
+ * Las líneas de «No se cierran» (F14-DC3), con concordancia: lo que sigue en plazo, los históricos sin registrar, (anexo
+ * 14C, §3.5) las mediciones que esperan una fuente y los periodos de los datos que siguen en plazo, y (complemento de la 14C,
+ * §5.4) los periodos de los datos que esperan que se actualicen sus categorías. Un grupo en cero no tiene línea; sin ninguna,
+ * la caja no se muestra.
  */
-export function frasesDeNoSeCierran(r: { enPlazo: number; historicosSinRegistrar: number; esperanEntrada?: number; datosEnPlazo?: number }): string[] {
+export function frasesDeNoSeCierran(r: {
+  enPlazo: number;
+  historicosSinRegistrar: number;
+  esperanEntrada?: number;
+  datosEnPlazo?: number;
+  datosEsperanCategorias?: number;
+}): string[] {
   const frases: string[] = [];
   if (r.enPlazo > 0) {
     frases.push(
@@ -89,29 +96,49 @@ export function frasesDeNoSeCierran(r: { enPlazo: number; historicosSinRegistrar
         : `${datos} periodos de datos compartidos siguen dentro de su plazo de reporte: quedan para el siguiente cierre.`,
     );
   }
+  const sinCategorias = r.datosEsperanCategorias ?? 0;
+  if (sinCategorias > 0) {
+    frases.push(
+      sinCategorias === 1
+        ? "1 periodo de un dato compartido espera que se actualicen sus categorías: queda para el siguiente cierre."
+        : `${sinCategorias} periodos de datos compartidos esperan que se actualicen sus categorías: quedan para el siguiente cierre.`,
+    );
+  }
   return frases;
 }
 
 /**
  * La línea de «Datos compartidos» del resumen (anexo 14C, §3.5), con concordancia: «Se cierra 1 periodo de un dato
  * compartido que terminó en marzo de 2026 o antes; venció sin que lo reportaran: queda sin dato.» o «Se cierran 3 periodos de
- * datos compartidos que terminaron en marzo de 2026 o antes; 1 venció sin que lo reportaran: queda sin dato.».
+ * datos compartidos que terminaron en marzo de 2026 o antes; 1 venció sin que lo reportaran: queda sin dato.». Los que quedan
+ * sin dato porque su dimensión no tiene categorías activas (`sinCategoriasActivas`, parte de `sinDato`; complemento de la 14C,
+ * §5.4) lo dicen aparte: «…; 1 queda sin dato porque su dimensión no tiene categorías activas.».
  */
-export function fraseDeDatosDelResumen(d: { seCierran: number; sinDato: number }, mes: string): string {
+export function fraseDeDatosDelResumen(d: { seCierran: number; sinDato: number; sinCategoriasActivas?: number }, mes: string): string {
   if (d.seCierran === 0) return "Ningún periodo de un dato compartido se cierra.";
   const base =
     d.seCierran === 1
       ? `Se cierra 1 periodo de un dato compartido que terminó en ${mes} o antes`
       : `Se cierran ${d.seCierran} periodos de datos compartidos que terminaron en ${mes} o antes`;
+  const sinActivas = d.sinCategoriasActivas ?? 0;
+  const vencidos = d.sinDato - sinActivas;
   const sinDato =
-    d.sinDato === 0
+    vencidos === 0
       ? ""
       : d.seCierran === 1
         ? "; venció sin que lo reportaran: queda sin dato"
-        : d.sinDato === 1
+        : vencidos === 1
           ? "; 1 venció sin que lo reportaran: queda sin dato"
-          : `; ${d.sinDato} vencieron sin que los reportaran: quedan sin dato`;
-  return `${base}${sinDato}.`;
+          : `; ${vencidos} vencieron sin que los reportaran: quedan sin dato`;
+  const sinCategorias =
+    sinActivas === 0
+      ? ""
+      : d.seCierran === 1
+        ? "; su dimensión no tiene categorías activas: queda sin dato"
+        : sinActivas === 1
+          ? "; 1 queda sin dato porque su dimensión no tiene categorías activas"
+          : `; ${sinActivas} quedan sin dato porque su dimensión no tiene categorías activas`;
+  return `${base}${sinDato}${sinCategorias}.`;
 }
 
 /**

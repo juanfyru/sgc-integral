@@ -127,7 +127,7 @@ describe("el cierre cierra los periodos de los datos", () => {
       const pSinPedirFebrero = await periodoDeDatoDePrueba(tx, { datoId: sinPedir, periodo: "2003-02", valor: "7", ahora: ABRE });
 
       const r = await resumenDeCierre(admin, MARZO, opc(tx));
-      expect(r.datos).toEqual({ seCierran: 3, sinDato: 1, esperan: 1 });
+      expect(r.datos).toEqual({ seCierran: 3, sinDato: 1, esperan: 1, esperanCategorias: 0, sinCategoriasActivas: 0 });
       // El resumen no escribe: nada se cierra todavía.
       expect((await periodoDelDato(tx, pReportado)).estado).toBe("reportado");
       expect((await periodoDelDato(tx, pSinPedir)).se_pide).toBe(false);
@@ -202,7 +202,7 @@ describe("un periodo de un dato ya reportado que sigue dentro de su plazo", () =
       expect(((await fila(tx, marzo)).vence_en as Date).getTime()).toBeLessThan(AHORA.getTime());
 
       const r = await resumenDeCierre(admin, MARZO, opc(tx));
-      expect(r.datos).toEqual({ seCierran: 0, sinDato: 0, esperan: 1 });
+      expect(r.datos).toEqual({ seCierran: 0, sinDato: 0, esperan: 1, esperanCategorias: 0, sinCategoriasActivas: 0 });
       expect(r.aCerrar).toBe(0);
       expect(r.esperanEntrada).toEqual([{ codigo: mixto.codigo, periodo: MARZO, espera: `El dato «${d.nombre as string}», marzo de 2003` }]);
 
@@ -238,7 +238,7 @@ describe("lo que espera una fuente no se cierra", () => {
       expect(r.aCerrar).toBe(0);
       expect(r.enPlazo).toBe(0);
       expect(r.esperanEntrada).toEqual([{ codigo: mixto.codigo, periodo: MARZO, espera: `El dato «${d.nombre as string}», marzo de 2003` }]);
-      expect(r.datos).toEqual({ seCierran: 0, sinDato: 0, esperan: 1 });
+      expect(r.datos).toEqual({ seCierran: 0, sinDato: 0, esperan: 1, esperanCategorias: 0, sinCategoriasActivas: 0 });
       await cerrarMes(admin, MARZO, opc(tx));
       expect((await fila(tx, marzo)).estado).toBe("abierta");
     }));
@@ -459,5 +459,62 @@ describe("lo que espera una fuente no se cierra", () => {
       expect((await fila(tx, t1)).estado).toBe("cerrada");
       expect((await fila(tx, await medicionDe(tx, b.id, MARZO))).estado).toBe("cerrada");
       expect((await fila(tx, await medicionDe(tx, a.id, MARZO))).estado).toBe("abierta");
+    }));
+});
+
+/**
+ * Complemento de la 14C, §5.4: el periodo de un dato que nació sin categorías. Las sedes de `dimensionDePrueba` nacen hace un
+ * año: ningún periodo de 2003 las trae en su lista, así que marzo del dato nace vacío. Lo usa un mixto mensual (A propia, B el
+ * dato por su total), cuya medición de marzo espera con él.
+ */
+describe("el periodo de un dato que nace sin categorías (complemento 14C, §5.4)", () => {
+  /** Un dato mensual por sedes, con plazo de 10 días, su mixto con A reportada y marzo del dato abierto el 1 de abril, vacío. */
+  async function vacio(tx: TransactionSql) {
+    const e = await entorno(tx);
+    const sede = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}`, ["S1", "S2"]);
+    const nombre = `ZZ Atenciones por sede ${Date.now() % 100_000_000}`;
+    const datoId = await datoDePrueba(tx, { procesoId: e.procesoId, nombre, dimensionId: sede.id, responsables: [e.responsable.usuarioId] });
+    const mixto = await e.nuevo({ variables: { B: { datoId } } });
+    const pMarzo = await e.abrirDato(datoId);
+    expect((await periodoDelDato(tx, pMarzo)).categorias).toEqual([]);
+    const marzo = await medicionDe(tx, mixto.id, MARZO);
+    await e.reportarLoPropio(e.mide, marzo, { A: "9" });
+    return { ...e, sede, nombre, datoId, mixto, pMarzo, marzo };
+  }
+
+  it("caso 4: con alguna sede activa, el cierre lo espera aunque venció, el resumen lo cuenta aparte y la medición espera con él", () =>
+    revertida(sql, async (tx) => {
+      const { admin, nombre, mixto, pMarzo, marzo } = await vacio(tx);
+      const r = await resumenDeCierre(admin, MARZO, opc(tx));
+      expect(r.datos).toEqual({ seCierran: 0, sinDato: 0, esperan: 0, esperanCategorias: 1, sinCategoriasActivas: 0 });
+      expect(r.esperanEntrada).toEqual([{ codigo: mixto.codigo, periodo: MARZO, espera: `El dato «${nombre}», marzo de 2003` }]);
+      expect(r.sinDato.map((s) => s.codigo)).not.toContain(mixto.codigo);
+
+      await cerrarMes(admin, MARZO, opc(tx));
+      expect((await periodoDelDato(tx, pMarzo)).estado).toBe("pendiente");
+      expect((await eventosDelDato(tx, pMarzo)).filter((x) => x.tipo === "cierre")).toHaveLength(0);
+      expect((await fila(tx, marzo)).estado).not.toBe("cerrada");
+      // Ningún cierre lo cierra «Sin dato» mientras siga vacío: en mayo esperan marzo y abril, que también nació vacío.
+      const abril = await resumenDeCierre(admin, ABRIL, opc(tx, EN_MAYO));
+      expect(abril.datos).toMatchObject({ seCierran: 0, sinDato: 0, esperanCategorias: 2, sinCategoriasActivas: 0 });
+      await cerrarMes(admin, ABRIL, opc(tx, EN_MAYO));
+      expect((await periodoDelDato(tx, pMarzo)).estado).toBe("pendiente");
+      expect((await fila(tx, marzo)).estado).not.toBe("cerrada");
+    }));
+
+  it("caso 5: sin ninguna sede activa no hay con qué actualizarlo: el cierre lo cierra «Sin dato» y dice por qué", () =>
+    revertida(sql, async (tx) => {
+      const { admin, sede, mixto, pMarzo, marzo } = await vacio(tx);
+      await tx`UPDATE dimension_categorias SET activo = false, desactivada_en = now() WHERE dimension_id = ${sede.id}`;
+      const r = await resumenDeCierre(admin, MARZO, opc(tx));
+      expect(r.datos).toEqual({ seCierran: 1, sinDato: 1, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 1 });
+      expect(r.esperanEntrada).toEqual([]);
+      expect(r.sinDato.find((s) => s.codigo === mixto.codigo)?.quien).toEqual(["Su dimensión no tiene categorías activas"]);
+
+      await cerrarMes(admin, MARZO, opc(tx));
+      const p = await periodoDelDato(tx, pMarzo);
+      expect([p.estado, p.valor]).toEqual(["cerrado", null]);
+      const m = await fila(tx, marzo);
+      expect([m.estado, m.resultado_exacto]).toEqual(["cerrada", null]);
     }));
 });

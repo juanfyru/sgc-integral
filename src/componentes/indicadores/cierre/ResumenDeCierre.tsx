@@ -80,12 +80,18 @@ function ConfirmarCierre({ resumen, mes }: { resumen: Resumen; mes: string }) {
 /**
  * El resumen previo del cierre (spec §9.2): cuántas mediciones se cerrarán y cómo, en total y por proceso, las que
  * quedarán sin dato con quién debía, las observaciones sin respuesta, los periodos de los datos compartidos que se cierran y
- * los grupos que no se cierran (F14-DC3; anexo 14C, §3.5: también las que esperan una fuente, con lo que esperan); al final,
- * la confirmación. `mes` es el mes en palabras, en minúscula («marzo de 2026»); `periodos`, cada periodo en palabras.
+ * los grupos que no se cierran (F14-DC3; anexo 14C, §3.5: también las que esperan una fuente, con lo que esperan;
+ * complemento de la 14C, §5.4: y los periodos de los datos que esperan que se actualicen sus categorías); al final, la
+ * confirmación. `mes` es el mes en palabras, en minúscula («marzo de 2026»); `periodos`, cada periodo en palabras.
  */
 export function ResumenDeCierre({ resumen, mes, periodos }: { resumen: Resumen; mes: string; periodos: Readonly<Record<string, string>> }) {
   const r = resumen;
-  const noSeCierran = frasesDeNoSeCierran({ ...r, esperanEntrada: r.esperanEntrada.length, datosEnPlazo: r.datos.esperan });
+  const noSeCierran = frasesDeNoSeCierran({
+    ...r,
+    esperanEntrada: r.esperanEntrada.length,
+    datosEnPlazo: r.datos.esperan,
+    datosEsperanCategorias: r.datos.esperanCategorias,
+  });
   return (
     <section aria-labelledby="cierre-resumen" className="flex min-w-0 flex-col gap-4">
       <h2 id="cierre-resumen" className="text-lg font-semibold">

@@ -13,12 +13,14 @@
  *   la transacción. Corregir antes del cierre no pide justificación; cada cambio deja su antes y su después en el historial
  *   (`variable_eventos`, de solo inserción).
  * - **Su tarea** (`tareasDeDatos`) y sus recordatorios (`datos-vencidos.ts`) miran lo mismo: lo que se pide
- *   (`periodoQueSePide`).
+ *   (`periodoQueSePide`), salvo el periodo sin categorías (`periodoSinCategorias`, complemento de la 14C §5), que nadie
+ *   puede reportar: es aviso (al nacer) y tarea (`tareasDeCategoriasPendientes`) de quien administra.
  *
  * - **Cerrar** lo hace el cierre del mes (`cierre.ts`); reabrir, la reapertura en cascada (`reapertura.ts`, anexo 14C §3.5);
  *   «Cerrar de nuevo» un periodo reabierto, `cerrarDeNuevoElDato`.
  * - **Las categorías** de un periodo de un dato con dimensión se fijan al abrirlo; uno pendiente las actualiza quien
- *   administra (`actualizarCategoriasDelDato`), y uno que nació sin ninguna no se reporta vacío (`PERIODO_SIN_CATEGORIAS`).
+ *   administra (`actualizarCategoriasDelDato`), y uno que nació sin ninguna no se reporta vacío (`PERIODO_SIN_CATEGORIAS`):
+ *   al recibirlas vuelve a su responsable con el plazo contado desde ese día.
  *
  * Candados: el dato `FOR SHARE` y después el periodo `FOR UPDATE` (o, al abrir, las filas del maestro `FOR KEY SHARE`), en
  * una transacción por dato: los indicadores que lo usan se leen sin candado, porque una transacción no bloquea más de un
@@ -32,7 +34,9 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { puedeReportarDato, puedeVerDato, responsabilidadEnDato, type SujetoVisibilidad } from "@/lib/alcance";
+import { crearNotificacion } from "@/db/consultas/notificaciones";
+import { adminsActivos } from "@/db/consultas/tramites";
+import { filtroDatos, puedeReportarDato, puedeVerDato, responsabilidadEnDato, type SujetoVisibilidad } from "@/lib/alcance";
 import { periodoDe, type Periodo } from "@/lib/indicadores-documentales/periodo";
 import { variacionExcesiva } from "@/lib/indicadores/calculo";
 import { listaDelPeriodo, type CategoriaDeMedicion } from "@/lib/indicadores/categorias";
@@ -48,6 +52,7 @@ import {
 } from "@/lib/indicadores/periodos";
 import { SIN_PUNTOS_DE_MILES, tienePuntoDeMiles } from "@/lib/indicadores/miles";
 import { leerValor, valorEnTexto, type VariableDeCaptura } from "@/lib/indicadores/reporte";
+import { rutaDeDato } from "@/lib/indicadores/rutas";
 import { numeroExacto } from "@/lib/indicadores/semaforo";
 import { ErrorIndicador, PERIODO_SIN_CATEGORIAS, SIN_RESPONSABLE, type Periodicidad } from "@/lib/indicadores/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
@@ -107,6 +112,19 @@ const SOLO_PENDIENTE = "Solo se actualizan las categorías de un periodo que aú
  * y el estado de la lista y de la página del dato.
  */
 export const periodoQueSePide = (sql: Cliente) => sql`(vv.estado = 'pendiente' AND vv.se_pide)`;
+
+/**
+ * Un periodo de un dato con dimensión cuya lista de categorías está vacía (nació antes de que existieran; complemento de la
+ * 14C, §5), para un `WHERE` sobre `variable_valores vv`. Nadie puede reportarlo: mientras se pida, es aviso y tarea de quien
+ * administra (`tareasDeCategoriasPendientes`), no de su responsable. Lo que se le pide al responsable (la tarea, los
+ * recordatorios, el vencido, el escalamiento, el número de la pestaña y «por reportar» en la lista) es `periodoQueSePide` sin
+ * él; la página del dato lo sigue mostrando como lo que se pide, con el aviso en lugar del formulario.
+ */
+export const periodoSinCategorias = (sql: Cliente) => sql`(vv.categorias IS NOT NULL AND jsonb_array_length(vv.categorias) = 0)`;
+
+/** «El periodo octubre de 2026 del dato «…» no tiene categorías: …»: el aviso a quien administra, que no nombra un indicador. */
+const avisoSinCategorias = (etiqueta: string, dato: string) =>
+  `El periodo ${etiqueta} del dato «${dato}» no tiene categorías: actualícelas para que se pueda reportar`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cuándo se abren
@@ -194,11 +212,13 @@ async function loQuePiden(
  * vuelve a pedirse, en verdadero, sin nacer vencido: si su fecha límite ya pasó, cuenta desde hoy con el plazo del dato y sus
  * avisos empiezan otra vez. Si no se pudo saber qué pide algún indicador (`completo` falso), solo abre: no quita ni marca.
  * Con dimensión, la lista de cada periodo nuevo sale del maestro leído `FOR KEY SHARE` en esta misma transacción
- * (`maestroDeCategorias`).
+ * (`maestroDeCategorias`). El que nace con la lista vacía avisa, en la misma transacción, a cada Administrador del SGC activo
+ * (`indicadores.dato_sin_categorias`, complemento de la 14C §5.1): solo quien lo insertó (`RETURNING`), así dos pasadas a la vez
+ * avisan una sola vez.
  */
 function asegurarDe(sql: Cliente, datoId: number, ahora: Date): Promise<{ abiertos: number; quitados: number }> {
   return enTransaccion(sql, async (tx) => {
-    const [d] = await tx`SELECT id, periodicidad, plazo_reporte_dias, dimension_id FROM variables_compartidas WHERE id = ${datoId} FOR SHARE`;
+    const [d] = await tx`SELECT id, nombre, periodicidad, plazo_reporte_dias, dimension_id FROM variables_compartidas WHERE id = ${datoId} FOR SHARE`;
     if (!d) return { abiertos: 0, quitados: 0 };
     const zona = zonaHoraria();
     const dato = { id: Number(d.id), periodicidad: d.periodicidad as Periodicidad };
@@ -210,6 +230,7 @@ function asegurarDe(sql: Cliente, datoId: number, ahora: Date): Promise<{ abiert
     const plazo = Number(d.plazo_reporte_dias);
     if (nuevos.length > 0) {
       const maestro = d.dimension_id === null ? null : await maestroDeCategorias(tx, Number(d.dimension_id), { bloquear: true });
+      const vacios: Periodo[] = [];
       for (const p of nuevos) {
         const limite = fechaLimiteDeReporte(p, plazo, zona);
         const vence = limite.getTime() < ahora.getTime() ? fechaLimite(ahora, plazo, zona) : limite;
@@ -219,6 +240,25 @@ function asegurarDe(sql: Cliente, datoId: number, ahora: Date): Promise<{ abiert
           ON CONFLICT DO NOTHING
           RETURNING id`;
         abiertos += creada.length;
+        if (creada.length > 0 && categorias !== null && categorias.length === 0) vacios.push(p);
+      }
+      if (vacios.length > 0) {
+        const admins = await adminsActivos({ sql: tx });
+        for (const p of vacios) {
+          for (const usuarioId of admins) {
+            await crearNotificacion(
+              {
+                usuarioId,
+                tipo: "indicadores.dato_sin_categorias",
+                titulo: avisoSinCategorias(p.etiqueta, d.nombre as string),
+                enlace: rutaDeDato(dato.id),
+                entidad: "dato_compartido",
+                entidadId: dato.id,
+              },
+              tx,
+            );
+          }
+        }
       }
     }
     if (!completo) return { abiertos, quitados: 0 };
@@ -552,6 +592,10 @@ export async function reportarDato(
  * `detalle.categorias.agregadas` (id y nombre) y sin antes ni después de valor, que es lo que lo distingue de la corrección de
  * un valor; no marca el periodo como corregido. Y su bitácora, `dato_categorias_actualizadas`.
  *
+ * Si la lista estaba vacía (complemento de la 14C, §5.5), el periodo vuelve a su responsable con su plazo completo contado
+ * desde `ahora` (el plazo no corrió mientras nadie podía reportarlo) y sus avisos empiezan otra vez, como el que vuelve a
+ * pedirse en `asegurarDe`; la fecha nueva queda en el evento (`detalle.venceEn`).
+ *
  * Candados, como al reportar: el dato `FOR SHARE`, el periodo `FOR UPDATE` y el maestro `FOR KEY SHARE`.
  */
 export async function actualizarCategoriasDelDato(sesion: SesionFlujo, periodoId: number, opciones?: Opciones): Promise<{ agregadas: number }> {
@@ -559,7 +603,7 @@ export async function actualizarCategoriasDelDato(sesion: SesionFlujo, periodoId
   if (!Number.isInteger(periodoId) || periodoId <= 0) throw new ErrorIndicador(PERIODO_NO_EXISTE);
   const ahora = opciones?.ahora ?? new Date();
   return enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    const [d] = await tx`SELECT id, nombre, dimension_id FROM variables_compartidas
+    const [d] = await tx`SELECT id, nombre, dimension_id, plazo_reporte_dias FROM variables_compartidas
       WHERE id = (SELECT variable_id FROM variable_valores WHERE id = ${periodoId}) FOR SHARE`;
     const [p] = await tx`SELECT * FROM variable_valores WHERE id = ${periodoId} FOR UPDATE`;
     if (!d || !p || Number(p.variable_id) !== Number(d.id)) throw new ErrorIndicador(PERIODO_NO_EXISTE);
@@ -571,8 +615,14 @@ export async function actualizarCategoriasDelDato(sesion: SesionFlujo, periodoId
       .filter((c) => c.activo && !ya.has(c.id))
       .map((c) => ({ id: c.id, nombre: c.nombre, orden: c.orden, noAplica: null }));
     if (agregadas.length === 0) return { agregadas: 0 };
-    await tx`UPDATE variable_valores SET categorias = ${tx.json([...lista, ...agregadas] as never)} WHERE id = ${periodoId}`;
-    const detalle = { categorias: { agregadas: agregadas.map((c) => ({ id: c.id, nombre: c.nombre })) } };
+    const venceEn = lista.length === 0 ? fechaLimite(ahora, Number(d.plazo_reporte_dias), zonaHoraria()) : null;
+    await tx`UPDATE variable_valores SET categorias = ${tx.json([...lista, ...agregadas] as never)}
+        ${venceEn ? tx`, vence_en = ${venceEn}, aviso_previo_en = NULL, aviso_vencido_en = NULL, escalado_en = NULL` : tx``}
+      WHERE id = ${periodoId}`;
+    const detalle = {
+      categorias: { agregadas: agregadas.map((c) => ({ id: c.id, nombre: c.nombre })) },
+      ...(venceEn ? { venceEn: venceEn.toISOString() } : {}),
+    };
     await tx`INSERT INTO variable_eventos (valor_id, tipo, usuario_id, detalle, creado_en)
       VALUES (${periodoId}, 'correccion', ${sesion.usuarioId}, ${tx.json(detalle as never)}, ${ahora})`;
     await registrarAuditoria(tx, {
@@ -628,7 +678,8 @@ export async function cerrarDeNuevoElDato(sesion: SesionFlujo, periodoId: number
 /**
  * «Reportar el dato Total facturado en el mes, noviembre de 2026»: una tarea por periodo que se pide del dato, para quien
  * está en `responsablesDeDato` (`responsabilidadEnDato`: sus responsables; sin ellos, los líderes del proceso dueño; sin
- * ellos, el Admin SGC, con «sin responsable»), con su fecha límite y el enlace a la página del dato. Solo lee.
+ * ellos, el Admin SGC, con «sin responsable»), con su fecha límite y el enlace a la página del dato. Sin los periodos sin
+ * categorías (`periodoSinCategorias`): son de quien administra (`tareasDeCategoriasPendientes`). Solo lee.
  */
 export async function tareasDeDatos(sql: Cliente, sesion: SujetoVisibilidad): Promise<Tarea[]> {
   if (!puede(sesion, "indicadores.medir")) return [];
@@ -636,7 +687,7 @@ export async function tareasDeDatos(sql: Cliente, sesion: SujetoVisibilidad): Pr
       SELECT vv.id, vv.variable_id, vv.periodo, vv.vence_en, d.nombre, p.nombre AS proceso,
         ${responsabilidadEnDato(sql, sesion)} AS responde
       FROM variable_valores vv JOIN variables_compartidas d ON d.id = vv.variable_id JOIN procesos p ON p.id = d.proceso_id
-      WHERE ${periodoQueSePide(sql)}
+      WHERE ${periodoQueSePide(sql)} AND NOT ${periodoSinCategorias(sql)}
     ) x
     WHERE x.responde IS NOT NULL
     ORDER BY x.vence_en, x.id`;
@@ -648,5 +699,33 @@ export async function tareasDeDatos(sql: Cliente, sesion: SujetoVisibilidad): Pr
     detalle: f.responde === "respaldo" ? SIN_RESPONSABLE : (f.proceso as string),
     vence: new Date(f.vence_en as string),
     enlace: `/indicadores/datos/${Number(f.variable_id)}`,
+  }));
+}
+
+const NADIE_PUEDE_REPORTARLO = "Nadie puede reportarlo hasta que tenga categorías";
+const SIN_CATEGORIAS_ACTIVAS = "Su dimensión no tiene categorías activas: créelas o actívelas primero";
+
+/**
+ * «Actualizar las categorías de Total facturado en el mes, octubre de 2026» (complemento de la 14C, §5.2): una tarea por periodo
+ * que se pide y no tiene categorías (`periodoSinCategorias`), solo de quien administra indicadores (para los demás no se
+ * consulta nada), con el enlace a la página del dato, donde está «Actualizar categorías». No vence ni escala: es
+ * configuración. Si la dimensión no tiene ninguna categoría activa, el detalle dice que primero hay que crearlas o activarlas.
+ * Nombra el dato y el periodo, nunca un indicador. Solo lee.
+ */
+export async function tareasDeCategoriasPendientes(sql: Cliente, sesion: SujetoVisibilidad): Promise<Tarea[]> {
+  if (!puede(sesion, "indicadores.administrar")) return [];
+  const filas = await sql`SELECT vv.id, vv.variable_id, vv.periodo, d.nombre,
+      EXISTS (SELECT 1 FROM dimension_categorias dc WHERE dc.dimension_id = d.dimension_id AND dc.activo) AS hay_activas
+    FROM variable_valores vv JOIN variables_compartidas d ON d.id = vv.variable_id
+    WHERE ${periodoQueSePide(sql)} AND ${periodoSinCategorias(sql)} AND ${filtroDatos(sql, sesion)}
+    ORDER BY vv.desde, vv.id`;
+  const zona = zonaHoraria();
+  return filas.map((f) => ({
+    id: `categorias-dato:${Number(f.id)}`,
+    modulo: "indicadores" as const,
+    titulo: `Actualizar las categorías de ${f.nombre as string}, ${periodoDe(f.periodo as string, zona)?.etiqueta ?? (f.periodo as string)}`,
+    detalle: f.hay_activas === true ? NADIE_PUEDE_REPORTARLO : SIN_CATEGORIAS_ACTIVAS,
+    vence: null,
+    enlace: rutaDeDato(Number(f.variable_id)),
   }));
 }

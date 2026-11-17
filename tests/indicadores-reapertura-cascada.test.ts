@@ -667,7 +667,7 @@ describe("el candado consultivo del cierre, paso 0 del orden de candados", () =>
       await e.nuevo();
       const sentencias: string[] = [];
       await cerrarMes(e.admin, MARZO, opc(espiar(tx, sentencias)));
-      candadoAntesDe(sentencias, "INSERT INTO cierres_indicadores", "FROM variable_valores WHERE hasta <=");
+      candadoAntesDe(sentencias, "INSERT INTO cierres_indicadores", "FROM variable_valores vv WHERE vv.hasta <=");
       candadoAntesDe(sentencias, "INSERT INTO cierres_indicadores", "FROM cierres_indicadores WHERE mes =");
     }));
 

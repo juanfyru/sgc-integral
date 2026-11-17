@@ -16,7 +16,8 @@
  *   (anexo 14C, §3.5): los reportados cuyo plazo ya pasó, y los pendientes que se piden y ya vencieron, sin valor («Sin
  *   dato»). El que sigue en plazo espera, también si ya está reportado: su responsable lo corrige sin justificación hasta el
  *   cierre (§4.4), y las mediciones que lo usan esperan con él. Uno que ya nadie pide (`se_pide` falso) no lo cierra nadie ni
- *   lo debe nadie.
+ *   lo debe nadie. El pendiente sin categorías espera a que quien administra las actualice, salvo que su dimensión no tenga
+ *   ninguna activa (complemento de la 14C, §5.4: `periodosDeDatosDelCierre`).
  * - Cerrar no es un cálculo: escribe `estado`, `cierre_id` y `sin_analisis` sin pasar por `recalcularMedicion`.
  * - Un cierre no se modifica (trigger): su resumen se calcula antes de insertarlo, sobre las mediciones ya bloqueadas, y
  *   el `UPDATE … RETURNING` debe alcanzar exactamente las que cuenta.
@@ -50,7 +51,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { serializarCierreYReapertura } from "./candado-del-cierre";
 import { componentesOcultos, letrasOcultasEnAlguna, nombresDeComponentes } from "./componentes";
-import { asegurarPeriodosDeDatos } from "./datos-periodos";
+import { asegurarPeriodosDeDatos, periodoSinCategorias } from "./datos-periodos";
 import { dependientesDe, memoriaNueva, revisarFuentes, type FuenteQueFalta, type RevisionDeFuentes } from "./dependencias";
 import { tomarFotos } from "./fotos";
 import { analisisDe, asegurarMediciones, contextoDeMedicion, esDeOtraPeriodicidad, mide, NO_EXISTE, versionesAprobadas, type VersionDeCalculo } from "./mediciones";
@@ -110,9 +111,12 @@ export type ResumenDeCierre = {
   porProceso: CuentasDeProceso[];
   /**
    * Los periodos de los datos compartidos que terminaron en el mes o antes (anexo 14C, §3.5): los que se cierran (con los que
-   * se cierran sin valor) y los que siguen dentro de su plazo, pendientes o ya reportados.
+   * se cierran sin valor y, de ellos, los que no tenían categorías porque su dimensión no tiene ninguna activa:
+   * `sinCategoriasActivas`), los que siguen dentro de su plazo, pendientes o ya reportados (`esperan`), y los que esperan que
+   * se actualicen sus categorías (`esperanCategorias`, complemento de la 14C §5.4), que no se cuentan entre los que esperan
+   * por su plazo.
    */
-  datos: { seCierran: number; sinDato: number; esperan: number };
+  datos: { seCierran: number; sinDato: number; esperan: number; esperanCategorias: number; sinCategoriasActivas: number };
   /** No se cierran: esperan una fuente que no está cerrada ni se cierra con este cierre, o lo copiado de ella no coincide. */
   esperanEntrada: { codigo: string; periodo: string; espera: string }[];
 };
@@ -194,8 +198,14 @@ const EL_SISTEMA = "El sistema";
 /** Lo que espera una medición cuyo valor copiado ya no coincide con el de su fuente (la pasada aún no lo copia). */
 const NO_COINCIDE = "Lo copiado de sus fuentes aún no está al día";
 
-/** Un periodo de un dato que se cierra: con valor, o sin él (`sinDato`). */
-type DatoQueSeCierra = { id: number; estado: string; sinDato: boolean };
+/**
+ * Un periodo de un dato que se cierra: con valor, o sin él (`sinDato`); `sinCategoriasActivas`, sin él porque no tiene
+ * categorías y su dimensión no tiene ninguna activa con que actualizarlo.
+ */
+type DatoQueSeCierra = { id: number; datoId: number; estado: string; sinDato: boolean; sinCategoriasActivas: boolean };
+
+/** Quién debía el dato de una medición que se cierra «Sin dato» porque su periodo no tenía categorías con que reportarse. */
+const SIN_CATEGORIAS_ACTIVAS = "Su dimensión no tiene categorías activas";
 
 type Clasificacion = {
   alcanzadas: Alcanzada[];
@@ -205,7 +215,7 @@ type Clasificacion = {
   versiones: Map<number, VersionDeCalculo[]>;
   /** Las que no se cierran porque esperan una fuente, con lo que esperan, por código y periodo. */
   esperan: { codigo: string; periodo: string; espera: string }[];
-  datos: { cierran: DatoQueSeCierra[]; esperan: number };
+  datos: { cierran: DatoQueSeCierra[]; esperan: number; esperanCategorias: number };
   /** Las entradas y lo que les falta a las alcanzadas (`revisarFuentes`). */
   revisiones: Map<number, RevisionDeFuentes>;
 };
@@ -234,17 +244,27 @@ function grupoDe(m: Record<string, unknown>): Grupo {
  * piden y también los ya reportados, que hasta el cierre se corrigen sin justificación (anexo 14C, §3.5 y §4.4). Un pendiente
  * que ya nadie pide no se cierra ni cuenta (anexo 14C, nota 1 de la Tarea 16): nadie lo debe y ninguna medición lo tiene de
  * entrada.
+ *
+ * Un pendiente que se pide y no tiene categorías (`periodoSinCategorias`, complemento de la 14C §5.4) espera, aunque haya
+ * vencido, mientras su dimensión tenga alguna activa con que actualizarlo (`esperanCategorias`), y las mediciones que lo usan
+ * esperan con él; sin ninguna activa, esperar no tendría fin: sigue la regla de siempre y, vencido, se cierra «Sin dato» con su
+ * razón (`sinCategoriasActivas`). La dimensión se lee en una subconsulta: el cierre no toma la fila del dato.
  */
 async function periodosDeDatosDelCierre(sql: Cliente, hasta: Date, ahora: Date, bloquear: boolean): Promise<Clasificacion["datos"]> {
-  const filas = await sql`SELECT id, estado, se_pide, vence_en FROM variable_valores WHERE hasta <= ${hasta} AND estado <> 'cerrado'
-    ORDER BY id ${bloquear ? sql`FOR UPDATE` : sql``}`;
-  const salida: Clasificacion["datos"] = { cierran: [], esperan: 0 };
+  const filas = await sql`SELECT vv.id, vv.variable_id, vv.estado, vv.se_pide, vv.vence_en, ${periodoSinCategorias(sql)} AS sin_categorias,
+      EXISTS (SELECT 1 FROM variables_compartidas d JOIN dimension_categorias dc ON dc.dimension_id = d.dimension_id
+        WHERE d.id = vv.variable_id AND dc.activo) AS hay_activas
+    FROM variable_valores vv WHERE vv.hasta <= ${hasta} AND vv.estado <> 'cerrado'
+    ORDER BY vv.id ${bloquear ? sql`FOR UPDATE OF vv` : sql``}`;
+  const salida: Clasificacion["datos"] = { cierran: [], esperan: 0, esperanCategorias: 0 };
   for (const p of filas) {
     const id = Number(p.id);
     const reportado = p.estado === "reportado";
     if (!reportado && p.se_pide !== true) continue;
-    if (new Date(p.vence_en as string).getTime() >= ahora.getTime()) salida.esperan += 1;
-    else salida.cierran.push({ id, estado: p.estado as string, sinDato: !reportado });
+    const sinCategorias = !reportado && p.sin_categorias === true;
+    if (sinCategorias && p.hay_activas === true) salida.esperanCategorias += 1;
+    else if (new Date(p.vence_en as string).getTime() >= ahora.getTime()) salida.esperan += 1;
+    else salida.cierran.push({ id, datoId: Number(p.variable_id), estado: p.estado as string, sinDato: !reportado, sinCategoriasActivas: sinCategorias });
   }
   return salida;
 }
@@ -422,7 +442,9 @@ async function nombresDe(sql: Cliente, ids: number[]): Promise<string[]> {
  * Quién debía lo que falta a las alcanzadas que se cierran «Sin dato» (anexo 14C, §3.5), con la regla única de «Falta un
  * dato» (`esperaUnDato`): si la medición esperaba un valor que no digita quien la mide, el sistema (un automático) o quienes
  * debían las fuentes que faltan («Los responsables del dato «…»», «El indicador …»); si no, quienes la miden (faltó lo
- * propio). Sin fuentes que falten, también quienes la miden: un caso que no debería darse.
+ * propio). Sin fuentes que falten, también quienes la miden: un caso que no debería darse. Un dato cuyo periodo se cierra
+ * «Sin dato» porque no tenía categorías y su dimensión no tiene ninguna activa (complemento de la 14C, §5.4) no lo debían sus
+ * responsables: «Su dimensión no tiene categorías activas»; si además otro de sus periodos venció sin reportarse, también ellos.
  */
 async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, string[]>> {
   const salida = new Map<number, string[]>();
@@ -436,8 +458,18 @@ async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, s
   const codigoDe = new Map(
     indicadores.length === 0 ? [] : (await sql`SELECT id, codigo FROM indicadores WHERE id IN ${sql([...new Set(indicadores)])}`).map((f) => [Number(f.id), f.codigo as string]),
   );
-  const deLaFuente = (f: FuenteQueFalta) =>
-    f.clase === "dato" ? `Los responsables del dato «${nombreDeDato.get(f.datoId) ?? "?"}»` : `El indicador ${codigoDe.get(f.indicadorId) ?? "?"}`;
+  const seCierra = new Map(c.datos.cierran.map((d) => [d.id, d]));
+  /** Quién debía la fuente que falta a la medición `a`: de un dato, según cómo se cierran sus periodos que la medición usa. */
+  const deLaFuente = (f: FuenteQueFalta, a: Alcanzada): string[] => {
+    if (f.clase === "indicador") return [`El indicador ${codigoDe.get(f.indicadorId) ?? "?"}`];
+    const responsables = `Los responsables del dato «${nombreDeDato.get(f.datoId) ?? "?"}»`;
+    const suyos = (c.revisiones.get(a.id)?.datos ?? []).flatMap((id) => {
+      const d = seCierra.get(id);
+      return d && d.datoId === f.datoId ? [d] : [];
+    });
+    if (!suyos.some((d) => d.sinCategoriasActivas)) return [responsables];
+    return suyos.some((d) => d.sinDato && !d.sinCategoriasActivas) ? [SIN_CATEGORIAS_ACTIVAS, responsables] : [SIN_CATEGORIAS_ACTIVAS];
+  };
   const quienesMiden = new Map<number, string[]>();
   for (const a of sinDato) {
     const lasQueFaltan = c.revisiones.get(a.id)?.faltan ?? [];
@@ -454,7 +486,7 @@ async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, s
       continue;
     }
     if (espera && lasQueFaltan.length > 0) {
-      salida.set(a.id, lasQueFaltan.map(deLaFuente));
+      salida.set(a.id, [...new Set(lasQueFaltan.flatMap((f) => deLaFuente(f, a)))]);
       continue;
     }
     // Por medición: un indicador que pasó a automático tiene periodos de antes, que debía quien mide.
@@ -530,7 +562,13 @@ export async function resumenDeCierre(sesion: SujetoPermiso, mes: string, opcion
     enPlazo: n.enPlazo,
     historicosSinRegistrar: n.historicosSinRegistrar,
     porProceso: n.porProceso,
-    datos: { seCierran: c.datos.cierran.length, sinDato: c.datos.cierran.filter((d) => d.sinDato).length, esperan: c.datos.esperan },
+    datos: {
+      seCierran: c.datos.cierran.length,
+      sinDato: c.datos.cierran.filter((d) => d.sinDato).length,
+      esperan: c.datos.esperan,
+      esperanCategorias: c.datos.esperanCategorias,
+      sinCategoriasActivas: c.datos.cierran.filter((d) => d.sinCategoriasActivas).length,
+    },
     esperanEntrada: c.esperan,
   };
 }

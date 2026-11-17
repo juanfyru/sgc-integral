@@ -1,6 +1,7 @@
 /**
  * Los recordatorios de los periodos de los datos compartidos (anexo 14C, §4.4), con los parámetros de §10.2 del spec 14.
- * Sobre lo que se pide de un dato (`periodoQueSePide`), tres pasos:
+ * Sobre lo que se pide de un dato (`periodoQueSePide`), salvo el periodo sin categorías (`periodoSinCategorias`), que nadie
+ * puede reportar y es de quien administra (complemento de la 14C, §5.3), tres pasos:
  *
  * 1. El aviso previo (`aviso_previo_en`), cuando faltan los días del parámetro (`ind_aviso_previo_dias`) para la fecha
  *    límite: uno por persona a quienes tienen la tarea (`responsablesDeDato`).
@@ -27,7 +28,7 @@ import { tocaAvisoPrevio } from "@/lib/indicadores/periodos";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { periodoQueSePide } from "./datos-periodos";
+import { periodoQueSePide, periodoSinCategorias } from "./datos-periodos";
 import { obtenerParametros } from "./maestros";
 import { correrPaso, diaYMes } from "./pasada";
 
@@ -77,7 +78,7 @@ function cuandoVencio(ps: Pendiente[], zona: string): string {
 async function leer(sql: Cliente, c: Contexto, paso: Paso, ids?: number[]): Promise<Pendiente[]> {
   const filas = await sql`SELECT vv.id, vv.variable_id, vv.vence_en, d.proceso_id, p.nombre AS proceso
     FROM variable_valores vv JOIN variables_compartidas d ON d.id = vv.variable_id JOIN procesos p ON p.id = d.proceso_id
-    WHERE ${periodoQueSePide(sql)} AND ${paso.sinMarca(sql)} AND ${paso.ventana(sql, c)}
+    WHERE ${periodoQueSePide(sql)} AND NOT ${periodoSinCategorias(sql)} AND ${paso.sinMarca(sql)} AND ${paso.ventana(sql, c)}
       ${ids ? sql`AND vv.id = ANY(${ids})` : sql``}
     ORDER BY vv.id
     ${ids ? sql`FOR UPDATE OF vv SKIP LOCKED` : sql``}`;

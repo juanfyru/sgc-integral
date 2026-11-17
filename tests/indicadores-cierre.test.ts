@@ -194,7 +194,7 @@ describe("el resumen y el cierre del mes", () => {
         observacionesSinRespuesta: 2,
         enPlazo: 1,
         historicosSinRegistrar: 1,
-        datos: { seCierran: 0, sinDato: 0, esperan: 0 },
+        datos: { seCierran: 0, sinDato: 0, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 0 },
         esperanEntrada: [],
         porProceso: porNombre([
           fila0(gth.nombre, { reportadas: 1, sinDato: 1, noAplica: 1, observacionesSinRespuesta: 1 }),

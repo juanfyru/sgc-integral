@@ -518,7 +518,7 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     enPlazo: 0,
     historicosSinRegistrar: 0,
     porProceso: [],
-    datos: { seCierran: 0, sinDato: 0, esperan: 0 },
+    datos: { seCierran: 0, sinDato: 0, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 0 },
     esperanEntrada: [],
   };
   const resumen = (o: Partial<DatosDelResumen>) =>
@@ -558,15 +558,15 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     expect(resumen({})).toContain("Ningún periodo de un dato compartido se cierra.");
     expect(resumen({})).not.toContain("Esperan una fuente");
     const html = resumen({
-      datos: { seCierran: 3, sinDato: 1, esperan: 2 },
+      datos: { seCierran: 3, sinDato: 1, esperan: 2, esperanCategorias: 0, sinCategoriasActivas: 0 },
       esperanEntrada: [{ codigo: "ZZ-ID-002", periodo: "2003-03", espera: "El dato «Total facturado en el mes», marzo de 2003" }],
     });
     expect(html).toContain("Se cierran 3 periodos de datos compartidos que terminaron en marzo de 2003 o antes; 1 venció sin que lo reportaran: queda sin dato.");
-    expect(resumen({ datos: { seCierran: 1, sinDato: 1, esperan: 0 } })).toContain(
+    expect(resumen({ datos: { seCierran: 1, sinDato: 1, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 0 } })).toContain(
       "Se cierra 1 periodo de un dato compartido que terminó en marzo de 2003 o antes; venció sin que lo reportaran: queda sin dato.",
     );
-    expect(resumen({ datos: { seCierran: 1, sinDato: 0, esperan: 0 } })).toContain("Se cierra 1 periodo de un dato compartido que terminó en marzo de 2003 o antes.");
-    expect(resumen({ datos: { seCierran: 4, sinDato: 2, esperan: 0 } })).toContain(
+    expect(resumen({ datos: { seCierran: 1, sinDato: 0, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 0 } })).toContain("Se cierra 1 periodo de un dato compartido que terminó en marzo de 2003 o antes.");
+    expect(resumen({ datos: { seCierran: 4, sinDato: 2, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 0 } })).toContain(
       "Se cierran 4 periodos de datos compartidos que terminaron en marzo de 2003 o antes; 2 vencieron sin que los reportaran: quedan sin dato.",
     );
     expect(html).toContain("Esperan una fuente");
@@ -577,6 +577,26 @@ describe("el resumen del cierre y la tabla del año, sin navegador", () => {
     expect(fraseDeDatosDelCierre({ seCierran: 0, sinDato: 0 })).toBeNull();
     expect(fraseDeDatosDelCierre({ seCierran: 1, sinDato: 0 })).toBe("También se cerrará 1 periodo de un dato compartido.");
     expect(fraseDeDatosDelCierre({ seCierran: 3, sinDato: 1 })).toBe("También se cerrarán 3 periodos de datos compartidos, 1 sin dato.");
+  });
+
+  it("los periodos de datos sin categorías: los que esperan su actualización y los que se cierran porque su dimensión no tiene activas (complemento 14C, §5.4)", () => {
+    const datos = (d: Partial<DatosDelResumen["datos"]>) => ({ seCierran: 0, sinDato: 0, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 0, ...d });
+    expect(resumen({})).not.toContain("actualicen sus categorías");
+    const uno = resumen({ datos: datos({ esperanCategorias: 1 }) });
+    expect(uno).toContain("No se cierran");
+    expect(uno).toContain("1 periodo de un dato compartido espera que se actualicen sus categorías: queda para el siguiente cierre.");
+    expect(resumen({ datos: datos({ esperan: 2, esperanCategorias: 3 }) })).toContain(
+      "3 periodos de datos compartidos esperan que se actualicen sus categorías: quedan para el siguiente cierre.",
+    );
+    expect(resumen({ datos: datos({ seCierran: 1, sinDato: 1, sinCategoriasActivas: 1 }) })).toContain(
+      "Se cierra 1 periodo de un dato compartido que terminó en marzo de 2003 o antes; su dimensión no tiene categorías activas: queda sin dato.",
+    );
+    expect(resumen({ datos: datos({ seCierran: 3, sinDato: 2, sinCategoriasActivas: 1 }) })).toContain(
+      "Se cierran 3 periodos de datos compartidos que terminaron en marzo de 2003 o antes; 1 venció sin que lo reportaran: queda sin dato; 1 queda sin dato porque su dimensión no tiene categorías activas.",
+    );
+    expect(resumen({ datos: datos({ seCierran: 4, sinDato: 2, sinCategoriasActivas: 2 }) })).toContain(
+      "Se cierran 4 periodos de datos compartidos que terminaron en marzo de 2003 o antes; 2 quedan sin dato porque su dimensión no tiene categorías activas.",
+    );
   });
 
   it("los dos formularios de «Reabrir» mandan lo que listaron (`vistas`); el sencillo, la medición sola", () => {
