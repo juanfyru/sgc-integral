@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
+import { CLASES, CRITICIDADES, ORIGENES_HALLAZGO } from "@/lib/mejoramiento/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
 /** Un entero llega como texto del formulario o como número de la consulta. */
@@ -91,3 +93,100 @@ export const EsquemaDiaDeCalendario = z
     motivo: textoAcotado("El motivo", 1, 200),
   })
   .strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El hallazgo (spec 15 §7.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const esFechaReal = (f: string) => {
+  const ms = Date.parse(`${f}T00:00:00Z`);
+  return !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(f);
+};
+
+/** Un id elegido: llega como número o como texto del formulario; vacío o ausente es «ninguno». */
+const idOpcional = (mensaje: string) =>
+  z
+    .union([z.number().int().positive().nullable(), z.string().regex(/^\d{1,15}$/), z.literal("")], { error: mensaje })
+    .optional()
+    .transform((v) => (v === undefined || v === null || v === "" ? null : Number(v)));
+
+/** Texto opcional recortado: vacío o solo espacios es «nada». */
+const textoOpcional = (nombre: string, maximo: number) =>
+  z
+    .string({ error: `${nombre} no es un texto válido` })
+    .trim()
+    .max(maximo, `${nombre} no puede pasar de ${maximo} caracteres`)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null));
+
+const fechaOpcional = (mensaje: string) =>
+  z
+    .string({ error: mensaje })
+    .nullable()
+    .optional()
+    .transform((v) => v?.trim() || null)
+    .refine((v) => v === null || (/^\d{4}-\d{2}-\d{2}$/.test(v) && esFechaReal(v)), mensaje);
+
+/**
+ * La identificación de un hallazgo tal como la recibe `registrarHallazgo` (objeto del dominio o campos del formulario).
+ * Lo que depende de la base o de la hora (la fecha futura, los enlaces) lo comprueba el dominio.
+ */
+export const EsquemaHallazgo = z
+  .object({
+    clase: z.enum(CLASES, { error: "Elija la clase del hallazgo" }),
+    origen: z.enum(ORIGENES_HALLAZGO, { error: "Elija el origen del hallazgo" }),
+    fuente: textoOpcional("La fuente", 200),
+    referenciaCaso: textoOpcional("La referencia del caso", 100),
+    detectadoEn: z
+      .string({ error: "Escriba la fecha en que se detectó" })
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Escriba una fecha válida en que se detectó")
+      .refine(esFechaReal, "Escriba una fecha válida en que se detectó"),
+    procesoId: z
+      .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "Elija el proceso" })
+      .transform(Number),
+    subprocesoId: idOpcional("El subproceso elegido no es válido"),
+    criticidad: z
+      .enum(CRITICIDADES, { error: "Elija una criticidad válida" })
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    titulo: z
+      .string({ error: "Escriba el título" })
+      .trim()
+      .min(1, "Escriba el título")
+      .max(150, "El título no puede pasar de 150 caracteres"),
+    descripcion: textoAcotado("La descripción", 10, 4000),
+    requisitoClausula: textoOpcional("La cláusula incumplida", 200),
+    requisitoNormaId: idOpcional("La norma elegida no es válida"),
+    requisitoDocumentoId: idOpcional("El documento del requisito no es válido"),
+    documentoId: idOpcional("El documento elegido no es válido"),
+    indicadorId: idOpcional("El indicador elegido no es válido"),
+    medicionId: idOpcional("La medición elegida no es válida"),
+    riesgo: textoOpcional("El riesgo asociado", 200),
+    fechaLimiteEnte: fechaOpcional("Escriba una fecha límite de respuesta al ente válida"),
+    reincidenteDe: idOpcional("El hallazgo anterior no es válido"),
+    reporteId: idOpcional("El reporte no es válido"),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const falta = (campo: string, message: string) => ctx.addIssue({ code: "custom", path: [campo], message });
+    const esNc = d.clase === "no_conformidad";
+    if (esNc && d.criticidad === null) falta("criticidad", "Elija la criticidad");
+    if (esNc && !d.requisitoClausula && d.requisitoNormaId === null && d.requisitoDocumentoId === null) {
+      falta("requisitoClausula", "Indique al menos un requisito incumplido");
+    }
+    if (fuenteObligatoria(d.origen, d.medicionId !== null) && !d.fuente) falta("fuente", "Escriba la fuente");
+    if (pideReferenciaDelCaso(d.origen) && !d.referenciaCaso) falta("referenciaCaso", "Escriba la referencia del caso");
+    if (d.origen === "ente_control" && !d.fechaLimiteEnte) {
+      falta("fechaLimiteEnte", "Escriba la fecha límite de respuesta al ente");
+    }
+  })
+  // La criticidad solo existe en la no conformidad y la fecha del ente solo en los orígenes externos: lo demás se ignora.
+  .transform((d) => ({
+    ...d,
+    criticidad: d.clase === "no_conformidad" ? d.criticidad : null,
+    fechaLimiteEnte: esExterno(d.origen) ? d.fechaLimiteEnte : null,
+  }));
+
+export type HallazgoValidado = z.output<typeof EsquemaHallazgo>;

@@ -1,6 +1,7 @@
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { periodosDeDatos } from "@/lib/indicadores/cierre";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "@/lib/indicadores/filtros";
+import type { AccionHallazgo } from "@/lib/mejoramiento/tipos";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION } from "@/lib/normograma/tipos";
 import { cuenta } from "@/lib/plural";
 import type { Accion } from "@/lib/tramites/transiciones";
@@ -541,6 +542,53 @@ function operacionAlPublicar(d: Record<string, unknown>): string {
   ].filter((f): f is string => f !== null);
   return frases.length > 0 ? `. ${frases.join(" ")}` : "";
 }
+
+/** Cómo se nombra el hallazgo en una frase: con su código, o «un hallazgo» si el detalle no lo trae. */
+type HallazgoEnFrase = { el: string; del: string };
+const SIN_CODIGO: HallazgoEnFrase = { el: "un hallazgo", del: "de un hallazgo" };
+
+/**
+ * Las acciones del motor del hallazgo (Mejoramiento, 15A): `flujo.ts` las arma como `mejora_<accion>` con el código en
+ * `detalle.codigo`. La frase sin código es también su nombre en el filtro.
+ */
+const FRASES_DE_MEJORA: Record<AccionHallazgo, (h: HallazgoEnFrase) => string> = {
+  registrar: (h) => `Registró ${h.el}`,
+  aceptar: (h) => `Aceptó ${h.el}`,
+  rechazar: (h) => `Rechazó ${h.el}`,
+  retirar: (h) => `Retiró ${h.el} tras su rechazo`,
+  sostener: (h) => `Sostuvo ${h.el} tras su rechazo`,
+  confirmar_hallazgo: (h) => `Confirmó ${h.el} en el arbitraje`,
+  confirmar_rechazo: (h) => `Confirmó en el arbitraje el rechazo ${h.del}`,
+  corregir: (h) => `Registró la corrección ${h.del}`,
+  decidir_si: (h) => `Decidió que ${h.el} requiere acción correctiva`,
+  decidir_no: (h) => `Decidió que ${h.el} no requiere acción correctiva`,
+  validar_correccion: (h) => `Validó la corrección ${h.del}`,
+  devolver_correccion: (h) => `Devolvió la corrección ${h.del}`,
+  enviar_plan: (h) => `Envió el plan de acción ${h.del}`,
+  devolver_plan: (h) => `Devolvió el plan de acción ${h.del}`,
+  revisar_plan: (h) => `Revisó el plan de acción ${h.del}`,
+  aprobar_plan: (h) => `Aprobó el plan de acción ${h.del}`,
+  completar: (h) => `Se terminaron las actividades ${h.del}: queda por verificar`,
+  verificar_implementacion: (h) => `Verificó la implementación del plan ${h.del}`,
+  evaluar_eficaz: (h) => `Evaluó como eficaz el plan ${h.del}`,
+  evaluar_no_eficaz: (h) => `Evaluó como no eficaz el plan ${h.del}`,
+  cerrar: (h) => `Cerró ${h.el}`,
+  anular: (h) => `Anuló ${h.el}`,
+  cargar: (h) => `Cargó ${h.el} ya en curso`,
+  reclasificar: (h) => `Reclasificó ${h.el}`,
+  ajustar: (h) => `Aplicó un ajuste aprobado al plan ${h.del}`,
+};
+
+function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): string {
+  const codigo = texto(d.codigo);
+  const frase = FRASES_DE_MEJORA[accion](codigo ? { el: `el hallazgo ${codigo}`, del: `del hallazgo ${codigo}` } : SIN_CODIGO);
+  const titulo = accion === "registrar" || accion === "cargar" ? texto(d.titulo) : null;
+  return `${frase}${titulo ? ` — ${titulo}` : ""}${conMotivo(d.justificacion)}`;
+}
+
+const NOMBRES_DE_MEJORA: Record<string, string> = Object.fromEntries(
+  Object.entries(FRASES_DE_MEJORA).map(([accion, frase]) => [`mejora_${accion}`, frase(SIN_CODIGO)]),
+);
 
 /** Acciones de mapa dinámicas: <verbo>_<singular>. */
 const ACCION_DE_MAPA = /^(reordenar|activar|desactivar|borrar|crear|editar)_(.+)$/;
@@ -1184,6 +1232,11 @@ export function describirEvento(e: EventoAuditoria): string {
 
   if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);
 
+  if (e.accion.startsWith("mejora_")) {
+    const accion = e.accion.slice("mejora_".length);
+    if (Object.hasOwn(FRASES_DE_MEJORA, accion)) return describirMejora(accion as AccionHallazgo, d);
+  }
+
   const m = ACCION_DE_MAPA.exec(e.accion);
   if (m) {
     const tipo = SINGULAR[e.entidad] ?? m[2].replace(/_/g, " ");
@@ -1317,6 +1370,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_config_guardada: "Guardó la configuración de mejoramiento",
   mejora_dia_agregado: "Añadió un día al calendario de mejoramiento",
   mejora_dia_quitado: "Quitó un día del calendario de mejoramiento",
+  ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",
   dato_compartido_activado: "Activó un dato compartido",

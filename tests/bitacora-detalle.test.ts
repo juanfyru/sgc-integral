@@ -313,6 +313,18 @@ describe("frases con el detalle real", () => {
   it("verificacion_abierta con el punto", () => {
     expect(e("verificacion_abierta", { puntoId: 3, punto: "Farmacia", items: 8, propioPunto: false })).toBe("Abrió la verificación de Farmacia");
   });
+  it("las del motor del hallazgo, con lo que guarda `flujo.ts`", () => {
+    const base = { codigo: "HZ-2026-001", antes: "por_aceptar", ronda: 1 };
+    expect(e("mejora_registrar", { ...base, antes: null, despues: "por_aceptar", titulo: "Formatos sin diligenciar" })).toBe(
+      "Registró el hallazgo HZ-2026-001 — Formatos sin diligenciar",
+    );
+    expect(e("mejora_rechazar", { ...base, despues: "rechazo", justificacion: "No es de este proceso" })).toBe(
+      "Rechazó el hallazgo HZ-2026-001: No es de este proceso",
+    );
+    expect(e("mejora_corregir", { ...base, despues: "por_decidir" })).toBe("Registró la corrección del hallazgo HZ-2026-001");
+    expect(e("mejora_completar", {})).toBe("Se terminaron las actividades de un hallazgo: queda por verificar");
+    expect(nombreDeAccion("mejora_aprobar_plan")).toBe("Aprobó el plan de acción de un hallazgo");
+  });
 });
 
 /**
@@ -371,6 +383,32 @@ const ACCIONES_ARMADAS = [
   "desactivar_punto_uso",
   "activar_area",
   "desactivar_area",
+  // mejoramiento/flujo.ts: `mejora_${accion}` en `nacerHallazgo` (registrar, cargar) y `transicionarHallazgo` (las demás).
+  "mejora_registrar",
+  "mejora_aceptar",
+  "mejora_rechazar",
+  "mejora_retirar",
+  "mejora_sostener",
+  "mejora_confirmar_hallazgo",
+  "mejora_confirmar_rechazo",
+  "mejora_corregir",
+  "mejora_decidir_si",
+  "mejora_decidir_no",
+  "mejora_validar_correccion",
+  "mejora_devolver_correccion",
+  "mejora_enviar_plan",
+  "mejora_devolver_plan",
+  "mejora_revisar_plan",
+  "mejora_aprobar_plan",
+  "mejora_completar",
+  "mejora_verificar_implementacion",
+  "mejora_evaluar_eficaz",
+  "mejora_evaluar_no_eficaz",
+  "mejora_cerrar",
+  "mejora_anular",
+  "mejora_cargar",
+  "mejora_reclasificar",
+  "mejora_ajustar",
   "activar_cargo",
   "desactivar_cargo",
 ];
