@@ -780,3 +780,63 @@ export async function sinResponsableDeDato(sql: Cliente, datoId: number): Promis
     FROM variables_compartidas d WHERE d.id = ${datoId}`;
   return f?.sin === true;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mejoramiento (15A, spec §6.3): quinta excepción nombrada a `alcanceProcesos()`: ser responsable de una actividad da
+// alcance sobre ese hallazgo sin liderar su proceso. No usa `alcanceProcesos`: a Consulta le devuelve `{ todos: true }`,
+// y quien solo consulta no ve ningún hallazgo que no sea suyo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Los procesos activos que lidera la persona, para un `WHERE` sobre `mejora_hallazgos h`; `false` si no es líder. */
+function liderDelProcesoDelHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (sujeto.rol !== "lider_proceso") return sql`false`;
+  return sql`EXISTS (
+    SELECT 1 FROM usuario_procesos hz_up
+    JOIN procesos hz_p ON hz_p.id = hz_up.proceso_id AND hz_p.activo
+    WHERE hz_up.usuario_id = ${sujeto.usuarioId} AND hz_up.proceso_id = h.proceso_id)`;
+}
+
+const registroElHallazgo = (sql: Cliente, sujeto: SujetoVisibilidad) => sql`h.registrado_por = ${sujeto.usuarioId}`;
+
+function esResponsableEnElHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
+  return sql`(EXISTS (SELECT 1 FROM mejora_actividades hz_a WHERE hz_a.hallazgo_id = h.id AND hz_a.responsable_id = ${sujeto.usuarioId})
+    OR EXISTS (SELECT 1 FROM mejora_seguimientos hz_s WHERE hz_s.hallazgo_id = h.id AND hz_s.registrado_por = ${sujeto.usuarioId}))`;
+}
+
+/**
+ * Qué hallazgos ve una persona, para un `WHERE` sobre `mejora_hallazgos h`: con `mejora.ver_todo`, todos; si no, los de sus
+ * procesos activos (si lidera), los que registró y aquellos donde es responsable de una actividad o registró un seguimiento.
+ */
+export function filtroHallazgos(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (puede(sujeto, "mejora.ver_todo")) return sql`true`;
+  return sql`(${liderDelProcesoDelHallazgo(sql, sujeto)} OR ${registroElHallazgo(sql, sujeto)} OR ${esResponsableEnElHallazgo(sql, sujeto)})`;
+}
+
+/**
+ * Cómo ve la persona un hallazgo: `"completo"` (rol, líder del proceso o quien lo registró), `"actividad"` (solo por ser
+ * responsable de una actividad: lo ve en texto) o `null` (no existe o no lo ve: la misma respuesta).
+ */
+export async function participacionEnHallazgo(
+  hallazgoId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<"completo" | "actividad" | null> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const todo = puede(sujeto, "mejora.ver_todo") ? sql`true` : sql`false`;
+  const [f] = await sql`
+    SELECT (${todo} OR ${liderDelProcesoDelHallazgo(sql, sujeto)} OR ${registroElHallazgo(sql, sujeto)}) AS completo,
+      ${esResponsableEnElHallazgo(sql, sujeto)} AS actividad
+    FROM mejora_hallazgos h WHERE h.id = ${hallazgoId}`;
+  if (!f) return null;
+  if (f.completo === true) return "completo";
+  return f.actividad === true ? "actividad" : null;
+}
+
+/** Quién ve un hallazgo: el que pasa `filtroHallazgos`. `false` si no existe. */
+export async function puedeVerHallazgo(
+  hallazgoId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  return (await participacionEnHallazgo(hallazgoId, sujeto, opciones)) !== null;
+}

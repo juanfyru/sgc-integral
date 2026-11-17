@@ -51,3 +51,26 @@ export function datosDeHallazgo(procesoId: number, cambios?: Partial<DatosDeHall
 export function c(ahora: string, sql?: TransactionSql): OpcionesFlujo {
   return { ahora: new Date(ahora), verificar: firmaDePrueba, ...(sql ? { sql } : {}) };
 }
+
+/** Un segundo proceso con su propio líder, para los casos de dos procesos. */
+export async function otroProcesoConLider(tx: TransactionSql): Promise<{ procesoId: number; lider: SesionFlujo }> {
+  const procesoId = await procesoNuevo(tx);
+  return { procesoId, lider: await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [procesoId] }) };
+}
+
+/** Una acción y una actividad (de la ronda 1) por SQL: las acciones y actividades llegan en las Tareas 12 a 14. */
+export async function actividadPorSql(
+  tx: TransactionSql,
+  hallazgoId: number,
+  responsableId: number,
+  cambios?: { fin?: string; estado?: string },
+): Promise<number> {
+  let [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${hallazgoId} AND numero = 1`;
+  if (!r) [r] = await tx`INSERT INTO mejora_rondas (hallazgo_id, numero) VALUES (${hallazgoId}, 1) RETURNING id`;
+  const [ac] = await tx`INSERT INTO mejora_acciones (hallazgo_id, ronda_id, orden, tipo, descripcion)
+    VALUES (${hallazgoId}, ${r.id}, 1, 'correctiva', 'Acción de prueba') RETURNING id`;
+  const [a] = await tx`INSERT INTO mejora_actividades (hallazgo_id, accion_id, orden, descripcion, responsable_id, inicio, fin, estado)
+    VALUES (${hallazgoId}, ${ac.id}, 1, 'Actividad de prueba', ${responsableId}, '2026-11-01',
+      ${cambios?.fin ?? "2026-12-31"}, ${cambios?.estado ?? "abierta"}) RETURNING id`;
+  return Number(a.id);
+}
