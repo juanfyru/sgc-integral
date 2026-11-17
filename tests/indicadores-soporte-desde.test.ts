@@ -1,8 +1,9 @@
 /**
- * Desde cuándo un indicador exige soporte (anexo del complemento de la 14C, §4.1 y §4.3): la fecha que escriben los cinco
- * sitios que cambian «soporte obligatorio», el `CHECK` que la ata a él y el relleno de la migración 0017 (la fecha de los
- * indicadores que ya lo exigen y la marca de sus mediciones en curso). Contra la BD de desarrollo, dentro de una
- * transacción que se revierte.
+ * Desde cuándo un indicador exige soporte (anexo del complemento de la 14C, §4.1 a §4.3 y §4.5): la fecha que escriben los
+ * cinco sitios que cambian «soporte obligatorio», el `CHECK` que la ata a él, el relleno de la migración 0017 (la fecha de
+ * los indicadores que ya lo exigen y la marca de sus mediciones en curso) y la marca de cada medición (`debe_soporte`), que
+ * se decide al nacer o al activarse y que respetan todo recálculo y el rechazo de un reporte sin soporte. Contra la BD de
+ * desarrollo, dentro de una transacción que se revierte.
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -15,13 +16,32 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { analizar } from "@/db/consultas/indicadores/analisis";
 import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion, duplicar } from "@/db/consultas/indicadores/operacion";
+import { reabrirEnCascada } from "@/db/consultas/indicadores/reapertura";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
+import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, type IndicadorDePrueba } from "./utiles/indicadores";
+import {
+  activarSoporte,
+  AHORA,
+  APROBADA,
+  desactivarSoporte,
+  falta,
+  fila,
+  medicionDe,
+  mixto,
+  propagarA,
+  reportarElDato,
+  reportarLoMio,
+} from "./utiles/mixto";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -409,5 +429,198 @@ describe("el relleno de la migración 0017", () => {
         deD: false,
       });
       expect(filas.find((f) => Number(f.id) === cerrada)!.estado).toBe("cerrada");
+    }));
+});
+
+async function rechaza(promesa: Promise<unknown>, mensaje: string) {
+  const err = await promesa.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(ErrorIndicador);
+  expect((err as Error).message).toBe(mensaje);
+}
+
+/** Un soporte de la medición, como lo deja la subida: una fila de `archivos` con contexto `medicion`. */
+const adjuntarSoporte = (tx: TransactionSql, medicionId: number) =>
+  tx`INSERT INTO archivos (rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256, contexto, contexto_id)
+    VALUES ('evidencia', ${`zz/${unico()}.pdf`}, 'soporte.pdf', 'pdf', 'application/pdf', 10, ${"a".repeat(64)}, 'medicion', ${medicionId})`;
+
+const marcaDe = async (tx: TransactionSql, medicionId: number) => (await fila(tx, medicionId)).debe_soporte as boolean;
+const estadoYMarca = async (tx: TransactionSql, medicionId: number) => {
+  const m = await fila(tx, medicionId);
+  return [m.estado as string, m.debe_soporte as boolean];
+};
+
+/**
+ * La marca de cada medición (anexo del complemento, §4.2) en los casos de §4.5, sobre el mixto de `utiles/mixto.ts`:
+ * septiembre vence el 10 de octubre y quien mide reportó lo suyo el 5 (`AHORA`), sin soporte. La marca se decide al
+ * activarse el soporte o al nacer la medición, y la respetan todo recálculo (de una persona, la propagación, el cambio del
+ * soporte o la reapertura) y el rechazo de un reporte sin soporte.
+ */
+describe("la marca de cada medición", () => {
+  const ZONA = zonaHoraria();
+  /** Lo propio de septiembre: con B en 1.284.300.000 es el 3 % (crítico); con 40.000.000, el 96 % (cumple). */
+  const LO_MIO = { A: "38529000" };
+  const CRITICO = "1284300000";
+  const CUMPLE = "40000000";
+  const EXIGE = "Este indicador exige un soporte: adjúntelo antes de reportar";
+  const ANALISIS = "La glosa bajó por la revisión previa de las cuentas.";
+  const CAUSA = "Las cuentas de urgencias se glosaron completas";
+  const ACCION = "Revisar las cuentas de urgencias antes de radicarlas";
+
+  it("caso 1: activado el 12, con el plazo vencido; el dato llega el 20 y no cumple: pide el análisis con plazo nuevo y no el soporte", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-12"));
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CRITICO, dia("2026-10-20"));
+      await propagarA(tx, dia("2026-10-20"), [x.ind.id]);
+      const m = await fila(tx, x.medicion);
+      expect([m.semaforo, m.estado, m.debe_soporte]).toEqual(["critico", "abierta", false]);
+      expect(m.vence_en).toEqual(fechaLimite(dia("2026-10-20"), 10, ZONA));
+      expect(await falta(tx, x.medicion)).toBe("analisis");
+
+      // Con el análisis que pide queda reportada: el soporte no se le debe.
+      await analizar(x.analiza, { medicionId: x.medicion, causa: CAUSA, accionPropuesta: ACCION }, { sql: tx, ahora: dia("2026-10-21") });
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["reportada", false]);
+    }));
+
+  it("caso 2: activado el 12; el dato llega el 20 y cumple: queda reportada, y un análisis opcional el 21 no la reabre", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-12"));
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CUMPLE, dia("2026-10-20"));
+      await propagarA(tx, dia("2026-10-20"), [x.ind.id]);
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["reportada", false]);
+
+      await analizar(x.analiza, { medicionId: x.medicion, analisis: ANALISIS }, { sql: tx, ahora: dia("2026-10-21") });
+      const m = await fila(tx, x.medicion);
+      expect([m.analisis, m.estado, m.debe_soporte]).toEqual([ANALISIS, "reportada", false]);
+    }));
+
+  it("caso 3: activado el 6, dentro del plazo: lo debe aunque el dato llegue el 20 y cumpla", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-06"));
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["abierta", true]);
+
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CUMPLE, dia("2026-10-20"));
+      await propagarA(tx, dia("2026-10-20"), [x.ind.id]);
+      const m = await fila(tx, x.medicion);
+      expect([m.semaforo, m.estado, m.debe_soporte]).toEqual(["bien", "abierta", true]);
+    }));
+
+  it("caso 5: activado el 6, desactivado el 8 y vuelto a activar el 12: ya estaba reportado con su plazo vencido y no lo debe", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-06"));
+      expect(await marcaDe(tx, x.medicion)).toBe(true);
+      await desactivarSoporte(tx, x.ind.id, dia("2026-10-08"));
+      await activarSoporte(tx, x.ind.id, dia("2026-10-12"));
+      expect(await marcaDe(tx, x.medicion)).toBe(false);
+    }));
+
+  it("caso 6: desactivado, nadie lo debe: la que solo esperaba el soporte queda reportada", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-06"));
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CUMPLE, dia("2026-10-07"));
+      await propagarA(tx, dia("2026-10-07"), [x.ind.id]);
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["abierta", true]);
+
+      await desactivarSoporte(tx, x.ind.id, dia("2026-10-08"));
+      expect((await fila(tx, x.medicion)).estado).toBe("reportada");
+    }));
+
+  it("caso 7: activado el 12; el 1 de noviembre el plazo sube a 15 días: la marca no cambia, y corregir lo propio no pide el soporte", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-12"));
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CUMPLE, dia("2026-10-20"));
+      await propagarA(tx, dia("2026-10-20"), [x.ind.id]);
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["reportada", false]);
+
+      await cambiarOperacion(
+        await sesionAdmin(tx),
+        { indicadorId: x.ind.id, plazoReporteDias: 15, inicioMedicion: "2026-09", soporteObligatorio: true, nivelAcceso: "general" },
+        { sql: tx, ahora: dia("2026-11-01") },
+      );
+      // La fecha límite nueva queda después de la activación; la marca, decidida el 12, no cambia con ella.
+      const m = await fila(tx, x.medicion);
+      expect(m.vence_en).toEqual(fechaLimiteDeReporte(periodoDe("2026-09", ZONA)!, 15, ZONA));
+      expect(m.vence_en.getTime()).toBeGreaterThan(dia("2026-10-12").getTime());
+      expect([m.estado, m.debe_soporte]).toEqual(["reportada", false]);
+
+      // Quien mide corrige lo suyo sin soporte el 2: no se le pide, y sigue reportada.
+      expect(await reportarLoMio(tx, x.mide, x.medicion, { A: "38000000" }, dia("2026-11-02"))).toMatchObject({ ok: true, estado: "reportada" });
+      expect(await marcaDe(tx, x.medicion)).toBe(false);
+    }));
+
+  it("caso 8: septiembre sin reportar al activarse el 12 lo debe; reportarlo el 20 sin soporte se rechaza, y con él se acepta", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-12"));
+      expect(await marcaDe(tx, x.medicion)).toBe(true);
+      await rechaza(reportarLoMio(tx, x.mide, x.medicion, LO_MIO, dia("2026-10-20")), EXIGE);
+
+      await adjuntarSoporte(tx, x.medicion);
+      expect(await reportarLoMio(tx, x.mide, x.medicion, LO_MIO, dia("2026-10-20"))).toMatchObject({ ok: true });
+    }));
+
+  it("nace marcada: con el soporte activo, la medición que abre asegurarMediciones lo debe; una histórica, no", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-12"));
+      await asegurarMediciones({ sql: tx, ahora: dia("2026-11-05"), indicadorId: x.ind.id });
+      expect(await marcaDe(tx, await medicionDe(tx, x.ind.id, "2026-10"))).toBe(true);
+
+      // Aprobados el 15 de agosto desde junio: junio y julio son históricos.
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const desdeJunio = { procesoId: x.procesoId, inicioMedicion: "2026-06", aprobadaEn: APROBADA, mide: [mide.usuarioId] };
+      const con = await indicadorDePrueba(tx, { ...desdeJunio, soporteObligatorio: true });
+      const sin = await indicadorDePrueba(tx, desdeJunio);
+      const marcas = async (indicadorId: number) => {
+        await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId });
+        const filas = await tx`SELECT periodo, historica, debe_soporte FROM mediciones WHERE indicador_id = ${indicadorId} ORDER BY periodo`;
+        return Object.fromEntries(filas.map((f) => [f.periodo as string, [f.historica as boolean, f.debe_soporte as boolean]]));
+      };
+      expect(await marcas(con.id)).toEqual({ "2026-06": [true, false], "2026-07": [true, false], "2026-08": [false, true], "2026-09": [false, true] });
+      expect(await marcas(sin.id)).toEqual({ "2026-06": [true, false], "2026-07": [true, false], "2026-08": [false, false], "2026-09": [false, false] });
+    }));
+
+  it("reabrir: la cerrada antes de activarse vuelve sin marca y queda reportada sin soporte; la marcada conserva su marca", () =>
+    revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const reabrir = (medicionId: number, ahora: Date) =>
+        reabrirEnCascada(admin, { fuente: { clase: "medicion", medicionId }, justificacion: "Facturación corrigió el total del mes" }, { sql: tx, ahora });
+
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CUMPLE);
+      await propagarA(tx, AHORA, [x.ind.id]);
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["reportada", false]);
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${x.medicion}`;
+      // Activarlo dentro del plazo no toca la cerrada (el trigger de las cerradas no lo dejaría): se queda sin marca.
+      await activarSoporte(tx, x.ind.id, dia("2026-10-06"));
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["cerrada", false]);
+      await reabrir(x.medicion, dia("2026-10-07"));
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["reportada", false]);
+
+      const y = await mixto(tx);
+      await activarSoporte(tx, y.ind.id, dia("2026-10-06"));
+      await adjuntarSoporte(tx, y.medicion);
+      await reportarLoMio(tx, y.mide, y.medicion, LO_MIO, dia("2026-10-07"));
+      await reportarElDato(tx, y.responsable, y.datoId, "2026-09", CUMPLE, dia("2026-10-07"));
+      await propagarA(tx, dia("2026-10-07"), [y.ind.id]);
+      expect(await estadoYMarca(tx, y.medicion)).toEqual(["reportada", true]);
+      await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${y.medicion}`;
+      await reabrir(y.medicion, dia("2026-10-08"));
+      expect(await estadoYMarca(tx, y.medicion)).toEqual(["reportada", true]);
     }));
 });

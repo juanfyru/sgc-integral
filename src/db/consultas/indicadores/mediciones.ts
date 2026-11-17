@@ -413,10 +413,14 @@ export async function asegurarMediciones(opciones?: { sql?: Cliente; ahora?: Dat
  * medición ordinaria cuya versión que rige se desagrega nace con su lista de categorías (`listaDelPeriodo`, anexo 14C §5.3),
  * del maestro leído `FOR KEY SHARE` en esta misma transacción (`maestroDeCategorias`: el `jsonb` no tiene llave foránea y
  * `borrarCategoria` espera a que la lista quede guardada). Una histórica no lleva lista: se digita el total (§3.6).
+ *
+ * Mientras el indicador exige soporte, la ordinaria nace debiéndolo (`debe_soporte`, anexo del complemento de la 14C §4.2),
+ * con «soporte obligatorio» leído bajo el mismo candado que `cambiarOperacion` toma `FOR UPDATE` para cambiarlo; una
+ * histórica nunca.
  */
 function abrirPeriodos(sql: Cliente, indicadorId: number, ahora: Date): Promise<number> {
   return enTransaccion(sql, async (tx) => {
-    const [i] = await tx`SELECT inicio_medicion, plazo_reporte_dias FROM indicadores
+    const [i] = await tx`SELECT inicio_medicion, plazo_reporte_dias, soporte_obligatorio FROM indicadores
       WHERE id = ${indicadorId} AND estado = 'activo' FOR SHARE`;
     if (!i?.inicio_medicion) return 0;
     const zona = zonaHoraria();
@@ -435,9 +439,10 @@ function abrirPeriodos(sql: Cliente, indicadorId: number, ahora: Date): Promise<
     if (nuevos.length === 0) return 0;
     const listas = await listasDeCategorias(tx, nuevos.map((n) => ({ dimensionId: n.historica ? null : n.version.dimensionId, periodo: n.periodo })));
     const plazo = Number(i.plazo_reporte_dias);
+    const conSoporte = i.soporte_obligatorio === true;
     const iso = (d: Date) => d.toISOString();
-    const creadas = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, historica, categorias)
-      SELECT ${indicadorId}, x.version_id, x.periodo, x.desde, x.hasta, x.vence_en, x.historica, x.categorias::jsonb
+    const creadas = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, historica, categorias, debe_soporte)
+      SELECT ${indicadorId}, x.version_id, x.periodo, x.desde, x.hasta, x.vence_en, x.historica, x.categorias::jsonb, x.debe_soporte
       FROM unnest(
         ${tx.array(nuevos.map((n) => n.version.id))}::bigint[],
         ${tx.array(nuevos.map((n) => n.periodo.clave))}::text[],
@@ -445,8 +450,9 @@ function abrirPeriodos(sql: Cliente, indicadorId: number, ahora: Date): Promise<
         ${tx.array(nuevos.map((n) => iso(n.periodo.hasta)))}::timestamptz[],
         ${tx.array(nuevos.map((n) => iso(fechaLimiteDeReporte(n.periodo, plazo, zona))))}::timestamptz[],
         ${tx.array(nuevos.map((n) => n.historica))}::boolean[],
-        ${tx.array(listas.map((l) => (l === null ? null : JSON.stringify(l))) as string[])}::text[]
-      ) AS x(version_id, periodo, desde, hasta, vence_en, historica, categorias)
+        ${tx.array(listas.map((l) => (l === null ? null : JSON.stringify(l))) as string[])}::text[],
+        ${tx.array(nuevos.map((n) => conSoporte && !n.historica))}::boolean[]
+      ) AS x(version_id, periodo, desde, hasta, vence_en, historica, categorias, debe_soporte)
       ON CONFLICT (indicador_id, periodo) DO NOTHING
       RETURNING id`;
     return creadas.length;
@@ -507,6 +513,16 @@ export async function contarSoportes(sql: Cliente, medicionId: number): Promise<
   const [f] = await sql`SELECT count(*)::int AS n FROM archivos WHERE contexto = 'medicion' AND contexto_id = ${medicionId}`;
   return Number(f.n);
 }
+
+/**
+ * ¿La medición debe su soporte obligatorio? (anexo del complemento de la 14C, §4.2): el indicador lo exige y la medición quedó
+ * marcada (`debe_soporte`), salvo la histórica, la «No aplica» y la de una versión que nadie mide (un automático o sin
+ * variables propias: nadie podría adjuntarlo). `debe_soporte` se decide una vez, al nacer la medición (`abrirPeriodos`) o al
+ * activarse el soporte (`recalcularPorSoporte`), y nada más lo cambia: ni el plazo, ni una fuente que llega, ni la racha, ni
+ * un análisis, ni una corrección. Es la regla única de `recalcularMedicion` y del rechazo de un reporte sin soporte.
+ */
+export const seDebeElSoporte = (d: { soporteObligatorio: boolean; marcada: boolean; historica: boolean; noAplica: boolean; mide: boolean }): boolean =>
+  d.soporteObligatorio && d.marcada && !d.historica && !d.noAplica && d.mide;
 
 /**
  * Una fila de `medicion_valores` con la letra y el origen de su variable, la que leen `valoresPorLetra` y `elegirValores`;
@@ -847,15 +863,13 @@ export function versionesDeCalculo(
  * (`recalcularSiguientes`). `c.sistema` marca un recálculo de sistema, que no nace de un cambio en la medición:
  * - siempre calcula con la versión que la medición ya tiene, la que se congeló al reportarla, y no con la que hoy rige el
  *   periodo: un cambio menor aprobado después no la cambia de versión sin que nadie la toque;
- * - `"racha"` (la de una siguiente, desde `recalcularSiguientes`) no sigue en cadena y la falta del soporte obligatorio no
- *   regresa a `abierta` una medición ya `reportada`: el soporte rige hacia adelante (residuos finales, punto 1);
- * - `"soporte"` (`cambiarOperacion` al cambiar «soporte obligatorio») aplica el soporte como está, porque es su causa:
- *   quien llama elige a qué mediciones (al activarlo, solo a las que siguen en plazo);
+ * - `"racha"` (la de una siguiente, desde `recalcularSiguientes`) no sigue en cadena;
+ * - `"soporte"` (`recalcularPorSoporte`, al cambiar «soporte obligatorio»), con el `debe_soporte` que ese cambio acaba de
+ *   decidir;
  * - `"fuente"` (la propagación, anexo 14C §3.3: llegó o cambió un valor ajeno) calcula con la versión congelada solo si la
- *   medición ya tenía resultado, y con la que rige si no (`versionesDeCalculo`), y como la racha, nunca regresa a `abierta`
- *   por falta del soporte una medición ya `reportada`; ni deja pidiéndolo a la que esperaba el dato con lo propio entregado
- *   y su plazo ya vencido (si el dato llega con el plazo en curso, el soporte sí se debe).
- * Una acción sobre la medición (reportar, corregir, analizar, la meta, un soporte, reabrir) aplica la regla viva.
+ *   medición ya tenía resultado, y con la que rige si no (`versionesDeCalculo`).
+ * Si la medición debe el soporte lo dice `debe_soporte` (`seDebeElSoporte`, anexo del complemento de la 14C §4.2), igual en
+ * todo recálculo: de una acción sobre ella (reportar, corregir, analizar, la meta, un soporte, reabrir) o de sistema.
  *
  * `c.conElResultado`, si algo cambió, corre con el resultado ya escrito y antes del evento, en la misma transacción; lo que
  * devuelve va al detalle del evento. La foto lo usa para mover el plazo solo cuando pide un análisis (anexo 14B, §5.4).
@@ -920,21 +934,15 @@ export async function recalcularMedicion(
     );
   }
   const conAnalisis = analisisCompleto(analisisExigido({ semaforo, cumple, repetido, historica, noAplica }), analisisDe(m));
-  // El soporte rige hacia adelante: la racha de una siguiente, o un valor ajeno que llega, no reabre por él lo que ya estaba
-  // reportado. Tampoco el valor ajeno que completa, con su plazo ya vencido, a la que esperaba el dato con lo propio ya
-  // entregado (`reportada_en` y sin resultado): estaba `abierta` solo por esa espera, y lo suyo entró cuando el soporte no se
-  // pedía o se volvió obligatorio con su plazo ya vencido (`recalcularPorSoporte` salta las vencidas). Si el dato llega con el
-  // plazo en curso, el soporte se activó dentro de él y sí se debe, como en cualquier medición en plazo. Lo que nadie mide (un
-  // automático, anexo 14B §5.3, o un indicador sin variables propias, anexo 14C §3.1) no lleva soporte: nadie podría adjuntarlo.
-  const esperabaElDato = m.reportada_en !== null && m.resultado_exacto === null && new Date(m.vence_en as string).getTime() < c.ahora.getTime();
-  const yaReportada = m.estado === "reportada" || (c.sistema === "fuente" && esperabaElDato);
-  const conSoporte =
-    !mide(version) ||
-    m.soporte_obligatorio !== true ||
-    historica ||
-    noAplica ||
-    ((c.sistema === "racha" || c.sistema === "fuente") && yaReportada) ||
-    (await contarSoportes(tx, medicionId)) > 0;
+  // Lo mismo venga de quien venga el recálculo: `debe_soporte` decide si la medición debe el soporte (`seDebeElSoporte`).
+  const debeSoporte = seDebeElSoporte({
+    soporteObligatorio: m.soporte_obligatorio === true,
+    marcada: m.debe_soporte === true,
+    historica,
+    noAplica,
+    mide: mide(version),
+  });
+  const conSoporte = !debeSoporte || (await contarSoportes(tx, medicionId)) > 0;
   const conDato = noAplica || resultado !== null;
   const estado: EstadoMedicion = conDato && conAnalisis && conSoporte ? "reportada" : "abierta";
   const limite = conDato ? limiteDeCritico(regla) : null;
@@ -1076,9 +1084,9 @@ export function plazoPorLaFuente(
  * mano); las históricas no tienen racha, y una de otra periodicidad no se calcula (`esDeOtraPeriodicidad`). Se bloquean en
  * el orden de los demás caminos (por `desde` e id, como el cierre y los históricos). Son recálculos de sistema
  * (`sistema: "racha"`): cada una conserva la versión con que se calculó y lo único que cambia es su racha y lo que de ella
- * depende (la marca, el análisis exigido y con él el estado); la falta de un soporte que se volvió obligatorio después no la
- * reabre. El semáforo de una siguiente no depende de las anteriores: su recálculo no sigue en cadena. Sus avisos son los de
- * `alRecalcular`, por el último nivel alertado.
+ * depende (la marca, el análisis exigido y con él el estado); si debe el soporte lo dice `debe_soporte`, como en todo
+ * recálculo (`seDebeElSoporte`). El semáforo de una siguiente no depende de las anteriores: su recálculo no sigue en
+ * cadena. Sus avisos son los de `alRecalcular`, por el último nivel alertado.
  *
  * Cuando la racha nace de una propagación (`c.sistema` es `"fuente"`: un dato corregido, la meta de un componente, lo
  * recalculado tras una reapertura en cascada), la siguiente que pasa de no pedir el análisis a pedirlo con su fecha ya pasada
@@ -1224,6 +1232,22 @@ function motivoDeFila(motivo: string, categoria: string): string {
 }
 
 /**
+ * Rechaza un reporte sin el soporte que la medición debe, con la regla de `recalcularMedicion` (`seDebeElSoporte`). Un
+ * reporte con datos no es «No aplica», aunque la medición lo estuviera: reportarla se lo quita.
+ */
+async function exigirElSoporte(sql: Cliente, ctx: Contexto): Promise<void> {
+  const m = ctx.medicion;
+  const debe = seDebeElSoporte({
+    soporteObligatorio: ctx.indicador.soporteObligatorio,
+    marcada: m.debe_soporte === true,
+    historica: m.historica === true,
+    noAplica: false,
+    mide: mide(ctx.version),
+  });
+  if (debe && (await contarSoportes(sql, m.id)) === 0) throw new ErrorIndicador("Este indicador exige un soporte: adjúntelo antes de reportar");
+}
+
+/**
  * El plan de reporte de una medición desagregada (anexo 14C, §5.4), sin escribir nada. Las filas traen solo categorías de su
  * lista y letras de la versión (si no, `FICHA_CAMBIO`); la persona digita solo las propias, cada celda con sus límites de
  * captura, y un total digitado es otro formulario. Un «No aplica» que puso el sistema en una fila no lo cambia la persona.
@@ -1306,9 +1330,7 @@ async function planDeRejilla(
     if (fuera && propias.length === version.variables.length) throw new ErrorIndicador(fuera);
     resultado = r.resultado;
   }
-  if (ctx.indicador.soporteObligatorio && (await contarSoportes(sql, m.id)) === 0) {
-    throw new ErrorIndicador("Este indicador exige un soporte: adjúntelo antes de reportar");
-  }
+  await exigirElSoporte(sql, ctx);
   if (fuera && !d.confirmado) return { valores: {}, confirmar: `${fuera}. ¿Los datos son correctos?`, rejilla };
   if (resultado && !d.confirmado) {
     const anterior = await anteriorConResultado(sql, ctx.indicador.id, m.desde);
@@ -1389,9 +1411,7 @@ export async function planDeReporte(
     if (fuera && digita.length === version.variables.length) throw new ErrorIndicador(fuera);
     resultado = r.resultado;
   }
-  if (ctx.indicador.soporteObligatorio && m.historica !== true && (await contarSoportes(sql, m.id)) === 0) {
-    throw new ErrorIndicador("Este indicador exige un soporte: adjúntelo antes de reportar");
-  }
+  await exigirElSoporte(sql, ctx);
   if (fuera && !d.confirmado) return { valores, confirmar: `${fuera}. ¿Los datos son correctos?` };
   if (resultado && !d.confirmado) {
     const anterior = await anteriorConResultado(sql, ctx.indicador.id, m.desde);

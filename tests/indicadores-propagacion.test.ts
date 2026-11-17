@@ -4,9 +4,10 @@
  * cada medición abierta que lo espera, que entonces se calcula sola. Una transacción por medición: la que falla se registra
  * y se salta. Contra la BD de desarrollo, dentro de una transacción que se revierte y con `ahora` inyectado.
  *
- * El mixto es el de `indicadores-medicion-mixta.test.ts`: mensual desde septiembre de 2026, aprobado el 15 de agosto, con A
- * propia («Valor glosado en el mes») y B el dato compartido mensual «Total facturado…»: forma «porcentaje», meta 90 y
- * umbral 70. Septiembre vence el 10 de octubre. 38.529.000 de 1.284.300.000 es el 3 % (crítico); de 40.000.000, el 96 %.
+ * El mixto es el de `indicadores-medicion-mixta.test.ts`, con sus ayudantes en `utiles/mixto.ts`: mensual desde septiembre
+ * de 2026, aprobado el 15 de agosto, con A propia («Valor glosado en el mes») y B el dato compartido mensual «Total
+ * facturado…»: forma «porcentaje», meta 90 y umbral 70. Septiembre vence el 10 de octubre. 38.529.000 de 1.284.300.000 es el
+ * 3 % (crítico); de 40.000.000, el 96 %.
  */
 import { existsSync } from "node:fs";
 import type { TransactionSql } from "postgres";
@@ -21,20 +22,13 @@ import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { tomarCalculo } from "@/db/consultas/indicadores/calculos";
-import { asegurarPeriodosDeDatos, reportarDato } from "@/db/consultas/indicadores/datos-periodos";
+import { asegurarPeriodosDeDatos } from "@/db/consultas/indicadores/datos-periodos";
 import { basesDe, leerPeriodos } from "@/db/consultas/indicadores/lectura";
-import {
-  asegurarMediciones,
-  marcarNoAplica,
-  MOTIVO_RESERVADO,
-  NO_APLICA_DEL_SISTEMA,
-  quitarNoAplica,
-  reportar,
-} from "@/db/consultas/indicadores/mediciones";
+import { asegurarMediciones, marcarNoAplica, MOTIVO_RESERVADO, NO_APLICA_DEL_SISTEMA, quitarNoAplica } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion } from "@/db/consultas/indicadores/operacion";
 import { listarIndicadores } from "@/db/consultas/indicadores/lista";
-import { asegurarMedicionesConFuentes, propagar, propagarSinFallar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
-import { columnasDePendiente, esPendiente, queFalta, tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { asegurarMedicionesConFuentes, propagarSinFallar, valorDeDato } from "@/db/consultas/indicadores/propagacion";
+import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
 import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { aTexto } from "@/lib/indicadores/formula/fraccion";
@@ -51,6 +45,21 @@ import {
   versionNueva,
   type OpcionesIndicadorDePrueba,
 } from "./utiles/indicadores";
+import {
+  activarSoporte,
+  AHORA,
+  APROBADA,
+  falta,
+  fila,
+  GLOSADO,
+  medicionDe,
+  mixto,
+  procesoNuevo,
+  propagarA,
+  reportarElDato,
+  reportarLoMio,
+  unico,
+} from "./utiles/mixto";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -66,24 +75,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-let consecutivo = 0;
-const unico = () => `${Date.now() % 100_000_000}${(consecutivo += 1)}`;
-
-const AHORA = new Date("2026-10-05T15:00:00Z");
 /** Pasada la fecha límite de septiembre (el 10 de octubre). */
 const TARDE = new Date("2026-10-20T15:00:00Z");
-const APROBADA = new Date("2026-08-15T15:00:00Z");
-const GLOSADO = "Valor glosado en el mes";
 const config = { ...CONFIG_DOCUMENTAL_DEFECTO, escalamientoDias: 3 };
 /** La fecha límite de septiembre con el plazo de 10 días. */
 const VENCE_SEPTIEMBRE = fechaLimiteDeReporte(periodoDe("2026-09", ZONA)!, 10, ZONA);
 
 const sinCambios = { escritas: 0, noAplica: 0, fallidas: 0 };
-
-const propagarA = (tx: TransactionSql, ahora: Date, indicadorIds?: number[]) =>
-  propagar({ sql: tx, ahora, ...(indicadorIds ? { indicadorIds } : {}) });
-
-const fila = async (tx: TransactionSql, medicionId: number) => (await tx`SELECT * FROM mediciones WHERE id = ${medicionId}`)[0];
 
 const eventos = async (tx: TransactionSql, medicionId: number) =>
   (await tx`SELECT tipo, usuario_id, detalle FROM medicion_eventos WHERE medicion_id = ${medicionId} ORDER BY id`).map((e) => ({
@@ -110,64 +108,10 @@ const valores = async (tx: TransactionSql, medicionId: number) =>
     ]),
   );
 
-/** Lo que le falta a la medición según `queFalta`, como la leen las tareas y la pasada; `null` si no está pendiente. */
-async function falta(tx: TransactionSql, medicionId: number) {
-  const filas = await tx`SELECT ${columnasDePendiente(tx)} FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
-    WHERE m.id = ${medicionId} AND ${esPendiente(tx)}`;
-  return queFalta(filas).get(medicionId)?.falta ?? null;
-}
-
 const avisos = async (tx: TransactionSql, medicionId: number) =>
   (await tx`SELECT tipo, titulo, usuario_id FROM notificaciones WHERE entidad = 'medicion' AND entidad_id = ${medicionId} ORDER BY id`).map(
     (n) => ({ tipo: n.tipo as string, titulo: n.titulo as string, usuarioId: Number(n.usuario_id) }),
   );
-
-async function procesoNuevo(tx: TransactionSql): Promise<number> {
-  const sigla = `Z${unico()}`;
-  const [macro] = await tx`SELECT id FROM macroprocesos ORDER BY id LIMIT 1`;
-  const [p] = await tx`INSERT INTO procesos (macroproceso_id, nombre, sigla, slug, icono, orden)
-    VALUES (${macro.id}, ${`Proceso ${sigla}`}, ${sigla}, ${sigla.toLowerCase()}, 'circle', 99) RETURNING id`;
-  return Number(p.id);
-}
-
-const medicionDe = async (tx: TransactionSql, indicadorId: number, periodo: string) =>
-  Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`)[0].id);
-
-/**
- * Reporta (o corrige) el periodo del dato como su responsable, a `ahora`, abriéndolo antes si hace falta
- * (`asegurarPeriodosDeDatos`). Devuelve el id del periodo.
- */
-async function reportarElDato(tx: TransactionSql, responsable: SesionFlujo, datoId: number, periodo: string, valor: string, ahora = AHORA) {
-  await asegurarPeriodosDeDatos({ sql: tx, ahora, datoIds: [datoId] });
-  const [p] = await tx`SELECT id FROM variable_valores WHERE variable_id = ${datoId} AND periodo = ${periodo}`;
-  expect(p, `el periodo ${periodo} del dato debía estar abierto`).toBeDefined();
-  expect(await reportarDato(responsable, { periodoId: Number(p.id), valor, confirmado: true }, { sql: tx, ahora })).toMatchObject({ ok: true });
-  return Number(p.id);
-}
-
-const reportarLoMio = (tx: TransactionSql, sesion: SesionFlujo, medicionId: number, v: Record<string, string>, ahora = AHORA) =>
-  reportar(sesion, { medicionId, valores: v, parcial: false, confirmado: true }, { sql: tx, ahora });
-
-/** El mixto de la cabecera, con quien mide, quien analiza y el responsable del dato; `o` cambia lo que haga falta. */
-async function mixto(tx: TransactionSql, o: OpcionesIndicadorDePrueba = {}) {
-  const procesoId = await procesoNuevo(tx);
-  const mide = await usuarioDePrueba(tx, { rol: "consulta" });
-  const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
-  const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
-  const datoId = await datoDePrueba(tx, { procesoId, nombre: `Total facturado ${unico()}`, responsables: [responsable.usuarioId] });
-  const ind = await indicadorDePrueba(tx, {
-    procesoId,
-    periodicidad: "mensual",
-    inicioMedicion: "2026-09",
-    aprobadaEn: APROBADA,
-    mide: [mide.usuarioId],
-    analiza: [analiza.usuarioId],
-    variables: { A: { nombre: GLOSADO }, B: { datoId } },
-    ...o,
-  });
-  await asegurarMediciones({ sql: tx, ahora: AHORA, indicadorId: ind.id });
-  return { procesoId, mide, analiza, responsable, datoId, ind, medicion: await medicionDe(tx, ind.id, "2026-09") };
-}
 
 /** Un indicador mensual desde septiembre con sus dos variables de datos compartidos, del mismo responsable: nadie lo mide. */
 async function sinPropias(tx: TransactionSql, o: OpcionesIndicadorDePrueba & { inicioMedicion?: string } = {}) {
@@ -760,13 +704,6 @@ describe("el soporte obligatorio de una medición que espera su dato", () => {
   const OCT_12 = new Date("2026-10-12T15:00:00Z");
   const OCT_21 = new Date("2026-10-21T15:00:00Z");
 
-  /** Activa «soporte obligatorio» en el indicador a `ahora`, como lo hace quien administra. */
-  const activarSoporte = async (tx: TransactionSql, indicadorId: number, ahora: Date) =>
-    cambiarOperacion(
-      await sesionAdmin(tx),
-      { indicadorId, plazoReporteDias: 10, inicioMedicion: "2026-09", soporteObligatorio: true, nivelAcceso: "general" },
-      { sql: tx, ahora },
-    );
   const tareaDeMedir = async (tx: TransactionSql, sesion: SesionFlujo, medicionId: number, ahora: Date) => {
     const { tareas, vencidas } = await tareasDeIndicadores(sesion, { sql: tx, ahora });
     return { tarea: tareas.find((t) => t.id === `medir:${medicionId}`) ?? null, vencidas };
@@ -822,24 +759,27 @@ describe("el soporte obligatorio de una medición que espera su dato", () => {
       expect((await tareaDeMedir(tx, x.mide, x.medicion, OCT_8)).tarea).toMatchObject({ detalle: SOPORTE });
     }));
 
-  it("si el plazo pasa y el dato no ha llegado, el soporte deja de pedirse: bajo «Falta un dato» nada vence", () =>
+  it("si el plazo pasa y el dato no ha llegado, lo sigue debiendo: el dato que llega después la deja abierta por el soporte", () =>
     revertida(sql, async (tx) => {
       await silenciarIndicadores(tx);
       const x = await mixto(tx);
       await reportarLoMio(tx, x.mide, x.medicion, { A: "38529000" });
       await activarSoporte(tx, x.ind.id, OCT_6);
+      expect((await fila(tx, x.medicion)).debe_soporte).toBe(true);
       expect((await tareaDeMedir(tx, x.mide, x.medicion, OCT_6)).tarea).not.toBeNull();
 
-      // Pasado el 10 sigue esperando el dato: ni tarea, ni vencida, ni aviso.
+      // La reescribe la Tarea 5: regla nueva del soporte. Lo debe desde el 6, así que pasado el 10 la tarea, la lista y la
+      // pasada deben decir que está vencido (anexo del complemento, §4.4); hasta entonces lo siguen aproximando por el plazo.
       await revisarVencimientosDeIndicadores({ sql: tx, ahora: OCT_12, config });
       expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toEqual({ tarea: null, vencidas: 0 });
       expect(await enLaLista(tx, x.mide, x, OCT_12)).toBe("Falta un dato");
       expect((await fila(tx, x.medicion)).aviso_vencido_en).toBeNull();
 
-      // Y cuando llega, con su plazo ya vencido, queda reportada.
+      // Cuando llega, con su plazo ya vencido, cumple y lo sigue debiendo: queda abierta por el soporte (§4.5, caso 3).
       await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "40000000", TARDE);
       await propagarA(tx, TARDE, [x.ind.id]);
-      expect((await fila(tx, x.medicion)).estado).toBe("reportada");
+      const m = await fila(tx, x.medicion);
+      expect([m.semaforo, m.estado, m.debe_soporte]).toEqual(["bien", "abierta", true]);
     }));
 
   it("la que ya tenía resultado y está abierta por el soporte no queda reportada porque se corrija el dato", () =>

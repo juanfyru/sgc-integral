@@ -737,10 +737,10 @@ describe("el incumplimiento repetido de los periodos siguientes", () => {
       await reportarCon(tx, mide, marzo, ATENCION);
       expect([(await fila(tx, marzo)).estado, ...(await racha(tx, marzo))]).toEqual(["reportada", "atencion", true, true]);
 
-      // El soporte se vuelve obligatorio cuando marzo ya se reportó: lo reportado no se reabre por eso.
+      // El soporte se vuelve obligatorio cuando marzo ya se reportó con su plazo vencido: no lo debe (`debe_soporte` falso, como
+      // al activarlo en «Datos de operación»), y lo reportado no se reabre por eso.
       await tx`UPDATE indicadores SET soporte_obligatorio = true, soporte_obligatorio_desde = now() WHERE id = ${ind.id}`;
-      // Enero se corrige (con su soporte, que ahora se exige para reportar) y cumple: la marca de marzo se va, y marzo,
-      // sin soporte, sigue reportada.
+      // Enero se corrige (con un soporte) y cumple: la marca de marzo se va, y marzo, sin soporte, sigue reportada.
       const enero = await medicion("2026-01");
       await soporte(tx, enero);
       await reportarCon(tx, mide, enero, BIEN);

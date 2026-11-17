@@ -334,7 +334,8 @@ export async function cambiarOperacion(
       await avisarPorAprobar(tx, f, (await aprobadoresDeFicha(f.versionId, { sql: tx })).filter((u) => !f.aprobadores.includes(u)));
     }
     const conFechaNueva = antes.plazoReporteDias !== despues.plazoReporteDias ? await moverFechasLimite(tx, i.id, despues.plazoReporteDias, ahora) : 0;
-    // Después del plazo: al activarlo, el soporte solo alcanza lo que sigue en plazo con la fecha límite nueva.
+    // Después del plazo: al activarlo, la marca de cada medición se decide con la fecha límite nueva. Un cambio de plazo sin
+    // cambiar el soporte no toca ninguna marca.
     const recalculadas =
       antes.soporteObligatorio !== despues.soporteObligatorio
         ? await recalcularPorSoporte(tx, i.id, { ahora, actorId: sesion.usuarioId, activado: despues.soporteObligatorio })

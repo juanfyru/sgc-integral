@@ -1,7 +1,8 @@
 /**
- * Las mediciones en curso de un indicador y el recálculo que «soporte obligatorio» les pide. Aparte de `operacion.ts` para
- * que `publicacion.ts` (`alPublicarVersion`) los use sin importar la operación, que importa `aprobacion.ts`, que importa
- * `publicacion.ts`: solo depende de `./mediciones` y `@/lib` (lo vigila `tests/indicadores-ciclos.test.ts`).
+ * Las mediciones en curso de un indicador, y la marca y el recálculo que «soporte obligatorio» les pide. Aparte de
+ * `operacion.ts` para que `publicacion.ts` (`alPublicarVersion`) los use sin importar la operación, que importa
+ * `aprobacion.ts`, que importa `publicacion.ts`: solo depende de `./mediciones` y `@/lib` (lo vigila
+ * `tests/indicadores-ciclos.test.ts`).
  */
 import type { TransactionSql } from "postgres";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
@@ -26,13 +27,16 @@ export const enCurso = (tx: TransactionSql, indicadorId: number) =>
     ORDER BY m.desde, m.id FOR UPDATE OF m`;
 
 /**
- * «Soporte obligatorio» cambió: las mediciones en curso se recalculan (evento `recalculo`, la misma persona y la misma
- * hora, recálculo de sistema `"soporte"`: con la versión con que se calcularon). El soporte rige hacia adelante (residuos
- * finales, punto 1): al **activarlo** solo alcanza las que siguen en plazo (`vence_en >= ahora`), y una ya reportada sin
- * soporte vuelve a abierta para pedirlo; las que ya vencieron se quedan como están (se reportaron cuando no se pedía y no
- * se vuelven vencidas). Al **desactivarlo**, todas: una que solo esperaba el soporte queda reportada. Las de otra
- * periodicidad no se calculan. Devuelve cuántas cambiaron. Quien llama tiene el indicador `FOR UPDATE` y ya escribió el valor
- * nuevo en `indicadores` (`recalcularMedicion` lo lee de ahí): `cambiarOperacion` y `alPublicarVersion`.
+ * «Soporte obligatorio» cambió. Al **activarlo** decide la marca de las mediciones en curso (`debe_soporte`, anexo del
+ * complemento de la 14C §4.2; las cerradas y las históricas no se tocan): la deben todas salvo las que quien mide ya había
+ * reportado (`reportada_en`, también en un mixto que espera su dato) con su fecha límite anterior a `ahora`, la que tienen
+ * en ese momento (`cambiarOperacion` mueve antes las fechas si cambió el plazo). Volver a activarlo la decide otra vez;
+ * desactivarlo no la toca, porque el indicador ya no lo exige. Después, en los dos casos, las recalcula todas (evento
+ * `recalculo`, la misma persona y la misma hora, recálculo de sistema `"soporte"`: con la versión con que se calcularon):
+ * una ya reportada que lo debe vuelve a abierta para pedirlo y, al desactivarlo, una que solo esperaba el soporte queda
+ * reportada. Las de otra periodicidad no se calculan. Devuelve cuántas cambiaron. Quien llama tiene el indicador
+ * `FOR UPDATE` y ya escribió el valor nuevo en `indicadores` (`recalcularMedicion` lo lee de ahí): `cambiarOperacion` y
+ * `alPublicarVersion`.
  */
 export async function recalcularPorSoporte(
   tx: TransactionSql,
@@ -41,9 +45,13 @@ export async function recalcularPorSoporte(
 ): Promise<number> {
   const zona = zonaHoraria();
   const versiones = await versionesAprobadas(tx, indicadorId);
+  const filas = await enCurso(tx, indicadorId);
+  if (c.activado && filas.length > 0) {
+    await tx`UPDATE mediciones SET debe_soporte = NOT (reportada_en IS NOT NULL AND vence_en < ${c.ahora})
+      WHERE id IN ${tx(filas.map((m) => Number(m.id)))}`;
+  }
   let recalculadas = 0;
-  for (const m of await enCurso(tx, indicadorId)) {
-    if (c.activado && new Date(m.vence_en as string).getTime() < c.ahora.getTime()) continue;
+  for (const m of filas) {
     const clave = m.periodo as string;
     const periodo = periodoDe(clave, zona);
     const version = periodo ? versionQueRigeEntre(versiones, periodo, zona) : null;
