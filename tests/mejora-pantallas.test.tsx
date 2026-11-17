@@ -1,0 +1,182 @@
+/**
+ * Las pantallas de «Mejoramiento» de la 15A que no tocan la base (spec 15 §16.1 y §16.2, maquetas 1 a 3): la lista, el
+ * recorrido, el formulario de registro y «Lo que sigue». Con datos de mentira.
+ */
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazgo";
+import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
+import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
+import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
+import { Recorrido } from "@/componentes/mejoramiento/Recorrido";
+import type { FilaDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { SIN_AJUSTES } from "@/lib/dias-habiles";
+import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
+import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
+import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
+import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
+
+// 18 de noviembre de 2026 (miércoles), 10:00 en Bogotá. El lunes 16 es festivo: del 11 al 18 hay cuatro días hábiles.
+const AHORA = new Date("2026-11-18T15:00:00Z");
+const CONTEXTO = { ahora: AHORA, zona: "America/Bogota", calendario: SIN_AJUSTES };
+
+const fila = (extra: Partial<FilaDeHallazgo>): FilaDeHallazgo => ({
+  id: 14,
+  codigo: "HZ-2026-014",
+  titulo: "Dos turnos de noche sin registro de temperatura",
+  clase: "no_conformidad",
+  criticidad: "alta",
+  origen: "auditoria_interna",
+  proceso: "Farmacia",
+  estado: "en_ejecucion",
+  etiqueta: "En ejecución",
+  marcas: [],
+  turno: "Los responsables de las actividades",
+  avance: 45,
+  vence: new Date("2026-11-12T04:59:59Z"),
+  prioridadAlta: false,
+  ...extra,
+});
+
+describe("ListaDeHallazgos", () => {
+  it("pinta el código, el título, el estado con texto, el turno y lo vencido", () => {
+    const html = renderToStaticMarkup(<ListaDeHallazgos filas={[fila({})]} contexto={CONTEXTO} />);
+    expect(html).toContain("HZ-2026-014");
+    expect(html).toContain("Dos turnos de noche sin registro de temperatura");
+    expect(html).toContain("En ejecución");
+    expect(html).toContain("Los responsables de las actividades");
+    expect(html).toContain("Vencida hace 4 días");
+    expect(html).toContain('href="/mejoramiento/14"');
+  });
+
+  it("dice cuántos días hábiles quedan", () => {
+    const html = renderToStaticMarkup(
+      <ListaDeHallazgos filas={[fila({ vence: new Date("2026-11-26T04:59:59Z") })]} contexto={CONTEXTO} />,
+    );
+    expect(html).toContain("quedan 5 días hábiles");
+  });
+
+  it("una fila de prioridad alta lleva la insignia con texto", () => {
+    const sin = renderToStaticMarkup(<ListaDeHallazgos filas={[fila({})]} contexto={CONTEXTO} />);
+    expect(sin).not.toContain("Prioridad alta");
+    const con = renderToStaticMarkup(
+      <ListaDeHallazgos filas={[fila({ prioridadAlta: true, marcas: ["Prioridad alta"] })]} contexto={CONTEXTO} />,
+    );
+    expect(con).toContain("Prioridad alta");
+  });
+
+  it("sin filas, el estado vacío", () => {
+    const html = renderToStaticMarkup(<ListaDeHallazgos filas={[]} contexto={CONTEXTO} />);
+    expect(html).toContain("Aún no hay hallazgos");
+  });
+});
+
+const base = (extra: Partial<HallazgoBase>): HallazgoBase => ({
+  id: 1,
+  codigo: "HZ-2026-001",
+  clase: "no_conformidad",
+  criticidad: "alta",
+  origen: "auditoria_interna",
+  estado: "en_ejecucion",
+  ronda: 1,
+  procesoId: 1,
+  reincidenteDe: null,
+  correccionRequerida: true,
+  accionRequerida: true,
+  resultadoCierre: null,
+  registradoPor: 1,
+  ...extra,
+});
+
+describe("Recorrido", () => {
+  it("marca un solo paso como actual, los anteriores como hechos y no es un control", () => {
+    const pasos = pasosDelRecorrido(base({}));
+    const html = renderToStaticMarkup(<Recorrido pasos={pasos} />);
+    expect(html.match(/aria-current="step"/g)).toHaveLength(1);
+    const actual = pasos.findIndex((p) => p.estado === "actual");
+    expect(actual).toBeGreaterThan(0);
+    expect(html.match(/data-estado="hecho"/g)).toHaveLength(actual);
+    expect(html).toContain("Ejecución");
+    expect(html).not.toMatch(/<(button|a)[\s>]/);
+  });
+
+  it("dice el estado de cada paso con texto, no solo con color", () => {
+    const html = renderToStaticMarkup(<Recorrido pasos={pasosDelRecorrido(base({}))} />);
+    expect(html).toContain("Hecho");
+    expect(html).toContain("En curso");
+    expect(html).toContain("Falta");
+  });
+});
+
+describe("FormularioHallazgo", () => {
+  const props = { accion: vi.fn(async () => null), procesos: [{ id: 3, nombre: "Farmacia" }], hoy: "2026-11-18", diasParaAceptar: 3 };
+  const pintar = (valores?: Record<string, string>) => renderToStaticMarkup(<FormularioHallazgo {...props} valores={valores} />);
+
+  it("siempre muestra el aviso de datos de pacientes", () => {
+    expect(pintar()).toContain(AVISO_SIN_PACIENTES);
+  });
+
+  it("la referencia del caso solo aparece en PQRSF y evento adverso", () => {
+    expect(pintar()).not.toContain("Referencia del caso");
+    expect(pintar({ origen: "pqrsf" })).toContain("Referencia del caso");
+    expect(pintar({ origen: "evento_adverso" })).toContain("Referencia del caso");
+  });
+
+  it("la criticidad solo aparece en la no conformidad", () => {
+    expect(pintar({ clase: "no_conformidad" })).toContain(">Criticidad<");
+    expect(pintar({ clase: "observacion" })).not.toContain(">Criticidad<");
+    expect(pintar({ clase: "oportunidad" })).not.toContain(">Criticidad<");
+  });
+
+  it("un origen externo pide la fecha límite al ente y avisa que no se rechaza y lo aprueba Gerencia", () => {
+    expect(pintar()).not.toContain("Fecha límite de respuesta al ente");
+    const html = pintar({ origen: "ente_control" });
+    expect(html).toContain("Fecha límite de respuesta al ente");
+    expect(html).toContain("Este hallazgo no se puede rechazar y lo aprobará Gerencia");
+  });
+
+  it("la criticidad alta avisa que lleva acción correctiva y la aprueba Gerencia", () => {
+    expect(pintar({ clase: "no_conformidad", criticidad: "alta" })).toContain("Llevará acción correctiva y lo aprobará Gerencia");
+    expect(pintar({ clase: "no_conformidad", criticidad: "baja" })).not.toContain("lo aprobará Gerencia");
+  });
+
+  it("ofrece solo los procesos que recibe y los orígenes", () => {
+    const html = pintar();
+    expect(html).toContain("Farmacia");
+    expect(html).toContain("Ente de control");
+    expect(html).toContain("Auditoría interna");
+  });
+
+  it("repuebla lo escrito tras un rechazo", () => {
+    expect(pintar({ titulo: "Un título escrito", descripcion: "Descripción larga escrita" })).toContain("Un título escrito");
+  });
+});
+
+describe("LoQueSigue", () => {
+  it("a quien no tiene el turno le dice quién lo tiene y no ofrece botones", () => {
+    const html = renderToStaticMarkup(<LoQueSigue texto="Tiene el turno: la líder del proceso, para aceptar el hallazgo o rechazarlo." />);
+    expect(html).toContain("Tiene el turno: la líder del proceso");
+    expect(html).not.toMatch(/<(button|a)[\s>]/);
+  });
+});
+
+describe("PestanasMejoramiento", () => {
+  it("hoy solo ofrece «Hallazgos», a quien los ve; las demás llegan en las tareas 14 y 18", () => {
+    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: true })).toEqual(["hallazgos"]);
+    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: false })).toEqual([]);
+    const html = renderToStaticMarkup(<PestanasMejoramiento activa="hallazgos" visibles={["hallazgos"]} />);
+    expect(html).toContain("Hallazgos");
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain("border-mod-planes");
+  });
+});
+
+describe("filtroDeConsulta", () => {
+  it("ignora lo que no entiende y lee lo que sí", () => {
+    expect(filtroDeConsulta({ origen: "inventado", clase: "observacion", proceso: "abc", vencidos: "1", estado: "abiertos" })).toEqual({
+      clase: "observacion",
+      soloVencidos: true,
+      estado: "abiertos",
+    });
+  });
+});

@@ -10,6 +10,7 @@ const ARCHIVOS_PANEL = [
   "src/app/acciones-vigencia.ts",
   "src/app/acciones-normograma.ts",
   "src/app/acciones-indicadores.ts",
+  "src/app/acciones-mejoramiento.ts",
 ];
 
 function exportadas(src: string) {

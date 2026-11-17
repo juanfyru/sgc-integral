@@ -8,6 +8,7 @@ export type IconoNav =
   | "vigencia"
   | "normograma"
   | "indicadores"
+  | "mejoramiento"
   | "documentos"
   | "maestro"
   | "tipos"
@@ -25,7 +26,7 @@ export type IconoNav =
   | "accesos"
   | "sesiones";
 
-export type GrupoNav = "inicio" | "documentos" | "indicadores" | "administracion";
+export type GrupoNav = "inicio" | "documentos" | "indicadores" | "mejoramiento" | "administracion";
 
 export type EntradaNav = {
   href: string;
@@ -46,10 +47,11 @@ export type EntradaNav = {
   prefijos?: readonly string[];
 };
 
-export const GRUPOS: Record<GrupoNav, { etiqueta: string | null; color: "marca" | "mod-documentos" | "mod-indicadores" }> = {
+export const GRUPOS: Record<GrupoNav, { etiqueta: string | null; color: "marca" | "mod-documentos" | "mod-indicadores" | "mod-planes" }> = {
   inicio: { etiqueta: null, color: "marca" },
   documentos: { etiqueta: "Documentos", color: "mod-documentos" },
   indicadores: { etiqueta: "Indicadores", color: "mod-indicadores" },
+  mejoramiento: { etiqueta: "Mejoramiento", color: "mod-planes" },
   administracion: { etiqueta: "Administración", color: "marca" },
 };
 
@@ -85,6 +87,8 @@ export const NAVEGACION: readonly EntradaNav[] = [
   { href: "/normograma", etiqueta: "Normograma", icono: "normograma", grupo: "documentos" },
   // Toda sesión, con pestañas (spec 14 §12.1); qué indicadores ve cada persona lo decide `filtroIndicadores`.
   { href: "/indicadores", etiqueta: "Indicadores", icono: "indicadores", grupo: "indicadores" },
+  // Toda sesión (spec 15 §16.1): qué hallazgos ve cada persona lo decide `filtroHallazgos`. Sin insignia de conteo.
+  { href: "/mejoramiento", etiqueta: "Mejoramiento", icono: "mejoramiento", grupo: "mejoramiento" },
   {
     href: "/admin",
     etiqueta: "Gestión de documentos",
