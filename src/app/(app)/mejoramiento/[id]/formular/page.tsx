@@ -16,6 +16,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
+import { leerCambios } from "@/lib/mejoramiento/analisis";
 import { exigirSesion } from "@/lib/paginas";
 import { exigirHallazgo, rutaDeFormular, rutaDeHallazgo } from "../../_comun";
 
@@ -129,7 +130,7 @@ export default async function PaginaFormular({
             <CausasRaiz key={`causas-${ronda.causas.map((c) => c.id).join("-")}`} hallazgoId={h.id} causas={ronda.causas} guardar={guardarCausasAccion} />
             <PreguntasDeCierre
               hallazgoId={h.id}
-              respuestas={{ similares: ronda.similares, similaresDetalle: ronda.similaresDetalle, cambios: ronda.cambios }}
+              respuestas={{ similares: ronda.similares, similaresDetalle: ronda.similaresDetalle, cambios: leerCambios(ronda.cambios) ?? null }}
               guardar={responderPreguntasAccion}
             />
           </div>

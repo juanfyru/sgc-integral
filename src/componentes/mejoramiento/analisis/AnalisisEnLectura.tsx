@@ -1,6 +1,17 @@
 import { ChevronDown } from "lucide-react";
 import type { RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
-import { CATEGORIAS_6M, ETIQUETA_6M, ETIQUETA_IMPACTO, type Categoria6M, type ImpactoDeCausa } from "@/lib/mejoramiento/analisis";
+import {
+  CATEGORIAS_6M,
+  ETIQUETA_6M,
+  ETIQUETA_IMPACTO,
+  leerCambios,
+  leerContenido,
+  type Categoria6M,
+  type ContenidoCincoPorques,
+  type ContenidoIshikawa,
+  type ContenidoOtroMetodo,
+  type ImpactoDeCausa,
+} from "@/lib/mejoramiento/analisis";
 
 const METODO: Record<string, string> = { cinco_porques: "5 porqués", ishikawa: "Ishikawa (6M)", pareto: "Pareto", otro: "Otro método" };
 
@@ -15,31 +26,25 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactN
   );
 }
 
-function CincoPorques({ contenido }: { contenido: unknown }) {
-  const niveles = ((contenido as { niveles?: Array<{ respuesta?: string; evidencia?: string }> } | null)?.niveles ?? []).filter(
-    (n) => typeof n?.respuesta === "string",
-  );
+function CincoPorques({ contenido }: { contenido: ContenidoCincoPorques }) {
   return (
     <ol className="flex list-none flex-col gap-2">
-      {niveles.map((n, i) => (
+      {contenido.niveles.map((n, i) => (
         <li key={i} className="border-l-2 border-mod-planes pl-3 text-sm">
           <span className="block text-xs font-medium text-muted-foreground">{i === 0 ? "Por qué ocurrió" : `Por qué (nivel ${i + 1})`}</span>
           <span className="block whitespace-pre-line break-words">{n.respuesta}</span>
-          {n.evidencia ? <span className="block break-words text-xs text-muted-foreground">Evidencia: {n.evidencia}</span> : null}
+          {"evidencia" in n && n.evidencia ? <span className="block break-words text-xs text-muted-foreground">Evidencia: {n.evidencia}</span> : null}
         </li>
       ))}
     </ol>
   );
 }
 
-function Ishikawa({ contenido }: { contenido: unknown }) {
-  const causas = (
-    (contenido as { causas?: Array<{ categoria?: string; texto?: string; confirmada?: boolean; impacto?: string; requiereAccion?: boolean }> } | null)?.causas ?? []
-  ).filter((c) => typeof c?.texto === "string");
+function Ishikawa({ contenido }: { contenido: ContenidoIshikawa }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {CATEGORIAS_6M.map((cat: Categoria6M) => {
-        const deLaCategoria = causas.filter((c) => c.categoria === cat);
+        const deLaCategoria = contenido.causas.filter((c) => c.categoria === cat);
         if (deLaCategoria.length === 0) return null;
         return (
           <div key={cat} className="min-w-0 rounded-md border border-border p-3">
@@ -50,7 +55,7 @@ function Ishikawa({ contenido }: { contenido: unknown }) {
                   {c.texto}
                   <span className="block text-xs text-muted-foreground">
                     {c.confirmada
-                      ? `Confirmada · impacto ${ETIQUETA_IMPACTO[c.impacto as ImpactoDeCausa]?.toLowerCase() ?? "sin indicar"}${c.requiereAccion ? " · requiere acción" : ""}`
+                      ? `Confirmada · impacto ${ETIQUETA_IMPACTO[c.impacto as ImpactoDeCausa].toLowerCase()}${c.requiereAccion ? " · requiere acción" : ""}`
                       : "Posible, sin confirmar"}
                   </span>
                 </li>
@@ -63,21 +68,36 @@ function Ishikawa({ contenido }: { contenido: unknown }) {
   );
 }
 
-function ContenidoDe({ a }: { a: Analisis }) {
-  if (a.metodo === "cinco_porques") return <CincoPorques contenido={a.contenido} />;
-  if (a.metodo === "ishikawa") return <Ishikawa contenido={a.contenido} />;
-  const c = (a.contenido ?? {}) as { nombre?: string; descripcion?: string };
+function Otro({ contenido }: { contenido: ContenidoOtroMetodo }) {
   return (
     <dl className="grid gap-2">
-      <Dato etiqueta="Método">{c.nombre ?? ""}</Dato>
-      <Dato etiqueta="Descripción">{c.descripcion ?? ""}</Dato>
+      <Dato etiqueta="Método">{contenido.nombre}</Dato>
+      <Dato etiqueta="Descripción">{contenido.descripcion}</Dato>
     </dl>
   );
 }
 
+/** Lee lo guardado con el esquema de su método; `null` si no pasa. */
+function leido(a: Analisis): ContenidoCincoPorques | ContenidoIshikawa | ContenidoOtroMetodo | null {
+  try {
+    return a.metodo === "cinco_porques" || a.metodo === "ishikawa" || a.metodo === "otro" ? leerContenido(a.metodo, a.contenido) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** El contenido guardado se vuelve a leer con el esquema de su método: lo que no pasa no rompe la página. */
+function ContenidoDe({ a }: { a: Analisis }) {
+  const c = leido(a);
+  if (c === null) return <p className="text-sm text-muted-foreground">No se pudo leer este análisis.</p>;
+  if (a.metodo === "cinco_porques") return <CincoPorques contenido={c as ContenidoCincoPorques} />;
+  if (a.metodo === "ishikawa") return <Ishikawa contenido={c as ContenidoIshikawa} />;
+  return <Otro contenido={c as ContenidoOtroMetodo} />;
+}
+
 function resumenDe(ronda: RondaDeDetalle): string {
   const partes = [
-    ronda.analisis.length > 0 ? `${ronda.analisis.length} ${ronda.analisis.length === 1 ? "análisis" : "análisis"}` : "Sin análisis",
+    ronda.analisis.length > 0 ? `${ronda.analisis.length} análisis` : "Sin análisis",
     ronda.causas.length > 0 ? `${ronda.causas.length} ${ronda.causas.length === 1 ? "causa raíz" : "causas raíz"}` : "sin causas raíz",
   ];
   return partes.join(" · ");
@@ -98,7 +118,8 @@ export function AnalisisEnLectura({
   abierta: boolean;
   children?: React.ReactNode;
 }) {
-  const c = ronda.cambios;
+  const leidos = leerCambios(ronda.cambios);
+  const c = leidos ?? null;
   const hayCambios = c !== null && (c.documentos || c.riesgos || c.controles);
   const cuales = c ? [c.documentos ? "documentos" : null, c.riesgos ? "matriz de riesgos" : null, c.controles ? "controles" : null].filter(Boolean).join(", ") : "";
   return (
@@ -133,16 +154,16 @@ export function AnalisisEnLectura({
             </ol>
           </div>
         ) : null}
-        {ronda.similares !== null || c !== null ? (
+        {ronda.similares !== null || leidos !== null ? (
           <dl className="grid gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
             {ronda.similares !== null ? (
               <Dato etiqueta="¿Hay no conformidades similares en otros procesos?">
                 {ronda.similares ? `Sí: ${ronda.similaresDetalle ?? ""}` : "No"}
               </Dato>
             ) : null}
-            {c !== null ? (
+            {leidos !== null ? (
               <Dato etiqueta="¿Se requieren cambios en documentos, riesgos o controles?">
-                {hayCambios ? `Sí (${cuales}): ${c.descripcion ?? ""}` : "No"}
+                {c === null ? "No se pudo leer esta respuesta." : hayCambios ? `Sí (${cuales}): ${c.descripcion ?? ""}` : "No"}
               </Dato>
             ) : null}
           </dl>

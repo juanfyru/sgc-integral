@@ -480,4 +480,62 @@ describe("el análisis de causa raíz (maqueta 4)", () => {
     expect(lectura).toContain("Sí: Urgencias");
     expect(lectura).toContain("Sí (documentos): Actualizar el procedimiento");
   });
+
+  it("todos los paneles quedan montados (los inactivos, ocultos) y cada pestaña apunta al suyo", () => {
+    const otro = { id: 8, metodo: "otro", equipo: null, observaciones: null, contenido: { nombre: "Lluvia de ideas", descripcion: "Con el equipo" } };
+    const html = renderToStaticMarkup(
+      <PestanasDeMetodo hallazgoId={1} analisis={[guardado, otro]} guardar={accion} quitar={accion} adjuntos={<p>ADJUNTOS DE LA RONDA</p>} />,
+    );
+    expect(html).toContain('id="panel-a-7"');
+    expect(html).toContain('id="panel-a-8"');
+    expect(html).toContain("Lluvia de ideas");
+    expect(html).toContain("No hay lista de chequeo");
+    expect(html).toMatch(/id="panel-a-7"[^>]*hidden/);
+    expect(html).toContain('aria-controls="panel-a-7"');
+    expect(html).toContain('tabindex="-1"');
+    // Los adjuntos de la ronda están siempre a la vista, no solo dentro de una pestaña «otro».
+    expect((html.match(/ADJUNTOS DE LA RONDA/g) ?? []).length).toBe(1);
+    expect(html).toContain("Añadir un análisis de 5 porqués");
+    expect(html).toContain("Añadir un análisis de Ishikawa (6M)");
+    expect(html).toContain("Añadir un análisis con otro método");
+    const soloIshikawa = renderToStaticMarkup(
+      <PestanasDeMetodo hallazgoId={1} analisis={[guardado]} guardar={accion} quitar={accion} adjuntos={<p>ADJUNTOS DE LA RONDA</p>} />,
+    );
+    expect(soloIshikawa).toContain("ADJUNTOS DE LA RONDA");
+  });
+
+  it("el Ishikawa da a cada control un nombre distinto, el análisis se quita con confirmación y las causas se pueden vaciar", () => {
+    const html = renderToStaticMarkup(<PestanasDeMetodo hallazgoId={1} analisis={[guardado]} guardar={accion} quitar={accion} />);
+    expect(html).toContain("Causa 1 de Método");
+    expect(html).toContain("Confirmada<span class=\"sr-only\"> (causa 1 de Método)</span>");
+    expect(html).toContain("Impacto<span class=\"sr-only\"> (causa 1 de Método)</span>");
+    expect(html).toContain("Requiere acción<span class=\"sr-only\"> (causa 1 de Método)</span>");
+    expect(html).toContain("Quitar la causa 1 de Método");
+    expect(html).toContain("Se quitará el análisis de Ishikawa (6M) de esta ronda.");
+    expect(renderToStaticMarkup(<CausasRaiz hallazgoId={1} causas={[{ id: 4, texto: "Una", sinAccionPorque: null }]} guardar={accion} />)).toContain(
+      "Quitar la causa 1",
+    );
+  });
+
+  it("la lectura no confía en lo guardado: un contenido que no pasa su esquema no rompe la página", () => {
+    const ronda = {
+      id: 1, numero: 1, similares: null, similaresDetalle: null, cambios: { raro: true },
+      analisis: [{ id: 9, orden: 1, metodo: "ishikawa", equipo: null, observaciones: null, contenido: { causas: "no es una lista" } }],
+      causas: [],
+    } as unknown as Parameters<typeof AnalisisEnLectura>[0]["ronda"];
+    const html = renderToStaticMarkup(<AnalisisEnLectura ronda={ronda} abierta />);
+    expect(html).toContain("No se pudo leer este análisis");
+  });
+
+  it("la sección «3. Causa raíz» lista los adjuntos de su ronda", () => {
+    const ronda = {
+      id: 1, numero: 1, similares: null, similaresDetalle: null, cambios: null, analisis: [], causas: [],
+    } as unknown as Parameters<typeof AnalisisEnLectura>[0]["ronda"];
+    const html = renderToStaticMarkup(
+      <AnalisisEnLectura ronda={ronda} abierta>
+        <p>acta-de-la-reunion.pdf</p>
+      </AnalisisEnLectura>,
+    );
+    expect(html).toContain("acta-de-la-reunion.pdf");
+  });
 });

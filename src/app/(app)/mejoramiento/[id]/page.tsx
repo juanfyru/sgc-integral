@@ -271,16 +271,29 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
             </SeccionCorreccion>
           ) : null}
           {completo
-            ? h.rondas
-                .filter((r) => r.analisis.length > 0 || r.causas.length > 0 || r.similares !== null || (r.numero === h.ronda && h.estado === "por_formular"))
-                .map((r) => (
-                  <AnalisisEnLectura
-                    key={`causa-${r.id}`}
-                    ronda={r}
-                    titulo={r.numero === h.ronda ? "3. Causa raíz" : `3. Causa raíz (ronda ${r.numero})`}
-                    abierta={r.numero === h.ronda && h.estado === "por_formular"}
-                  />
-                ))
+            ? await Promise.all(
+                h.rondas
+                  .filter((r) => r.analisis.length > 0 || r.causas.length > 0 || r.similares !== null || (r.numero === h.ronda && h.estado === "por_formular"))
+                  .map(async (r) => {
+                    // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí.
+                    const adjuntos = (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis");
+                    return (
+                      <AnalisisEnLectura
+                        key={`causa-${r.id}`}
+                        ronda={r}
+                        titulo={r.numero === h.ronda ? "3. Causa raíz" : `3. Causa raíz (ronda ${r.numero})`}
+                        abierta={r.numero === h.ronda && h.estado === "por_formular"}
+                      >
+                        {adjuntos.length > 0 ? (
+                          <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
+                            <h3 className="text-sm font-semibold">Adjuntos del análisis</h3>
+                            <ArchivosDe archivos={adjuntos} nombre="Adjuntos del análisis" />
+                          </div>
+                        ) : null}
+                      </AnalisisEnLectura>
+                    );
+                  }),
+              )
             : null}
           {completo ? (
             <Ocurrencias

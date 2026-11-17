@@ -71,7 +71,7 @@ export function FormularioOtroMetodo({
       <CamposComunes idBase={idBase} equipo={analisis?.equipo ?? null} observaciones={analisis?.observaciones ?? null} />
       <ErrorDeAnalisis estado={estado} />
       <ErrorDeAnalisis estado={q.estado} />
-      <PieDelAnalisis pendiente={pendiente} guardado={guardado} alQuitar={q.quitar} quitando={q.pendiente} />
+      <PieDelAnalisis pendiente={pendiente} guardado={guardado} alQuitar={q.quitar} quitando={q.pendiente} etiqueta="otro método" />
     </form>
   );
 }

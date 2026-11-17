@@ -34,7 +34,7 @@ describe("el contenido de cada método", () => {
       "Los niveles van en orden, sin saltar ninguno",
     );
     const seis = Array.from({ length: 6 }, (_, i) => ({ respuesta: `Nivel ${i + 1}` }));
-    expect(() => leerContenido("cinco_porques", { niveles: seis })).toThrow();
+    expect(() => leerContenido("cinco_porques", { niveles: seis })).toThrow("Son cinco niveles como máximo");
     // Los niveles vacíos al final no cuentan.
     expect(leerContenido("cinco_porques", { niveles: [{ respuesta: " Uno " }, { respuesta: "" }] })).toEqual({
       niveles: [{ respuesta: "Uno" }],
@@ -53,7 +53,9 @@ describe("el contenido de cada método", () => {
       causas: [{ categoria: "metodo", texto: "No hay lista de chequeo", confirmada: true, impacto: "alto", requiereAccion: true }],
     };
     expect(analisisCompleto({ metodo: "ishikawa", contenido: confirmada })).toBe(true);
-    expect(() => leerContenido("ishikawa", { causas: [{ categoria: "dinero", texto: "Falta presupuesto", confirmada: false }] })).toThrow();
+    expect(() => leerContenido("ishikawa", { causas: [{ categoria: "dinero", texto: "Falta presupuesto", confirmada: false }] })).toThrow(
+      "Elija una de las seis categorías",
+    );
     // Una causa sin confirmar no guarda impacto.
     expect(
       leerContenido("ishikawa", { causas: [{ categoria: "material", texto: "Insumo vencido", confirmada: false, impacto: "bajo" }] }),
@@ -172,7 +174,7 @@ describe("guardar el análisis", () => {
       const ajeno = await guardarAnalisis(b.lider, { hallazgoId: g.id, metodo: "otro", contenido: { nombre: "Lluvia", descripcion: "De ideas" } }, c(AHORA, tx));
       await expect(
         guardarAnalisis(b.lider, { hallazgoId: h.id, analisisId: ajeno.id, metodo: "otro", contenido: { nombre: "X", descripcion: "Y" } }, c(AHORA, tx)),
-      ).rejects.toThrow();
+      ).rejects.toThrow("El análisis no existe en esta ronda");
       await tx`UPDATE mejora_rondas SET estado_plan = 'enviado' WHERE hallazgo_id = ${h.id}`;
       await expect(exigirBorrador(tx, b.lider, h.id)).rejects.toThrow(YA_CAMBIO);
     }));
@@ -202,7 +204,75 @@ describe("las causas de la ronda", () => {
         "Esa causa tiene acciones: quítelas antes",
       );
       // Un id que no es de la ronda no se acepta.
-      await expect(guardarCausas(b.lider, { hallazgoId: h.id, causas: [{ id: 999999999, texto: "Fantasma" }] }, c(AHORA, tx))).rejects.toThrow();
+      await expect(guardarCausas(b.lider, { hallazgoId: h.id, causas: [{ id: 999999999, texto: "Fantasma" }] }, c(AHORA, tx))).rejects.toThrow(
+        "Una de las causas ya no existe: vuelva a cargar la página",
+      );
+    }));
+});
+
+describe("las causas, ronda por ronda", () => {
+  it("la lista puede quedar vacía: quita las causas sin acciones", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { clase: "observacion" });
+      await guardarCausas(b.lider, { hallazgoId: h.id, causas: [{ texto: "Una causa suelta" }] }, c(AHORA, tx));
+      await guardarCausas(b.lider, { hallazgoId: h.id, causas: [] }, c(AHORA, tx));
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM mejora_causas WHERE hallazgo_id = ${h.id}`;
+      expect(n).toBe(0);
+    }));
+
+  it("un análisis de una ronda anterior no se reemplaza y la vez pasada lee la última ronda", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const anterior = await hallazgoEn(tx, b, "por_formular");
+      const viejo = await guardarAnalisis(b.lider, { hallazgoId: anterior.id, metodo: "otro", contenido: { nombre: "Lluvia", descripcion: "De ideas" } }, c(AHORA, tx));
+      await guardarCausas(b.lider, { hallazgoId: anterior.id, causas: [{ texto: "Causa de la ronda uno" }] }, c(AHORA, tx));
+      await tx`INSERT INTO mejora_rondas (hallazgo_id, numero) VALUES (${anterior.id}, 2)`;
+      await tx`UPDATE mejora_hallazgos SET ronda = 2 WHERE id = ${anterior.id}`;
+      await expect(
+        guardarAnalisis(b.lider, { hallazgoId: anterior.id, analisisId: viejo.id, metodo: "otro", contenido: { nombre: "X", descripcion: "Y" } }, c(AHORA, tx)),
+      ).rejects.toThrow("El análisis no existe en esta ronda");
+      await guardarCausas(b.lider, { hallazgoId: anterior.id, causas: [{ texto: "Causa de la ronda dos" }] }, c(AHORA, tx));
+      const actual = await hallazgoEn(tx, b, "por_formular");
+      await tx`UPDATE mejora_hallazgos SET reincidente_de = ${anterior.id} WHERE id = ${actual.id}`;
+      expect((await laVezPasada(tx, actual.id))?.causas).toEqual(["Causa de la ronda dos"]);
+    }));
+});
+
+describe("la bitácora de los guardados (regla 5)", () => {
+  it("cada guardado deja su acción en auditoría, con el código y la ronda y sin el contenido", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      const a = await guardarAnalisis(b.lider, { hallazgoId: h.id, metodo: "ishikawa", contenido: ishikawa }, c(AHORA, tx));
+      await guardarCausas(b.lider, { hallazgoId: h.id, causas: [{ texto: "Causa secreta del equipo" }, { texto: "Otra" }] }, c(AHORA, tx));
+      await responderPreguntas(b.lider, { hallazgoId: h.id, similares: false, cambios: { documentos: false, riesgos: false, controles: false } }, c(AHORA, tx));
+      await quitarAnalisis(b.lider, { hallazgoId: h.id, analisisId: a.id }, c(AHORA, tx));
+      const filas = await tx`SELECT accion, entidad, detalle FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${h.id}
+        AND accion IN ('mejora_analisis_guardado', 'mejora_causas_guardadas', 'mejora_preguntas_respondidas', 'mejora_analisis_quitado') ORDER BY id`;
+      expect(filas.map((f) => f.accion)).toEqual([
+        "mejora_analisis_guardado",
+        "mejora_causas_guardadas",
+        "mejora_preguntas_respondidas",
+        "mejora_analisis_quitado",
+      ]);
+      for (const f of filas) expect(f.detalle).toMatchObject({ codigo: h.codigo, ronda: 1 });
+      expect(filas[0].detalle).toMatchObject({ metodo: "ishikawa", analisisId: a.id });
+      expect(filas[1].detalle).toMatchObject({ causas: 2 });
+      expect(JSON.stringify(filas.map((f) => f.detalle))).not.toContain("secreta");
+      expect(JSON.stringify(filas.map((f) => f.detalle))).not.toContain("lista de chequeo");
+    }));
+
+  it("guardarAnalisis vuelve a validar en el dominio", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      await expect(
+        guardarAnalisis(b.lider, { hallazgoId: h.id, metodo: "otro", equipo: "x".repeat(501), contenido: { nombre: "A", descripcion: "B" } }, c(AHORA, tx)),
+      ).rejects.toThrow("El equipo no puede pasar de 500 caracteres");
+      await expect(
+        guardarAnalisis(b.lider, { hallazgoId: -3, metodo: "otro", contenido: { nombre: "A", descripcion: "B" } }, c(AHORA, tx)),
+      ).rejects.toThrow("El hallazgo no es válido");
     }));
 });
 

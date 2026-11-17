@@ -21,7 +21,7 @@ const etiquetaDe = (m: string) => METODOS.find((x) => x.clave === m)?.etiqueta ?
 /**
  * El análisis de la ronda (spec 15 §9.1, maqueta 4): una pestaña por análisis, con el formulario de su método. «Añadir otro
  * análisis» abre una pestaña nueva de cualquiera de los tres métodos; un borrador sin guardar se descarta sin tocar el
- * servidor. `adjuntos` son los de la ronda (rol «análisis») y solo se pintan en «Otro método», fuera del formulario.
+ * servidor. `adjuntos` son los de la ronda (rol «análisis»): se pintan siempre, fuera de los formularios.
  */
 export function PestanasDeMetodo({
   hallazgoId,
@@ -41,12 +41,20 @@ export function PestanasDeMetodo({
   );
   const [siguiente, setSiguiente] = useState(1);
   const [elegida, setElegida] = useState<string | null>(null);
+  const [conocidos, setConocidos] = useState<number[]>(() => analisis.map((a) => a.id));
 
   const guardadas: Pestana[] = analisis
-    .filter((a): a is AnalisisGuardado & { metodo: Metodo } => METODOS.some((m) => m.clave === a.metodo))
+    .filter((a) => METODOS.some((m) => m.clave === a.metodo))
     .map((a) => ({ clave: `a-${a.id}`, metodo: a.metodo as Metodo, analisis: a }));
   const pestanas: Pestana[] = [...guardadas, ...borradores.map((b) => ({ ...b, analisis: null }))];
   const activa = pestanas.find((p) => p.clave === elegida) ?? pestanas[pestanas.length - 1] ?? null;
+
+  // Al guardar un análisis nuevo, su pestaña pasa a ser la activa (se ajusta al leer lo nuevo, no en un efecto).
+  const nuevos = analisis.filter((a) => !conocidos.includes(a.id));
+  if (nuevos.length > 0) {
+    setConocidos([...conocidos, ...nuevos.map((a) => a.id)]);
+    if (activa && activa.analisis === null) setElegida(`a-${nuevos[nuevos.length - 1].id}`);
+  }
 
   const anadir = (metodo: Metodo) => {
     const clave = `n-${siguiente}`;
@@ -56,7 +64,7 @@ export function PestanasDeMetodo({
   };
   const descartar = (clave: string) => {
     setBorradores((bs) => bs.filter((b) => b.clave !== clave));
-    setElegida(null);
+    setElegida((e) => (e === clave ? null : e));
   };
 
   const etiquetas = pestanas.map((p, i) => {
@@ -64,6 +72,17 @@ export function PestanasDeMetodo({
     const total = pestanas.filter((x) => x.metodo === p.metodo).length;
     return `${etiquetaDe(p.metodo)}${total > 1 ? ` (${antes + 1})` : ""}${p.analisis ? "" : " · sin guardar"}`;
   });
+
+  /** Flechas, Inicio y Fin mueven entre pestañas (patrón de pestañas de WAI-ARIA); el foco sigue a la elegida. */
+  const alTeclear = (e: React.KeyboardEvent, i: number) => {
+    const ultimo = pestanas.length - 1;
+    const destino =
+      e.key === "ArrowRight" ? (i === ultimo ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? ultimo : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? ultimo : null;
+    if (destino === null) return;
+    e.preventDefault();
+    setElegida(pestanas[destino].clave);
+    document.getElementById(`pestana-${pestanas[destino].clave}`)?.focus();
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -78,7 +97,9 @@ export function PestanasDeMetodo({
               id={`pestana-${p.clave}`}
               aria-selected={esActiva}
               aria-controls={`panel-${p.clave}`}
+              tabIndex={esActiva ? 0 : -1}
               onClick={() => setElegida(p.clave)}
+              onKeyDown={(e) => alTeclear(e, i)}
               className={`-mb-px rounded-t-md border-b-2 px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca ${
                 esActiva ? "border-mod-planes font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
@@ -92,53 +113,32 @@ export function PestanasDeMetodo({
         <span className="text-sm text-muted-foreground">Añadir otro análisis:</span>
         {METODOS.map((m) => (
           <Boton key={m.clave} variante="secundario" tamano="sm" onClick={() => anadir(m.clave)}>
-            {m.etiqueta}
+            {m.clave === "otro" ? "Añadir un análisis con otro método" : `Añadir un análisis de ${m.etiqueta}`}
           </Boton>
         ))}
       </div>
-      {activa ? (
-        <div role="tabpanel" id={`panel-${activa.clave}`} aria-labelledby={`pestana-${activa.clave}`} className="flex flex-col gap-3">
-          {activa.analisis === null && analisis.length + borradores.length > 1 ? (
-            <Boton variante="fantasma" tamano="sm" className="self-start" onClick={() => descartar(activa.clave)}>
-              Descartar este borrador
-            </Boton>
-          ) : null}
-          {activa.metodo === "cinco_porques" ? (
-            <FormularioCincoPorques
-              key={activa.clave}
-              idBase={`ap-${activa.clave}`}
-              hallazgoId={hallazgoId}
-              analisis={activa.analisis}
-              guardar={guardar}
-              quitar={quitar}
-              alGuardar={activa.analisis ? undefined : () => descartar(activa.clave)}
-            />
-          ) : activa.metodo === "ishikawa" ? (
-            <FormularioIshikawa
-              key={activa.clave}
-              idBase={`ap-${activa.clave}`}
-              hallazgoId={hallazgoId}
-              analisis={activa.analisis}
-              guardar={guardar}
-              quitar={quitar}
-              alGuardar={activa.analisis ? undefined : () => descartar(activa.clave)}
-            />
-          ) : (
-            <>
-              <FormularioOtroMetodo
-                key={activa.clave}
-                idBase={`ap-${activa.clave}`}
-                hallazgoId={hallazgoId}
-                analisis={activa.analisis}
-                guardar={guardar}
-                quitar={quitar}
-                alGuardar={activa.analisis ? undefined : () => descartar(activa.clave)}
-              />
-              {adjuntos}
-            </>
-          )}
-        </div>
-      ) : null}
+      {/* Todos los paneles quedan montados: cambiar de pestaña no borra lo escrito sin guardar. */}
+      {pestanas.map((p) => {
+        const alGuardar = p.analisis ? undefined : () => descartar(p.clave);
+        const comunes = { idBase: `ap-${p.clave}`, hallazgoId, analisis: p.analisis, guardar, quitar, alGuardar };
+        return (
+          <div key={p.clave} role="tabpanel" id={`panel-${p.clave}`} aria-labelledby={`pestana-${p.clave}`} hidden={p.clave !== activa?.clave} className="flex flex-col gap-3">
+            {p.analisis === null && analisis.length + borradores.length > 1 ? (
+              <Boton variante="fantasma" tamano="sm" className="self-start" onClick={() => descartar(p.clave)}>
+                Descartar este borrador
+              </Boton>
+            ) : null}
+            {p.metodo === "cinco_porques" ? (
+              <FormularioCincoPorques {...comunes} />
+            ) : p.metodo === "ishikawa" ? (
+              <FormularioIshikawa {...comunes} />
+            ) : (
+              <FormularioOtroMetodo {...comunes} />
+            )}
+          </div>
+        );
+      })}
+      {adjuntos}
     </div>
   );
 }

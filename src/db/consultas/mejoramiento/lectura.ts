@@ -301,7 +301,8 @@ export type RondaDeDetalle = {
   resultado: string | null;
   similares: boolean | null;
   similaresDetalle: string | null;
-  cambios: { documentos: boolean; riesgos: boolean; controles: boolean; descripcion: string | null } | null;
+  /** Tal como se guardó: quien lo pinta lo lee con `leerCambios` (no se confía en su forma). */
+  cambios: unknown;
   analisis: Array<{ id: number; orden: number; metodo: string; equipo: string | null; observaciones: string | null; contenido: unknown }>;
   causas: Array<{ id: number; orden: number; texto: string; sinAccionPorque: string | null }>;
   acciones: AccionDeDetalle[];
@@ -497,7 +498,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     resultado: (r.resultado as string | null) ?? null,
     similares: (r.similares as boolean | null) ?? null,
     similaresDetalle: (r.similares_detalle as string | null) ?? null,
-    cambios: (r.cambios as RondaDeDetalle["cambios"]) ?? null,
+    cambios: r.cambios ?? null,
     analisis: analisis
       .filter((x) => Number(x.ronda_id) === Number(r.id))
       .map((x) => ({

@@ -197,7 +197,7 @@ export type HallazgoValidado = z.output<typeof EsquemaHallazgo>;
 
 /** El id de un hallazgo: llega como número o como texto del formulario. */
 const idDeHallazgo = z
-  .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "El hallazgo no es válido" })
+  .union([z.number().int("El hallazgo no es válido").positive("El hallazgo no es válido"), z.string().regex(/^\d{1,15}$/)], { error: "El hallazgo no es válido" })
   .transform(Number)
   .refine((n) => Number.isSafeInteger(n) && n > 0, "El hallazgo no es válido");
 
@@ -413,6 +413,18 @@ export const EsquemaFormularioAnalisis = z
   })
   .strict();
 
+/** Lo que el dominio vuelve a validar de un análisis (el contenido lo lee `leerContenido`, según su método). */
+export const EsquemaGuardarAnalisis = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    analisisId: idOpcional("El análisis no es válido"),
+    metodo: z.enum(METODOS_ANALISIS, { error: "Elija el método del análisis" }),
+    equipo: textoOpcional("El equipo", 500),
+    observaciones: textoOpcional("Las observaciones", 2000),
+    contenido: z.unknown(),
+  })
+  .strict();
+
 export const EsquemaQuitarAnalisis = z.object({ hallazgoId: idDeHallazgo, analisisId: idDeAnalisis }).strict();
 
 const causaDeLaRonda = z
@@ -432,7 +444,7 @@ const causaDeLaRonda = z
 export const EsquemaCausas = z
   .object({
     hallazgoId: idDeHallazgo,
-    causas: z.array(causaDeLaRonda, { error: "Escriba las causas raíz" }).min(1, "Escriba al menos una causa raíz").max(20, "Son veinte causas como máximo"),
+    causas: z.array(causaDeLaRonda, { error: "Las causas no son válidas" }).max(20, "Son veinte causas como máximo"),
   })
   .strict()
   .superRefine((d, ctx) => {

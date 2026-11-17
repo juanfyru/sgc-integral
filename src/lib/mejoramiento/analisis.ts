@@ -124,3 +124,20 @@ export function analisisCompleto(a: { metodo: MetodoAnalisis; contenido: unknown
     return false;
   }
 }
+
+const EsquemaCambios = z
+  .object({
+    documentos: z.boolean(),
+    riesgos: z.boolean(),
+    controles: z.boolean(),
+    descripcion: z.string().nullish().transform((v) => v ?? null),
+  })
+  .strict();
+export type CambiosDeCierre = z.output<typeof EsquemaCambios>;
+
+/** Lee lo guardado en `mejora_rondas.cambios` sin confiar en su forma: `null` si no se respondió, `undefined` si no se puede leer. */
+export function leerCambios(crudo: unknown): CambiosDeCierre | null | undefined {
+  if (crudo === null || crudo === undefined) return null;
+  const leido = EsquemaCambios.safeParse(crudo);
+  return leido.success ? leido.data : undefined;
+}

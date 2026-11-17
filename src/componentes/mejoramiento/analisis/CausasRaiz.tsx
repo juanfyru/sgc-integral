@@ -26,7 +26,7 @@ export function CausasRaiz({
   const [lista, setLista] = useState<Causa[]>(() =>
     causas.length > 0
       ? causas.map((c) => ({ id: c.id, texto: c.texto, sinAccionPorque: c.sinAccionPorque ?? "" }))
-      : [{ id: null, texto: "", sinAccionPorque: "" }],
+      : [],
   );
   const [estado, enviar, pendiente] = useActionState(guardar, null);
   const guardado = useGuardado(estado, pendiente);
@@ -47,6 +47,7 @@ export function CausasRaiz({
       <p id="causas-aviso" className="text-xs text-muted-foreground">
         Una frase por causa. {AVISO_SIN_PACIENTES}
       </p>
+      {lista.length === 0 ? <p className="text-sm text-muted-foreground">Sin causas raíz. En una observación o una oportunidad de mejora son opcionales.</p> : null}
       <ol className="flex list-none flex-col gap-3">
         {lista.map((c, i) => (
           <li key={i} className="flex flex-col gap-2 rounded-md border border-border p-3">
@@ -73,11 +74,9 @@ export function CausasRaiz({
               onChange={(e) => cambiar(i, { sinAccionPorque: e.target.value })}
               className={claseControl}
             />
-            {lista.length > 1 ? (
-              <Boton variante="fantasma" tamano="sm" className="self-start" onClick={() => setLista((l) => l.filter((_, j) => j !== i))}>
-                Quitar la causa {i + 1}
-              </Boton>
-            ) : null}
+            <Boton variante="fantasma" tamano="sm" className="self-start" onClick={() => setLista((l) => l.filter((_, j) => j !== i))}>
+              {`Quitar la causa ${i + 1}`}
+            </Boton>
           </li>
         ))}
       </ol>

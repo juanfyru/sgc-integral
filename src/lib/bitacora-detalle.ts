@@ -924,6 +924,22 @@ export function describirEvento(e: EventoAuditoria): string {
       const codigo = texto(d.codigo);
       return `Añadió una ocurrencia ${codigo ? `al hallazgo ${codigo}` : "a un hallazgo"}`;
     }
+    case "mejora_analisis_guardado": {
+      const codigo = texto(d.codigo);
+      return `Guardó un análisis de causa raíz ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
+    case "mejora_analisis_quitado": {
+      const codigo = texto(d.codigo);
+      return `Quitó un análisis de causa raíz ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
+    case "mejora_causas_guardadas": {
+      const codigo = texto(d.codigo);
+      return `Guardó las causas raíz ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
+    case "mejora_preguntas_respondidas": {
+      const codigo = texto(d.codigo);
+      return `Respondió las preguntas de cierre del análisis ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
     case "mejora_editar": {
       const codigo = texto(d.codigo);
       return `Editó la identificación ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
@@ -1388,6 +1404,10 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_dia_agregado: "Añadió un día al calendario de mejoramiento",
   mejora_dia_quitado: "Quitó un día del calendario de mejoramiento",
   mejora_ocurrencia: "Añadió una ocurrencia a un hallazgo",
+  mejora_analisis_guardado: "Guardó un análisis de causa raíz",
+  mejora_analisis_quitado: "Quitó un análisis de causa raíz",
+  mejora_causas_guardadas: "Guardó las causas raíz de un hallazgo",
+  mejora_preguntas_respondidas: "Respondió las preguntas de cierre del análisis",
   mejora_editar: "Editó la identificación de un hallazgo",
   mejora_cambiar_proceso: "Cambió el proceso de un hallazgo",
   ...NOMBRES_DE_MEJORA,

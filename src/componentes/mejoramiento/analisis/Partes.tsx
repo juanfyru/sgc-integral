@@ -3,6 +3,7 @@
 import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { Boton } from "@/componentes/ui/Boton";
+import { Dialogo } from "@/componentes/ui/Dialogo";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 
@@ -78,31 +79,64 @@ export function CamposComunes({ idBase, equipo, observaciones }: { idBase: strin
   );
 }
 
-/** El pie de un formulario de análisis: guardar (con su confirmación) y, si ya está guardado, quitarlo. */
+/** El pie de un formulario de análisis: guardar (con su confirmación) y, si ya está guardado, quitarlo tras confirmar. */
 export function PieDelAnalisis({
   pendiente,
   guardado,
   alQuitar,
   quitando,
+  etiqueta,
 }: {
   pendiente: boolean;
   guardado: boolean;
   alQuitar?: () => void;
   quitando?: boolean;
+  /** El método del análisis, para decir qué se quita. */
+  etiqueta: string;
 }) {
+  const [confirmando, setConfirmando] = useState(false);
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Boton type="submit" pendiente={pendiente}>
         {pendiente ? "Guardando…" : "Guardar el análisis"}
       </Boton>
       {alQuitar ? (
-        <Boton variante="peligro" pendiente={quitando} onClick={alQuitar}>
+        <Boton variante="peligro" pendiente={quitando} onClick={() => setConfirmando(true)} aria-haspopup="dialog">
           {quitando ? "Quitando…" : "Quitar este análisis"}
         </Boton>
       ) : null}
       <span role="status" className="text-sm text-muted-foreground">
         {guardado ? "Guardado." : ""}
       </span>
+      {alQuitar ? (
+        <Dialogo
+          abierto={confirmando}
+          alCerrar={() => setConfirmando(false)}
+          titulo="Quitar el análisis"
+          className="m-auto w-full max-w-md rounded-lg border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40"
+        >
+          <div className="flex flex-col gap-4 p-5">
+            <p aria-hidden="true" className="font-semibold">
+              Quitar el análisis
+            </p>
+            <p className="text-sm">{`Se quitará el análisis de ${etiqueta} de esta ronda.`}</p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Boton variante="secundario" onClick={() => setConfirmando(false)}>
+                Cancelar
+              </Boton>
+              <Boton
+                variante="peligro"
+                onClick={() => {
+                  setConfirmando(false);
+                  alQuitar();
+                }}
+              >
+                Quitar el análisis
+              </Boton>
+            </div>
+          </div>
+        </Dialogo>
+      ) : null}
     </div>
   );
 }

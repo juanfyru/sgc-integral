@@ -84,11 +84,14 @@ export function FormularioIshikawa({
         {CATEGORIAS_6M.map((cat) => (
           <fieldset key={cat} className="flex min-w-0 flex-col gap-2 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-semibold">{ETIQUETA_6M[cat]}</legend>
-            {causas.map((c, i) =>
-              c.categoria !== cat ? null : (
+            {causas.map((c, i) => {
+              if (c.categoria !== cat) return null;
+              const n = causas.slice(0, i + 1).filter((x) => x.categoria === cat).length;
+              const de = `causa ${n} de ${ETIQUETA_6M[cat]}`;
+              return (
                 <div key={i} className="flex flex-col gap-2 border-b border-linea-suave pb-2 last:border-b-0">
                   <label htmlFor={`${idBase}-t${i}`} className="sr-only">
-                    Causa de {ETIQUETA_6M[cat]}
+                    {`Causa ${n} de ${ETIQUETA_6M[cat]}`}
                   </label>
                   <input
                     id={`${idBase}-t${i}`}
@@ -100,18 +103,17 @@ export function FormularioIshikawa({
                     className={claseControl}
                   />
                   <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={c.confirmada}
-                      onChange={(e) => cambiar(i, { confirmada: e.target.checked })}
-                      className="size-4"
-                    />
-                    Causa confirmada
+                    <input type="checkbox" checked={c.confirmada} onChange={(e) => cambiar(i, { confirmada: e.target.checked })} className="size-4" />
+                    <span>
+                      Confirmada<span className="sr-only">{` (${de})`}</span>
+                    </span>
                   </label>
                   {c.confirmada ? (
                     <div className="flex flex-wrap items-center gap-3">
                       <label className="flex items-center gap-2 text-sm">
-                        Impacto
+                        <span>
+                          Impacto<span className="sr-only">{` (${de})`}</span>
+                        </span>
                         <select value={c.impacto} onChange={(e) => cambiar(i, { impacto: e.target.value })} className={claseControl}>
                           <option value="">Elija</option>
                           {IMPACTOS.map((v) => (
@@ -122,30 +124,36 @@ export function FormularioIshikawa({
                         </select>
                       </label>
                       <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={c.requiereAccion}
-                          onChange={(e) => cambiar(i, { requiereAccion: e.target.checked })}
-                          className="size-4"
-                        />
-                        Requiere acción
+                        <input type="checkbox" checked={c.requiereAccion} onChange={(e) => cambiar(i, { requiereAccion: e.target.checked })} className="size-4" />
+                        <span>
+                          Requiere acción<span className="sr-only">{` (${de})`}</span>
+                        </span>
                       </label>
                     </div>
                   ) : null}
-                  <Boton variante="fantasma" tamano="sm" className="self-start" onClick={() => setCausas((cs) => cs.filter((_, j) => j !== i))}>
-                    Quitar esta causa
+                  <Boton
+                    variante="fantasma"
+                    tamano="sm"
+                    className="self-start"
+                    onClick={() => {
+                      setCausas((cs) => cs.filter((_, j) => j !== i));
+                      document.getElementById(`${idBase}-anadir-${cat}`)?.focus();
+                    }}
+                  >
+                    {`Quitar la causa ${n} de ${ETIQUETA_6M[cat]}`}
                   </Boton>
                 </div>
-              ),
-            )}
+              );
+            })}
             <Boton
+              id={`${idBase}-anadir-${cat}`}
               variante="secundario"
               tamano="sm"
               className="self-start"
               onClick={() => setCausas((cs) => [...cs, { categoria: cat, texto: "", confirmada: false, impacto: "", requiereAccion: false }])}
             >
               Añadir una causa
-              <span className="sr-only"> de {ETIQUETA_6M[cat]}</span>
+              <span className="sr-only">{` de ${ETIQUETA_6M[cat]}`}</span>
             </Boton>
           </fieldset>
         ))}
@@ -153,7 +161,7 @@ export function FormularioIshikawa({
       <CamposComunes idBase={idBase} equipo={analisis?.equipo ?? null} observaciones={analisis?.observaciones ?? null} />
       <ErrorDeAnalisis estado={estado} />
       <ErrorDeAnalisis estado={q.estado} />
-      <PieDelAnalisis pendiente={pendiente} guardado={guardado} alQuitar={q.quitar} quitando={q.pendiente} />
+      <PieDelAnalisis pendiente={pendiente} guardado={guardado} alQuitar={q.quitar} quitando={q.pendiente} etiqueta="Ishikawa (6M)" />
     </form>
   );
 }

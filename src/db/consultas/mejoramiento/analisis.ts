@@ -11,13 +11,15 @@ import type { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeVerHallazgo } from "@/lib/alcance";
-import { EsquemaCausas, EsquemaPreguntasDeCierre, EsquemaQuitarAnalisis } from "@/lib/esquemas/mejoramiento";
+import { registrarAuditoria } from "@/db/consultas/admin";
+import { EsquemaCausas, EsquemaGuardarAnalisis, EsquemaPreguntasDeCierre, EsquemaQuitarAnalisis } from "@/lib/esquemas/mejoramiento";
 import { leerContenido } from "@/lib/mejoramiento/analisis";
-import { ErrorMejora, METODOS_ANALISIS, type HallazgoBase, type MetodoAnalisis } from "@/lib/mejoramiento/tipos";
+import { ErrorMejora, type HallazgoBase, type MetodoAnalisis } from "@/lib/mejoramiento/tipos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import { actuaPorElProceso } from "./avisos";
 import { bloquearHallazgo, dejarEvento, legible, NO_EXISTE } from "./flujo";
+import { ENTIDAD_HALLAZGO } from "./avisos";
 
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 
@@ -53,6 +55,23 @@ export async function exigirBorrador(
   return { h, rondaId: Number(r.id) };
 }
 
+/** La bitácora de un guardado (regla 5): el código, la ronda y el método o la cantidad, nunca el contenido. */
+async function auditar(
+  tx: TransactionSql,
+  sesion: SesionFlujo,
+  h: HallazgoBase,
+  accion: string,
+  detalle: Record<string, unknown>,
+): Promise<void> {
+  await registrarAuditoria(tx, {
+    usuarioId: sesion.usuarioId,
+    accion,
+    entidad: ENTIDAD_HALLAZGO,
+    entidadId: h.id,
+    detalle: { codigo: h.codigo, ronda: h.ronda, ...detalle },
+  });
+}
+
 function enBorrador<T>(
   sesion: SesionFlujo,
   hallazgoId: number,
@@ -86,23 +105,22 @@ export async function guardarAnalisis(
   opciones?: OpcionesFlujo,
 ): Promise<{ id: number }> {
   requerirPermiso(sesion, "mejora.formular");
-  if (!(METODOS_ANALISIS as readonly string[]).includes(d.metodo)) throw new ErrorMejora("Elija el método del análisis");
-  const contenido = leerContenido(d.metodo, d.contenido);
-  const equipo = d.equipo?.trim() || null;
-  const observaciones = d.observaciones?.trim() || null;
-  return enBorrador(sesion, d.hallazgoId, opciones, async (tx, h, rondaId, ahora) => {
+  const v = leer(EsquemaGuardarAnalisis, d);
+  const contenido = leerContenido(v.metodo, v.contenido);
+  const { equipo, observaciones } = v;
+  return enBorrador(sesion, v.hallazgoId, opciones, async (tx, h, rondaId, ahora) => {
     let id: number;
-    if (d.analisisId) {
-      const [a] = await tx`SELECT id FROM mejora_analisis WHERE id = ${d.analisisId} AND hallazgo_id = ${h.id} AND ronda_id = ${rondaId} FOR UPDATE`;
+    if (v.analisisId) {
+      const [a] = await tx`SELECT id FROM mejora_analisis WHERE id = ${v.analisisId} AND hallazgo_id = ${h.id} AND ronda_id = ${rondaId} FOR UPDATE`;
       if (!a) throw new ErrorMejora("El análisis no existe en esta ronda");
-      await tx`UPDATE mejora_analisis SET metodo = ${d.metodo}, equipo = ${equipo}, observaciones = ${observaciones},
+      await tx`UPDATE mejora_analisis SET metodo = ${v.metodo}, equipo = ${equipo}, observaciones = ${observaciones},
           contenido = ${tx.json(contenido as never)}
         WHERE id = ${a.id}`;
       id = Number(a.id);
     } else {
       const [o] = await tx`SELECT coalesce(max(orden), 0) + 1 AS orden FROM mejora_analisis WHERE ronda_id = ${rondaId}`;
       const [nuevo] = await tx`INSERT INTO mejora_analisis (hallazgo_id, ronda_id, orden, metodo, equipo, observaciones, contenido)
-        VALUES (${h.id}, ${rondaId}, ${Number(o.orden)}, ${d.metodo}, ${equipo}, ${observaciones}, ${tx.json(contenido as never)})
+        VALUES (${h.id}, ${rondaId}, ${Number(o.orden)}, ${v.metodo}, ${equipo}, ${observaciones}, ${tx.json(contenido as never)})
         RETURNING id`;
       id = Number(nuevo.id);
     }
@@ -110,10 +128,11 @@ export async function guardarAnalisis(
       hallazgoId: h.id,
       ronda: h.ronda,
       tipo: "analisis_guardado",
-      detalle: { metodo: d.metodo, analisisId: id },
+      detalle: { metodo: v.metodo, analisisId: id },
       usuarioId: sesion.usuarioId,
       ocurrioEn: ahora,
     });
+    await auditar(tx, sesion, h, "mejora_analisis_guardado", { metodo: v.metodo, analisisId: id });
     return { id };
   });
 }
@@ -137,6 +156,7 @@ export async function quitarAnalisis(
       usuarioId: sesion.usuarioId,
       ocurrioEn: ahora,
     });
+    await auditar(tx, sesion, h, "mejora_analisis_quitado", { metodo: a.metodo, analisisId: Number(a.id) });
   });
 }
 
@@ -183,6 +203,7 @@ export async function guardarCausas(
       usuarioId: sesion.usuarioId,
       ocurrioEn: ahora,
     });
+    await auditar(tx, sesion, h, "mejora_causas_guardadas", { causas: v.causas.length });
   });
 }
 
@@ -210,6 +231,7 @@ export async function responderPreguntas(
       usuarioId: sesion.usuarioId,
       ocurrioEn: ahora,
     });
+    await auditar(tx, sesion, h, "mejora_preguntas_respondidas", { similares: v.similares });
   });
 }
 
