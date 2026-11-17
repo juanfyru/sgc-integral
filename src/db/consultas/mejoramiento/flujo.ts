@@ -281,11 +281,8 @@ export async function legible<T>(p: Promise<T>): Promise<T> {
     return await p;
   } catch (err) {
     const codigo = (err as { code?: unknown } | null)?.code;
-    if (typeof codigo === "string" && Object.hasOwn(LEGIBLES, codigo)) {
-      const traducido = new ErrorMejora(LEGIBLES[codigo]);
-      traducido.cause = err;
-      throw traducido;
-    }
+    // Sin `cause`: el error traducido es igual a cualquier otro `ErrorMejora` con esa frase.
+    if (typeof codigo === "string" && Object.hasOwn(LEGIBLES, codigo)) throw new ErrorMejora(LEGIBLES[codigo]);
     throw err;
   }
 }

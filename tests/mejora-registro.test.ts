@@ -12,10 +12,11 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { actuaPorElProceso, quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
-import { bloquearHallazgo, transicionarHallazgo } from "@/db/consultas/mejoramiento/flujo";
+import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { formularAntesDe, venceEn } from "@/lib/mejoramiento/plazos";
@@ -386,6 +387,49 @@ describe("transicionarHallazgo", () => {
       expect((await tx`SELECT count(*)::int AS n FROM notificaciones WHERE entidad_id = ${id} AND entidad = 'mejora_hallazgo'`)[0].n).toBe(avisosAntes);
       expect((await eventos(tx, id)).at(-1)).toMatchObject({ tipo: "ajustar", detalle: { antes: "en_ejecucion", despues: "en_ejecucion" } });
       expect(ronda.formular_antes_de).toEqual(venceEn("formular", ahora, ctx));
+
+      // `completar` lo hace el sistema: sin sesión, el evento y la bitácora van sin usuario.
+      const r = await transicionarHallazgo(tx, null, await bloquearHallazgo(tx, id), "completar", {}, ctx2);
+      expect(r).toEqual({ antes: "en_ejecucion", despues: "por_verificar", ronda: 1 });
+      expect((await hallazgo(tx, id)).vence_en).toEqual(venceEn("verificar", despues, ctx));
+      expect((await eventos(tx, id)).at(-1)).toMatchObject({ tipo: "completar", usuario_id: null });
+      const [completar] = await tx`SELECT usuario_id FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND accion = 'mejora_completar'`;
+      expect(completar.usuario_id).toBeNull();
+      const verificadores = await activosDe(tx, ["admin_sgc", "control_interno"]);
+      expect(await quienTieneElTurno(tx, await bloquearHallazgo(tx, id))).toEqual(verificadores);
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM notificaciones
+        WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND tipo = 'mejora.turno' AND titulo LIKE 'Verificar la implementación%'`;
+      expect(n).toBe(verificadores.length);
+    });
+  });
+
+  it("un hallazgo terminado: el evento va antes del estado y después no admite hijas", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ctx = await contextoDeMejora(tx, ahora);
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(AHORA, tx));
+      await transicionarHallazgo(tx, b.lider, await bloquearHallazgo(tx, id), "rechazar", { detalle: { justificacion: "No es de este proceso" } }, ctx);
+      const turnos = await avisos(tx, id, "mejora.turno");
+
+      const r = await transicionarHallazgo(tx, b.control, await bloquearHallazgo(tx, id), "retirar", {}, ctx);
+      expect(r).toEqual({ antes: "rechazo", despues: "rechazado", ronda: 1 });
+      expect(await hallazgo(tx, id)).toMatchObject({ estado: "rechazado", vence_en: null });
+      expect((await eventos(tx, id)).at(-1)).toMatchObject({ tipo: "retirar", detalle: { antes: "rechazo", despues: "rechazado" } });
+      const [bitacora] = await tx`SELECT accion FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND accion = 'mejora_retirar'`;
+      expect(bitacora).toBeDefined();
+      // Nadie tiene el turno de un terminado: no hay aviso nuevo.
+      expect(await avisos(tx, id, "mejora.turno")).toEqual(turnos);
+
+      // El trigger rechaza toda hija nueva con `42501`, y `legible` lo vuelve una frase (en un savepoint: el test sigue).
+      await expect(
+        legible(
+          enTransaccion(tx, (t) => dejarEvento(t, { hallazgoId: id, ronda: 1, tipo: "nota", usuarioId: b.admin.usuarioId, ocurrioEn: ahora })),
+        ),
+      ).rejects.toThrow(new ErrorMejora("El hallazgo ya terminó y no admite cambios"));
+      await expect(transicionarHallazgo(tx, b.admin, await bloquearHallazgo(tx, id), "anular", {}, ctx)).rejects.toThrow(
+        new ErrorMejora(YA_CAMBIO),
+      );
+      expect((await eventos(tx, id)).map((e) => e.tipo)).toEqual(["registrar", "rechazar", "retirar"]);
     });
   });
 
@@ -411,5 +455,25 @@ describe("transicionarHallazgo", () => {
     await revertida(sql, async (tx) => {
       await expect(bloquearHallazgo(tx, 0x7fffffff)).rejects.toThrow(new ErrorMejora("El hallazgo no existe"));
     });
+  });
+});
+
+describe("legible", () => {
+  it.each([
+    ["23503", "Uno de los datos elegidos ya no existe: vuelva a cargar la página"],
+    ["23505", "Otra persona guardó lo mismo a la vez: vuelva a cargar la página"],
+    ["42501", "El hallazgo ya terminó y no admite cambios"],
+    ["40P01", "Otra persona cambió el hallazgo a la vez: vuelva a intentarlo"],
+  ])("traduce el %s", async (code, mensaje) => {
+    const crudo = Object.assign(new Error("error crudo de PostgreSQL"), { code });
+    await expect(legible(Promise.reject(crudo))).rejects.toThrow(new ErrorMejora(mensaje));
+  });
+
+  it("deja pasar los demás", async () => {
+    const permiso = new ErrorPermiso();
+    await expect(legible(Promise.reject(permiso))).rejects.toBe(permiso);
+    const otro = Object.assign(new Error("violación de un CHECK"), { code: "23514" });
+    await expect(legible(Promise.reject(otro))).rejects.toBe(otro);
+    expect(await legible(Promise.resolve(7))).toBe(7);
   });
 });
