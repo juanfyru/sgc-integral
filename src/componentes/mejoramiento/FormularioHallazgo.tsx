@@ -26,6 +26,8 @@ type Props = {
   valores?: Record<string, string | string[]>;
   /** Lo que se muestra a la derecha, bajo los parecidos del mismo proceso. */
   lateral?: React.ReactNode;
+  /** Editar un hallazgo «Por aceptar» (spec §7.6): sin parecidos, y el envío guarda los cambios en vez de registrar. */
+  edicion?: { hallazgoId: number };
 };
 
 const texto = (v: Record<string, string | string[]> | undefined, c: string, defecto = ""): string => {
@@ -40,7 +42,7 @@ const NOTA = "rounded-md border border-border bg-muted px-3 py-2 text-sm";
  * y del origen aparece y desaparece (la criticidad, la referencia del caso, la fecha límite al ente) y las notas dicen lo
  * que ese hallazgo llevará. Los nombres de los campos son los de `EsquemaHallazgo`, que es estricto.
  */
-export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral }: Props) {
+export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral, edicion }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const v = estado?.valores ?? valores;
   const [clase, setClase] = useState<string>(texto(v, "clase"));
@@ -58,8 +60,9 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
   const esOcurrencia = relacion.startsWith("ocurrencia:");
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+    <div className={edicion && !lateral ? "grid gap-6" : "grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"}>
       <form id="formulario-hallazgo" action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
+        {edicion ? <input type="hidden" name="hallazgoId" value={edicion.hallazgoId} /> : null}
         {estado?.ok === false ? (
           <p role="alert" className="rounded-md border border-estado-critico/40 bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
             {estado.error}
@@ -195,26 +198,30 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Link
-            href="/mejoramiento"
+            href={edicion ? `/mejoramiento/${edicion.hallazgoId}` : "/mejoramiento"}
             className="inline-flex items-center rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
           >
             Cancelar
           </Link>
           <Boton type="submit" variante="primario" pendiente={pendiente}>
-            {esOcurrencia ? "Añadir la ocurrencia" : "Registrar el hallazgo"}
+            {edicion ? "Guardar los cambios" : esOcurrencia ? "Añadir la ocurrencia" : "Registrar el hallazgo"}
           </Boton>
         </div>
       </form>
-      <aside className="flex min-w-0 flex-col gap-4">
-        <ParecidosDelProceso
-          procesoId={procesoId}
-          proceso={procesos.find((p) => String(p.id) === procesoId)?.nombre ?? null}
-          texto={`${titulo} ${descripcion}`}
-          relacion={relacion}
-          alCambiar={setRelacion}
-        />
-        {lateral}
-      </aside>
+      {edicion && !lateral ? null : (
+        <aside className="flex min-w-0 flex-col gap-4">
+          {edicion ? null : (
+            <ParecidosDelProceso
+              procesoId={procesoId}
+              proceso={procesos.find((p) => String(p.id) === procesoId)?.nombre ?? null}
+              texto={`${titulo} ${descripcion}`}
+              relacion={relacion}
+              alCambiar={setRelacion}
+            />
+          )}
+          {lateral}
+        </aside>
+      )}
     </div>
   );
 }

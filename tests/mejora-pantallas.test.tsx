@@ -4,6 +4,9 @@
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
+import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
+import { resolverPanelDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazgo";
 import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
@@ -212,5 +215,101 @@ describe("filtroDeConsulta", () => {
       soloVencidos: true,
       estado: "abiertos",
     });
+  });
+});
+
+describe("el panel de parecidos", () => {
+  const p = { id: 7, codigo: "HZ-2026-007", titulo: "Algo", etiqueta: "Por aceptar", abierto: true, cuando: "2026-11-17T15:00:00Z" };
+  const previa = { consulta: "proceso=3&q=uno", procesoId: "3", parecidos: [p], error: false };
+
+  it("la elección sobrevive a una búsqueda en curso y dice que busca", () => {
+    const r = resolverPanelDeParecidos({ consulta: "proceso=3&q=dos", procesoId: "3", respuesta: previa, relacion: "ocurrencia:7" });
+    expect(r).toMatchObject({ vigente: "ocurrencia:7", buscando: true, error: false });
+    expect(r.parecidos).toEqual([p]);
+  });
+
+  it("cuando llega una respuesta que excluye el hallazgo, la elección vuelve a «distinto»", () => {
+    const r = resolverPanelDeParecidos({
+      consulta: "proceso=3&q=dos",
+      procesoId: "3",
+      respuesta: { consulta: "proceso=3&q=dos", procesoId: "3", parecidos: [], error: false },
+      relacion: "ocurrencia:7",
+    });
+    expect(r).toMatchObject({ vigente: "distinto", buscando: false, parecidos: [] });
+  });
+
+  it("una respuesta no OK dice el error y conserva lo anterior; otro proceso no hereda resultados", () => {
+    const r = resolverPanelDeParecidos({
+      consulta: "proceso=3&q=dos",
+      procesoId: "3",
+      respuesta: { ...previa, consulta: "proceso=3&q=dos", error: true },
+      relacion: "ocurrencia:7",
+    });
+    expect(r).toMatchObject({ error: true, buscando: false, vigente: "ocurrencia:7" });
+    const otro = resolverPanelDeParecidos({ consulta: "proceso=4&q=uno", procesoId: "4", respuesta: previa, relacion: "ocurrencia:7" });
+    expect(otro.parecidos).toEqual([]);
+    expect(otro.vigente).toBe("distinto");
+  });
+
+  it("sin consulta no hay nada que buscar", () => {
+    expect(resolverPanelDeParecidos({ consulta: null, procesoId: "3", respuesta: previa, relacion: "distinto" })).toMatchObject({
+      parecidos: [], buscando: false, error: false, vigente: "distinto",
+    });
+  });
+});
+
+describe("la justificación, la nota y el motivo se ven", () => {
+  const evento = (id: number, tipo: string, detalle: Record<string, unknown>) => ({
+    id, tipo, ronda: 1, quien: "Ana", cuando: new Date("2026-11-18T15:00:00Z"), detalle,
+  });
+
+  it("el historial muestra bajo cada evento lo que trae su detalle", () => {
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        eventos={[
+          evento(1, "reclasificar", { justificacion: "Se corrige la clasificación", nota: "Es una oportunidad" }),
+          evento(2, "anular", { justificacion: "Se registró por error" }),
+          evento(3, "aceptar", { estado: { antes: "por_aceptar", despues: "por_corregir" } }),
+        ]}
+      />,
+    );
+    expect(html).toContain("Justificación: Se corrige la clasificación");
+    expect(html).toContain("Nota: Es una oportunidad");
+    expect(html).toContain("Justificación: Se registró por error");
+    expect(html).not.toContain("Justificación: undefined");
+  });
+
+  it("la identificación muestra las notas de reclasificación con su fecha", () => {
+    const h = {
+      clase: "oportunidad", origen: "otro", fuente: null, referenciaCaso: null, detectadoEn: "2026-11-10", proceso: "Farmacia",
+      requisitoClausula: null, riesgo: null, descripcion: "Descripción original del hallazgo", registradoPor: "Ana",
+      registradoEn: new Date("2026-11-10T15:00:00Z"), fechaLimiteEnte: null, reincidenteDe: null,
+    } as const;
+    const html = renderToStaticMarkup(
+      <SeccionIdentificacion hallazgo={h} zona="America/Bogota" abierta notas={[{ cuando: new Date("2026-11-18T15:00:00Z"), nota: "Es una oportunidad" }]} />,
+    );
+    expect(html).toContain("Nota del 18 de nov de 2026: Es una oportunidad");
+    const sin = renderToStaticMarkup(<SeccionIdentificacion hallazgo={h} zona="America/Bogota" abierta />);
+    expect(sin).not.toContain("Nota del");
+  });
+});
+
+describe("FormularioHallazgo en edición", () => {
+  it("guarda los cambios, lleva el id del hallazgo y no ofrece parecidos", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        accion={vi.fn(async () => null)}
+        procesos={[{ id: 3, nombre: "Farmacia" }]}
+        hoy="2026-11-18"
+        diasParaAceptar={3}
+        valores={{ titulo: "Un título" }}
+        edicion={{ hallazgoId: 41 }}
+      />,
+    );
+    expect(html).toContain("Guardar los cambios");
+    expect(html).toMatch(/<input[^>]*name="hallazgoId"[^>]*value="41"/);
+    expect(html).not.toContain('name="relacion"');
+    expect(html).not.toContain("Parecidos en");
   });
 });

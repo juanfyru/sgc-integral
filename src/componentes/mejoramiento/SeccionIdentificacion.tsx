@@ -25,6 +25,7 @@ export function SeccionIdentificacion({
   hallazgo: h,
   zona,
   abierta,
+  notas = [],
 }: {
   hallazgo: Pick<
     DetalleDeHallazgo,
@@ -44,6 +45,8 @@ export function SeccionIdentificacion({
   >;
   zona: string;
   abierta: boolean;
+  /** Las notas que se añadieron al reclasificar: la descripción no se reescribe (spec 15 §7.6). */
+  notas?: ReadonlyArray<{ cuando: Date; nota: string }>;
 }) {
   const resumen = [h.proceso, ETIQUETA_ORIGEN.get(h.origen) ?? h.origen, `detectado el ${fechaDeDia(h.detectadoEn)}`].join(" · ");
   return (
@@ -57,6 +60,11 @@ export function SeccionIdentificacion({
       </summary>
       <div className="border-t border-linea-suave px-4 py-3">
         <p className="whitespace-pre-line text-sm">{h.descripcion}</p>
+        {notas.map((n, i) => (
+          <p key={i} className="mt-2 whitespace-pre-line border-l-2 border-mod-planes pl-3 text-sm">
+            Nota del {fechaDeDia(new Intl.DateTimeFormat("sv-SE", { timeZone: zona }).format(n.cuando))}: {n.nota}
+          </p>
+        ))}
         <dl className="mt-4 grid gap-3 sm:grid-cols-2">
           <Dato etiqueta="Clase">{ETIQUETA_CLASE[h.clase]}</Dato>
           <Dato etiqueta="Origen">{ETIQUETA_ORIGEN.get(h.origen) ?? h.origen}</Dato>

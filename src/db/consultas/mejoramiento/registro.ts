@@ -3,7 +3,7 @@
  * de §7.4; el nacimiento, `nacerHallazgo`.
  */
 import type { TransactionSql } from "postgres";
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { registrarAuditoria } from "@/db/consultas/admin";
@@ -24,7 +24,7 @@ import { ErrorMejora, TERMINALES, type Clase, type Criticidad, type HallazgoBase
 import { DESDE, YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { activosDeRol, avisarDeMejora, avisarDelTurno, ENTIDAD_HALLAZGO, lideresOAdmins } from "./avisos";
+import { activosDeRol, avisarDeMejora, avisarDelTurno, ENTIDAD_HALLAZGO, lideresOAdmins, verificadoresActivos } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
 
@@ -273,7 +273,8 @@ export async function registrarOcurrencia(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       const h = await bloquearHallazgo(tx, o.hallazgoId);
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), h.procesoId)) {
-        throw new ErrorMejora(NO_EXISTE);
+        // Quien lo ve por otro camino (una actividad suya) no puede añadirle ocurrencias; quien no lo ve, no sabe que existe.
+        throw (await puedeVerHallazgo(h.id, sesion, { sql: tx })) ? new ErrorPermiso() : new ErrorMejora(NO_EXISTE);
       }
       if (h.estado === "cerrado") throw new ErrorMejora("El hallazgo ya terminó: regístrelo como reincidencia");
       if (TERMINALES.includes(h.estado)) throw new ErrorMejora("El hallazgo ya terminó y no admite ocurrencias");
@@ -306,9 +307,7 @@ export async function registrarOcurrencia(
         destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo as string })),
       );
       if (h.estado === "en_espera") {
-        const verificadores = (await activosDeRol(tx, ["admin_sgc", "gerencia", "control_interno"])).filter(
-          (u) => u !== sesion.usuarioId && !destinos.includes(u),
-        );
+        const verificadores = (await verificadoresActivos(tx, h)).filter((u) => u !== sesion.usuarioId);
         await avisarDeMejora(
           tx,
           { tipo: "mejora.recurrencia", titulo: `Posible recurrencia en ${h.codigo}, en espera de su evaluación`, hallazgoId: h.id },
@@ -378,7 +377,11 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
         entidadId: h.id,
         detalle: { codigo: h.codigo, campos: Object.keys(cambios.antes) },
       });
-      if (antes.procesoId !== despues.procesoId) await avisarAlProcesoNuevo(tx, h, v.procesoId, v.titulo, sesion.usuarioId);
+      if (antes.procesoId !== despues.procesoId) {
+        // Los líderes nuevos reciben su propio aviso de vencido y de escalamiento.
+        await tx`UPDATE mejora_hallazgos SET aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${h.id}`;
+        await avisarAlProcesoNuevo(tx, h, v.procesoId, v.titulo, sesion.usuarioId);
+      }
       if (!esExterno(antes.origen as Origen) && esExterno(v.origen)) {
         await transicionarHallazgo(
           tx,
@@ -471,6 +474,25 @@ export async function reclasificarHallazgo(
           await tx`UPDATE mejora_hallazgos SET vence_en = ${formularAntes}, aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${h.id}`;
         }
       }
+      // Al salir de una decisión hacia «Por formular», la decisión anterior ya no vale: la acción pasa a ser obligada y se
+      // borra quién y cuándo decidió (o validó). El antes y el después quedan en el evento.
+      const saleDeUnaDecision = quedaEn === "por_formular" && (h.estado === "por_decidir" || h.estado === "por_validar");
+      let decision: Record<string, unknown> | null = null;
+      if (saleDeUnaDecision) {
+        decision = {
+          antes: {
+            accionRequerida: (f.accion_requerida as boolean | null) ?? null,
+            justificacion: (f.accion_justificacion as string | null) ?? null,
+            decididaPor: idONulo(f.accion_decidida_por),
+            decididaEn: (f.accion_decidida_en as Date | null) ?? null,
+            validadaPor: idONulo(f.validada_por),
+            validadaEn: (f.validada_en as Date | null) ?? null,
+          },
+          despues: { accionRequerida: true },
+        };
+        await tx`UPDATE mejora_hallazgos SET accion_requerida = true, accion_justificacion = NULL, accion_decidida_por = NULL,
+          accion_decidida_en = NULL, validada_por = NULL, validada_en = NULL WHERE id = ${h.id}`;
+      }
       await tx`UPDATE mejora_hallazgos SET clase = ${v.clase}, criticidad = ${v.criticidad}, origen = ${v.origen},
           fuente = ${v.fuente}, referencia_caso = ${v.referenciaCaso}, titulo = ${v.titulo},
           requisito_clausula = ${v.requisitoClausula}, requisito_norma_id = ${v.requisitoNormaId},
@@ -488,6 +510,7 @@ export async function reclasificarHallazgo(
             antes: cambios.antes,
             despues: cambios.despues,
             justificacion: r.justificacion,
+            ...(decision ? { decision } : {}),
             ...(r.nota ? { nota: r.nota } : {}),
           },
         },
@@ -517,16 +540,24 @@ export async function cambiarProceso(
       const [nuevo] = await tx`SELECT nombre, activo FROM procesos WHERE id = ${r.procesoId}`;
       if (!nuevo?.activo) throw new ErrorMejora("Elija un proceso activo");
       const c = await contextoDeMejora(tx, ahora);
-      const [viejo] = await tx`SELECT p.nombre, h.titulo FROM mejora_hallazgos h JOIN procesos p ON p.id = h.proceso_id WHERE h.id = ${h.id}`;
-      // El subproceso es del proceso anterior, y una reincidencia solo vale dentro de su proceso.
-      await tx`UPDATE mejora_hallazgos SET proceso_id = ${r.procesoId}, subproceso_id = NULL, reincidente_de = NULL WHERE id = ${h.id}`;
+      const [viejo] = await tx`SELECT p.nombre, h.titulo, h.subproceso_id, h.reincidente_de
+        FROM mejora_hallazgos h JOIN procesos p ON p.id = h.proceso_id WHERE h.id = ${h.id}`;
+      // El subproceso es del proceso anterior, y una reincidencia solo vale dentro de su proceso. Los líderes nuevos reciben
+      // su propio aviso de vencido y de escalamiento.
+      await tx`UPDATE mejora_hallazgos SET proceso_id = ${r.procesoId}, subproceso_id = NULL, reincidente_de = NULL,
+        aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${h.id}`;
       await dejarEvento(tx, {
         hallazgoId: h.id,
         ronda: h.ronda,
         tipo: "proceso_cambiado",
         detalle: {
-          antes: { procesoId: h.procesoId, proceso: viejo.nombre },
-          despues: { procesoId: r.procesoId, proceso: nuevo.nombre },
+          antes: {
+            procesoId: h.procesoId,
+            proceso: viejo.nombre,
+            subprocesoId: idONulo(viejo.subproceso_id),
+            reincidenteDe: idONulo(viejo.reincidente_de),
+          },
+          despues: { procesoId: r.procesoId, proceso: nuevo.nombre, subprocesoId: null, reincidenteDe: null },
           justificacion: r.justificacion,
         },
         usuarioId: sesion.usuarioId,
@@ -594,4 +625,28 @@ export async function anularHallazgo(
       );
     }),
   );
+}
+
+/** Lo enlazado que el formulario de edición no pinta: la edición lo conserva en vez de borrarlo. */
+export async function enlacesDelHallazgo(
+  id: number,
+  opciones?: { sql?: Cliente },
+): Promise<{ subprocesoId: number | null; documentoId: number | null; indicadorId: number | null; medicionId: number | null; reincidenteDe: number | null }> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT subproceso_id, documento_id, indicador_id, medicion_id, reincidente_de FROM mejora_hallazgos WHERE id = ${id}`;
+  if (!f) throw new ErrorMejora(NO_EXISTE);
+  return {
+    subprocesoId: idONulo(f.subproceso_id),
+    documentoId: idONulo(f.documento_id),
+    indicadorId: idONulo(f.indicador_id),
+    medicionId: idONulo(f.medicion_id),
+    reincidenteDe: idONulo(f.reincidente_de),
+  };
+}
+
+/** El proceso en que está un hallazgo ahora (la edición compara contra el que se eligió). */
+export async function procesoDelHallazgo(id: number, opciones?: { sql?: Cliente }): Promise<number> {
+  const [f] = await (opciones?.sql ?? obtenerSql())`SELECT proceso_id FROM mejora_hallazgos WHERE id = ${id}`;
+  if (!f) throw new ErrorMejora(NO_EXISTE);
+  return Number(f.proceso_id);
 }

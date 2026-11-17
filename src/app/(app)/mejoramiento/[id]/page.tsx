@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { anularHallazgoAccion, reclasificarHallazgoAccion, registrarOcurrenciaAccion } from "@/app/acciones-mejoramiento";
+import Link from "next/link";
+import { anularHallazgoAccion, cambiarProcesoAccion, reclasificarHallazgoAccion, registrarOcurrenciaAccion } from "@/app/acciones-mejoramiento";
+import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
 import { Ocurrencias } from "@/componentes/mejoramiento/Ocurrencias";
@@ -8,10 +10,11 @@ import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHal
 import { InsigniasDelHallazgo } from "@/componentes/mejoramiento/InsigniasDelHallazgo";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
-import { cerradosDelProceso, documentosVigentesVisibles, normasQueRigen } from "@/db/consultas/mejoramiento/opciones";
+import { cerradosDelProceso, documentosVigentesVisibles, normasQueRigen, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { diaCorto } from "@/lib/mejoramiento/formato";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { TERMINALES } from "@/lib/mejoramiento/tipos";
@@ -76,6 +79,16 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   const [normas, documentos, cerrados] = reclasificable
     ? await Promise.all([normasQueRigen(), documentosVigentesVisibles(sesion), cerradosDelProceso(h.procesoId, h.id)])
     : [[], [], []];
+  const puedeEditar = completo && h.estado === "por_aceptar" && h.registradoPorId === sesion.usuarioId && puede(sesion, "mejora.registrar");
+  const puedeCambiarProceso = gestiona && h.estado === "por_aceptar";
+  const procesos = puedeCambiarProceso ? await procesosDelAlcance(sesion) : [];
+  // Las notas que se añadieron al reclasificar: la descripción no se reescribe.
+  const notas = completo
+    ? h.eventos.flatMap((e) => {
+        const nota = e.tipo === "reclasificar" && typeof e.detalle === "object" && e.detalle !== null ? (e.detalle as { nota?: unknown }).nota : undefined;
+        return typeof nota === "string" && nota !== "" ? [{ cuando: e.cuando, nota }] : [];
+      })
+    : [];
   const clave = `${h.estado}-${h.eventos.length}`;
 
   return (
@@ -95,7 +108,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       <Recorrido pasos={pasosConFechas(h, zona)} />
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
-          <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} />
+          <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} notas={notas} />
           {completo ? (
             <Ocurrencias
               key={`ocurrencias-${h.ocurrencias.length}`}
@@ -106,8 +119,23 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
               accion={registrarOcurrenciaAccion}
             />
           ) : null}
-          {gestiona ? (
+          {puedeEditar || gestiona ? (
             <div className="flex flex-wrap gap-2">
+              {puedeEditar ? (
+                <Link href={`/mejoramiento/${h.id}/editar`} className={claseBoton("secundario")}>
+                  Editar
+                </Link>
+              ) : null}
+              {puedeCambiarProceso ? (
+                <DialogoCambiarProceso
+                  key={`proceso-${clave}`}
+                  hallazgoId={h.id}
+                  codigo={h.codigo}
+                  procesoActualId={h.procesoId}
+                  procesos={procesos}
+                  accion={cambiarProcesoAccion}
+                />
+              ) : null}
               {reclasificable ? (
                 <DialogoReclasificar
                   key={`reclasificar-${clave}`}
@@ -132,7 +160,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
                   accion={reclasificarHallazgoAccion}
                 />
               ) : null}
-              <DialogoAnular key={`anular-${clave}`} hallazgoId={h.id} codigo={h.codigo} accion={anularHallazgoAccion} />
+              {gestiona ? <DialogoAnular key={`anular-${clave}`} hallazgoId={h.id} codigo={h.codigo} accion={anularHallazgoAccion} /> : null}
             </div>
           ) : null}
         </div>

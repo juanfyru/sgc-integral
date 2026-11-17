@@ -336,6 +336,7 @@ export type DetalleDeHallazgo = {
   etiqueta: string;
   ronda: number;
   registradoPor: string;
+  registradoPorId: number;
   registradoEn: Date;
   cargado: boolean;
   /** El hallazgo anterior solo si quien mira puede verlo; si no, sin id ni nombre. */
@@ -542,6 +543,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     etiqueta: etiquetaDeEstado(h),
     ronda: h.ronda,
     registradoPor: f.registrador as string,
+    registradoPorId: Number(f.registrado_por),
     registradoEn: f.registrado_en as Date,
     cargado: f.cargado === true,
     reincidenteDe: await anterior,

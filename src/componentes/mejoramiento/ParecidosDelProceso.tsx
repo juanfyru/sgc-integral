@@ -3,18 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { DISTINTO, resolverPanelDeParecidos, salidaDe, type ParecidoDeRuta, type RespuestaDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
-
-/** Lo que responde `GET /mejoramiento/parecidos`: la fecha llega como texto ISO. */
-type Parecido = { id: number; codigo: string; titulo: string; etiqueta: string; abierto: boolean; cuando: string };
 
 /** Menos de este largo no es un texto con qué comparar (la ruta usa el mismo mínimo). */
 const MINIMO = 15;
-
-const DISTINTO = "distinto";
-
-/** La salida que corresponde a cada parecido: abierto, una ocurrencia; cerrado, una reincidencia (spec 15 §7.5). */
-const valorDe = (p: Parecido) => `${p.abierto ? "ocurrencia" : "reincidencia"}:${p.id}`;
+/** Lo que viaja en `q`: el título y el comienzo de la descripción bastan, y la URL tiene un límite. */
+const LARGO_DE_LA_CONSULTA = 300;
 
 type Props = {
   /** El proceso elegido en el formulario (el `id` como texto) y su nombre. */
@@ -33,22 +28,30 @@ type Props = {
  * el campo `relacion` del formulario. Sin resultados, el campo vale `distinto` y no se dice nada más que una nota.
  */
 export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCambiar }: Props) {
-  const consulta = procesoId !== "" && texto.trim().length > MINIMO ? `proceso=${encodeURIComponent(procesoId)}&q=${encodeURIComponent(texto.trim())}` : null;
-  const [respuesta, setRespuesta] = useState<{ consulta: string; parecidos: Parecido[] } | null>(null);
+  const recortado = texto.trim().slice(0, LARGO_DE_LA_CONSULTA);
+  const consulta = procesoId !== "" && recortado.length > MINIMO ? `proceso=${encodeURIComponent(procesoId)}&q=${encodeURIComponent(recortado)}` : null;
+  const [respuesta, setRespuesta] = useState<RespuestaDeParecidos | null>(null);
 
   useEffect(() => {
     if (consulta === null) return;
     const control = new AbortController();
+    const llegó = (parecidos: ParecidoDeRuta[] | null) =>
+      setRespuesta((previa) => ({
+        consulta,
+        procesoId,
+        parecidos: parecidos ?? (previa?.procesoId === procesoId ? previa.parecidos : []),
+        error: parecidos === null,
+      }));
     fetch(`/mejoramiento/parecidos?${consulta}`, { signal: control.signal })
-      .then((r) => (r.ok ? r.json() : { parecidos: [] }))
-      .then((j: { parecidos?: Parecido[] }) => setRespuesta({ consulta, parecidos: j.parecidos ?? [] }))
-      .catch(() => undefined);
+      .then((r) => (r.ok ? (r.json() as Promise<{ parecidos?: ParecidoDeRuta[] }>) : null))
+      .then((j) => llegó(j === null ? null : (j.parecidos ?? [])))
+      .catch((e: unknown) => {
+        if (!(e instanceof DOMException && e.name === "AbortError")) llegó(null);
+      });
     return () => control.abort();
-  }, [consulta]);
+  }, [consulta, procesoId]);
 
-  const parecidos = consulta !== null && respuesta?.consulta === consulta ? respuesta.parecidos : [];
-  // Una salida que ya no está entre los resultados vuelve a «distinto».
-  const vigente = parecidos.some((p) => valorDe(p) === relacion) ? relacion : DISTINTO;
+  const { parecidos, buscando, error, vigente } = resolverPanelDeParecidos({ consulta, procesoId, respuesta, relacion });
 
   // El formulario cambia el texto de su botón según la salida: se le dice cuando una salida deja de valer.
   useEffect(() => {
@@ -66,10 +69,16 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
           <p className="text-muted-foreground">
             {consulta === null
               ? "Elija el proceso y escriba el título y la descripción: el sistema busca hallazgos parecidos del mismo proceso."
-              : "No hay hallazgos parecidos en este proceso."}
+              : buscando
+                ? "Buscando…"
+                : error
+                  ? "No se pudieron buscar los parecidos"
+                  : "No hay hallazgos parecidos en este proceso."}
           </p>
         ) : (
           <>
+            {buscando ? <p className="text-muted-foreground">Buscando…</p> : null}
+            {error ? <p role="alert" className="text-estado-critico-texto">No se pudieron buscar los parecidos</p> : null}
             <ul className="flex list-none flex-col gap-2">
               {parecidos.map((p) => (
                 <li key={p.id} className="rounded-md border border-linea-suave px-3 py-2">
@@ -94,8 +103,8 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
                   <input
                     type="radio"
                     name="salida-de-parecidos"
-                    checked={vigente === valorDe(p)}
-                    onChange={() => alCambiar(valorDe(p))}
+                    checked={vigente === salidaDe(p)}
+                    onChange={() => alCambiar(salidaDe(p))}
                     className="mt-1 accent-marca"
                   />
                   <span>

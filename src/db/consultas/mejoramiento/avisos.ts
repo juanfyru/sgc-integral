@@ -71,6 +71,11 @@ const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>
   validadores: (tx) => activosDeRol(tx, ["admin_sgc", "control_interno"]),
 };
 
+/** Quienes pueden verificar un hallazgo (Admin SGC y Control Interno activos): la Tarea 16 lo afina. */
+export function verificadoresActivos(tx: Cliente, h: HallazgoBase): Promise<number[]> {
+  return QUIENES.verificadores(tx, h);
+}
+
 /** Los usuarios activos que tienen el turno del hallazgo en su estado actual; vacío si nadie lo tiene. */
 export async function quienTieneElTurno(tx: Cliente, h: HallazgoBase): Promise<number[]> {
   const turno = turnoDe(h.estado);

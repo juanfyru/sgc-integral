@@ -23,6 +23,7 @@ import {
   anularHallazgo,
   cambiarProceso,
   editarHallazgo,
+  enlacesDelHallazgo,
   reclasificarHallazgo,
   registrarHallazgo,
   registrarOcurrencia,
@@ -106,9 +107,18 @@ describe("la ruta de parecidos", () => {
   });
 
   it("responde 404 a quien no puede registrar en ese proceso", async () => {
-    // Un líder que no lidera nada: otro proceso. (El usuario no existe: su alcance es vacío.)
-    sesionDePeticion.mockResolvedValue({ usuarioId: 2147483000, rol: "lider_proceso", verHistorial: false });
-    expect((await pedir(`proceso=1&${TEXTO}`)).status).toBe(404);
+    // Un líder real y un proceso real que no es de él.
+    const [par] = await sql`SELECT u.id AS usuario, p.id AS proceso FROM usuarios u JOIN procesos p ON p.activo
+      WHERE u.rol = 'lider_proceso' AND u.activo
+        AND NOT EXISTS (SELECT 1 FROM usuario_procesos up WHERE up.usuario_id = u.id AND up.proceso_id = p.id)
+        AND EXISTS (SELECT 1 FROM usuario_procesos up WHERE up.usuario_id = u.id)
+      LIMIT 1`;
+    expect(par).toBeDefined();
+    sesionDePeticion.mockResolvedValue({ usuarioId: Number(par.usuario), rol: "lider_proceso", verHistorial: false });
+    expect((await pedir(`proceso=${par.proceso}&${TEXTO}`)).status).toBe(404);
+    // Y el suyo, sí.
+    const [suyo] = await sql`SELECT proceso_id FROM usuario_procesos WHERE usuario_id = ${par.usuario} LIMIT 1`;
+    expect((await pedir(`proceso=${suyo.proceso_id}&${TEXTO}`)).status).toBe(200);
     // Un rol sin el permiso de registrar.
     sesionDePeticion.mockResolvedValue({ usuarioId: 2147483001, rol: "consulta", verHistorial: false });
     expect((await pedir(`proceso=1&${TEXTO}`)).status).toBe(404);
@@ -163,7 +173,9 @@ describe("registrarOcurrencia", () => {
       await registrarOcurrencia(b.lider, dato(h.id), c(DESPUES, tx));
       const recurrencia = await avisos(tx, h.id, "mejora.recurrencia");
       expect(recurrencia).toContain(b.control.usuarioId);
-      expect(recurrencia).toContain(b.gerencia.usuarioId);
+      expect(recurrencia).toContain(b.admin.usuarioId);
+      expect(recurrencia).not.toContain(b.gerencia.usuarioId);
+      expect(recurrencia).not.toContain(b.lider.usuarioId);
     });
   });
 
@@ -173,6 +185,9 @@ describe("registrarOcurrencia", () => {
       const otro = await otroProcesoConLider(tx);
       const h = await nuevo(tx, b);
       await expect(registrarOcurrencia(otro.lider, dato(h.id), c(DESPUES, tx))).rejects.toThrow("El hallazgo no existe");
+      // Quien ve el hallazgo solo por una actividad, no puede añadirle ocurrencias: permiso, no «no existe».
+      await actividadPorSql(tx, h.id, otro.lider.usuarioId);
+      await expect(registrarOcurrencia(otro.lider, dato(h.id), c(DESPUES, tx))).rejects.toBeInstanceOf(ErrorPermiso);
       await cerrarPorSql(tx, h.id);
       await expect(registrarOcurrencia(b.control, dato(h.id), c(DESPUES, tx))).rejects.toThrow(
         "El hallazgo ya terminó: regístrelo como reincidencia",
@@ -193,7 +208,7 @@ describe("la reincidencia", () => {
       const deOtro = await registrarHallazgo(b.control, datosDeHallazgo(otro.procesoId), c(AHORA, tx));
       await cerrarPorSql(tx, deOtro.id);
 
-      await expect(nuevo(tx, b, b.control, { reincidenteDe: abierto.id })).rejects.toThrow("Solo se marca reincidencia de un hallazgo cerrado");
+      await expect(nuevo(tx, b, b.control, { reincidenteDe: abierto.id })).rejects.toThrow(/^Solo se marca reincidencia de un hallazgo cerrado$/);
       await expect(nuevo(tx, b, b.control, { reincidenteDe: deOtro.id })).rejects.toThrow("del mismo proceso");
 
       const r = await nuevo(tx, b, b.control, { reincidenteDe: cerrado.id });
@@ -302,6 +317,25 @@ describe("reclasificarHallazgo (spec §7.6)", () => {
         estado: { antes: "por_decidir", despues: "por_formular" },
       });
       expect(await avisos(tx, h.id, "mejora.turno")).toContain(b.lider.usuarioId);
+    });
+  });
+
+  it("al salir de una decisión hacia «Por formular» borra la decisión vieja y la deja en el evento", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await nuevo(tx, b);
+      await poner(tx, h.id, "por_validar");
+      await tx`UPDATE mejora_hallazgos SET accion_requerida = false, accion_justificacion = 'No se repite',
+        accion_decidida_por = ${b.admin.usuarioId}, accion_decidida_en = ${new Date(AHORA)} WHERE id = ${h.id}`;
+      await reclasificar(tx, b.admin, h.id, { criticidad: "alta" });
+      const f = await fila(tx, h.id);
+      expect(f).toMatchObject({
+        estado: "por_formular", accion_requerida: true, accion_justificacion: null, accion_decidida_por: null, accion_decidida_en: null,
+      });
+      const [e] = await eventos(tx, h.id, "reclasificar");
+      expect(e.detalle).toMatchObject({
+        decision: { antes: { accionRequerida: false, justificacion: "No se repite", decididaPor: b.admin.usuarioId }, despues: { accionRequerida: true } },
+      });
     });
   });
 
@@ -414,6 +448,47 @@ describe("reclasificarHallazgo (spec §7.6)", () => {
   });
 });
 
+describe("cambiarProceso (reincidencia, subproceso y avisos)", () => {
+  it("guarda en el evento lo que borra y limpia las marcas de vencido y escalado", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const anterior = await nuevo(tx, b);
+      await cerrarPorSql(tx, anterior.id);
+      const h = await nuevo(tx, b, b.control, { reincidenteDe: anterior.id });
+      await tx`UPDATE mejora_hallazgos SET aviso_vencido_en = ${new Date(AHORA)}, escalado_en = ${new Date(AHORA)} WHERE id = ${h.id}`;
+      await cambiarProceso(b.admin, { hallazgoId: h.id, procesoId: otro.procesoId, justificacion: "Corresponde a otro proceso" }, c(DESPUES, tx));
+      const f = await fila(tx, h.id);
+      expect(f).toMatchObject({ reincidente_de: null, subproceso_id: null, aviso_vencido_en: null, escalado_en: null });
+      const [ev] = await eventos(tx, h.id, "proceso_cambiado");
+      expect(ev.detalle).toMatchObject({ antes: { reincidenteDe: anterior.id }, despues: { reincidenteDe: null } });
+    });
+  });
+
+  it("editar el proceso limpia también las marcas de vencido y escalado", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const h = await nuevo(tx, b);
+      await tx`UPDATE mejora_hallazgos SET aviso_vencido_en = ${new Date(AHORA)}, escalado_en = ${new Date(AHORA)} WHERE id = ${h.id}`;
+      await editarHallazgo(b.control, h.id, datosDeHallazgo(otro.procesoId), c(DESPUES, tx));
+      expect(await fila(tx, h.id)).toMatchObject({ aviso_vencido_en: null, escalado_en: null });
+    });
+  });
+});
+
+describe("enlacesDelHallazgo", () => {
+  it("devuelve lo que el formulario de edición no pinta, para no perderlo al guardar", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await nuevo(tx, b);
+      expect(await enlacesDelHallazgo(h.id, { sql: tx })).toEqual({
+        subprocesoId: null, documentoId: null, indicadorId: null, medicionId: null, reincidenteDe: null,
+      });
+    });
+  });
+});
+
 describe("cambiarProceso", () => {
   it("solo en «Por aceptar», y avisa a los líderes del proceso nuevo", async () => {
     await revertida(sql, async (tx) => {
@@ -423,7 +498,8 @@ describe("cambiarProceso", () => {
       await cambiarProceso(b.admin, { hallazgoId: h.id, procesoId: otro.procesoId, justificacion: "Corresponde a otro proceso" }, c(DESPUES, tx));
       expect(Number((await fila(tx, h.id)).proceso_id)).toBe(otro.procesoId);
       expect(await avisos(tx, h.id, "mejora.turno")).toContain(otro.lider.usuarioId);
-      expect((await eventos(tx, h.id, "proceso_cambiado")).length).toBe(1);
+      const [ev] = await eventos(tx, h.id, "proceso_cambiado");
+      expect(ev.detalle).toMatchObject({ antes: { procesoId: b.procesoId, subprocesoId: null, reincidenteDe: null }, despues: { procesoId: otro.procesoId } });
 
       await poner(tx, h.id, "por_corregir");
       await expect(

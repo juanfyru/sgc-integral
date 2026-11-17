@@ -4,15 +4,20 @@
 // de persona (el alcance de proceso, quien tiene el turno) la vuelve a comprobar la consulta dentro de su transacción.
 // Las de la configuración viven en `src/app/admin/acciones-mejoramiento.ts`.
 
-import { mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import {
   anularHallazgo,
+  cambiarProceso,
+  editarHallazgo,
+  enlacesDelHallazgo,
+  procesoDelHallazgo,
   reclasificarHallazgo,
   registrarHallazgo,
   registrarOcurrencia,
 } from "@/db/consultas/mejoramiento/registro";
 import {
   EsquemaAnulacion,
+  EsquemaCambioDeProceso,
   EsquemaHallazgo,
   EsquemaOcurrencia,
   EsquemaReclasificacion,
@@ -67,6 +72,36 @@ export async function anularHallazgoAccion(_previo: EstadoAccion, formData: Form
   return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
     const d = parsearFormulario(datos, EsquemaAnulacion);
     await anularHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/**
+ * Edita la identificación de un hallazgo «Por aceptar» (spec §7.6): solo quien lo registró. El formulario no pinta el
+ * subproceso, el documento, el indicador, la medición ni la reincidencia: se conservan (salvo el subproceso y la
+ * reincidencia si cambia el proceso, que ya no valen).
+ */
+export async function editarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
+    const id = idNumerico(datos, "hallazgoId");
+    const d = parsearFormulario(datos, EsquemaHallazgo, { omitir: ["hallazgoId"] });
+    const enlaces = await enlacesDelHallazgo(id);
+    const mismoProceso = d.procesoId === (await procesoDelHallazgo(id));
+    await editarHallazgo(sesion, id, {
+      ...d,
+      ...enlaces,
+      subprocesoId: mismoProceso ? enlaces.subprocesoId : null,
+      reincidenteDe: mismoProceso ? enlaces.reincidenteDe : null,
+    });
+    return rutaDeHallazgo(id);
+  });
+}
+
+/** Cambia el proceso de un hallazgo «Por aceptar», con justificación: solo el Admin SGC (spec §7.6). */
+export async function cambiarProcesoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaCambioDeProceso);
+    await cambiarProceso(sesion, d);
     return rutaDeHallazgo(d.hallazgoId);
   });
 }

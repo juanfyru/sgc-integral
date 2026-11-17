@@ -1,6 +1,21 @@
 import { fechaYHora } from "@/lib/mejoramiento/formato";
 
-type Evento = { id: number; tipo: string; ronda: number; quien: string | null; cuando: Date };
+type Evento = { id: number; tipo: string; ronda: number; quien: string | null; cuando: Date; detalle?: unknown };
+
+/** Lo que un evento dice por escrito: la justificación, la nota o el motivo que trae su detalle, con su rótulo. */
+const TEXTOS_DEL_DETALLE: ReadonlyArray<readonly [clave: string, rotulo: string]> = [
+  ["justificacion", "Justificación"],
+  ["nota", "Nota"],
+  ["motivo", "Motivo"],
+];
+
+function textosDe(detalle: unknown): Array<{ rotulo: string; texto: string }> {
+  if (typeof detalle !== "object" || detalle === null) return [];
+  const d = detalle as Record<string, unknown>;
+  return TEXTOS_DEL_DETALLE.flatMap(([clave, rotulo]) =>
+    typeof d[clave] === "string" && d[clave].trim() !== "" ? [{ rotulo, texto: d[clave] as string }] : [],
+  );
+}
 
 /** Lo que cada acción del hallazgo dice en el historial: en pasado, sin nombres (quién va aparte). */
 const FRASE: Record<string, string> = {
@@ -51,6 +66,11 @@ export function HistorialDelHallazgo({ eventos, zona }: { eventos: readonly Even
                 {FRASE[e.tipo] ?? e.tipo}
                 {e.ronda > 1 ? ` (ronda ${e.ronda})` : ""}
               </span>
+              {textosDe(e.detalle).map((t) => (
+                <span key={t.rotulo} className="block whitespace-pre-line break-words text-sm">
+                  {t.rotulo}: {t.texto}
+                </span>
+              ))}
               <span className="block text-xs text-muted-foreground">
                 {e.quien ?? "El sistema"} · <time dateTime={e.cuando.toISOString()}>{fechaYHora(e.cuando, zona)}</time>
               </span>
