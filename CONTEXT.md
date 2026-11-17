@@ -44,9 +44,14 @@
    orígenes, tres tipos de acción, el hallazgo como unidad y el plan opcional, plazos en días hábiles, visibilidad por
    alcance y el informe en la 15C. Las decisiones del usuario son los temas 1 a 16 de su §2; las de Claude, F15-DC1 a
    DC38 (§29), que el usuario leyó al aprobar. Las maquetas aprobadas (no versionadas) están en
-   `.superpowers/brainstorm/1893-1794928689/content/pantallas-15-v2.html`. **Lo que sigue:** el plan de implementación
-   de la 15A (`docs/superpowers/plans/`) y su construcción en una rama y un worktree aparte, contra una base aparte, como
-   las entregas anteriores. **Pendientes del usuario, ninguno bloquea la 15A** (spec §28): la plantilla del ente de
+   `.superpowers/brainstorm/1893-1794928689/content/pantallas-15-v2.html`. **El plan de la 15A está aprobado por el
+   usuario el 2026-11-17** («Apruebo la enmienda y el plan. ejecuta con subagentes»):
+   `docs/superpowers/plans/2026-11-17-fase15a-mejoramiento.md`, 22 tareas, **con subagentes** (una implementación y una
+   revisión por tarea, y la revisión de toda la rama al final), en el worktree `F:\sgc-integral-f15a`, rama
+   `fase-15a-mejoramiento`, contra la base aparte `sgc_f15a` (su Paso 0 lo prepara). Con el plan, el usuario aprobó una
+   **enmienda del spec** de ese mismo día: el festivo del 9 de julio (Ley 2578 de 2026) en el calendario y en el
+   Apéndice C, con el calendario publicado de 2025 a 2027 para las pruebas; F15-DC39 (la lista de días de la entidad
+   también vuelve hábil un festivo calculado); y cuatro contextos de archivo en lugar de tres (F15-DC38). **Pendientes del usuario, ninguno bloquea la 15A** (spec §28): la plantilla del ente de
    control y de qué ente es (la necesita la 15B); los tres hallazgos que hoy están abiertos en papel, con sus formatos
    diligenciados; la matriz SGC-MZ-AC-01, si existe; registrar los siete formatos como documentos; y los ajustes a sus
    textos del Apéndice B. Desde ese día `.git/info/exclude` excluye todo Excel, Word o PDF de la raíz.
@@ -216,8 +221,8 @@
    se cerró la Fase 14 del diseño maestro. (b) el
    recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)»); (c) si no se hicieron, los recorridos
    del usuario de la 14A y de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); y
-   (d) la **Fase 15 — Planes de mejoramiento**, con el diseño ya aprobado (punto 1): escribir el plan de la 15A y
-   construirla. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
+   (d) la **Fase 15 — Planes de mejoramiento**, con el diseño y el plan de la 15A ya aprobados (punto 1): construir la
+   15A con subagentes. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
    tablero de la Fase 17 puede leer sin digitar nada (y donde entra el compuesto «promedio de los componentes medidos»), y
    los avisos de los datos vencidos, que la Fase 16 lleva al correo. Enganches que deja la 14A: la marca
    «Requiere acción de mejora» con su causa y su acción propuesta, que la Fase 15 convierte en acción formal; los

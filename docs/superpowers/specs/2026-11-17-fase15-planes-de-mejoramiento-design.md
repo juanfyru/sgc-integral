@@ -3,8 +3,10 @@
 Fecha: 2026-11-17. Estado: **aprobado por el usuario el 2026-11-17** («aprobado el spec,
 continuemos con el plan de la 15A»), después de la revisión del constructor. Su única pregunta para
 el usuario quedó resuelta en el Tema 16 de §2; sus demás observaciones se corrigieron en §6.1, §7.1,
-§7.6, §8.1 a §8.3, §8.5, §8.6, §11.3, §11.4, §13.2, §13.3, §15, §16.1 y §19. Cubre las tres
-entregas de la fase (15A, 15B y 15C). La 15A va con detalle completo; la 15B y la 15C, al nivel de lo ya decidido,
+§7.6, §8.1 a §8.3, §8.5, §8.6, §11.3, §11.4, §13.2, §13.3, §15, §16.1 y §19. **Enmienda del mismo
+día, al escribir el plan de la 15A:** el calendario de festivos (§13.1, Apéndice C y F15-DC39: la
+Ley 2578 de 2026 creó un festivo que la primera redacción no traía) y los contextos de archivo
+(§19.2 y F15-DC38: cuatro, no tres). Cubre las tres entregas de la fase (15A, 15B y 15C). La 15A va con detalle completo; la 15B y la 15C, al nivel de lo ya decidido,
 y cada una tendrá su anexo cuando llegue su turno (la 15B, además, cuando llegue la plantilla del
 ente de control). Sigue, por entrega, el plan de implementación.
 
@@ -515,7 +517,7 @@ Los campos de la sección 1 del SGC-FO-AC-01, más lo que la plataforma ya sabe.
 | Título | Una frase (hasta 150 caracteres) que nombra el hallazgo en las listas, los avisos y las tareas. La maqueta 3 no lo mostraba como campo aparte; las maquetas 1 y 2 lo usan [Decisión de Claude, F15-DC6] |
 | Descripción | Detallada, con la evidencia objetiva (de 10 a 4.000 caracteres) |
 | Requisito incumplido | Tres campos, al menos uno en la no conformidad y opcionales en las otras clases: cláusula de ISO 9001 (texto), norma del normograma (enlace) y documento interno (enlace) [Usuario, 13.8] |
-| A qué se refiere | Enlaces opcionales: un documento, un indicador o una medición (solo una que ya tiene resultado). La 15B añade el hallazgo de verificación y el impacto de norma [Usuario, 3.3] |
+| A qué se refiere | Enlaces opcionales: un documento, un indicador (activo o retirado, nunca un borrador ni uno descartado) o una medición (solo una que ya tiene resultado). La 15B añade el hallazgo de verificación y el impacto de norma [Usuario, 3.3] |
 | Riesgo asociado | Texto opcional (hasta 200 caracteres): el código y el nombre del riesgo en la matriz del proceso [Usuario, 13.10] |
 | Evidencia | Archivos opcionales (los tipos que ya admite `src/lib/subida.ts` para evidencias) |
 | Fecha límite del ente | Solo en los orígenes externos (§13.4) |
@@ -1174,7 +1176,13 @@ evento con esa marca.
   tabla que mantener ni consulta a internet. La regla está en el Apéndice C;
 - **los días no hábiles de la entidad,** una lista (fecha y motivo) que edita el Admin SGC en la
   configuración del módulo. Sirve para un día cívico o un cierre institucional, y para un festivo
-  nuevo que cree una ley mientras se actualiza la plataforma.
+  nuevo que cree una ley mientras se actualiza la plataforma;
+- y, al revés, **vuelve a ser hábil** el festivo calculado que el Admin SGC marque en esa misma
+  lista como «día hábil», con su motivo: para el festivo que una ley o una sentencia quite antes
+  de que la plataforma se actualice [Decisión de Claude, F15-DC39].
+
+La regla del cálculo incluye el festivo que creó la Ley 2578 de 2026 (el 9 de julio, trasladado al
+lunes), que rige desde 2026: los años anteriores no lo llevan (Apéndice C).
 
 El sábado no es hábil [Decisión de Claude, F15-DC26].
 
@@ -1626,7 +1634,7 @@ Claude, F15-DC38].
 
 | Tabla | Qué guarda |
 |---|---|
-| `dias_no_habiles` | Fecha (única) y motivo |
+| `dias_no_habiles` | Fecha (única), tipo (`no_habil`, o `habil` para anular un festivo calculado) y motivo |
 | `mejora_reportes` | El reporte de un funcionario: quién, cuándo, texto, proceso opcional, referencia, estado (`recibido`, `convertido`, `sumado`, `descartado`), el hallazgo que nació o al que se sumó, el motivo del descarte, su vencimiento y sus marcas de aviso |
 | `mejora_reporte_eventos` | Solo inserción: lo que pasó con un reporte |
 | `mejora_hallazgos` | La identificación de §7.1; `estado`, `ronda`; quién y cuándo lo registró; `reincidente_de`, `derivado_de`; si requiere acción correctiva, con su justificación; la corrección (qué, quién, cuándo, quién la validó); `cargado`; la fecha del ente y su respuesta; el vencimiento del paso en curso y sus marcas de aviso; el cierre (cuándo, quién, resultado, lecciones) |
@@ -1648,11 +1656,14 @@ número y la fecha como dos campos opcionales de su evento.
 - **`firmas`:** una columna nueva para el hallazgo dueño de la firma (nula en las demás); `verifico`
   y `cerro` entran al `CHECK` de `firma`; y el `CHECK` `firmas_tramite_coherente` admite la firma
   con hallazgo. La `ronda` es la del hallazgo.
-- **`archivos`:** tres contextos nuevos en `archivos_contexto_valido`, con el hallazgo, la actividad
-  o el reporte como dueño (`mejora_hallazgo`, `mejora_actividad` y `mejora_reporte`). El `rol` del
-  archivo distingue, dentro del hallazgo, la evidencia del registro, la de la corrección, la del
-  análisis, la de la verificación y el escaneo de una carga: esos valores nuevos entran al `CHECK`
-  cerrado `archivos_rol_valido`. El contexto `hallazgo` sigue siendo el de la 13B.
+- **`archivos`:** cuatro contextos nuevos en `archivos_contexto_valido`, uno por dueño: el hallazgo
+  (`mejora_hallazgo`), la ronda (`mejora_ronda`), la actividad (`mejora_actividad`) y el reporte
+  (`mejora_reporte`). El `rol` del archivo distingue, dentro del hallazgo, la evidencia del
+  registro, la de la corrección y el escaneo de una carga; y, dentro de la ronda, la del análisis
+  y la de la verificación. Esos valores nuevos entran al `CHECK` cerrado `archivos_rol_valido`, y
+  `recibirArchivo`, que hoy fija el rol de toda evidencia, pasa a recibirlo del destino. El
+  contexto `hallazgo` sigue siendo el de la 13B. (Al planear la 15A se vio que el análisis y la
+  verificación son de la ronda, no del hallazgo: por eso son cuatro contextos y no tres.)
 - **`configuracion`:** las claves de los plazos, de los recordatorios y del documento de cada
   impreso.
 
@@ -1928,7 +1939,8 @@ Ninguno bloquea la 15A.
 | F15-DC35 | Mecánica del informe: número, congelado al aprobarse, PDF al primer pedido, quién lo ve | §18.1 | El mismo mecanismo de la revisión anual | Práctica |
 | F15-DC36 | La unidad de tres cálculos es la ronda; reglas de lo cancelado y lo devuelto | §18.3 | Cada plan se juzga con sus fechas | Práctica |
 | F15-DC37 | Son vitales las causas que suman hasta el 80 %, con la que lo cruza | §18.2 | La regla del formato, hecha precisa | Práctica |
-| F15-DC38 | Prefijo `mejora` y tres contextos de archivo | §19 | `hallazgos` y `hallazgo` ya son de la 13B | Práctica |
+| F15-DC38 | Prefijo `mejora` y cuatro contextos de archivo, uno por dueño | §19 | `hallazgos` y `hallazgo` ya son de la 13B; el análisis y la verificación son de la ronda | Práctica |
+| F15-DC39 | La lista de días de la entidad sirve en los dos sentidos: añade un día no hábil y vuelve hábil un festivo calculado | §13.1, Apéndice C | La Ley 2578 de 2026 creó un festivo a mitad de año; una norma o una sentencia puede quitar otro, y no debe hacer falta una versión nueva para corregir un vencimiento | Regulación (Ley 51 de 1983 y Ley 2578 de 2026); Práctica |
 
 ## Apéndice A — Los formatos del hospital y dónde quedó cada campo
 
@@ -2065,7 +2077,7 @@ decidió para la plataforma.
 
 ## Apéndice C — Los festivos de Colombia
 
-La regla (Ley 51 de 1983), que el sistema calcula para cualquier año:
+La regla que el sistema calcula para cualquier año (Ley 51 de 1983 y Ley 2578 de 2026):
 
 - **De fecha fija:** 1 de enero, 1 de mayo, 20 de julio, 7 de agosto, 8 de diciembre y 25 de
   diciembre.
@@ -2074,8 +2086,22 @@ La regla (Ley 51 de 1983), que el sistema calcula para cualquier año:
 - **Dependen de la Pascua:** el Jueves Santo (tres días antes del domingo de Pascua) y el Viernes
   Santo (dos días antes), sin traslado; y, trasladados al lunes, la Ascensión (43 días después del
   domingo de Pascua), el Corpus Christi (64 días después) y el Sagrado Corazón (71 días después).
+- **Desde 2026,** el 9 de julio (Nuestra Señora de Chiquinquirá, Ley 2578 del 1 de junio de 2026),
+  trasladado al lunes siguiente cuando no cae en lunes. Los años anteriores a 2026 no lo llevan.
 
-Con esa regla, los dieciocho festivos de 2026 son: 1 y 12 de enero; 23 de marzo; 2 y 3 de abril; 1 y
-18 de mayo; 8, 15 y 29 de junio; 20 de julio; 7 y 17 de agosto; 12 de octubre; 2 y 16 de noviembre;
-8 y 25 de diciembre. **Esta lista sale de aplicar la regla; antes de usarla como caso de prueba, el
-constructor la contrasta, junto con la de otros dos años, con un calendario oficial publicado.**
+Este festivo se encontró al contrastar la regla con un calendario publicado, el 2026-11-17, después
+de aprobado el spec: la primera redacción de este apéndice no lo traía. Es la razón de F15-DC39: una
+ley puede añadir un festivo, y otra norma o una sentencia puede quitarlo.
+
+**Calendario publicado, para las pruebas** (fuente: `festivos.com.co`, páginas de 2025, 2026 y 2027,
+leídas el 2026-11-17; el 13 de julio de 2026 lo confirman además el comunicado del Ministerio del
+Interior sobre la Ley 2578 y El Tiempo). La regla de arriba da exactamente estas fechas:
+
+- **2025** (dieciocho festivos en diecisiete fechas: el Sagrado Corazón y San Pedro y San Pablo caen
+  el mismo lunes): 1 y 6 de enero; 24 de marzo; 17 y 18 de abril; 1 de mayo; 2, 23 y 30 de junio; 20
+  de julio; 7 y 18 de agosto; 13 de octubre; 3 y 17 de noviembre; 8 y 25 de diciembre.
+- **2026** (diecinueve): 1 y 12 de enero; 23 de marzo; 2 y 3 de abril; 1 y 18 de mayo; 8, 15 y 29 de
+  junio; 13 y 20 de julio; 7 y 17 de agosto; 12 de octubre; 2 y 16 de noviembre; 8 y 25 de
+  diciembre.
+- **2027** (diecinueve): 1 y 11 de enero; 22, 25 y 26 de marzo; 1, 10 y 31 de mayo; 7 de junio; 5,
+  12 y 20 de julio; 7 y 16 de agosto; 18 de octubre; 1 y 15 de noviembre; 8 y 25 de diciembre.
