@@ -840,3 +840,46 @@ export async function puedeVerHallazgo(
 ): Promise<boolean> {
   return (await participacionEnHallazgo(hallazgoId, sujeto, opciones)) !== null;
 }
+
+/** Los cuatro contextos de `archivos` que cuelgan de lo de mejoramiento (spec 15 §12.2). */
+const CONTEXTOS_DE_MEJORA = ["mejora_hallazgo", "mejora_ronda", "mejora_actividad", "mejora_reporte"];
+
+/**
+ * Quién abre un archivo de mejoramiento (spec 15 §6.3 y §12.2): los de un hallazgo y de una ronda, quien lo ve completo;
+ * los de una actividad, esos y su responsable o quien registró un seguimiento en esa actividad; los de un reporte, quien
+ * reportó, quien tiene `mejora.ver_todo` y, convertido el reporte, quien ve completo el hallazgo. Los demás, y un
+ * contexto o un dueño que no existen, `false`: la ruta responde 404.
+ */
+export async function puedeAbrirArchivoDeMejora(
+  archivo: { contexto: string; contextoId: number },
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  if (!CONTEXTOS_DE_MEJORA.includes(archivo.contexto) || !Number.isSafeInteger(archivo.contextoId) || archivo.contextoId <= 0) {
+    return false;
+  }
+  const sql = opciones?.sql ?? obtenerSql();
+  if (archivo.contexto === "mejora_reporte") {
+    const [r] = await sql`SELECT reportado_por, estado, hallazgo_id FROM mejora_reportes WHERE id = ${archivo.contextoId}`;
+    if (!r) return false;
+    if (Number(r.reportado_por) === sujeto.usuarioId || puede(sujeto, "mejora.ver_todo")) return true;
+    return r.estado === "convertido" && r.hallazgo_id !== null
+      ? (await participacionEnHallazgo(Number(r.hallazgo_id), sujeto, { sql })) === "completo"
+      : false;
+  }
+  const consulta =
+    archivo.contexto === "mejora_hallazgo"
+      ? sql`SELECT id AS hallazgo_id, NULL::bigint AS responsable_id FROM mejora_hallazgos WHERE id = ${archivo.contextoId}`
+      : archivo.contexto === "mejora_ronda"
+        ? sql`SELECT hallazgo_id, NULL::bigint AS responsable_id FROM mejora_rondas WHERE id = ${archivo.contextoId}`
+        : sql`SELECT hallazgo_id, responsable_id FROM mejora_actividades WHERE id = ${archivo.contextoId}`;
+  const [d] = await consulta;
+  if (!d) return false;
+  const participacion = await participacionEnHallazgo(Number(d.hallazgo_id), sujeto, { sql });
+  if (participacion === "completo") return true;
+  if (archivo.contexto !== "mejora_actividad" || participacion === null) return false;
+  if (Number(d.responsable_id) === sujeto.usuarioId) return true;
+  const [s] = await sql`SELECT 1 FROM mejora_seguimientos
+    WHERE actividad_id = ${archivo.contextoId} AND registrado_por = ${sujeto.usuarioId} LIMIT 1`;
+  return s !== undefined;
+}

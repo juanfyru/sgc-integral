@@ -17,6 +17,7 @@ import {
 } from "./codigos";
 import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { bloquearParaSoporteDeConstancia, dejarSoporteDeConstanciaSubido } from "./indicadores/constancias-soporte";
+import { CONTEXTOS_DE_MEJORA, exigirDestinoAbierto } from "./mejoramiento/archivos";
 import { bloquearParaSoporteDeDato, dejarSoporteDeDatoSubido } from "./indicadores/datos-soporte";
 import { bloquearParaSoporte, dejarSoporteSubido } from "./indicadores/soportes";
 import { exigirLoteSinArchivo } from "./indicadores/lote-importacion";
@@ -781,6 +782,10 @@ export async function registrarArchivo(
         }
         if (datos.contexto === "verificacion_item") await exigirVerificacionAbierta(tx, datos.contextoId);
         if (datos.contexto === "hallazgo") await exigirHallazgoNoCerrado(tx, datos.contextoId);
+        // Lo de mejoramiento (15A): el dueño bloqueado, abierto y la persona comprobada otra vez.
+        if (CONTEXTOS_DE_MEJORA.includes(datos.contexto)) {
+          await exigirDestinoAbierto(tx, datos.contexto, datos.contextoId, usuarioId, datos.rol);
+        }
         // El soporte de una medición: el indicador y la medición bloqueados antes de escribir la fila hija.
         if (datos.contexto === "medicion") await bloquearParaSoporte(tx, datos.contextoId);
         // El de una constancia de envío al ente: el indicador y la constancia, en ese orden.

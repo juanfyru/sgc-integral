@@ -48,6 +48,14 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/api/reportes-externos/5/archivos?x=1",
     "/api/datos-compartidos/7/archivos",
     "/api/datos-compartidos/7/archivos?archivo=3",
+    "/api/mejoramiento/hallazgos/5/archivos",
+    "/api/mejoramiento/hallazgos/5/archivos?rol=correccion",
+    "/api/mejoramiento/rondas/5/archivos",
+    "/api/mejoramiento/rondas/5/archivos?rol=analisis",
+    "/api/mejoramiento/actividades/5/archivos",
+    "/api/mejoramiento/actividades/5/archivos?x=1",
+    "/api/mejoramiento/reportes/5/archivos",
+    "/api/mejoramiento/reportes/5/archivos?x=1",
   ])("%s queda fuera del proxy", (url) => expect(pasa(url)).toBe(false));
 
   it.each([
@@ -98,6 +106,17 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/api/datos-compartidos/x/archivos",
     "/api/datos-compartidos/7",
     "/indicadores/datos/7/soportes/3",
+    "/api/mejoramiento/hallazgos/5/archivos/7",
+    "/api/mejoramiento/hallazgos/x/archivos",
+    "/api/mejoramiento/hallazgos/5",
+    "/api/mejoramiento/rondas/5/archivos/7",
+    "/api/mejoramiento/rondas/x/archivos",
+    "/api/mejoramiento/actividades/5/archivos/7",
+    "/api/mejoramiento/actividades/x/archivos",
+    "/api/mejoramiento/reportes/5/archivos/7",
+    "/api/mejoramiento/reportes/x/archivos",
+    "/api/mejoramiento/reportes/5",
+    "/mejoramiento/archivos/7/evidencia.pdf",
   ])("%s sigue pasando por el proxy", (url) => expect(pasa(url)).toBe(true));
 });
 

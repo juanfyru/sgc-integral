@@ -5,6 +5,7 @@
 // Las de la configuración viven en `src/app/admin/acciones-mejoramiento.ts`.
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import {
   anularHallazgo,
   cambiarProceso,
@@ -103,5 +104,16 @@ export async function cambiarProcesoAccion(_previo: EstadoAccion, formData: Form
     const d = parsearFormulario(datos, EsquemaCambioDeProceso);
     await cambiarProceso(sesion, d);
     return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/**
+ * Quita un archivo de mejoramiento (spec 15 §12.2). El permiso de la matriz es el de ejecutar; la condición de persona (quien
+ * lo subió mientras su paso sigue abierto, o el Admin SGC mientras el hallazgo no termine) la comprueba
+ * `quitarArchivoDeMejora` dentro de su transacción.
+ */
+export async function quitarArchivoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
+    await quitarArchivoDeMejora(sesion, idNumerico(datos, "archivoId"));
   });
 }

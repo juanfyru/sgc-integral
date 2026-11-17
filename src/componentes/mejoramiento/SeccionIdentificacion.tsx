@@ -26,6 +26,7 @@ export function SeccionIdentificacion({
   zona,
   abierta,
   notas = [],
+  children,
 }: {
   hallazgo: Pick<
     DetalleDeHallazgo,
@@ -47,6 +48,8 @@ export function SeccionIdentificacion({
   abierta: boolean;
   /** Las notas que se añadieron al reclasificar: la descripción no se reescribe (spec 15 §7.6). */
   notas?: ReadonlyArray<{ cuando: Date; nota: string }>;
+  /** Lo que sigue a los datos: las evidencias del hallazgo (`ArchivosDe`), solo para quien las ve. */
+  children?: React.ReactNode;
 }) {
   const resumen = [h.proceso, ETIQUETA_ORIGEN.get(h.origen) ?? h.origen, `detectado el ${fechaDeDia(h.detectadoEn)}`].join(" · ");
   return (
@@ -90,6 +93,12 @@ export function SeccionIdentificacion({
             </Dato>
           ) : null}
         </dl>
+        {children ? (
+          <div className="mt-4 border-t border-linea-suave pt-3">
+            <h3 className="mb-2 text-sm font-semibold">Evidencias</h3>
+            {children}
+          </div>
+        ) : null}
       </div>
     </details>
   );

@@ -26,7 +26,7 @@ export async function activosDeRol(sql: Cliente, roles: readonly Rol[]): Promise
  * La condición de persona de todo lo que «le toca al líder» (spec §6.1, F15-DC3): ser un líder activo de ese proceso o,
  * si el proceso no tiene ninguno, ser Admin SGC.
  */
-export async function actuaPorElProceso(tx: Cliente, sesion: SesionFlujo, procesoId: number): Promise<boolean> {
+export async function actuaPorElProceso(tx: Cliente, sesion: Pick<SesionFlujo, "usuarioId" | "rol">, procesoId: number): Promise<boolean> {
   const lideres = await lideresDeProceso(procesoId, { sql: tx });
   if (sesion.rol === "lider_proceso") return lideres.includes(sesion.usuarioId);
   return sesion.rol === "admin_sgc" && lideres.length === 0;

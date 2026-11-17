@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { anularHallazgoAccion, cambiarProcesoAccion, reclasificarHallazgoAccion, registrarOcurrenciaAccion } from "@/app/acciones-mejoramiento";
+import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
@@ -13,6 +14,8 @@ import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentif
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { obtenerSql } from "@/db/cliente";
+import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import type { DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { cerradosDelProceso, documentosVigentesVisibles, normasQueRigen, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { diaCorto } from "@/lib/mejoramiento/formato";
@@ -90,6 +93,12 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       })
     : [];
   const clave = `${h.estado}-${h.eventos.length}`;
+  // Los archivos de la identificación (rol `evidencia`): solo para quien ve el hallazgo completo; el servidor decide cada subida.
+  const sqlArchivos = obtenerSql();
+  const dueno = { contexto: "mejora_hallazgo", contextoId: h.id } as const;
+  const evidencias = completo ? (await archivosDe(sqlArchivos, sesion, dueno)).filter((a) => a.rol === "evidencia") : [];
+  const puedeSubirEvidencia = completo && (await autorizarSubida(sesion, { contexto: "mejora_hallazgo", id: h.id, rol: "evidencia" })).ok;
+  const quitables = await archivosQuitables(sqlArchivos, sesion, evidencias, dueno);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -108,7 +117,17 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       <Recorrido pasos={pasosConFechas(h, zona)} />
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
-          <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} notas={notas} />
+          <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} notas={notas}>
+            {completo ? (
+              <ArchivosDe
+                archivos={evidencias}
+                quitables={quitables}
+                direccionDeSubida={puedeSubirEvidencia ? `/api/mejoramiento/hallazgos/${h.id}/archivos` : null}
+                nombre="Zona de carga de las evidencias del hallazgo"
+                vacio="Sin evidencias adjuntas."
+              />
+            ) : null}
+          </SeccionIdentificacion>
           {completo ? (
             <Ocurrencias
               key={`ocurrencias-${h.ocurrencias.length}`}
