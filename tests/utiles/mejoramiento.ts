@@ -58,19 +58,30 @@ export async function otroProcesoConLider(tx: TransactionSql): Promise<{ proceso
   return { procesoId, lider: await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [procesoId] }) };
 }
 
-/** Una acción y una actividad (de la ronda 1) por SQL: las acciones y actividades llegan en las Tareas 12 a 14. */
+/**
+ * Una actividad (de la ronda 1) por SQL: las acciones y actividades llegan en las Tareas 12 a 14. Con `accionDe` (el id de
+ * otra actividad) cuelga de la misma acción; si no, de una acción nueva. `aprobada` pone `fin_original`: el plan aprobado.
+ */
 export async function actividadPorSql(
   tx: TransactionSql,
   hallazgoId: number,
   responsableId: number,
-  cambios?: { fin?: string; estado?: string },
+  cambios?: { fin?: string; estado?: string; avance?: number; aprobada?: boolean; accionDe?: number },
 ): Promise<number> {
-  let [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${hallazgoId} AND numero = 1`;
-  if (!r) [r] = await tx`INSERT INTO mejora_rondas (hallazgo_id, numero) VALUES (${hallazgoId}, 1) RETURNING id`;
-  const [ac] = await tx`INSERT INTO mejora_acciones (hallazgo_id, ronda_id, orden, tipo, descripcion)
-    VALUES (${hallazgoId}, ${r.id}, 1, 'correctiva', 'Acción de prueba') RETURNING id`;
-  const [a] = await tx`INSERT INTO mejora_actividades (hallazgo_id, accion_id, orden, descripcion, responsable_id, inicio, fin, estado)
-    VALUES (${hallazgoId}, ${ac.id}, 1, 'Actividad de prueba', ${responsableId}, '2026-11-01',
-      ${cambios?.fin ?? "2026-12-31"}, ${cambios?.estado ?? "abierta"}) RETURNING id`;
+  let accionId: number;
+  if (cambios?.accionDe !== undefined) {
+    const [o] = await tx`SELECT accion_id FROM mejora_actividades WHERE id = ${cambios.accionDe}`;
+    accionId = Number(o.accion_id);
+  } else {
+    let [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${hallazgoId} AND numero = 1`;
+    if (!r) [r] = await tx`INSERT INTO mejora_rondas (hallazgo_id, numero) VALUES (${hallazgoId}, 1) RETURNING id`;
+    const [ac] = await tx`INSERT INTO mejora_acciones (hallazgo_id, ronda_id, orden, tipo, descripcion)
+      VALUES (${hallazgoId}, ${r.id}, 1, 'correctiva', 'Acción de prueba') RETURNING id`;
+    accionId = Number(ac.id);
+  }
+  const fin = cambios?.fin ?? "2026-12-31";
+  const [a] = await tx`INSERT INTO mejora_actividades (hallazgo_id, accion_id, orden, descripcion, responsable_id, inicio, fin_original, fin, estado, avance)
+    VALUES (${hallazgoId}, ${accionId}, 1, 'Actividad de prueba', ${responsableId}, '2026-11-01',
+      ${cambios?.aprobada ? fin : null}, ${fin}, ${cambios?.estado ?? "abierta"}, ${cambios?.avance ?? 0}) RETURNING id`;
   return Number(a.id);
 }

@@ -33,13 +33,13 @@ export async function actuaPorElProceso(tx: Cliente, sesion: SesionFlujo, proces
 }
 
 /** Los líderes activos del proceso o, si no tiene ninguno, los Admin SGC activos. */
-async function lideresOAdmins(tx: TransactionSql, procesoId: number): Promise<number[]> {
+async function lideresOAdmins(tx: Cliente, procesoId: number): Promise<number[]> {
   const lideres = await lideresDeProceso(procesoId, { sql: tx });
   return lideres.length > 0 ? lideres : adminsActivos({ sql: tx });
 }
 
 /** Cómo se resuelve cada turno a usuarios activos. Un solo lugar: las tareas 10, 13 y 16 lo refinan aquí. */
-const QUIENES: Record<Turno, (tx: TransactionSql, h: HallazgoBase) => Promise<number[]>> = {
+const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>> = {
   lideres: (tx, h) => lideresOAdmins(tx, h.procesoId),
   registrador: async (tx, h) => {
     const [u] = await tx`SELECT id FROM usuarios WHERE id = ${h.registradoPor} AND activo`;
@@ -72,7 +72,7 @@ const QUIENES: Record<Turno, (tx: TransactionSql, h: HallazgoBase) => Promise<nu
 };
 
 /** Los usuarios activos que tienen el turno del hallazgo en su estado actual; vacío si nadie lo tiene. */
-export async function quienTieneElTurno(tx: TransactionSql, h: HallazgoBase): Promise<number[]> {
+export async function quienTieneElTurno(tx: Cliente, h: HallazgoBase): Promise<number[]> {
   const turno = turnoDe(h.estado);
   return turno ? QUIENES[turno](tx, h) : [];
 }

@@ -3,12 +3,11 @@
  * lectura pasa por `filtroHallazgos` (`src/lib/alcance.ts`): quien no ve un hallazgo no lo recibe, no lo cuenta, y un
  * identificador que no existe y uno que no se ve responden igual (nulo). El turno y lo vencido se calculan al leer.
  */
-import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
-import { filtroHallazgos, participacionEnHallazgo } from "@/lib/alcance";
-import { etiquetaDeEstado, turnoDe } from "@/lib/mejoramiento/estados";
+import { filtroHallazgos, participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
+import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import {
   TERMINALES,
@@ -33,6 +32,8 @@ export type FiltroDeLista = {
   criticidad?: Criticidad;
   estado?: EstadoHallazgo | "abiertos" | "reabiertos" | "sin_accion";
   soloVencidos?: boolean;
+  /** Los que esperan la decisión de quien mira (R2: está en `quienTieneElTurno`). */
+  esperanSuDecision?: boolean;
 };
 
 export type FilaDeHallazgo = {
@@ -83,56 +84,84 @@ function aBase(f: Record<string, unknown>): HallazgoBase {
 
 const ADMIN = "Administrador del SGC";
 
+/** La resolución de turnos dentro de una llamada: cada clave se resuelve una vez (ver `resolverTurno`). */
+type Memoria = Map<string, Promise<unknown>>;
+const recordar = <T>(m: Memoria, clave: string, f: () => Promise<T>): Promise<T> => {
+  if (!m.has(clave)) m.set(clave, f());
+  return m.get(clave) as Promise<T>;
+};
+
+async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<{ ids: number[]; texto: string }> {
+  const turno = turnoDe(h.estado);
+  if (!turno) return { ids: [], texto: esTerminal(h.estado) ? "Sin pendientes" : "Nadie por ahora" };
+  // Quién tiene el turno depende solo de esto: el proceso, quien registró, el hallazgo o nada.
+  const clave =
+    turno === "lideres" ? `lideres:${h.procesoId}`
+    : turno === "registrador" || turno === "arbitro" ? `${turno}:${h.registradoPor}`
+    : turno === "responsables" ? `responsables:${h.id}`
+    : turno;
+  const ids = await recordar(m, clave, () => quienTieneElTurno(tx, h));
+  switch (turno) {
+    case "lideres": {
+      const lideres = await recordar(m, `hay-lideres:${h.procesoId}`, () => lideresDeProceso(h.procesoId, { sql: tx }));
+      return { ids, texto: lideres.length > 0 ? "La líder del proceso" : ADMIN };
+    }
+    case "registrador":
+      return { ids, texto: ids.includes(h.registradoPor) ? "Quien lo registró" : ADMIN };
+    case "arbitro": {
+      const gerencia = await recordar(m, "gerencia-activa", () => activosDeRol(tx, ["gerencia"]));
+      return { ids, texto: ids.length > 0 && ids.every((id) => gerencia.includes(id)) ? "Gerencia" : ADMIN };
+    }
+    case "admin":
+      return { ids, texto: ADMIN };
+    case "gerencia":
+      return { ids, texto: "Gerencia" };
+    case "responsables":
+      return { ids, texto: "Los responsables de las actividades" };
+    case "verificadores":
+      return { ids, texto: "Quien puede verificar" };
+    case "validadores":
+      return { ids, texto: "Quien puede validar" };
+  }
+}
+
 /**
  * Con quién está el hallazgo, en palabras, según los usuarios activos de hoy (nunca se guarda): si el turno es del líder y
  * el proceso ya no tiene ninguno activo, es del Administrador del SGC.
  */
 export async function turnoEnTexto(tx: Cliente, h: HallazgoBase): Promise<string> {
-  const turno = turnoDe(h.estado);
-  if (!turno) return esTerminal(h.estado) ? "Sin pendientes" : "Nadie por ahora";
-  switch (turno) {
-    case "lideres":
-      return (await lideresDeProceso(h.procesoId, { sql: tx })).length > 0 ? "La líder del proceso" : ADMIN;
-    case "registrador": {
-      const quienes = await quienTieneElTurno(tx as unknown as TransactionSql, h);
-      return quienes.includes(h.registradoPor) ? "Quien lo registró" : ADMIN;
-    }
-    case "arbitro": {
-      const gerencia = await activosDeRol(tx, ["gerencia"]);
-      const quienes = await quienTieneElTurno(tx as unknown as TransactionSql, h);
-      return quienes.length > 0 && quienes.every((id) => gerencia.includes(id)) ? "Gerencia" : ADMIN;
-    }
-    case "admin":
-      return ADMIN;
-    case "gerencia":
-      return "Gerencia";
-    case "responsables":
-      return "Los responsables de las actividades";
-    case "verificadores":
-    case "validadores":
-      return "Quien puede verificar";
-  }
+  return (await resolverTurno(tx, h, new Map())).texto;
 }
 
-/** Cuántas actividades sin terminar de este hallazgo tienen la fecha de fin antes de hoy (en la zona). */
-const ALGO_VENCIDO = (sql: Cliente, hoy: string) => sql`EXISTS (
+/** Una actividad vencida: con el plan aprobado (`fin_original`), sin terminar ni cancelar y con el fin ya pasado en la zona. */
+const ACTIVIDAD_VENCIDA = (sql: Cliente, hoy: string) => sql`EXISTS (
   SELECT 1 FROM mejora_actividades va
-  WHERE va.hallazgo_id = h.id AND va.estado NOT IN ('terminada', 'cancelada') AND va.fin < ${hoy}::date)`;
+  WHERE va.hallazgo_id = h.id AND va.fin_original IS NOT NULL AND va.estado NOT IN ('terminada', 'cancelada')
+    AND va.fin < ${hoy}::date)`;
 
-/** El avance de la ronda en curso: el promedio de sus actividades que siguen vivas; nulo si no hay. */
+/**
+ * El avance (spec §10.3): el promedio de los avances de las acciones de la ronda en curso, y el de cada acción, el de sus
+ * actividades no canceladas; entero, y nulo si no hay.
+ */
 const AVANCE = (sql: Cliente) => sql`(
-  SELECT round(avg(aa.avance))::int
-  FROM mejora_actividades aa
-  JOIN mejora_acciones ac ON ac.id = aa.accion_id
-  JOIN mejora_rondas ar ON ar.id = ac.ronda_id
-  WHERE aa.hallazgo_id = h.id AND ar.numero = h.ronda AND aa.estado <> 'cancelada')`;
+  SELECT round(avg(por_accion.promedio))::int FROM (
+    SELECT avg(aa.avance) AS promedio
+    FROM mejora_actividades aa
+    JOIN mejora_acciones ac ON ac.id = aa.accion_id
+    JOIN mejora_rondas ar ON ar.id = ac.ronda_id
+    WHERE aa.hallazgo_id = h.id AND ar.numero = h.ronda AND aa.estado <> 'cancelada'
+    GROUP BY ac.id) por_accion)`;
 
 /** `%` y `_` de la búsqueda se toman como texto, no como comodines. */
 const comoPatron = (q: string) => "%" + q.trim().replace(/[\\%_]/g, (m) => "\\" + m) + "%";
 
+const COLUMNAS_BASE = (sql: Cliente) => sql`h.id, h.codigo, h.clase, h.criticidad, h.origen, h.estado, h.ronda, h.proceso_id,
+  h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.registrado_por`;
+
 /**
  * La lista de hallazgos que la persona ve, con las cifras de lo que ve (no de lo filtrado). Orden por omisión: los
- * externos primero, luego los que tienen algo vencido, luego por vencimiento ascendente con los nulos al final.
+ * de prioridad alta (externos) primero, luego los que tienen algo vencido, luego por vencimiento ascendente con los nulos
+ * al final. Los filtros van al `WHERE`; solo `esperanSuDecision` se resuelve por hallazgo, con el turno memorizado.
  */
 export async function listarHallazgos(
   sesion: SesionFlujo,
@@ -142,52 +171,64 @@ export async function listarHallazgos(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const hoy = fechaEnZona(ahora, zonaHoraria());
+  const memoria: Memoria = new Map();
+  const visible = filtroHallazgos(sql, sesion);
+  const abierto = sql`h.estado NOT IN ${sql([...TERMINALES])}`;
+  const algoVencido = sql`(${ACTIVIDAD_VENCIDA(sql, hoy)} OR h.vence_en < ${ahora})`;
+
+  // Quienes esperan la decisión de quien mira (R2): los abiertos que tienen turno y donde está en `quienTieneElTurno`.
+  const conTurno = await sql`SELECT ${COLUMNAS_BASE(sql)} FROM mejora_hallazgos h
+    WHERE ${visible} AND ${abierto} AND h.estado <> 'en_espera'`;
+  const suyos: number[] = [];
+  for (const f of conTurno) {
+    const h = aBase(f);
+    if ((await resolverTurno(sql, h, memoria)).ids.includes(sesion.usuarioId)) suyos.push(h.id);
+  }
+
+  const [c] = await sql`SELECT
+      count(*) FILTER (WHERE ${abierto}) AS abiertos,
+      count(*) FILTER (WHERE ${abierto} AND ${algoVencido}) AS con_algo_vencido,
+      count(*) FILTER (WHERE h.estado = 'en_espera') AS en_espera,
+      count(*) FILTER (WHERE ${abierto} AND h.ronda > 1) AS reabiertos
+    FROM mejora_hallazgos h WHERE ${visible}`;
+  const cifras: CifrasDeLista = {
+    abiertos: Number(c.abiertos),
+    conAlgoVencido: Number(c.con_algo_vencido),
+    esperanSuDecision: suyos.length,
+    enEspera: Number(c.en_espera),
+    reabiertos: Number(c.reabiertos),
+  };
+
+  const e = filtro.estado;
   const q = filtro.q?.trim();
-  const coincide = q
-    ? sql`(unaccent(lower(h.codigo)) LIKE unaccent(lower(${comoPatron(q)})) OR unaccent(lower(h.titulo)) LIKE unaccent(lower(${comoPatron(q)})))`
-    : sql`true`;
+  const condiciones = [
+    q
+      ? sql`(unaccent(lower(h.codigo)) LIKE unaccent(lower(${comoPatron(q)})) OR unaccent(lower(h.titulo)) LIKE unaccent(lower(${comoPatron(q)})))`
+      : sql`true`,
+    filtro.procesoId !== undefined ? sql`h.proceso_id = ${filtro.procesoId}` : sql`true`,
+    filtro.origen ? sql`h.origen = ${filtro.origen}` : sql`true`,
+    filtro.clase ? sql`h.clase = ${filtro.clase}` : sql`true`,
+    filtro.criticidad ? sql`h.criticidad = ${filtro.criticidad}` : sql`true`,
+    e === "abiertos" ? abierto
+    : e === "reabiertos" ? sql`(${abierto} AND h.ronda > 1)`
+    : e === "sin_accion" ? sql`(h.estado = 'cerrado' AND h.resultado_cierre = 'sin_accion')`
+    : e ? sql`h.estado = ${e}`
+    : sql`true`,
+    filtro.soloVencidos ? sql`(${abierto} AND ${algoVencido})` : sql`true`,
+    filtro.esperanSuDecision ? sql`h.id = ANY(${sql.array(suyos)}::bigint[])` : sql`true`,
+  ];
   const filas = await sql`
-    SELECT h.id, h.codigo, h.titulo, h.clase, h.criticidad, h.origen, h.estado, h.ronda, h.proceso_id, h.reincidente_de,
-      h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.registrado_por, h.vence_en, h.cargado,
-      p.nombre AS proceso, ${coincide} AS coincide, ${ALGO_VENCIDO(sql, hoy)} AS algo_vencido, ${AVANCE(sql)} AS avance
+    SELECT ${COLUMNAS_BASE(sql)}, h.titulo, h.vence_en, h.cargado, p.nombre AS proceso,
+      ${ACTIVIDAD_VENCIDA(sql, hoy)} AS actividad_vencida, ${algoVencido} AS algo_vencido, ${AVANCE(sql)} AS avance
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
-    WHERE ${filtroHallazgos(sql, sesion)}`;
+    WHERE ${visible} AND ${condiciones.reduce((a, b) => sql`${a} AND ${b}`)}`;
 
-  const cifras: CifrasDeLista = { abiertos: 0, conAlgoVencido: 0, esperanSuDecision: 0, enEspera: 0, reabiertos: 0 };
   const resultado: Array<FilaDeHallazgo & { vencido: boolean }> = [];
   for (const f of filas) {
     const h = aBase(f);
-    const abierto = !esTerminal(h.estado);
-    const vence = (f.vence_en as Date | null) ?? null;
-    const pasoVencido = abierto && vence !== null && vence.getTime() < ahora.getTime();
-    const vencido = abierto && (f.algo_vencido === true || pasoVencido);
-    const reabierto = abierto && h.ronda > 1;
-    const turnoMio = abierto && turnoDe(h.estado) !== null && (await quienTieneElTurno(sql as unknown as TransactionSql, h)).includes(sesion.usuarioId);
-    if (abierto) cifras.abiertos++;
-    if (vencido) cifras.conAlgoVencido++;
-    if (h.estado === "en_espera") cifras.enEspera++;
-    if (reabierto) cifras.reabiertos++;
-    if (turnoMio) cifras.esperanSuDecision++;
-
-    if (f.coincide !== true) continue;
-    if (filtro.procesoId !== undefined && h.procesoId !== filtro.procesoId) continue;
-    if (filtro.origen && h.origen !== filtro.origen) continue;
-    if (filtro.clase && h.clase !== filtro.clase) continue;
-    if (filtro.criticidad && h.criticidad !== filtro.criticidad) continue;
-    if (filtro.soloVencidos && !vencido) continue;
-    const e = filtro.estado;
-    if (e === "abiertos" && !abierto) continue;
-    if (e === "reabiertos" && !reabierto) continue;
-    if (e === "sin_accion" && !(h.resultadoCierre === "sin_accion" || h.accionRequerida === false)) continue;
-    if (e && e !== "abiertos" && e !== "reabiertos" && e !== "sin_accion" && h.estado !== e) continue;
-
-    const marcas: string[] = [];
-    if (esExterno(h.origen)) marcas.push("Externo");
-    if (reabierto) marcas.push("Reabierto");
-    if (h.reincidenteDe !== null) marcas.push("Reincidente");
-    if (f.cargado === true) marcas.push("Cargado");
-    if (vencido) marcas.push("Con algo vencido");
+    const abierta = !esTerminal(h.estado);
+    const vence = abierta ? ((f.vence_en as Date | null) ?? null) : null;
     resultado.push({
       id: h.id,
       codigo: h.codigo,
@@ -198,12 +239,12 @@ export async function listarHallazgos(
       proceso: f.proceso as string,
       estado: h.estado,
       etiqueta: etiquetaDeEstado(h),
-      marcas,
-      turno: await turnoEnTexto(sql, h),
+      marcas: marcasDeHallazgo(h, { cargado: f.cargado === true, algunaActividadVencida: f.actividad_vencida === true }),
+      turno: (await resolverTurno(sql, h, memoria)).texto,
       avance: idONulo(f.avance),
-      vence: abierto ? vence : null,
-      prioridadAlta: abierto && esExterno(h.origen),
-      vencido,
+      vence,
+      prioridadAlta: abierta && esExterno(h.origen),
+      vencido: abierta && f.algo_vencido === true,
     });
   }
   resultado.sort((a, b) => {
@@ -295,7 +336,9 @@ export type DetalleDeHallazgo = {
   registradoPor: string;
   registradoEn: Date;
   cargado: boolean;
-  reincidenteDe: number | null;
+  /** El hallazgo anterior solo si quien mira puede verlo; si no, sin id ni nombre. */
+  reincidenteDe: { id: number; codigo: string; titulo: string } | { visible: false } | null;
+  marcas: string[];
   fechaLimiteEnte: string | null;
   vence: Date | null;
   correccion: {
@@ -335,7 +378,7 @@ async function loQueSigue(tx: Cliente, h: HallazgoBase, usuarioId: number, turno
   if (h.estado === "en_espera") return "Espera el momento de evaluar la eficacia de las acciones.";
   const toca = LE_TOCA[h.estado];
   if (!toca) return "Tiene el turno: " + turno + ".";
-  const mio = (await quienTieneElTurno(tx as unknown as TransactionSql, h)).includes(usuarioId);
+  const mio = (await quienTieneElTurno(tx, h)).includes(usuarioId);
   return mio ? "A usted le toca " + toca + "." : "Tiene el turno: " + turno + ", para " + toca + ".";
 }
 
@@ -361,6 +404,12 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   if (!f) return null;
   const h = aBase(f);
   const turno = await turnoEnTexto(sql, h);
+  const anterior = (async () => {
+    if (h.reincidenteDe === null) return null;
+    if (!(await puedeVerHallazgo(h.reincidenteDe, sesion, { sql }))) return { visible: false as const };
+    const [o] = await sql`SELECT id, codigo, titulo FROM mejora_hallazgos WHERE id = ${h.reincidenteDe}`;
+    return { id: Number(o.id), codigo: o.codigo as string, titulo: o.titulo as string };
+  })();
 
   const [rondas, analisis, causas, acciones, vinculos, actividades, ajustes] = await Promise.all([
     sql`SELECT id, numero, estado_plan, formular_antes_de, enviado_en, aprobado_en, aprobado_rol, resultado, cierre_previsto,
@@ -484,7 +533,11 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     registradoPor: f.registrador as string,
     registradoEn: f.registrado_en as Date,
     cargado: f.cargado === true,
-    reincidenteDe: h.reincidenteDe,
+    reincidenteDe: await anterior,
+    marcas: marcasDeHallazgo(h, {
+      cargado: f.cargado === true,
+      algunaActividadVencida: actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.fin as string) < fechaEnZona(opciones?.ahora ?? new Date(), zonaHoraria())),
+    }),
     fechaLimiteEnte: (f.limite_ente as string | null) ?? null,
     vence: esTerminal(h.estado) ? null : ((f.vence_en as Date | null) ?? null),
     correccion: {

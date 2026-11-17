@@ -1,5 +1,6 @@
+import { esExterno } from "./origenes";
 import { accionObligada, llevaPlanSiempre } from "./reglas";
-import type { EstadoHallazgo, HallazgoBase } from "./tipos";
+import { TERMINALES, type EstadoHallazgo, type HallazgoBase } from "./tipos";
 
 const ETIQUETAS: Record<EstadoHallazgo, string> = {
   por_aceptar: "Por aceptar",
@@ -137,4 +138,22 @@ export function pasosDelRecorrido(
     ...p,
     estado: h.estado === "cerrado" || i < actual ? "hecho" : i === actual ? "actual" : "falta",
   }));
+}
+
+/**
+ * Las marcas de un hallazgo (spec §8.1 y §7.2), las mismas en la lista y en la página. La de vencido es solo de las
+ * actividades; el paso en curso tiene su propio «Vencido hace N días» en la columna «Vence».
+ */
+export function marcasDeHallazgo(
+  h: Pick<HallazgoBase, "estado" | "ronda" | "origen" | "reincidenteDe">,
+  x: { cargado: boolean; algunaActividadVencida: boolean },
+): string[] {
+  const abierto = !TERMINALES.includes(h.estado);
+  const marcas: string[] = [];
+  if (abierto && esExterno(h.origen)) marcas.push("Prioridad alta");
+  if (abierto && h.ronda > 1) marcas.push(`Reabierto · ronda ${h.ronda}`);
+  if (h.reincidenteDe !== null) marcas.push("Reincidente");
+  if (x.cargado) marcas.push("Cargado");
+  if (abierto && x.algunaActividadVencida) marcas.push("Con algo vencido");
+  return marcas;
 }
