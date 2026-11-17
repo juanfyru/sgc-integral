@@ -42,6 +42,14 @@ const ESPERADA: Record<Permiso, Rol[]> = {
   "indicadores.aprobar": ["gerencia", "lider_proceso"],
   "indicadores.medir": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
   "indicadores.observar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "mejora.reportar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "mejora.ejecutar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "mejora.registrar": ["admin_sgc", "control_interno", "lider_proceso"],
+  "mejora.formular": ["admin_sgc", "lider_proceso"],
+  "mejora.gestionar": ["admin_sgc"],
+  "mejora.aprobar": ["gerencia"],
+  "mejora.verificar": ["admin_sgc", "gerencia", "control_interno"],
+  "mejora.ver_todo": ["admin_sgc", "gerencia", "control_interno"],
 };
 
 describe("matriz de permisos", () => {

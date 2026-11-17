@@ -39,7 +39,15 @@ export type Permiso =
   | "indicadores.administrar"
   | "indicadores.aprobar"
   | "indicadores.medir"
-  | "indicadores.observar";
+  | "indicadores.observar"
+  | "mejora.reportar"
+  | "mejora.ejecutar"
+  | "mejora.registrar"
+  | "mejora.formular"
+  | "mejora.gestionar"
+  | "mejora.aprobar"
+  | "mejora.verificar"
+  | "mejora.ver_todo";
 
 /** Matriz fija rol -> permiso (diseño F11 §5). */
 export const MATRIZ: Record<Permiso, readonly Rol[]> = {
@@ -82,6 +90,14 @@ export const MATRIZ: Record<Permiso, readonly Rol[]> = {
   "indicadores.aprobar": ["gerencia", "lider_proceso"],
   "indicadores.medir": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
   "indicadores.observar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "mejora.reportar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "mejora.ejecutar": ["admin_sgc", "gerencia", "control_interno", "lider_proceso", "consulta"],
+  "mejora.registrar": ["admin_sgc", "control_interno", "lider_proceso"],
+  "mejora.formular": ["admin_sgc", "lider_proceso"],
+  "mejora.gestionar": ["admin_sgc"],
+  "mejora.aprobar": ["gerencia"],
+  "mejora.verificar": ["admin_sgc", "gerencia", "control_interno"],
+  "mejora.ver_todo": ["admin_sgc", "gerencia", "control_interno"],
 };
 
 export const PERMISOS = Object.keys(MATRIZ) as readonly Permiso[];
