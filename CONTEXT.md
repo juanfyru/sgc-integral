@@ -1,6 +1,9 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-17**, al fusionar el **complemento de la
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-17**, al aprobar el usuario el **diseño de la
+> Fase 15 — Planes de mejoramiento** (`docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`; tres
+> entregas, 15A, 15B y 15C; **todavía sin código**: sigue el plan de la 15A). Ese mismo día, antes, se fusionó el
+> **complemento de la
 > 14C** (el punto de miles en los indicadores, el soporte obligatorio con su fecha y el periodo de un dato sin categorías;
 > rama `f14c-complemento`, sobre `main` en `07cb1e6`, en el worktree `F:\sgc-integral-f14c` y contra la base aparte
 > `sgc_f14c`; **fusionado en `main` el 2026-11-17 por decisión del usuario, por avance rápido, sin publicar en `origin`**,
@@ -31,7 +34,23 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** el **complemento de la 14C** está terminado y **fusionado en `main`** (el 2026-11-17, por decisión
+1. **Dónde quedamos:** la **Fase 15 — Planes de mejoramiento** tiene su **diseño aprobado por el usuario el 2026-11-17**
+   («aprobado el spec, continuemos con el plan de la 15A») y **todavía no tiene código**. El spec es uno solo para las
+   tres entregas: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`. **15A**, el hallazgo de
+   punta a punta (§6 a §16, con detalle completo); **15B**, planes y enganches (§17); **15C**, el informe SGC-FO-28, el
+   Pareto y cuatro cálculos automáticos (§18). La 15B y la 15C tendrán su anexo al empezar. Se diseñó sobre siete formatos
+   del hospital (SGC-PR-03, SGC-FO-AC-01 a 04, SGC-FO-14 y SGC-FO-28), que están en `F:\plan_mejoramiento`, fuera del
+   repositorio: el Apéndice A del spec los transcribe. **Manda sobre el spec maestro** en lo que lista su §5.2: catorce
+   orígenes, tres tipos de acción, el hallazgo como unidad y el plan opcional, plazos en días hábiles, visibilidad por
+   alcance y el informe en la 15C. Las decisiones del usuario son los temas 1 a 16 de su §2; las de Claude, F15-DC1 a
+   DC38 (§29), que el usuario leyó al aprobar. Las maquetas aprobadas (no versionadas) están en
+   `.superpowers/brainstorm/1893-1794928689/content/pantallas-15-v2.html`. **Lo que sigue:** el plan de implementación
+   de la 15A (`docs/superpowers/plans/`) y su construcción en una rama y un worktree aparte, contra una base aparte, como
+   las entregas anteriores. **Pendientes del usuario, ninguno bloquea la 15A** (spec §28): la plantilla del ente de
+   control y de qué ente es (la necesita la 15B); los tres hallazgos que hoy están abiertos en papel, con sus formatos
+   diligenciados; la matriz SGC-MZ-AC-01, si existe; registrar los siete formatos como documentos; y los ajustes a sus
+   textos del Apéndice B. Desde ese día `.git/info/exclude` excluye todo Excel, Word o PDF de la raíz.
+   **Antes, el complemento de la 14C** está terminado y **fusionado en `main`** (el 2026-11-17, por decisión
    del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se construyó (las siete tareas de su plan y
    la decisión 12 del usuario) en la rama `f14c-complemento` (salía de `main` en `07cb1e6`), en el worktree
    `F:\sgc-integral-f14c` y contra la base `sgc_f14c`; **la rama, el worktree y esa base se conservan** hasta que el
@@ -197,7 +216,8 @@
    se cerró la Fase 14 del diseño maestro. (b) el
    recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)»); (c) si no se hicieron, los recorridos
    del usuario de la 14A y de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); y
-   (d) la **Fase 15 — Planes de mejoramiento**. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
+   (d) la **Fase 15 — Planes de mejoramiento**, con el diseño ya aprobado (punto 1): escribir el plan de la 15A y
+   construirla. Enganches que deja la 14C: los datos compartidos y los compuestos, que el
    tablero de la Fase 17 puede leer sin digitar nada (y donde entra el compuesto «promedio de los componentes medidos»), y
    los avisos de los datos vencidos, que la Fase 16 lleva al correo. Enganches que deja la 14A: la marca
    «Requiere acción de mejora» con su causa y su acción propuesta, que la Fase 15 convierte en acción formal; los
