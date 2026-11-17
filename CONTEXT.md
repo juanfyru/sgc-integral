@@ -48,7 +48,10 @@
    usuario el 2026-11-17** («Apruebo la enmienda y el plan. ejecuta con subagentes»):
    `docs/superpowers/plans/2026-11-17-fase15a-mejoramiento.md`, 22 tareas, **con subagentes** (una implementación y una
    revisión por tarea, y la revisión de toda la rama al final), en el worktree `F:\sgc-integral-f15a`, rama
-   `fase-15a-mejoramiento`, contra la base aparte `sgc_f15a` (su Paso 0 lo prepara). Con el plan, el usuario aprobó una
+   `fase-15a-mejoramiento`, contra la base aparte `sgc_f15a`. **La 15A está en curso** desde el 2026-11-17 en ese
+   worktree (Paso 0 hecho: la base con dieciocho migraciones y la demo recién sembrada; el ledger de la ejecución, con la
+   línea base, está en `.superpowers/sdd/2026-11-17-fase15a-mejoramiento/progress.md`, ignorado por git). Mientras se
+   construye, `F:\sgc-integral` no se toca y la base `sgc` del usuario solo se lee. Con el plan, el usuario aprobó una
    **enmienda del spec** de ese mismo día: el festivo del 9 de julio (Ley 2578 de 2026) en el calendario y en el
    Apéndice C, con el calendario publicado de 2025 a 2027 para las pruebas; F15-DC39 (la lista de días de la entidad
    también vuelve hábil un festivo calculado); y cuatro contextos de archivo en lugar de tres (F15-DC38). **Pendientes del usuario, ninguno bloquea la 15A** (spec §28): la plantilla del ente de
