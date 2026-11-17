@@ -1,7 +1,7 @@
 import { IconoFormato } from "@/componentes/documentos/IconoFormato";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
-import { advertenciaDelPeriodoVacio, CerrarDeNuevoDato, DialogoReabrirDato } from "@/componentes/indicadores/cierre/DialogoReabrir";
+import { CerrarDeNuevoDato, DialogoReabrirDato } from "@/componentes/indicadores/cierre/DialogoReabrir";
 import { ActualizarCategoriasDelDato } from "@/componentes/indicadores/medicion/ActualizarCategorias";
 import type { EventoDeDato, PeriodoDeDato } from "@/db/consultas/indicadores/datos-periodos";
 import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
@@ -195,7 +195,7 @@ export function HistorialDelDato({
                       <CerrarDeNuevoDato
                         periodoId={p.id}
                         etiqueta={etiquetaDePeriodo(p.periodo, true)}
-                        advertencia={p.sinCategorias && categoriasActivas ? advertenciaDelPeriodoVacio(actualiza) : null}
+                        advertir={p.sinCategorias && categoriasActivas ? { conActualizar: actualiza } : null}
                       />
                     ) : null}
                   </div>

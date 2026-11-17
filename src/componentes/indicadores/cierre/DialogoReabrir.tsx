@@ -287,12 +287,26 @@ function CerrarConAdvertencia({ accion, id, etiqueta, advertencia }: { accion: A
 }
 
 /**
- * «Cerrar de nuevo» un periodo reabierto de un dato compartido. Con `advertencia` (el periodo está vacío y su dimensión ya
- * tiene categorías activas: `advertenciaDelPeriodoVacio`), advierte antes de cerrar; sin ella, cierra al pulsar.
+ * «Cerrar de nuevo» un periodo reabierto de un dato compartido. Con `advertir` (el periodo está vacío y su dimensión ya tiene
+ * categorías activas), advierte antes de cerrar (`advertenciaDelPeriodoVacio`, armada aquí: la fila es de servidor y no puede
+ * llamar una función de este archivo); sin él, cierra al pulsar.
  */
-export function CerrarDeNuevoDato({ periodoId, etiqueta, advertencia = null }: { periodoId: number; etiqueta: string; advertencia?: string | null }) {
-  return advertencia ? (
-    <CerrarConAdvertencia accion={cerrarDeNuevoElDatoCompartido} id={periodoId} etiqueta={etiqueta} advertencia={advertencia} />
+export function CerrarDeNuevoDato({
+  periodoId,
+  etiqueta,
+  advertir = null,
+}: {
+  periodoId: number;
+  etiqueta: string;
+  advertir?: { conActualizar: boolean } | null;
+}) {
+  return advertir ? (
+    <CerrarConAdvertencia
+      accion={cerrarDeNuevoElDatoCompartido}
+      id={periodoId}
+      etiqueta={etiqueta}
+      advertencia={advertenciaDelPeriodoVacio(advertir.conActualizar)}
+    />
   ) : (
     <CerrarOtraVez accion={cerrarDeNuevoElDatoCompartido} id={periodoId} etiqueta={etiqueta} />
   );
