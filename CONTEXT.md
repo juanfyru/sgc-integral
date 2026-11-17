@@ -416,6 +416,13 @@ confirmado después son solo documentos.
   técnica (complemento de la 14C)».
 - **Lo que no se tocó:** el código de `F:\sgc-integral`, su `next dev` del 3002 y la base `sgc`, que solo se leyó esa vez.
   La base `sgc_f14c` quedó con la demo recién sembrada.
+- **El relleno de la `0017`, ejercitado de verdad:** como la copia de `sgc` no tiene ningún indicador con soporte, en una
+  segunda copia desechable se encendió antes de migrar el soporte de `AIN-IND-01` (sin rastro en la bitácora) y de
+  `CEX-IND-01` (con una fila de bitácora que lo activa el 20 de octubre de 2026). La migración aplicó con el `CHECK`; la
+  fecha salió de la creación del primero y de esa fila del segundo; las cerradas quedaron sin marca; quedaron marcadas las
+  dos mediciones en curso del primero y la de octubre del segundo (reportada el 4 de noviembre), y la de septiembre del
+  segundo (reportada el 4 de octubre, con su plazo vencido el 11) quedó sin marca; ninguna de otros indicadores. La copia
+  se borró; `sgc` solo se leyó.
 
 ### Hecho (complemento de la 14C)
 
@@ -550,13 +557,13 @@ al cerrar (ver «Verificación de cierre», arriba); el 6 lo cubren las pruebas.
 
 - **La rama no está fusionada.** Mientras se construyó, `F:\sgc-integral`, su base `sgc` y su `next dev` del 3002 no se
   tocaron. Al fusionar, hay que aplicar la `0017` a la base `sgc` (con la `0015` y la `0016`, si aún no se aplicaron: `npm
-  run db:preparar` en `F:\sgc-integral` y reiniciar `next dev`). La prueba de la `0017` sobre una copia de `sgc` la hace
-  quien coordina al cerrar: cuenta cuántas mediciones de los indicadores que ya exigen soporte quedarían con un estado viejo
-  (abiertas solo por un soporte que ya no deben, o reportadas sin el que deben). **Migrar no recalcula:** cada una se ajusta
-  la próxima vez que algo la recalcule.
-- **Las seis decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (complemento de la 14C)»). Las
-  que más pesan: dónde se aplica la regla del punto de miles (1), el relleno ante un cambio de plazo posterior (2) y lo que
-  dice la lista de un soporte que se debe (5).
+  run db:preparar` en `F:\sgc-integral` y reiniciar `next dev`). En la copia de `sgc` de la verificación de cierre ningún
+  indicador exige soporte: la `0017` no marca nada ni deja ningún estado viejo. **Migrar no recalcula:** en otra base, cada
+  medición se ajusta la próxima vez que algo la recalcule.
+- **Las once decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (complemento de la 14C)»). Las
+  que más pesan: qué fecha límite cuenta al activar el soporte (3: lee el `vence_en` del anexo §4.2 como la fecha del
+  reporte, cambió una vez durante la ejecución y deja un caso estrecho), dónde se aplica la regla del punto de miles (1), el
+  relleno ante un cambio de plazo posterior (2) y lo que dice la lista de un soporte que se debe (5).
 - **Lo que cambia para las personas:** en los formularios de los indicadores, «1.500» se rechaza (antes se guardaba 1,5);
   «1.6» y «0.125» siguen valiendo, pero un decimal de tres cifras exactas como 2,375 se escribe con coma. «012.500» no
   tiene la forma de la regla del anexo y se lee como 12,5 (ver «Deuda técnica»). Un indicador que ya exigía soporte toma la
@@ -626,6 +633,23 @@ y su base. El detalle está en el registro de la ejecución (`progress.md` del e
    anexo (un mixto que espera su dato: el mes que no lo debe muestra el caso 1 al llegar el dato) y no cambia lo que
    afirmaba ningún test de semilla; en `CNT-ID-001` el test de su «periodo que cumple» dejaba de verlo reportado. Cuesta una
    tarea vencida más para `lider.cex` en la demo. Base: Práctica.
+7. **Una medición abierta solo por un soporte que ya no debe, y con su resultado** (el estado viejo que pudo dejar la
+   `0017` en otra base), no es tarea de nadie ni vence, y la lista y la tabla la dan por reportada; una reportada **sin**
+   resultado sigue siendo tarea de quien mide. Porque migrar no recalcula (anexo §4.3) y esa medición, recalculada, quedaría
+   reportada; esconder una sin resultado ocultaría un reporte pendiente. Base: Práctica (anexo §4.3).
+8. **El periodo vacío de un dato dice «Espera sus categorías»** en la página del dato y en la lista «Datos compartidos»
+   (sin fecha), y la pantalla de reportar de un indicador que lo usa, ««{dato}» espera que el Administrador del SGC actualice
+   sus categorías.», sin «venció». Porque mostrarlo vencido es el fracaso que nombra el anexo (§7) y la fecha no corre
+   (§5.5). Base: Anexo §5.3 y §7.
+9. **El formulario principal de la página del dato es el pendiente más antiguo que se puede reportar**; el vacío, solo si
+   no hay otro. Porque la tarea de noviembre llevaba a una página que ofrecía arriba el octubre bloqueado. Base: Práctica.
+10. **«Quién debía» de una medición que quedó sin dato por un periodo vacío dice «El dato «{nombre}», {periodo}, no tuvo
+    categorías con que reportarse»**, en pasado y con el dato, decidido con la fila del periodo (también si lo cerró un
+    cierre anterior). Porque «Su dimensión no tiene categorías activas» afirmaba en presente algo que podía haber cambiado
+    y no decía de qué dato. Base: ISO 7.5.3 (el registro dice lo que pasó).
+11. **El rechazo del punto de miles en un límite de captura de la ficha nombra la variable** («El máximo de captura de
+    «Casos»: …»). Porque una ficha tiene varias variables y el anexo pide el nombre cuando hay varios campos (§3.1). Base:
+    Anexo §3.1.
 
 ### Deuda técnica (complemento de la 14C)
 
