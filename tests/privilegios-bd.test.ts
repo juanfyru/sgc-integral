@@ -75,6 +75,24 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`UPDATE variable_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM variable_eventos WHERE id = -1`)).toBe("42501");
   });
+  // Lo de mejoramiento (0018): los eventos del hallazgo y del reporte, los seguimientos y las ocurrencias. Sin filas, el
+  // 42501 es del privilegio.
+  it("no puede modificar ni borrar mejora_eventos", async () => {
+    expect(await codigoDeError(app`UPDATE mejora_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM mejora_eventos WHERE id = -1`)).toBe("42501");
+  });
+  it("no puede modificar ni borrar mejora_seguimientos", async () => {
+    expect(await codigoDeError(app`UPDATE mejora_seguimientos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM mejora_seguimientos WHERE id = -1`)).toBe("42501");
+  });
+  it("no puede modificar ni borrar mejora_ocurrencias", async () => {
+    expect(await codigoDeError(app`UPDATE mejora_ocurrencias SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM mejora_ocurrencias WHERE id = -1`)).toBe("42501");
+  });
+  it("no puede modificar ni borrar mejora_reporte_eventos", async () => {
+    expect(await codigoDeError(app`UPDATE mejora_reporte_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM mejora_reporte_eventos WHERE id = -1`)).toBe("42501");
+  });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
     const [u] = await app`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${'zz_priv_u_' + Date.now()}, 'x', 'h') RETURNING id`;
     expect(u.id).toBeGreaterThan(0);

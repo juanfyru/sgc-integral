@@ -72,9 +72,10 @@ export type Norma = {
 
 /**
  * ¿La norma tiene historia (D47)? Una relación (también una eliminada), un proceso, un documento, un cambio de estado, un
- * impacto, su PDF, la cita de una ficha de indicador (de cualquier versión, también un borrador) o un impacto de indicador
- * (14B): cada tabla con llave foránea hacia `normas`. Una norma con historia se retira; borrarla daría el error crudo de
- * la llave. La comparten `borrarNorma` y la ficha (`tieneHistoria`).
+ * impacto, su PDF, la cita de una ficha de indicador (de cualquier versión, también un borrador), un impacto de indicador
+ * (14B) o un hallazgo de mejoramiento que la cita como requisito incumplido (15A): cada tabla con llave foránea hacia
+ * `normas`. Una norma con historia se retira; borrarla daría el error crudo de la llave. La comparten `borrarNorma` y la
+ * ficha (`tieneHistoria`).
  */
 export const historiaDeNorma = (sql: Cliente, normaId: number) => sql`(
   EXISTS (SELECT 1 FROM norma_relaciones WHERE norma_id = ${normaId} OR afectada_id = ${normaId})
@@ -84,7 +85,8 @@ export const historiaDeNorma = (sql: Cliente, normaId: number) => sql`(
   OR EXISTS (SELECT 1 FROM impactos_normativos WHERE norma_id = ${normaId})
   OR EXISTS (SELECT 1 FROM archivos WHERE contexto = 'norma' AND contexto_id = ${normaId})
   OR EXISTS (SELECT 1 FROM indicador_normas WHERE norma_id = ${normaId})
-  OR EXISTS (SELECT 1 FROM impactos_indicadores WHERE norma_id = ${normaId}))`;
+  OR EXISTS (SELECT 1 FROM impactos_indicadores WHERE norma_id = ${normaId})
+  OR EXISTS (SELECT 1 FROM mejora_hallazgos WHERE requisito_norma_id = ${normaId}))`;
 
 /**
  * La ficha de una norma (spec 13C §10.6), para toda sesión; también la de una retirada. `null` si no existe. `alcance`,

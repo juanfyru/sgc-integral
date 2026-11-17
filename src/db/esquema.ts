@@ -261,7 +261,7 @@ export const archivos = pgTable(
   {
     id: id(),
     // Nulo cuando el archivo es de otro dueño (`contexto`): jornada, ítem de verificación,
-    // norma, revisión anual o hallazgo.
+    // norma, revisión anual, hallazgo, lo de los indicadores o lo de mejoramiento (`mejora_*`).
     versionId: bigint("version_id", { mode: "number" }).references(
       () => documentoVersiones.id,
       { onDelete: "restrict" },
@@ -287,11 +287,11 @@ export const archivos = pgTable(
       .where(sql`rol = 'principal'`),
     check(
       "archivos_rol_valido",
-      sql`${t.rol} IN ('principal', 'editable', 'anexo', 'acta_aprobacion', 'acta_eliminacion', 'evidencia')`,
+      sql`${t.rol} IN ('principal', 'editable', 'anexo', 'acta_aprobacion', 'acta_eliminacion', 'evidencia', 'correccion', 'carga', 'analisis', 'verificacion')`,
     ),
     check(
       "archivos_contexto_valido",
-      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores', 'dato_compartido')`,
+      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores', 'dato_compartido', 'mejora_hallazgo', 'mejora_ronda', 'mejora_actividad', 'mejora_reporte')`,
     ),
     check(
       "archivos_contexto_coherente",
@@ -755,6 +755,11 @@ export const firmas = pgTable(
       (): AnyPgColumn => indicadorVersiones.id,
       { onDelete: "restrict" },
     ),
+    // Las de un hallazgo de mejoramiento (las del plan, `verifico` y `cerro`), con la ronda del hallazgo.
+    mejoraHallazgoId: bigint("mejora_hallazgo_id", { mode: "number" }).references(
+      (): AnyPgColumn => mejoraHallazgos.id,
+      { onDelete: "restrict" },
+    ),
     usuarioId: refUsuario("usuario_id").notNull(),
     firma: text("firma").notNull(),
     ronda: integer("ronda").notNull(),
@@ -769,16 +774,17 @@ export const firmas = pgTable(
   (t) => [
     check(
       "firmas_firma_valida",
-      sql`${t.firma} IN ('elaboro', 'reviso', 'aprobo', 'publico', 'ratifico', 'adopto')`,
+      sql`${t.firma} IN ('elaboro', 'reviso', 'aprobo', 'publico', 'ratifico', 'adopto', 'verifico', 'cerro')`,
     ),
     check(
       "firmas_tramite_coherente",
-      sql`${t.tramiteId} IS NOT NULL OR ${t.firma} IN ('ratifico', 'adopto') OR ${t.indicadorVersionId} IS NOT NULL`,
+      sql`${t.tramiteId} IS NOT NULL OR ${t.firma} IN ('ratifico', 'adopto') OR ${t.indicadorVersionId} IS NOT NULL OR ${t.mejoraHallazgoId} IS NOT NULL`,
     ),
     check("firmas_metodo_valido", sql`${t.metodo} IN ('clave', 'clave_totp')`),
     index("firmas_tramite_idx").on(t.tramiteId),
     index("firmas_version_idx").on(t.versionId),
     index("firmas_indicador_version_idx").on(t.indicadorVersionId),
+    index("firmas_mejora_hallazgo_idx").on(t.mejoraHallazgoId),
   ],
 );
 
@@ -2224,4 +2230,371 @@ export const impactosIndicadores = pgTable(
       sql`(${t.estado} = 'resuelto') = (${t.resolucion} IS NOT NULL AND ${t.resueltoPor} IS NOT NULL AND ${t.resueltoEn} IS NOT NULL)`,
     ),
   ],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 15A: mejoramiento. `hallazgos` es de la 13B: lo de esta fase lleva el prefijo `mejora_`. Toda tabla hija lleva
+// `hallazgo_id`: un hallazgo cerrado, rechazado o anulado no cambia, ni sus hijas, ni recibe hijas nuevas (trigger
+// `sgc_impedir_si_hallazgo_terminado` de la migración 0018).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Lo que la entidad cambia del calendario de festivos: un día no hábil más, o un festivo calculado que sí es hábil.
+export const diasNoHabiles = pgTable(
+  "dias_no_habiles",
+  {
+    id: id(),
+    fecha: date("fecha").notNull().unique(),
+    tipo: text("tipo").notNull(),
+    motivo: text("motivo").notNull(),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [check("dias_no_habiles_tipo_valido", sql`${t.tipo} IN ('no_habil', 'habil')`)],
+);
+
+// El consecutivo del código `HZ-AAAA-NNN` por año: una secuencia quemaría el número de una transacción revertida.
+export const mejoraConsecutivos = pgTable("mejora_consecutivos", {
+  anio: integer("anio").primaryKey(),
+  ultimo: integer("ultimo").notNull(),
+});
+
+export const mejoraHallazgos = pgTable(
+  "mejora_hallazgos",
+  {
+    id: id(),
+    codigo: text("codigo").notNull().unique(),
+    anio: integer("anio").notNull(),
+    consecutivo: integer("consecutivo").notNull(),
+    clase: text("clase").notNull(),
+    origen: text("origen").notNull(),
+    fuente: text("fuente"),
+    referenciaCaso: text("referencia_caso"),
+    detectadoEn: date("detectado_en").notNull(),
+    procesoId: ref("proceso_id", () => procesos.id).notNull(),
+    subprocesoId: ref("subproceso_id", () => subprocesos.id),
+    criticidad: text("criticidad"),
+    titulo: text("titulo").notNull(),
+    descripcion: text("descripcion").notNull(),
+    requisitoClausula: text("requisito_clausula"),
+    requisitoNormaId: ref("requisito_norma_id", () => normas.id),
+    requisitoDocumentoId: ref("requisito_documento_id", () => documentos.id),
+    documentoId: ref("documento_id", () => documentos.id),
+    indicadorId: ref("indicador_id", () => indicadores.id),
+    medicionId: ref("medicion_id", () => mediciones.id),
+    riesgo: text("riesgo"),
+    estado: text("estado").notNull(),
+    ronda: integer("ronda").notNull().default(1),
+    registradoPor: refUsuario("registrado_por").notNull(),
+    registradoEn: marca("registrado_en").notNull(),
+    reincidenteDe: ref("reincidente_de", (): AnyPgColumn => mejoraHallazgos.id),
+    derivadoDe: ref("derivado_de", (): AnyPgColumn => mejoraHallazgos.id),
+    cargado: boolean("cargado").notNull().default(false),
+    // Nulo mientras no se registra la corrección.
+    correccionRequerida: boolean("correccion_requerida"),
+    correccionDescripcion: text("correccion_descripcion"),
+    correccionResponsableId: refUsuario("correccion_responsable_id"),
+    correccionResponsableNombre: text("correccion_responsable_nombre"),
+    correccionImplementadaEn: date("correccion_implementada_en"),
+    correccionRegistradaPor: refUsuario("correccion_registrada_por"),
+    correccionRegistradaEn: marca("correccion_registrada_en"),
+    // Nulo mientras no se decide si lleva acción correctiva.
+    accionRequerida: boolean("accion_requerida"),
+    accionJustificacion: text("accion_justificacion"),
+    accionDecididaPor: refUsuario("accion_decidida_por"),
+    accionDecididaEn: marca("accion_decidida_en"),
+    validadaPor: refUsuario("validada_por"),
+    validadaEn: marca("validada_en"),
+    fechaLimiteEnte: date("fecha_limite_ente"),
+    respuestaEnteEn: date("respuesta_ente_en"),
+    respuestaEntePor: refUsuario("respuesta_ente_por"),
+    // El vencimiento del paso en curso y sus marcas de aviso; `aviso_evaluar_en`, el de «ya se puede evaluar».
+    venceEn: marca("vence_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    avisoEvaluarEn: marca("aviso_evaluar_en"),
+    cerradoEn: marca("cerrado_en"),
+    cerradoPor: refUsuario("cerrado_por"),
+    resultadoCierre: text("resultado_cierre"),
+    lecciones: text("lecciones"),
+    cambiosAtendidos: text("cambios_atendidos"),
+    anuladoMotivo: text("anulado_motivo"),
+  },
+  (t) => [
+    unique("mejora_hallazgos_anio_consecutivo_unico").on(t.anio, t.consecutivo),
+    index("mejora_hallazgos_proceso_estado_idx").on(t.procesoId, t.estado),
+    index("mejora_hallazgos_estado_vence_idx").on(t.estado, t.venceEn),
+    check("mejora_hallazgos_clase_valida", sql`${t.clase} IN ('no_conformidad', 'observacion', 'oportunidad')`),
+    check(
+      "mejora_hallazgos_origen_valido",
+      sql`${t.origen} IN ('auditoria_interna', 'control_interno', 'revision_direccion', 'pamec', 'autoevaluacion', 'indicador', 'pqrsf', 'evento_adverso', 'riesgo_materializado', 'satisfaccion_usuario', 'control_documental', 'otro', 'auditoria_externa', 'ente_control')`,
+    ),
+    check("mejora_hallazgos_criticidad_valida", sql`${t.criticidad} IN ('alta', 'media', 'baja')`),
+    check("mejora_hallazgos_criticidad_coherente", sql`(${t.clase} = 'no_conformidad') = (${t.criticidad} IS NOT NULL)`),
+    check(
+      "mejora_hallazgos_estado_valido",
+      sql`${t.estado} IN ('por_aceptar', 'rechazo', 'arbitraje', 'por_corregir', 'por_decidir', 'por_validar', 'por_formular', 'en_revision', 'en_aprobacion', 'en_ejecucion', 'por_verificar', 'en_espera', 'por_cerrar', 'cerrado', 'rechazado', 'anulado')`,
+    ),
+    check(
+      "mejora_hallazgos_resultado_cierre_valido",
+      sql`${t.resultadoCierre} IN ('eficaz', 'con_correccion', 'sin_accion')`,
+    ),
+  ],
+);
+
+export const mejoraRondas = pgTable(
+  "mejora_rondas",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    numero: integer("numero").notNull(),
+    formularAntesDe: marca("formular_antes_de"),
+    // La primera vez que se envió el plan: una devolución no la cambia.
+    enviadoEn: marca("enviado_en"),
+    estadoPlan: text("estado_plan").notNull().default("borrador"),
+    elaboradoPor: refUsuario("elaborado_por"),
+    revisadoPor: refUsuario("revisado_por"),
+    revisadoEn: marca("revisado_en"),
+    aprobadoPor: refUsuario("aprobado_por"),
+    aprobadoEn: marca("aprobado_en"),
+    aprobadoRol: text("aprobado_rol"),
+    // Quién lo aprobó en papel, en un hallazgo cargado.
+    aprobadoFuera: text("aprobado_fuera"),
+    requiereRecursos: boolean("requiere_recursos").notNull().default(false),
+    notaRecursos: text("nota_recursos"),
+    // Las dos preguntas de cierre del análisis: nulas mientras no se responden.
+    similares: boolean("similares"),
+    similaresDetalle: text("similares_detalle"),
+    cambios: jsonb("cambios"),
+    criterios: jsonb("criterios").notNull().default(sql`'[]'::jsonb`),
+    criterioOtro: text("criterio_otro"),
+    indicadorEficaciaId: ref("indicador_eficacia_id", () => indicadores.id),
+    fechaEvaluacion: date("fecha_evaluacion"),
+    cierrePrevisto: marca("cierre_previsto"),
+    verificadaPor: refUsuario("verificada_por"),
+    verificadaEn: marca("verificada_en"),
+    verificacionMetodos: jsonb("verificacion_metodos"),
+    verificacionNota: text("verificacion_nota"),
+    evaluadaPor: refUsuario("evaluada_por"),
+    evaluadaEn: marca("evaluada_en"),
+    resultado: text("resultado"),
+    evaluacionDesde: date("evaluacion_desde"),
+    evaluacionHasta: date("evaluacion_hasta"),
+    evaluacionCriterios: jsonb("evaluacion_criterios"),
+    evaluacionJustificacion: text("evaluacion_justificacion"),
+  },
+  (t) => [
+    unique("mejora_rondas_numero_unico").on(t.hallazgoId, t.numero),
+    check("mejora_rondas_estado_plan_valido", sql`${t.estadoPlan} IN ('borrador', 'enviado', 'aprobado')`),
+    check("mejora_rondas_aprobado_rol_valido", sql`${t.aprobadoRol} IN ('admin_sgc', 'gerencia')`),
+    check("mejora_rondas_resultado_valido", sql`${t.resultado} IN ('eficaz', 'no_eficaz')`),
+  ],
+);
+
+export const mejoraAnalisis = pgTable(
+  "mejora_analisis",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    rondaId: ref("ronda_id", () => mejoraRondas.id).notNull(),
+    orden: integer("orden").notNull(),
+    metodo: text("metodo").notNull(),
+    equipo: text("equipo"),
+    observaciones: text("observaciones"),
+    contenido: jsonb("contenido"),
+  },
+  (t) => [check("mejora_analisis_metodo_valido", sql`${t.metodo} IN ('cinco_porques', 'ishikawa', 'pareto', 'otro')`)],
+);
+
+export const mejoraCausas = pgTable("mejora_causas", {
+  id: id(),
+  hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+  rondaId: ref("ronda_id", () => mejoraRondas.id).notNull(),
+  orden: integer("orden").notNull(),
+  texto: text("texto").notNull(),
+  sinAccionPorque: text("sin_accion_porque"),
+});
+
+export const mejoraAcciones = pgTable(
+  "mejora_acciones",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    rondaId: ref("ronda_id", () => mejoraRondas.id).notNull(),
+    orden: integer("orden").notNull(),
+    tipo: text("tipo").notNull(),
+    descripcion: text("descripcion").notNull(),
+    recursos: text("recursos"),
+    indicadorCumplimiento: text("indicador_cumplimiento"),
+    meta: text("meta"),
+  },
+  (t) => [check("mejora_acciones_tipo_valido", sql`${t.tipo} IN ('correctiva', 'preventiva', 'mejora')`)],
+);
+
+export const mejoraAccionCausas = pgTable(
+  "mejora_accion_causas",
+  {
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    accionId: ref("accion_id", () => mejoraAcciones.id).notNull(),
+    causaId: ref("causa_id", () => mejoraCausas.id).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.accionId, t.causaId] })],
+);
+
+export const mejoraActividades = pgTable(
+  "mejora_actividades",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    accionId: ref("accion_id", () => mejoraAcciones.id).notNull(),
+    orden: integer("orden").notNull(),
+    descripcion: text("descripcion").notNull(),
+    responsableId: refUsuario("responsable_id").notNull(),
+    inicio: date("inicio").notNull(),
+    // Nula hasta que se aprueba el plan; después no cambia nunca.
+    finOriginal: date("fin_original"),
+    fin: date("fin").notNull(),
+    avance: integer("avance").notNull().default(0),
+    estado: text("estado").notNull().default("abierta"),
+    terminadaEn: marca("terminada_en"),
+    terminadaPor: refUsuario("terminada_por"),
+    verificacion: text("verificacion"),
+    verificacionNota: text("verificacion_nota"),
+    corregirAntesDe: date("corregir_antes_de"),
+    canceladaEn: marca("cancelada_en"),
+    reprogramaciones: integer("reprogramaciones").notNull().default(0),
+    // Cuándo se escaló a Gerencia; `escalado_en` es el aviso al jefe.
+    gerenciaEn: marca("gerencia_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+    recordatorioEn: marca("recordatorio_en"),
+  },
+  (t) => [
+    index("mejora_actividades_responsable_estado_idx").on(t.responsableId, t.estado),
+    check("mejora_actividades_avance_valido", sql`${t.avance} BETWEEN 0 AND 100`),
+    check("mejora_actividades_estado_valido", sql`${t.estado} IN ('abierta', 'en_proceso', 'terminada', 'cancelada')`),
+    check("mejora_actividades_verificacion_valida", sql`${t.verificacion} IN ('conforme', 'devuelta')`),
+  ],
+);
+
+// Solo-inserción (trigger en la migración 0018 y REVOKE en roles-bd.ts)
+export const mejoraSeguimientos = pgTable(
+  "mejora_seguimientos",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    actividadId: ref("actividad_id", () => mejoraActividades.id).notNull(),
+    fecha: date("fecha").notNull(),
+    realizado: text("realizado").notNull(),
+    avance: integer("avance").notNull(),
+    barreras: text("barreras"),
+    registradoPor: refUsuario("registrado_por").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [
+    index("mejora_seguimientos_actividad_idx").on(t.actividadId, t.fecha),
+    check("mejora_seguimientos_avance_valido", sql`${t.avance} BETWEEN 0 AND 100`),
+  ],
+);
+
+export const mejoraAjustes = pgTable(
+  "mejora_ajustes",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    rondaId: ref("ronda_id", () => mejoraRondas.id).notNull(),
+    tipo: text("tipo").notNull(),
+    // Nula en un «añadir»: la actividad todavía no existe.
+    actividadId: ref("actividad_id", () => mejoraActividades.id),
+    datos: jsonb("datos"),
+    causa: text("causa").notNull(),
+    pedidoPor: refUsuario("pedido_por").notNull(),
+    pedidoEn: marca("pedido_en").notNull(),
+    estado: text("estado").notNull().default("pendiente"),
+    decididoPor: refUsuario("decidido_por"),
+    decididoEn: marca("decidido_en"),
+    nota: text("nota"),
+    actaNumero: text("acta_numero"),
+    actaFecha: date("acta_fecha"),
+    venceEn: marca("vence_en"),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+  },
+  (t) => [
+    uniqueIndex("mejora_ajustes_un_pendiente_idx").on(t.actividadId).where(sql`estado = 'pendiente'`),
+    check("mejora_ajustes_tipo_valido", sql`${t.tipo} IN ('reprogramar', 'agregar', 'cancelar')`),
+    check("mejora_ajustes_estado_valido", sql`${t.estado} IN ('pendiente', 'aprobado', 'negado')`),
+  ],
+);
+
+// Solo-inserción (trigger en la migración 0018 y REVOKE en roles-bd.ts)
+export const mejoraOcurrencias = pgTable(
+  "mejora_ocurrencias",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    fecha: date("fecha").notNull(),
+    descripcion: text("descripcion").notNull(),
+    origen: text("origen").notNull(),
+    reporteId: ref("reporte_id", (): AnyPgColumn => mejoraReportes.id),
+    registradoPor: refUsuario("registrado_por").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [check("mejora_ocurrencias_origen_valido", sql`${t.origen} IN ('registro', 'reporte', 'medicion')`)],
+);
+
+// Solo-inserción (trigger en la migración 0018 y REVOKE en roles-bd.ts)
+export const mejoraEventos = pgTable(
+  "mejora_eventos",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    ronda: integer("ronda").notNull(),
+    tipo: text("tipo").notNull(),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    // Nulo cuando lo hizo el sistema.
+    usuarioId: refUsuario("usuario_id"),
+    // Hecho fuera de la plataforma (un hallazgo cargado): `ocurrio_en` es su fecha real.
+    fuera: boolean("fuera").notNull().default(false),
+    ocurrioEn: marca("ocurrio_en").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [index("mejora_eventos_hallazgo_idx").on(t.hallazgoId, t.creadoEn)],
+);
+
+export const mejoraReportes = pgTable(
+  "mejora_reportes",
+  {
+    id: id(),
+    reportadoPor: refUsuario("reportado_por").notNull(),
+    reportadoEn: marca("reportado_en").notNull(),
+    descripcion: text("descripcion").notNull(),
+    vistoEn: date("visto_en").notNull(),
+    procesoId: ref("proceso_id", () => procesos.id),
+    referenciaCaso: text("referencia_caso"),
+    estado: text("estado").notNull().default("recibido"),
+    // El hallazgo que nació del reporte o al que se sumó.
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id),
+    motivoDescarte: text("motivo_descarte"),
+    clasificadoPor: refUsuario("clasificado_por"),
+    clasificadoEn: marca("clasificado_en"),
+    venceEn: marca("vence_en").notNull(),
+    avisoVencidoEn: marca("aviso_vencido_en"),
+    escaladoEn: marca("escalado_en"),
+  },
+  (t) => [
+    check("mejora_reportes_estado_valido", sql`${t.estado} IN ('recibido', 'convertido', 'sumado', 'descartado')`),
+  ],
+);
+
+// Solo-inserción (trigger en la migración 0018 y REVOKE en roles-bd.ts)
+export const mejoraReporteEventos = pgTable(
+  "mejora_reporte_eventos",
+  {
+    id: id(),
+    reporteId: ref("reporte_id", () => mejoraReportes.id).notNull(),
+    tipo: text("tipo").notNull(),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [index("mejora_reporte_eventos_reporte_idx").on(t.reporteId, t.creadoEn)],
 );

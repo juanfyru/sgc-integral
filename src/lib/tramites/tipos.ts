@@ -38,7 +38,7 @@ export const CRITICO_NO_CUMPLE = "Hay un ítem crítico que no cumple";
 export const LARGO_MIN_NOTA_CRITERIO = 5;
 export const FALTA_NOTA_CRITERIO = "Escriba una nota en cada criterio que no cumple";
 
-export const FIRMAS = ["elaboro", "reviso", "aprobo", "publico", "ratifico", "adopto"] as const;
+export const FIRMAS = ["elaboro", "reviso", "aprobo", "publico", "ratifico", "adopto", "verifico", "cerro"] as const;
 export type Firma = (typeof FIRMAS)[number];
 
 /** Dónde se aprobó una versión: con las firmas del trámite, o fuera de la plataforma (spec 13A §13.2). */
@@ -101,6 +101,8 @@ export const ETIQUETA_FIRMA: Record<Firma, string> = {
   publico: "Publicó",
   ratifico: "Ratificó",
   adopto: "Adoptó",
+  verifico: "Verificó",
+  cerro: "Cerró",
 };
 
 /** Un grupo se resume: la bandeja, el encabezado y el aviso al jefe nombran solo al primero. */

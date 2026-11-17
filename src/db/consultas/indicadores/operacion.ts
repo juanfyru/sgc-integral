@@ -42,7 +42,7 @@ import { enCurso, recalcularPorSoporte } from "./en-curso";
 import { codigoCon, COLUMNAS_VARIABLE, CONTENIDO, proponerCodigo, siguientes } from "./fichas";
 import { resolverImpactosPorRetiro } from "./impactos";
 import { obtenerParametros } from "./maestros";
-import { conDatos, mide, NADIE_LO_MIDE, versionesAprobadas } from "./mediciones";
+import { citadoEnMejoramiento, conDatos, mide, NADIE_LO_MIDE, versionesAprobadas } from "./mediciones";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -626,8 +626,8 @@ export async function descartarIndicador(sesion: SesionFlujo, d: { indicadorId: 
 
 /**
  * Borra un indicador en borrador que nunca se envió a aprobación, con sus versiones, sus filas hijas y sus designados. Uno
- * con revisiones por cambio de norma o reportes al ente (anexo 14B, §8 y §9) no se borra: un borrador nunca enviado no
- * debería tenerlos, y si los tiene son historia.
+ * con revisiones por cambio de norma o reportes al ente (anexo 14B, §8 y §9), o citado en un hallazgo de mejoramiento
+ * (spec 15 §19.4), no se borra: un borrador nunca enviado no debería tenerlos, y si los tiene son historia.
  */
 export async function borrarIndicador(sesion: SesionFlujo, indicadorId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -636,9 +636,12 @@ export async function borrarIndicador(sesion: SesionFlujo, indicadorId: number, 
     if (i.estado !== "borrador") throw new ErrorIndicador("Solo se puede borrar un indicador en borrador");
     if (await seEnvioAlgunaVez(tx, i.id)) throw new ErrorIndicador("Este indicador ya se envió a aprobación: descártelo");
     const [historia] = await tx`SELECT
-        EXISTS (SELECT 1 FROM impactos_indicadores WHERE indicador_id = ${i.id})
-        OR EXISTS (SELECT 1 FROM reportes_externos WHERE indicador_id = ${i.id}) AS tiene`;
+        EXISTS (SELECT 1 FROM impactos_indicadores WHERE indicador_id = i.id)
+        OR EXISTS (SELECT 1 FROM reportes_externos WHERE indicador_id = i.id) AS tiene,
+        ${citadoEnMejoramiento(tx)} AS mejoramiento
+      FROM indicadores i WHERE i.id = ${i.id}`;
     if (historia.tiene) throw new ErrorIndicador("El indicador tiene revisiones por cambio de norma o reportes al ente: no se puede borrar");
+    if (historia.mejoramiento) throw new ErrorIndicador("El indicador está citado en un hallazgo de mejoramiento");
     const nombre = await nombreDe(tx, i.id);
     const versiones = (await tx`SELECT id FROM indicador_versiones WHERE indicador_id = ${i.id} ORDER BY id FOR UPDATE`).map((v) => Number(v.id));
     if (versiones.length > 0) {

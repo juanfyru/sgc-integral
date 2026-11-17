@@ -266,8 +266,8 @@ export async function retirarNorma(
 }
 
 /**
- * Solo una norma sin historia (D47, `historiaDeNorma`): sin relaciones, asociaciones, cambios, impactos, PDF ni la cita de
- * una ficha de indicador; las demás se retiran.
+ * Solo una norma sin historia (D47, `historiaDeNorma`): sin relaciones, asociaciones, cambios, impactos, PDF, la cita de
+ * una ficha de indicador ni la de un hallazgo de mejoramiento; las demás se retiran.
  */
 export async function borrarNorma(sesion: SesionFlujo, normaId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);

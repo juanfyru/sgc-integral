@@ -144,9 +144,12 @@ describe("separación de funciones", () => {
 
 describe("tipos ampliados de la Fase 13C", () => {
   it("las firmas sin trámite y el origen externo tienen su texto", () => {
-    expect(FIRMAS).toEqual(["elaboro", "reviso", "aprobo", "publico", "ratifico", "adopto"]);
+    // «Verificó» y «Cerró» son las de un hallazgo de mejoramiento (15A).
+    expect(FIRMAS).toEqual(["elaboro", "reviso", "aprobo", "publico", "ratifico", "adopto", "verifico", "cerro"]);
     expect(ETIQUETA_FIRMA.ratifico).toBe("Ratificó");
     expect(ETIQUETA_FIRMA.adopto).toBe("Adoptó");
+    expect(ETIQUETA_FIRMA.verifico).toBe("Verificó");
+    expect(ETIQUETA_FIRMA.cerro).toBe("Cerró");
     expect(APROBACION_EN_LISTADO.externo).toBe("Adoptado");
     expect(APROBACION_DE_VERSION.externo).toBe("Edición adoptada en la plataforma");
   });

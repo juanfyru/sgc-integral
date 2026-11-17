@@ -92,7 +92,10 @@ export async function limpiarTodo(db: Db): Promise<void> {
       indicador_designados, indicador_metas, mediciones, medicion_valores, medicion_eventos,
       medicion_observaciones, cierres_indicadores, variables_compartidas, variable_responsables,
       variable_valores, variable_eventos, dimensiones, dimension_categorias, reportes_externos,
-      reporte_externo_eventos, impactos_indicadores
+      reporte_externo_eventos, impactos_indicadores,
+      dias_no_habiles, mejora_consecutivos, mejora_hallazgos, mejora_rondas, mejora_analisis, mejora_causas,
+      mejora_acciones, mejora_accion_causas, mejora_actividades, mejora_seguimientos, mejora_ajustes,
+      mejora_ocurrencias, mejora_eventos, mejora_reportes, mejora_reporte_eventos
     RESTART IDENTITY CASCADE
   `);
 }

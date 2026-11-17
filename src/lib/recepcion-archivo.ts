@@ -79,9 +79,10 @@ export type DestinoVersion = {
 /**
  * `carpeta` es relativa al almacén: `jornadas/<id>`, `verificaciones/<verificacionId>/items/<itemId>`, `normas/<id>`,
  * `mediciones/<id>`, `datos-compartidos/<id>` (el periodo del dato) o `importaciones/<id>`. Una norma recibe solo un PDF, que reemplaza al que tuviera
- * (`registrarArchivo`); un lote de importación, solo su plantilla en `.xlsx`, una vez.
+ * (`registrarArchivo`); un lote de importación, solo su plantilla en `.xlsx`, una vez. `rol` distingue, dentro de un
+ * mismo dueño, qué evidencia es (la de la corrección, el escaneo de una carga…); sin él, `evidencia`.
  */
-export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string };
+export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string; rol?: string };
 
 function esEvidencia(destino: DestinoVersion | DestinoEvidencia): destino is DestinoEvidencia {
   return destino.contexto !== undefined && destino.contexto !== "version";
@@ -194,7 +195,7 @@ export async function recibirArchivo(
     };
     const { id, reemplazados } = esEvidencia(destino)
       ? await registrarArchivo(
-          { versionId: null, rol: "evidencia", contexto: destino.contexto, contextoId: destino.contextoId, ...comunes },
+          { versionId: null, rol: destino.rol ?? "evidencia", contexto: destino.contexto, contextoId: destino.contextoId, ...comunes },
           usuarioId,
         )
       : await registrarArchivo({ versionId: destino.versionId, rol: destino.rol, ...comunes }, usuarioId, {
