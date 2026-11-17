@@ -695,7 +695,8 @@ indicador cuyo resultado faltó.
 siga vacío: el cierre lo espera, aunque su fecha límite haya pasado, y las mediciones que lo usan
 esperan con él. Solo si su dimensión no tiene ninguna categoría activa (no hay con qué actualizarlo)
 el cierre lo cierra «Sin dato», el resumen dice por qué («…; su dimensión no tiene categorías
-activas: queda sin dato.») y **Quién debía** dice «Su dimensión no tiene categorías activas».
+activas: queda sin dato.») y **Quién debía** dice, del periodo vacío, «El dato «…», octubre de 2026, no
+tuvo categorías con que reportarse» (lo dice también si ese periodo lo cerró un cierre anterior).
 
 Pulse **Cerrar …** y confirme con **Cerrar el mes**. No pide clave: es una rutina mensual. Después
 del cierre, los datos, el resultado, el análisis y los soportes de esas mediciones no cambian (sí

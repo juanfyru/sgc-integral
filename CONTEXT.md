@@ -432,8 +432,9 @@ usuario** («Decisiones adicionales (complemento de la 14C)»).
   pendiente más antiguo que se puede reportar. Al actualizar, el periodo cuenta su plazo completo desde ese día y sus avisos
   empiezan de nuevo. El cierre lo espera («n periodos de datos compartidos esperan que se actualicen sus categorías: quedan
   para el siguiente cierre.»), con las mediciones que lo usan; sin ninguna categoría activa lo cierra «Sin dato», el
-  resumen dice por qué y «Quién debía» dice «Su dimensión no tiene categorías activas» (decidido con la fila del periodo,
-  también si lo cerró un cierre anterior).
+  resumen dice por qué y «Quién debía» dice «El dato «{nombre}», {periodo}, no tuvo categorías con que reportarse», una
+  frase por periodo y en pasado (decidido con la fila del periodo, también si lo cerró un cierre anterior; con otro periodo
+  del mismo dato sin valor y con categorías, también «Los responsables del dato «…»»).
 - **Demo y documentos (Tarea 7):** la agenda de la semilla activa el soporte obligatorio de `CEX-ID-001` a mitad del plazo
   de un mes, con `cambiarOperacion` y la hora inyectada (ver «Qué probar y cómo», paso 0, y la decisión 6), y la semilla no
   sigue si las marcas no quedan como deben; `tests/semilla-indicadores-14c.test.ts` afirma la fecha y las dos marcas detrás
@@ -523,10 +524,8 @@ quien coordina al cerrar); lo de cada paso sale de la demo sembrada y de las pru
 - **La demo cambia:** `CEX-ID-001` exige soporte; `lider.cex` tiene una tarea vencida más (octubre) y, al entrar, el aviso
   de vencido (sin escalamiento: su cargo superior no lo ocupa nadie en la demo). El paso 1 de «Qué probar y cómo (Fase
   14C)» sigue igual (septiembre no es tarea de nadie).
-- **Para decidir antes de fusionar** (de la revisión de la Tarea 6, ver «Deuda técnica»): «Quién debía» dice en presente
-  «Su dimensión no tiene categorías activas» también de un periodo que cerró un cierre anterior y cuya dimensión pudo
-  volver a tener categorías; y «Cerrar de nuevo» un periodo vacío reabierto lo cierra «Sin dato» aunque su dimensión tenga
-  categorías activas, sin esperar ni advertirlo.
+- **Para decidir antes de fusionar** (de la revisión de la Tarea 6, ver «Deuda técnica»): «Cerrar de nuevo» un periodo
+  vacío reabierto lo cierra «Sin dato» aunque su dimensión tenga categorías activas, sin esperar ni advertirlo.
 
 ### Decisiones adicionales (complemento de la 14C)
 
@@ -590,11 +589,6 @@ de `src/db/consultas/indicadores/`):
   administrador, sin agrupar (`categorias-dato:` no está en `GRUPOS` de `src/lib/tareas.ts`).
 - **Para el usuario:** `cerrarDeNuevoElDato` cierra «Sin dato» un periodo vacío reabierto aunque su dimensión tenga
   categorías activas, saltándose la espera de §5.4, sin advertirlo.
-- **Para el usuario, candidato a arreglar antes de fusionar:** «Quién debía» dice en presente «Su dimensión no tiene
-  categorías activas» también de un periodo que cerró un cierre anterior (las sedes pudieron reactivarse; también los
-  cerrados con la regla de la 14C), y «Su» no tiene antecedente en la fila de un indicador. Texto que propuso el
-  re-revisor: «El dato «{nombre}», {periodo}, no tuvo categorías con que reportarse». El comentario de `cierre.ts` (~:447,
-  «un vacío solo llega al cierre sin ninguna activa…») también es falso por esos caminos.
 - «012.500» no tiene la forma de la regla (empieza por cero) y se lee como 12,5, también en la meta de la importación, que
   antes la marcaba ambigua: pasa sin aviso (comprobado con `fraccion`).
 - El aviso del periodo vacío dice «actualícelas para que se pueda reportar» también cuando la dimensión no tiene categorías
@@ -606,8 +600,7 @@ de `src/db/consultas/indicadores/`):
 - Lo que el manual ya dice (§3.4) y el código hace así: la marca de aviso es de la medición, así que el aviso previo del
   soporte bajo «Falta un dato» deja sin aviso previo a quien analiza si el dato llega en plazo y pide análisis; y con el
   análisis y el soporte pendientes a la vez, la pasada solo avisa a quien analiza.
-- Dos constantes `SIN_CATEGORIAS_ACTIVAS` con textos distintos (`cierre.ts` ~:208 y `datos-periodos.ts` ~:712) y el `EXISTS
-  … dimension_categorias … activo` escrito dos veces; el estado viejo, dos veces (`lista.ts` ~:192 y `tareas.ts` ~:126); el
+- El `EXISTS … dimension_categorias … activo` escrito dos veces (`cierre.ts` ~:258 y `datos-periodos.ts` ~:724); el estado viejo, dos veces (`lista.ts` ~:192 y `tareas.ts` ~:126); el
   fragmento `CASE` de la fecha, dos veces (`operacion.ts` ~:330 y `fichas.ts` ~:914); dos funciones `numeroCanonico`
   distintas (`src/lib/esquemas/indicadores.ts` ~:120 y `src/lib/indicadores/importacion/revisar.ts` ~:163); el formato
   «{día} de {mes} de {año}», en cuatro sitios; `datos-periodos.ts` comprueba el punto de miles y después `leerValor` lo
@@ -623,8 +616,8 @@ de `src/db/consultas/indicadores/`):
   la racha respete una marca en verdadero y que desactivar no toque la marca; un caso 7 que detecte una re-decisión al
   cambiar el plazo; las exclusiones de `seDebeElSoporte` dentro de `recalcularMedicion` y la función pura sola; el
   escalamiento y el aviso previo del soporte bajo «Falta un dato»; el «· falta el soporte» en el Excel; que los avisos del
-  periodo actualizado «empiezan de nuevo»; el control negativo del aviso (un periodo con categorías o un dato sin dimensión
-  no avisan); y la rama mixta de «Quién debía» (`cierre.ts` ~:482). En las pruebas, `tests/indicadores-miles-ficha.test.ts`
+  periodo actualizado «empiezan de nuevo»; y el control negativo del aviso (un periodo con categorías o un dato sin
+  dimensión no avisan). En las pruebas, `tests/indicadores-miles-ficha.test.ts`
   repite un caso y `adjuntarSoporte` (`tests/indicadores-soporte-desde.test.ts`) repite `soporte(tx, id)`.
 - `tests/indicadores-soporte-desde.test.ts` corre el relleno de la `0017` sin filtro dentro de su transacción revertida:
   con la demo nueva, ahí le pone a `CEX-ID-001` la fecha de su bitácora (la hora del reloj de la siembra, no la del 7 de

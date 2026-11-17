@@ -204,8 +204,11 @@ const NO_COINCIDE = "Lo copiado de sus fuentes aún no está al día";
  */
 type DatoQueSeCierra = { id: number; estado: string; sinDato: boolean; sinCategoriasActivas: boolean };
 
-/** Quién debía el dato de una medición que se cierra «Sin dato» porque su periodo no tenía categorías con que reportarse. */
-const SIN_CATEGORIAS_ACTIVAS = "Su dimensión no tiene categorías activas";
+/**
+ * Quién debía el dato de una medición que se cierra «Sin dato» porque un periodo de su dato quedó sin valor y sin categorías:
+ * en pasado y anclado al periodo (`etiqueta`, en minúscula), porque la fila no dice si hoy las tiene.
+ */
+const noTuvoCategorias = (dato: string, etiqueta: string) => `El dato «${dato}», ${etiqueta}, no tuvo categorías con que reportarse`;
 
 type Clasificacion = {
   alcanzadas: Alcanzada[];
@@ -442,11 +445,14 @@ async function nombresDe(sql: Cliente, ids: number[]): Promise<string[]> {
  * Quién debía lo que falta a las alcanzadas que se cierran «Sin dato» (anexo 14C, §3.5), con la regla única de «Falta un
  * dato» (`esperaUnDato`): si la medición esperaba un valor que no digita quien la mide, el sistema (un automático) o quienes
  * debían las fuentes que faltan («Los responsables del dato «…»», «El indicador …»); si no, quienes la miden (faltó lo
- * propio). Sin fuentes que falten, también quienes la miden: un caso que no debería darse. Un dato con algún periodo de los
- * que usa la medición sin valor y con la lista de categorías vacía (complemento de la 14C, §5.4), se cierre en este cierre o
- * lo haya cerrado uno anterior, no lo debían sus responsables: «Su dimensión no tiene categorías activas» (un vacío solo llega
- * al cierre sin ninguna activa con que actualizarlo); si además otro de esos periodos quedó sin valor teniendo categorías,
- * también ellos. Se decide con las filas de los periodos, no con lo que cierra este cierre.
+ * propio). Sin fuentes que falten, también quienes la miden: un caso que no debería darse. Un periodo de un dato de los que
+ * usa la medición sin valor y con la lista de categorías vacía (complemento de la 14C, §5.4), se cierre en este cierre o lo
+ * haya cerrado uno anterior, no lo debían sus responsables: «El dato «…», {periodo}, no tuvo categorías con que
+ * reportarse», una frase por periodo, en pasado. No dice por qué quedó vacío ni si su dimensión tiene hoy categorías: lo
+ * pudo cerrar este cierre porque no tenía ninguna activa, uno anterior (también con la regla de la 14C, que no esperaba),
+ * o «Cerrar de nuevo» (`cerrarDeNuevoElDato`, que no mira las categorías), y las sedes pudieron volver después. Si además
+ * otro de esos periodos quedó sin valor teniendo categorías, también sus responsables. Se decide con las filas de los
+ * periodos, no con lo que cierra este cierre.
  */
 async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, string[]>> {
   const salida = new Map<number, string[]>();
@@ -466,20 +472,27 @@ async function quienDebia(sql: Cliente, c: Clasificacion): Promise<Map<number, s
     entradas.length === 0
       ? []
       : (
-          await sql`SELECT vv.id, vv.variable_id, vv.valor IS NULL AS sin_valor, ${periodoSinCategorias(sql)} AS sin_categorias
+          await sql`SELECT vv.id, vv.variable_id, vv.periodo, vv.valor IS NULL AS sin_valor, ${periodoSinCategorias(sql)} AS sin_categorias
             FROM variable_valores vv WHERE vv.id IN ${sql(entradas)}`
-        ).map((f) => [Number(f.id), { datoId: Number(f.variable_id), sinValor: f.sin_valor === true, sinCategorias: f.sin_categorias === true }]),
+        ).map((f) => [
+          Number(f.id),
+          { datoId: Number(f.variable_id), periodo: f.periodo as string, sinValor: f.sin_valor === true, sinCategorias: f.sin_categorias === true },
+        ]),
   );
+  const zona = zonaHoraria();
   /** Quién debía la fuente que falta a la medición `a`: de un dato, según sus periodos que la medición usa y quedaron sin valor. */
   const deLaFuente = (f: FuenteQueFalta, a: Alcanzada): string[] => {
     if (f.clase === "indicador") return [`El indicador ${codigoDe.get(f.indicadorId) ?? "?"}`];
-    const responsables = `Los responsables del dato «${nombreDeDato.get(f.datoId) ?? "?"}»`;
+    const nombre = nombreDeDato.get(f.datoId) ?? "?";
+    const responsables = `Los responsables del dato «${nombre}»`;
     const sinValor = (c.revisiones.get(a.id)?.datos ?? []).flatMap((id) => {
       const p = deEntrada.get(id);
       return p && p.datoId === f.datoId && p.sinValor ? [p] : [];
     });
-    if (!sinValor.some((p) => p.sinCategorias)) return [responsables];
-    return sinValor.some((p) => !p.sinCategorias) ? [SIN_CATEGORIAS_ACTIVAS, responsables] : [SIN_CATEGORIAS_ACTIVAS];
+    const vacios = sinValor.filter((p) => p.sinCategorias).sort((x, y) => x.periodo.localeCompare(y.periodo));
+    if (vacios.length === 0) return [responsables];
+    const frases = vacios.map((p) => noTuvoCategorias(nombre, periodoDe(p.periodo, zona)?.etiqueta ?? p.periodo));
+    return sinValor.some((p) => !p.sinCategorias) ? [...frases, responsables] : frases;
   };
   const quienesMiden = new Map<number, string[]>();
   for (const a of sinDato) {

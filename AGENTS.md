@@ -800,8 +800,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   antes del `UPDATE`), y el resumen la dice (`esperanEntrada`, `datos`). Quién debía lo que quedó «Sin
   dato» sale de la regla única de «Falta un dato» (`esperaUnDato`, `src/lib/indicadores/origen.ts`, la
   misma de la lectura, la lista y las tareas): quienes miden, los responsables del dato o el indicador
-  componente; por un periodo de un dato sin valor y con la lista vacía, decidido con su fila aunque lo haya
-  cerrado un cierre anterior, «Su dimensión no tiene categorías activas» (`quienDebia`). «Cerrar de nuevo» una medición no la cierra con su fuente abierta ni, en un indicador activo,
+  componente; por cada periodo de un dato sin valor y con la lista vacía, decidido con su fila aunque lo haya
+  cerrado un cierre anterior, «El dato «…», {periodo}, no tuvo categorías con que reportarse» (`quienDebia`:
+  en pasado, porque la fila no dice si su dimensión las tiene hoy). «Cerrar de nuevo» una medición no la cierra con su fuente abierta ni, en un indicador activo,
   con lo copiado distinto de su fuente (propaga antes lo de su indicador); un periodo reabierto de un dato
   se cierra de nuevo con `cerrarDeNuevoElDato`. **La reapertura en cascada** (`reabrirEnCascada`;
   `reabrirMedicion` delega en ella cuando la medición tiene dependientes cerradas): reabrir un periodo

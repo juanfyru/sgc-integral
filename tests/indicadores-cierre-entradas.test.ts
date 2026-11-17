@@ -53,6 +53,8 @@ const periodoDelDato = async (tx: TransactionSql, id: number) => (await tx`SELEC
 const medicionDe = async (tx: TransactionSql, indicadorId: number, periodo: string) =>
   Number((await tx`SELECT id FROM mediciones WHERE indicador_id = ${indicadorId} AND periodo = ${periodo}`)[0].id);
 const eventosDelDato = (tx: TransactionSql, id: number) => tx`SELECT tipo, usuario_id, detalle FROM variable_eventos WHERE valor_id = ${id} ORDER BY id`;
+/** «Quién debía» de un periodo de un dato que quedó sin valor y con la lista de categorías vacía. */
+const noTuvo = (dato: string, periodo: string) => `El dato «${dato}», ${periodo}, no tuvo categorías con que reportarse`;
 
 /** Quien administra, quien mide y quien responde por los datos; antes, que el resumen de base esté vacío en 2003. */
 async function entorno(tx: TransactionSql) {
@@ -504,12 +506,12 @@ describe("el periodo de un dato que nace sin categorías (complemento 14C, §5.4
 
   it("caso 5: sin ninguna sede activa no hay con qué actualizarlo: el cierre lo cierra «Sin dato» y dice por qué", () =>
     revertida(sql, async (tx) => {
-      const { admin, sede, mixto, pMarzo, marzo } = await vacio(tx);
+      const { admin, sede, nombre, mixto, pMarzo, marzo } = await vacio(tx);
       await tx`UPDATE dimension_categorias SET activo = false, desactivada_en = now() WHERE dimension_id = ${sede.id}`;
       const r = await resumenDeCierre(admin, MARZO, opc(tx));
       expect(r.datos).toEqual({ seCierran: 1, sinDato: 1, esperan: 0, esperanCategorias: 0, sinCategoriasActivas: 1 });
       expect(r.esperanEntrada).toEqual([]);
-      expect(r.sinDato.find((s) => s.codigo === mixto.codigo)?.quien).toEqual(["Su dimensión no tiene categorías activas"]);
+      expect(r.sinDato.find((s) => s.codigo === mixto.codigo)?.quien).toEqual([noTuvo(nombre, "marzo de 2003")]);
 
       await cerrarMes(admin, MARZO, opc(tx));
       const p = await periodoDelDato(tx, pMarzo);
@@ -518,42 +520,68 @@ describe("el periodo de un dato que nace sin categorías (complemento 14C, §5.4
       expect([m.estado, m.resultado_exacto]).toEqual(["cerrada", null]);
     }));
 
+  /**
+   * Un trimestral por sedes con un dato mensual. Las sedes llegan el 10 de febrero: enero nace vacío y el cierre de enero, sin
+   * ninguna sede activa, lo cierra «Sin dato»; después vuelven, febrero y marzo nacen con las dos y de ellos se reportan los
+   * de `reportados`. Lo propio del trimestre también se reporta.
+   */
+  async function trimestralConEneroVacio(tx: TransactionSql, reportados: string[]) {
+    const { admin, mide, responsable, procesoId, nuevo, reportarLoPropio } = await entorno(tx);
+    const sede = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}`, ["S1", "S2"]);
+    const [s1, s2] = sede.categorias.map(String);
+    await tx`UPDATE dimension_categorias SET creado_en = '2003-02-10T15:00:00Z' WHERE dimension_id = ${sede.id}`;
+    const nombre = `ZZ Atenciones por sede ${Date.now() % 100_000_000}`;
+    const datoId = await datoDePrueba(tx, { procesoId, nombre, dimensionId: sede.id, responsables: [responsable.usuarioId] });
+    const trimestral = await nuevo({ periodicidad: "trimestral", inicioMedicion: "2003-T1", variables: { B: { datoId } } });
+
+    // El 1 de febrero nace enero, vacío; el cierre de enero, sin ninguna sede activa, lo cierra «Sin dato».
+    await asegurarPeriodosDeDatos({ sql: tx, ahora: new Date("2003-02-01T15:00:00Z"), datoIds: [datoId] });
+    const enero = Number((await tx`SELECT id FROM variable_valores WHERE variable_id = ${datoId} AND periodo = '2003-01'`)[0].id);
+    expect((await periodoDelDato(tx, enero)).categorias).toEqual([]);
+    await tx`UPDATE dimension_categorias SET activo = false, desactivada_en = '2003-02-15T15:00:00Z' WHERE dimension_id = ${sede.id}`;
+    const deEnero = await resumenDeCierre(admin, "2003-01", opc(tx, new Date("2003-02-20T15:00:00Z")));
+    expect(deEnero.datos).toMatchObject({ seCierran: 1, sinDato: 1, sinCategoriasActivas: 1 });
+    await cerrarMes(admin, "2003-01", opc(tx, new Date("2003-02-20T15:00:00Z")));
+    expect((await periodoDelDato(tx, enero)).estado).toBe("cerrado");
+
+    // Las sedes vuelven: febrero y marzo nacen con las dos.
+    await tx`UPDATE dimension_categorias SET activo = true, desactivada_en = NULL WHERE dimension_id = ${sede.id}`;
+    await asegurarPeriodosDeDatos({ sql: tx, ahora: ABRE, datoIds: [datoId] });
+    for (const periodo of ["2003-02", MARZO]) {
+      const [p] = await tx`SELECT id, categorias FROM variable_valores WHERE variable_id = ${datoId} AND periodo = ${periodo}`;
+      expect((p.categorias as unknown[]).length).toBe(2);
+      if (!reportados.includes(periodo)) continue;
+      expect((await reportarDato(responsable, { periodoId: Number(p.id), porCategoria: { [s1]: "1", [s2]: "2" }, confirmado: true }, opc(tx))).ok).toBe(true);
+    }
+    const t1 = await medicionDe(tx, trimestral.id, "2003-T1");
+    await reportarLoPropio(mide, t1, { A: "9" });
+    return { admin, nombre, datoId, trimestral, t1 };
+  }
+
   it("casos 4 y 5 con un trimestral: el mes vacío que cerró un cierre anterior sigue diciendo por qué cuando se cierra el trimestre", () =>
     revertida(sql, async (tx) => {
-      const { admin, mide, responsable, procesoId, nuevo, reportarLoPropio } = await entorno(tx);
-      const sede = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}`, ["S1", "S2"]);
-      const [s1, s2] = sede.categorias.map(String);
-      // Las sedes llegan el 10 de febrero: enero nace vacío; febrero y marzo, con las dos.
-      await tx`UPDATE dimension_categorias SET creado_en = '2003-02-10T15:00:00Z' WHERE dimension_id = ${sede.id}`;
-      const nombre = `ZZ Atenciones por sede ${Date.now() % 100_000_000}`;
-      const datoId = await datoDePrueba(tx, { procesoId, nombre, dimensionId: sede.id, responsables: [responsable.usuarioId] });
-      const trimestral = await nuevo({ periodicidad: "trimestral", inicioMedicion: "2003-T1", variables: { B: { datoId } } });
+      const { admin, nombre, trimestral, t1 } = await trimestralConEneroVacio(tx, ["2003-02", MARZO]);
 
-      // El 1 de febrero nace enero, vacío; el cierre de enero, sin ninguna sede activa, lo cierra «Sin dato».
-      await asegurarPeriodosDeDatos({ sql: tx, ahora: new Date("2003-02-01T15:00:00Z"), datoIds: [datoId] });
-      const enero = Number((await tx`SELECT id FROM variable_valores WHERE variable_id = ${datoId} AND periodo = '2003-01'`)[0].id);
-      expect((await periodoDelDato(tx, enero)).categorias).toEqual([]);
-      await tx`UPDATE dimension_categorias SET activo = false, desactivada_en = '2003-02-15T15:00:00Z' WHERE dimension_id = ${sede.id}`;
-      const deEnero = await resumenDeCierre(admin, "2003-01", opc(tx, new Date("2003-02-20T15:00:00Z")));
-      expect(deEnero.datos).toMatchObject({ seCierran: 1, sinDato: 1, sinCategoriasActivas: 1 });
-      await cerrarMes(admin, "2003-01", opc(tx, new Date("2003-02-20T15:00:00Z")));
-      expect((await periodoDelDato(tx, enero)).estado).toBe("cerrado");
-
-      // Las sedes vuelven: febrero y marzo se reportan, y lo propio del trimestre también.
-      await tx`UPDATE dimension_categorias SET activo = true, desactivada_en = NULL WHERE dimension_id = ${sede.id}`;
-      await asegurarPeriodosDeDatos({ sql: tx, ahora: ABRE, datoIds: [datoId] });
-      for (const periodo of ["2003-02", MARZO]) {
-        const [p] = await tx`SELECT id, categorias FROM variable_valores WHERE variable_id = ${datoId} AND periodo = ${periodo}`;
-        expect((p.categorias as unknown[]).length).toBe(2);
-        expect((await reportarDato(responsable, { periodoId: Number(p.id), porCategoria: { [s1]: "1", [s2]: "2" }, confirmado: true }, opc(tx))).ok).toBe(true);
-      }
-      const t1 = await medicionDe(tx, trimestral.id, "2003-T1");
-      await reportarLoPropio(mide, t1, { A: "9" });
-
-      // El cierre de marzo cierra el trimestre «Sin dato»: lo que faltó es enero, que no tenía con qué reportarse.
+      // El cierre de marzo cierra el trimestre «Sin dato»: lo que faltó es enero, que no tuvo con qué reportarse.
       const r = await resumenDeCierre(admin, MARZO, opc(tx, EN_MAYO));
-      expect(r.sinDato.find((s) => s.codigo === trimestral.codigo)?.quien).toEqual(["Su dimensión no tiene categorías activas"]);
+      expect(r.sinDato.find((s) => s.codigo === trimestral.codigo)?.quien).toEqual([noTuvo(nombre, "enero de 2003")]);
       await cerrarMes(admin, MARZO, opc(tx, EN_MAYO));
+      const m = await fila(tx, t1);
+      expect([m.estado, m.resultado_exacto]).toEqual(["cerrada", null]);
+    }));
+
+  it("con un trimestral, enero vacío y febrero sin reportar teniendo sus sedes: «Quién debía» dice las dos cosas", () =>
+    revertida(sql, async (tx) => {
+      const { admin, nombre, datoId, trimestral, t1 } = await trimestralConEneroVacio(tx, [MARZO]);
+      const febrero = Number((await tx`SELECT id FROM variable_valores WHERE variable_id = ${datoId} AND periodo = '2003-02'`)[0].id);
+
+      // Febrero venció sin que lo reportaran: el cierre de marzo lo cierra «Sin dato» y, con él, el trimestre.
+      const r = await resumenDeCierre(admin, MARZO, opc(tx, EN_MAYO));
+      expect(r.datos).toMatchObject({ sinDato: 1, sinCategoriasActivas: 0 });
+      expect(r.sinDato.find((s) => s.codigo === trimestral.codigo)?.quien).toEqual([noTuvo(nombre, "enero de 2003"), `Los responsables del dato «${nombre}»`]);
+      await cerrarMes(admin, MARZO, opc(tx, EN_MAYO));
+      const p = await periodoDelDato(tx, febrero);
+      expect([p.estado, p.valor]).toEqual(["cerrado", null]);
       const m = await fila(tx, t1);
       expect([m.estado, m.resultado_exacto]).toEqual(["cerrada", null]);
     }));
