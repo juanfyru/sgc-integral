@@ -11,7 +11,8 @@
  * pasada (`fotos`) o, al final de la siembra, `tomarFotos`.
  *
  * La 14C (anexo §10) añade su historia (`de14C`) con el plan de su dato compartido (`planDe14C`): un mes pendiente, uno
- * corregido que cierra el cierre del mes, uno con soporte (lo sube el final de la siembra) y un trimestre completo.
+ * corregido que cierra el cierre del mes, uno con soporte (lo sube el final de la siembra) y un trimestre completo. Su
+ * complemento (`soporteDelComplemento`) activa el soporte obligatorio del uso de la agenda a mitad del plazo de un mes.
  */
 import { periodoDe, type Periodo } from "../../lib/indicadores-documentales/periodo";
 import { anterior, clavesFinas, fechaLimiteDeReporte, periodoQueContiene, periodosTerminados } from "../../lib/indicadores/periodos";
@@ -255,6 +256,11 @@ export type Hecho =
    * cambio mayor rige desde `rigeDesde` o, sin él, desde el periodo por omisión.
    */
   | { tipo: "cambiar"; codigo: string; ficha: FichaDemo; motivo: string; rigeDesde?: string }
+  /**
+   * La coordinadora activa el soporte obligatorio en los datos de operación, con lo demás como está (complemento de la
+   * 14C, §4): la medición de `debe` queda debiéndolo y la de `noDebe`, no.
+   */
+  | { tipo: "soporte"; codigo: string; debe: string; noDebe: string }
   /** La pasada de esa hora toma las fotos que tocan (`tomarFotos`); cada medición de `esperado` debe quedar con ese color. */
   | { tipo: "fotos"; esperado: { codigo: string; periodo: string; semaforo: Semaforo }[] };
 
@@ -272,6 +278,7 @@ export function agendaDeIndicadores(ahora: Date, zona: string = zonaHoraria()): 
   fichasRecientes(cal, ahora, en);
   automaticosDelSgc(cal, en);
   de14C(cal, ahora, zona, en);
+  soporteDelComplemento(cal, en);
   return agenda
     .map((p, i) => ({ p, i }))
     .sort((x, y) => x.p.momento.getTime() - y.p.momento.getTime() || x.i - y.i)
@@ -686,4 +693,15 @@ function de14C(cal: CalendarioDeIndicadores, ahora: Date, zona: string, en: En):
   crearYEnviar(en, enDia(ultimo, 25, 10), SGC_INDICE_RESTRINGIDO, ultimo.clave, "coordinadora");
   en(enDia(ultimo, 26, 10), { tipo: "aprobar", quien: "gerente", codigos: [SGC_INDICE.codigo, SGC_INDICE_RESTRINGIDO.codigo] });
   en(enDia(ultimo, 26, 11), { tipo: "seguimiento", codigo: SGC_INDICE_RESTRINGIDO.codigo, quien: "liderCex" });
+}
+
+/**
+ * El complemento de la 14C (su anexo, §4 y §8): el día 7 de `meses[0]`, a mitad del plazo de reporte de `meses[1]` (vence el
+ * 10) y dos días después de que `lider.cex` reportara lo suyo del uso de la agenda, la coordinadora le activa el soporte
+ * obligatorio. `meses[1]` seguía en su plazo: lo debe, y al llegarle el dato queda abierta pidiéndolo. `meses[2]`, con lo
+ * suyo reportado y su fecha límite pasada, no lo debe: cuando llega su dato, nadie le pide el soporte.
+ */
+function soporteDelComplemento(cal: CalendarioDeIndicadores, en: En): void {
+  const m = cal.meses;
+  en(enDia(m[0], 6, 10), { tipo: "soporte", codigo: CEX_AGENDA.codigo, debe: m[1].clave, noDebe: m[2].clave });
 }

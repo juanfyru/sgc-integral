@@ -4,9 +4,10 @@
  * dos fichas que lo usan, con el valor copiado y su resultado; la desagregada por sede, con una sede en Crítico bajo un total
  * en Bien y otro mes con una sede «Sin casos» y otra «No aplica»; el compuesto general, con sus valores copiados iguales a lo
  * que dan sus componentes; y el restringido, que `consulta` no ve y cuyo componente de talento humano no ve `lider.cex`, que sí
- * ve el compuesto. Y que, sembrada la demo, una lectura no tiene nada que abrir ni que propagar. Solo lee (lo último, dentro de
- * una transacción que se revierte). Los periodos salen del plan de la siembra (`planDe14C`), contado desde su reloj. Como el
- * resto de la demo, se salta si ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
+ * ve el compuesto. Desde el complemento de la 14C, el soporte obligatorio del uso de la agenda, activado a mitad del plazo de
+ * un mes: ese mes lo debe y el anterior no. Y que, sembrada la demo, una lectura no tiene nada que abrir ni que propagar.
+ * Solo lee (lo último, dentro de una transacción que se revierte). Los periodos salen del plan de la siembra (`planDe14C`),
+ * contado desde su reloj. Como el resto de la demo, se salta si ya se usó (ver `utiles/demo.ts`); `SEMILLA_RECIEN=1` lo exige.
  */
 import { existsSync } from "node:fs";
 import type { TransactionSql } from "postgres";
@@ -24,9 +25,11 @@ import { revisarFuentes } from "@/db/consultas/indicadores/dependencias";
 import { cambiarEstadoDeCategoria } from "@/db/consultas/indicadores/dimensiones";
 import { abrirCambio } from "@/db/consultas/indicadores/fichas";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
-import { designar } from "@/db/consultas/indicadores/operacion";
+import { cambiarOperacion, designar } from "@/db/consultas/indicadores/operacion";
 import { propagar, valorDeComponente } from "@/db/consultas/indicadores/propagacion";
+import { bloquearParaSoporte, dejarSoporteSubido } from "@/db/consultas/indicadores/soportes";
 import {
+  agendaDeIndicadores,
   calendarioDeIndicadores,
   consultasDe,
   MOTIVO_SEDE_CERRADA,
@@ -95,8 +98,10 @@ async function periodosDelDato(datoId: number, db: Cliente = sql) {
  * (indicadores o datos nuevos, versiones, firmas, eventos de mediciones, metas programadas, bajas ni cierres: los compuestos
  * dependen de sus componentes, y la lectura en vacío del último caso, de todo); las designaciones de los cinco y de
  * `GTH-IND-01` (`DESIGNADOS_SEMBRADOS`); quienes responden por el dato; sus periodos en el estado del plan y sin eventos
- * posteriores, salvo el del soporte (lo sube `registrarArchivo`, con la hora del reloj); y «Sede» con sus cuatro categorías
- * activas, ninguna nueva. Lo que no deja hora (quitar una designación o un responsable) se compara con lo sembrado.
+ * posteriores, salvo el del soporte (lo sube `registrarArchivo`, con la hora del reloj); «Sede» con sus cuatro categorías
+ * activas, ninguna nueva; y, desde el complemento de la 14C, el soporte obligatorio del uso de la agenda desde la hora en que
+ * lo activó la agenda (desactivarlo lo borra y volver a activarlo lo mueve). Lo que no deja hora (quitar una designación o un
+ * responsable) se compara con lo sembrado.
  */
 async function comoSeSembro(db: Cliente = sql): Promise<{ intacta: boolean; motivo: string }> {
   const t = await sembradaEn(db);
@@ -151,6 +156,13 @@ async function comoSeSembro(db: Cliente = sql): Promise<{ intacta: boolean; moti
   if (s.total !== SEDE.categorias.length || s.activas !== s.total || s.nuevas > 0) {
     cambios.push(`«${SEDE.nombre}» tiene ${s.activas} de ${s.total} categorías activas (se sembraron ${SEDE.categorias.length})`);
   }
+  const activacion = activacionDelSoporte(t);
+  const [soporte] = await db`SELECT soporte_obligatorio_desde FROM indicadores WHERE codigo = ${CEX_AGENDA.codigo}`;
+  const desde = soporte?.soporte_obligatorio_desde ? new Date(soporte.soporte_obligatorio_desde) : null;
+  if (desde?.getTime() !== activacion.momento.getTime()) {
+    const hoy = desde ? `exige soporte desde ${desde.toISOString()}` : "no exige soporte";
+    cambios.push(`${CEX_AGENDA.codigo} ${hoy} (se sembró desde ${activacion.momento.toISOString()})`);
+  }
   return { intacta: cambios.length === 0, motivo: cambios.length === 0 ? "la 14C está como se sembró" : `hay ${cambios.join("; ")}` };
 }
 
@@ -186,6 +198,13 @@ async function valores(medicionId: number) {
       },
     ]),
   );
+}
+
+/** La activación del soporte obligatorio que siembra la agenda (complemento de la 14C), con su hora. */
+function activacionDelSoporte(sembrada: Date) {
+  const paso = agendaDeIndicadores(sembrada).find((p) => p.hecho.tipo === "soporte");
+  if (!paso || paso.hecho.tipo !== "soporte") throw new Error("La agenda no activa el soporte obligatorio");
+  return { momento: paso.momento, ...paso.hecho };
 }
 
 const eventosDe = async (periodoId: number) =>
@@ -376,6 +395,31 @@ describe("la demo de la 14C", () => {
     expect((await revisarFuentes(sql, [Number(m.id)])).get(Number(m.id))).toMatchObject({ coincide: true, faltan: [] });
   });
 
+  it("el uso de la agenda exige soporte desde la mitad del plazo de un mes: ese mes lo debe y el anterior, reportado y vencido, no", async (ctx) => {
+    await exigir14C(ctx);
+    const sembrada = await sembradaEn(sql);
+    const cal = calendarioDeIndicadores(sembrada);
+    const activacion = activacionDelSoporte(sembrada);
+    expect([activacion.debe, activacion.noDebe]).toEqual([cal.meses[1].clave, cal.meses[2].clave]);
+    const [i] = await sql`SELECT soporte_obligatorio, soporte_obligatorio_desde FROM indicadores WHERE codigo = ${CEX_AGENDA.codigo}`;
+    expect(i.soporte_obligatorio).toBe(true);
+    expect(new Date(i.soporte_obligatorio_desde).getTime()).toBe(activacion.momento.getTime());
+
+    // La marca de cada una, decidida al activar (anexo del complemento, §4.2): la que seguía en su plazo lo debe; la que
+    // quien mide ya había reportado, con la fecha límite pasada, no.
+    const debe = await medicion(CEX_AGENDA.codigo, activacion.debe);
+    const noDebe = await medicion(CEX_AGENDA.codigo, activacion.noDebe);
+    expect([debe.debe_soporte, noDebe.debe_soporte]).toEqual([true, false]);
+    expect(new Date(debe.reportada_en).getTime()).toBeLessThan(activacion.momento.getTime());
+    expect(new Date(debe.vence_en).getTime()).toBeGreaterThan(activacion.momento.getTime());
+    expect(new Date(noDebe.reportada_en).getTime()).toBeLessThan(activacion.momento.getTime());
+    expect(new Date(noDebe.vence_en).getTime()).toBeLessThan(activacion.momento.getTime());
+    // La que lo debe queda sin él, para el recorrido: es tarea de quien mide hasta que lo adjunte.
+    const [{ n }] = await sql`SELECT count(*)::int AS n FROM archivos WHERE contexto = 'medicion' AND contexto_id = ${debe.id}`;
+    expect(n).toBe(0);
+    expect(debe.estado).toBe("abierta");
+  });
+
   it("sembrada la demo, una lectura no tiene periodos que abrir ni valores que propagar", async (ctx) => {
     await exigir14C(ctx);
     const sembrada = await sembradaEn(sql);
@@ -389,12 +433,13 @@ describe("la demo de la 14C", () => {
 
 describe("la guarda de la 14C ve lo que cambia el recorrido", () => {
   /**
-   * Cada paso de «Qué probar y cómo (Fase 14C)» que cambia algo que estos casos leen, hecho con las funciones del dominio en
-   * una transacción que se revierte: después de él, `comoSeSembro` lo nota (y los casos saltan en vez de fallar). El cierre
-   * del mes (paso 4) no se prueba aquí (ningún test deja ni hace un cierre de la demo): lo ve la cuenta de cierres posteriores,
-   * y sus eventos, la de eventos. Leer el aviso de la sede en Crítico lo decide el caso de la desagregada (`exigirDemo`).
+   * Cada paso de «Qué probar y cómo (Fase 14C)» y de su complemento que cambia algo que estos casos leen, hecho con las
+   * funciones del dominio en una transacción que se revierte: después de él, `comoSeSembro` lo nota (y los casos saltan en
+   * vez de fallar). El cierre del mes (paso 4) no se prueba aquí (ningún test deja ni hace un cierre de la demo): lo ve la
+   * cuenta de cierres posteriores, y sus eventos, la de eventos. Leer el aviso de la sede en Crítico lo decide el caso de la
+   * desagregada (`exigirDemo`).
    */
-  it("un dato nuevo, el dato reportado, la rejilla corregida, una sede desactivada, un componente corregido, un cambio de ficha, las designaciones y los responsables", async (ctx) => {
+  it("un dato nuevo, el dato reportado, la rejilla corregida, una sede desactivada, un componente corregido, un cambio de ficha, las designaciones, los responsables y el soporte del uso de la agenda", async (ctx) => {
     await exigir14C(ctx);
     const plan = planDe14C(await sembradaEn(sql));
     const cal = calendarioDeIndicadores(await sembradaEn(sql));
@@ -481,6 +526,30 @@ describe("la guarda de la 14C ve lo que cambia el recorrido", () => {
             { sql: tx },
           ),
         /responden por el dato 1 personas/,
+      ],
+      [
+        "complemento: se adjunta el soporte que debe el uso de la agenda",
+        async (tx) => {
+          const [m] = await tx`SELECT m.id FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+            WHERE i.codigo = ${CEX_AGENDA.codigo} AND m.periodo = ${activacionDelSoporte(await sembradaEn(tx)).debe}`;
+          await bloquearParaSoporte(tx, Number(m.id));
+          await tx`INSERT INTO archivos (rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256, contexto, contexto_id)
+            VALUES ('evidencia', ${`zz/${Date.now()}.pdf`}, 'soporte.pdf', 'pdf', 'application/pdf', 10, ${"a".repeat(64)}, 'medicion', ${m.id})`;
+          return dejarSoporteSubido(tx, { medicionId: Number(m.id), usuarioId: (await sesionDe(tx, "lider.cex")).usuarioId, nombre: "soporte.pdf", ahora: new Date() });
+        },
+        /eventos posteriores a la siembra/,
+      ],
+      [
+        "complemento: el uso de la agenda deja de exigir soporte",
+        async (tx) => {
+          const [i] = await tx`SELECT id, plazo_reporte_dias, inicio_medicion, nivel_acceso FROM indicadores WHERE codigo = ${CEX_AGENDA.codigo}`;
+          return cambiarOperacion(
+            await sesionDe(tx, "coordinadora.sgc"),
+            { indicadorId: Number(i.id), plazoReporteDias: Number(i.plazo_reporte_dias), inicioMedicion: i.inicio_medicion, soporteObligatorio: false, nivelAcceso: i.nivel_acceso },
+            { sql: tx },
+          );
+        },
+        new RegExp(`${CEX_AGENDA.codigo} no exige soporte`),
       ],
     ];
     for (const [nombre, paso, motivo] of pasos) {

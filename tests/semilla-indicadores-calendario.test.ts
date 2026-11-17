@@ -407,3 +407,33 @@ describe("la 14C en la agenda (anexo 14C, §10)", () => {
     expect([...codigos].sort()).toEqual([CEX_CONSULTAS_TRIMESTRE.codigo, SGC_INDICE.codigo, SGC_INDICE_RESTRINGIDO.codigo].sort());
   });
 });
+
+/**
+ * Lo que el complemento de la 14C deja si se siembra en `ahora` (su anexo, §4 y §8): `null` si está, o lo primero que falla.
+ * La agenda activa una sola vez el soporte obligatorio, en el uso de la agenda y antes de la siembra: después de que
+ * `lider.cex` reportara lo suyo de `meses[1]` y dentro de su plazo (lo debe), y después de vencer `meses[2]`, que ya tenía lo
+ * suyo reportado (no lo debe).
+ */
+function problemaDelComplemento(ahora: Date): string | null {
+  const cal = calendarioDeIndicadores(ahora, zona);
+  const agenda = agendaDeIndicadores(ahora, zona);
+  const activaciones = deTipo(agenda, "soporte");
+  if (activaciones.length !== 1) return `${activaciones.length} activaciones del soporte`;
+  const [{ momento, hecho }] = activaciones;
+  if (momento.getTime() >= ahora.getTime()) return "la activación es posterior a la siembra";
+  if (hecho.codigo !== CEX_AGENDA.codigo || hecho.debe !== cal.meses[1].clave || hecho.noDebe !== cal.meses[2].clave) return "qué se activa";
+  const loSuyo = (clave: string) =>
+    deTipo(agenda, "reportar").find((p) => p.hecho.codigo === CEX_AGENDA.codigo && p.hecho.periodo === clave)?.momento.getTime() ?? Infinity;
+  const vence = (clave: string) => fechaLimiteDeReporte(periodoDe(clave, zona)!, CEX_AGENDA.plazoReporte ?? PLAZO_DE_REPORTE, zona).getTime();
+  const t = momento.getTime();
+  if (loSuyo(hecho.debe) >= t || t >= vence(hecho.debe)) return `${hecho.debe} no seguía en su plazo con lo suyo reportado`;
+  if (loSuyo(hecho.noDebe) >= vence(hecho.noDebe) || vence(hecho.noDebe) >= t) return `${hecho.noDebe} no estaba reportado a tiempo y vencido`;
+  return null;
+}
+
+describe("el complemento de la 14C en la agenda (su anexo, §4 y §8)", () => {
+  it("en los días donde cambia el calendario, durante trece meses, el soporte del uso de la agenda se activa a mitad del plazo de un mes que lo debe, después de vencer el anterior", () => {
+    const problemas = INSTANTES_DE_LA_14C.map((ahora) => [ahora.toISOString(), problemaDelComplemento(ahora)]).filter(([, p]) => p !== null);
+    expect(problemas).toEqual([]);
+  }, 30_000);
+});

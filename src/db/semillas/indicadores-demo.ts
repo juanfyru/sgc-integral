@@ -21,9 +21,12 @@
  * después de cada hecho que cambia una fuente, aquí se abren las mediciones de las fichas con variables ajenas y se propaga a
  * esa hora (`propagarALaHora`), como lo haría la acción. Al final, `indicadores-demo-14c.ts` hace la pasada de la hora de la
  * siembra y sube el soporte del dato.
+ *
+ * Desde el complemento de la 14C, la historia activa además el soporte obligatorio de `CEX-ID-001` a mitad del plazo de un
+ * mes (`cambiarOperacion`, `activarSoporte`): ese mes lo debe y el anterior, reportado y vencido, no.
  */
 import type { Sql } from "postgres";
-import type { Semaforo } from "../../lib/indicadores/tipos";
+import type { NivelAcceso, Semaforo } from "../../lib/indicadores/tipos";
 import { zonaHoraria } from "../../lib/zona-horaria";
 import { enTransaccion, type SesionFlujo } from "../consultas/flujo/contrato";
 import { asignarSiglaASubproceso } from "../consultas/mapa-admin";
@@ -41,7 +44,7 @@ import { guardarEnMaestro } from "../consultas/indicadores/maestros";
 import { asegurarMediciones, listaDe, marcarNoAplica, reportar } from "../consultas/indicadores/mediciones";
 import { programarMeta } from "../consultas/indicadores/metas";
 import { observar } from "../consultas/indicadores/observaciones";
-import { designar, retirar } from "../consultas/indicadores/operacion";
+import { cambiarOperacion, designar, retirar } from "../consultas/indicadores/operacion";
 import { propagar } from "../consultas/indicadores/propagacion";
 import { momentoHace, minutosDespues, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
 import {
@@ -301,6 +304,36 @@ async function hacer(s: Siembra, h: Hecho, ahora: Date): Promise<void> {
     case "fotos":
       await fotosDeLaPasada(s, h.esperado, ahora);
       return;
+    case "soporte":
+      await activarSoporte(s, h, ahora);
+      return;
+  }
+}
+
+/**
+ * La coordinadora activa «Pedir un soporte (archivo) con cada reporte» en los datos de operación (complemento de la 14C, §4),
+ * con el plazo, el inicio de medición y el nivel de acceso como están, y se comprueba la marca que deja en las mediciones en
+ * curso (`debe_soporte`): si la de `debe` no lo debe o la de `noDebe` sí, la semilla no sigue.
+ */
+async function activarSoporte(s: Siembra, h: Extract<Hecho, { tipo: "soporte" }>, ahora: Date): Promise<void> {
+  const { indicadorId } = creado(s, h.codigo);
+  const [i] = await s.sql`SELECT plazo_reporte_dias, inicio_medicion, nivel_acceso FROM indicadores WHERE id = ${indicadorId}`;
+  await cambiarOperacion(
+    s.sesion.coordinadora,
+    {
+      indicadorId,
+      plazoReporteDias: Number(i.plazo_reporte_dias),
+      inicioMedicion: i.inicio_medicion as string,
+      soporteObligatorio: true,
+      nivelAcceso: i.nivel_acceso as NivelAcceso,
+    },
+    { sql: s.sql, ahora },
+  );
+  const marcas = new Map(
+    (await s.sql`SELECT periodo, debe_soporte FROM mediciones WHERE indicador_id = ${indicadorId}`).map((m) => [m.periodo as string, m.debe_soporte as boolean]),
+  );
+  if (marcas.get(h.debe) !== true || marcas.get(h.noDebe) !== false) {
+    throw new Error(`${h.codigo}: al activar el soporte, ${h.debe} debía deberlo y ${h.noDebe} no`);
   }
 }
 
