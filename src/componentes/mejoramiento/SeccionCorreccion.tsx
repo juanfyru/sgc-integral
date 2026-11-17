@@ -11,14 +11,25 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactN
   );
 }
 
-/** El resumen en una línea de la sección plegada (maqueta 2): qué se hizo, quién y cuándo, y cuántos archivos. */
-function resumenDe(c: DetalleDeHallazgo["correccion"], archivos: number): string {
+/** Lo que cabe del texto en la línea del resumen: hasta `maximo` caracteres, cortado en una palabra. */
+function recortar(texto: string, maximo = 90): string {
+  if (texto.length <= maximo) return texto;
+  const corte = texto.slice(0, maximo);
+  const espacio = corte.lastIndexOf(" ");
+  return (espacio > maximo / 2 ? corte.slice(0, espacio) : corte).trimEnd() + "…";
+}
+
+/**
+ * El resumen en una línea de la sección plegada (maqueta 2): qué se hizo, quién y cuándo y, a quien ve los archivos,
+ * cuántos hay (`archivos` nulo: quien mira no los ve, y no se cuentan).
+ */
+function resumenDe(c: DetalleDeHallazgo["correccion"], archivos: number | null): string {
   if (c.requerida === null) return "Aún no se registra la corrección";
   if (c.requerida === false) return "No requirió corrección inmediata";
   const partes = [
-    c.descripcion ?? "",
+    recortar(c.descripcion ?? ""),
     [c.responsable, c.implementadaEn ? fechaDeDia(c.implementadaEn) : null].filter(Boolean).join(", "),
-    `${archivos} ${archivos === 1 ? "archivo" : "archivos"}`,
+    archivos === null ? "" : `${archivos} ${archivos === 1 ? "archivo" : "archivos"}`,
   ];
   return partes.filter(Boolean).join(" · ");
 }
@@ -42,8 +53,8 @@ export function SeccionCorreccion({
   decision: DetalleDeHallazgo["decision"];
   zona: string;
   abierta: boolean;
-  /** Cuántos archivos de la corrección hay (para el resumen). */
-  archivos: number;
+  /** Cuántos archivos de la corrección hay, para el resumen; nulo si quien mira no los ve. */
+  archivos: number | null;
   /** La nota con que se devolvió la corrección, si se devolvió y está otra vez por corregir. */
   devuelta?: string | null;
   children?: React.ReactNode;

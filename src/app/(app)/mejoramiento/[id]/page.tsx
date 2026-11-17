@@ -244,7 +244,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
               decision={h.decision}
               zona={zona}
               abierta={EN_LA_CORRECCION.has(h.estado)}
-              archivos={correcciones.length}
+              archivos={completo ? correcciones.length : null}
               devuelta={devuelta}
             >
               {completo ? (

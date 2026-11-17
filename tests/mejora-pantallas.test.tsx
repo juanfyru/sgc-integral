@@ -399,6 +399,20 @@ describe("los pasos del recorrido hasta el plan (Tarea 10)", () => {
     );
     expect(sinCorreccion).toContain("No requirió corrección inmediata");
     expect(sinCorreccion).not.toContain("M. Cuéllar");
+    // A quien no ve los archivos no se le cuentan; una descripción larga no desborda la línea del resumen.
+    const larga = "Se revisó la cadena de frío de la nevera de vacunas y se reubicaron las dosis en la nevera de respaldo del servicio";
+    const actividad = renderToStaticMarkup(
+      <SeccionCorreccion
+        correccion={{ ...correccion, descripcion: larga }}
+        decision={{ accionRequerida: null, justificacion: null, decididaEn: null }}
+        zona="America/Bogota"
+        abierta={false}
+        archivos={null}
+      />,
+    );
+    expect(actividad).not.toMatch(/\d archivos?/);
+    expect(actividad).toContain("Se revisó la cadena de frío de la nevera de vacunas y se reubicaron las dosis en la… · M. Cuéllar");
+    expect(actividad).toContain(larga);
 
     const historial = renderToStaticMarkup(
       <HistorialDelHallazgo
