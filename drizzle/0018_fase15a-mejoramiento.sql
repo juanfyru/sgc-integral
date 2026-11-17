@@ -350,6 +350,27 @@ ALTER TABLE "archivos" ADD CONSTRAINT "archivos_rol_valido" CHECK ("archivos"."r
 ALTER TABLE "archivos" ADD CONSTRAINT "archivos_contexto_valido" CHECK ("archivos"."contexto" IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores', 'dato_compartido', 'mejora_hallazgo', 'mejora_ronda', 'mejora_actividad', 'mejora_reporte'));--> statement-breakpoint
 ALTER TABLE "firmas" ADD CONSTRAINT "firmas_firma_valida" CHECK ("firmas"."firma" IN ('elaboro', 'reviso', 'aprobo', 'publico', 'ratifico', 'adopto', 'verifico', 'cerro'));--> statement-breakpoint
 ALTER TABLE "firmas" ADD CONSTRAINT "firmas_tramite_coherente" CHECK ("firmas"."tramite_id" IS NOT NULL OR "firmas"."firma" IN ('ratifico', 'adopto') OR "firmas"."indicador_version_id" IS NOT NULL OR "firmas"."mejora_hallazgo_id" IS NOT NULL);--> statement-breakpoint
+CREATE INDEX "mejora_accion_causas_hallazgo_idx" ON "mejora_accion_causas" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_acciones_hallazgo_idx" ON "mejora_acciones" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_acciones_ronda_idx" ON "mejora_acciones" USING btree ("ronda_id");--> statement-breakpoint
+CREATE INDEX "mejora_actividades_hallazgo_idx" ON "mejora_actividades" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_actividades_accion_idx" ON "mejora_actividades" USING btree ("accion_id");--> statement-breakpoint
+CREATE INDEX "mejora_ajustes_hallazgo_idx" ON "mejora_ajustes" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_ajustes_ronda_idx" ON "mejora_ajustes" USING btree ("ronda_id");--> statement-breakpoint
+CREATE INDEX "mejora_analisis_hallazgo_idx" ON "mejora_analisis" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_analisis_ronda_idx" ON "mejora_analisis" USING btree ("ronda_id");--> statement-breakpoint
+CREATE INDEX "mejora_causas_hallazgo_idx" ON "mejora_causas" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_causas_ronda_idx" ON "mejora_causas" USING btree ("ronda_id");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_registrado_por_idx" ON "mejora_hallazgos" USING btree ("registrado_por");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_indicador_idx" ON "mejora_hallazgos" USING btree ("indicador_id");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_medicion_idx" ON "mejora_hallazgos" USING btree ("medicion_id");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_requisito_norma_idx" ON "mejora_hallazgos" USING btree ("requisito_norma_id");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_documento_idx" ON "mejora_hallazgos" USING btree ("documento_id");--> statement-breakpoint
+CREATE INDEX "mejora_ocurrencias_hallazgo_idx" ON "mejora_ocurrencias" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_reportes_estado_vence_idx" ON "mejora_reportes" USING btree ("estado","vence_en");--> statement-breakpoint
+CREATE INDEX "mejora_reportes_reportado_por_idx" ON "mejora_reportes" USING btree ("reportado_por");--> statement-breakpoint
+CREATE INDEX "mejora_rondas_indicador_eficacia_idx" ON "mejora_rondas" USING btree ("indicador_eficacia_id");--> statement-breakpoint
+CREATE INDEX "mejora_seguimientos_hallazgo_registrado_por_idx" ON "mejora_seguimientos" USING btree ("hallazgo_id","registrado_por");--> statement-breakpoint
 CREATE TRIGGER mejora_eventos_inmutable BEFORE UPDATE OR DELETE ON "mejora_eventos" FOR EACH ROW EXECUTE FUNCTION sgc_impedir_modificacion();--> statement-breakpoint
 CREATE TRIGGER mejora_seguimientos_inmutable BEFORE UPDATE OR DELETE ON "mejora_seguimientos" FOR EACH ROW EXECUTE FUNCTION sgc_impedir_modificacion();--> statement-breakpoint
 CREATE TRIGGER mejora_ocurrencias_inmutable BEFORE UPDATE OR DELETE ON "mejora_ocurrencias" FOR EACH ROW EXECUTE FUNCTION sgc_impedir_modificacion();--> statement-breakpoint

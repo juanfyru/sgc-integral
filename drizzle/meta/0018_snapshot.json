@@ -7632,7 +7632,23 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mejora_accion_causas_hallazgo_idx": {
+          "name": "mejora_accion_causas_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "mejora_accion_causas_hallazgo_id_mejora_hallazgos_id_fk": {
           "name": "mejora_accion_causas_hallazgo_id_mejora_hallazgos_id_fk",
@@ -7758,7 +7774,38 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mejora_acciones_hallazgo_idx": {
+          "name": "mejora_acciones_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_acciones_ronda_idx": {
+          "name": "mejora_acciones_ronda_idx",
+          "columns": [
+            {
+              "expression": "ronda_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "mejora_acciones_hallazgo_id_mejora_hallazgos_id_fk": {
           "name": "mejora_acciones_hallazgo_id_mejora_hallazgos_id_fk",
@@ -7961,6 +8008,36 @@
             },
             {
               "expression": "estado",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_actividades_hallazgo_idx": {
+          "name": "mejora_actividades_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_actividades_accion_idx": {
+          "name": "mejora_actividades_accion_idx",
+          "columns": [
+            {
+              "expression": "accion_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -8180,6 +8257,36 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mejora_ajustes_hallazgo_idx": {
+          "name": "mejora_ajustes_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_ajustes_ronda_idx": {
+          "name": "mejora_ajustes_ronda_idx",
+          "columns": [
+            {
+              "expression": "ronda_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -8328,7 +8435,38 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mejora_analisis_hallazgo_idx": {
+          "name": "mejora_analisis_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_analisis_ronda_idx": {
+          "name": "mejora_analisis_ronda_idx",
+          "columns": [
+            {
+              "expression": "ronda_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "mejora_analisis_hallazgo_id_mejora_hallazgos_id_fk": {
           "name": "mejora_analisis_hallazgo_id_mejora_hallazgos_id_fk",
@@ -8420,7 +8558,38 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mejora_causas_hallazgo_idx": {
+          "name": "mejora_causas_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_causas_ronda_idx": {
+          "name": "mejora_causas_ronda_idx",
+          "columns": [
+            {
+              "expression": "ronda_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "mejora_causas_hallazgo_id_mejora_hallazgos_id_fk": {
           "name": "mejora_causas_hallazgo_id_mejora_hallazgos_id_fk",
@@ -8994,6 +9163,81 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mejora_hallazgos_registrado_por_idx": {
+          "name": "mejora_hallazgos_registrado_por_idx",
+          "columns": [
+            {
+              "expression": "registrado_por",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_hallazgos_indicador_idx": {
+          "name": "mejora_hallazgos_indicador_idx",
+          "columns": [
+            {
+              "expression": "indicador_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_hallazgos_medicion_idx": {
+          "name": "mejora_hallazgos_medicion_idx",
+          "columns": [
+            {
+              "expression": "medicion_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_hallazgos_requisito_norma_idx": {
+          "name": "mejora_hallazgos_requisito_norma_idx",
+          "columns": [
+            {
+              "expression": "requisito_norma_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_hallazgos_documento_idx": {
+          "name": "mejora_hallazgos_documento_idx",
+          "columns": [
+            {
+              "expression": "documento_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -9318,7 +9562,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mejora_ocurrencias_hallazgo_idx": {
+          "name": "mejora_ocurrencias_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "mejora_ocurrencias_hallazgo_id_mejora_hallazgos_id_fk": {
           "name": "mejora_ocurrencias_hallazgo_id_mejora_hallazgos_id_fk",
@@ -9589,7 +9849,44 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mejora_reportes_estado_vence_idx": {
+          "name": "mejora_reportes_estado_vence_idx",
+          "columns": [
+            {
+              "expression": "estado",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "vence_en",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_reportes_reportado_por_idx": {
+          "name": "mejora_reportes_reportado_por_idx",
+          "columns": [
+            {
+              "expression": "reportado_por",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "mejora_reportes_reportado_por_usuarios_id_fk": {
           "name": "mejora_reportes_reportado_por_usuarios_id_fk",
@@ -9878,7 +10175,23 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "mejora_rondas_indicador_eficacia_idx": {
+          "name": "mejora_rondas_indicador_eficacia_idx",
+          "columns": [
+            {
+              "expression": "indicador_eficacia_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "mejora_rondas_hallazgo_id_mejora_hallazgos_id_fk": {
           "name": "mejora_rondas_hallazgo_id_mejora_hallazgos_id_fk",
@@ -10083,6 +10396,27 @@
             },
             {
               "expression": "fecha",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_seguimientos_hallazgo_registrado_por_idx": {
+          "name": "mejora_seguimientos_hallazgo_registrado_por_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "registrado_por",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
