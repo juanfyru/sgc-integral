@@ -248,7 +248,16 @@ export function TarjetaDeAccion({
                   <input id={`${id}-fin`} type="date" value={f.fin} onChange={(e) => cambiar(i, { fin: e.target.value })} className={claseControl} />
                 </div>
                 {filas.length > 1 ? (
-                  <Boton variante="fantasma" tamano="sm" className="justify-self-start" onClick={() => setFilas((l) => l.filter((_, j) => j !== i))}>
+                  <Boton
+                    variante="fantasma"
+                    tamano="sm"
+                    className="justify-self-start"
+                    onClick={() => {
+                      setFilas((l) => l.filter((_, j) => j !== i));
+                      // La fila desaparece con su botón: el foco va a «Añadir otra actividad», que sigue ahí.
+                      document.getElementById(`${clave}-anadir-actividad`)?.focus();
+                    }}
+                  >
                     Quitar<span className="sr-only">{` la actividad ${numero}`}</span>
                   </Boton>
                 ) : null}
@@ -257,7 +266,13 @@ export function TarjetaDeAccion({
           })}
         </ol>
         {filas.length < 30 ? (
-          <Boton variante="secundario" tamano="sm" className="self-start" onClick={() => setFilas((l) => [...l, vacia()])}>
+          <Boton
+            id={`${clave}-anadir-actividad`}
+            variante="secundario"
+            tamano="sm"
+            className="self-start"
+            onClick={() => setFilas((l) => [...l, vacia()])}
+          >
             Añadir otra actividad<span className="sr-only">{` a la acción ${etiqueta}`}</span>
           </Boton>
         ) : null}
@@ -269,7 +284,7 @@ export function TarjetaDeAccion({
       <ErrorDeAnalisis estado={estado} />
       <ErrorDeAnalisis estado={estadoQuitar} />
       <div className="flex flex-wrap items-center gap-3">
-        <Boton type="submit" pendiente={pendiente}>
+        <Boton id={`${clave}-guardar`} type="submit" pendiente={pendiente}>
           {pendiente ? "Guardando…" : `Guardar la acción ${etiqueta}`}
         </Boton>
         {accion.id !== null ? (

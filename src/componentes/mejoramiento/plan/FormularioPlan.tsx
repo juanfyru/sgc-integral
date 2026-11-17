@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Boton } from "@/componentes/ui/Boton";
 import type { TipoAccion } from "@/lib/mejoramiento/tipos";
 import type { AccionDeAnalisis } from "../analisis/Partes";
 import { TarjetaDeAccion, type AccionDelFormulario, type UsuarioAsignable } from "./TarjetaDeAccion";
+
+/** El botón «Añadir otra acción»: recibe el foco cuando la tarjeta que lo tenía desaparece. */
+const ANADIR = "plan-anadir-accion";
 
 /** Qué identifica a una acción guardada y a sus actividades: si cambia, la tarjeta se vuelve a montar con los ids nuevos. */
 const firmaDe = (a: AccionDelFormulario) => `${a.id}:${a.actividades.map((x) => x.id).join(".")}`;
@@ -40,12 +43,18 @@ export function FormularioPlan({
   const firmas = acciones.map(firmaDe).join("|");
   const [vistas, setVistas] = useState(firmas);
   const [aviso, setAviso] = useState("");
+  // La tarjeta que tenía el foco se vuelve a montar (guardada) o desaparece (quitada): el foco va a su «Guardar» o a «Añadir».
+  const [foco, setFoco] = useState<{ id: string; vez: number } | null>(null);
   if (vistas !== firmas) {
     const antes = new Set(vistas.split("|"));
     const cambiada = acciones.find((a) => !antes.has(firmaDe(a)));
     setVistas(firmas);
     setAviso(cambiada ? `Se guardó la acción A${cambiada.orden}.` : "Se quitó la acción.");
+    setFoco((f) => ({ id: cambiada ? `accion-${cambiada.id}-guardar` : ANADIR, vez: (f?.vez ?? 0) + 1 }));
   }
+  useEffect(() => {
+    if (foco) document.getElementById(foco.id)?.focus();
+  }, [foco]);
   const anadir = () => {
     setNuevas((l) => [...l, siguiente]);
     setSiguiente((n) => n + 1);
@@ -86,11 +95,14 @@ export function FormularioPlan({
           guardar={guardar}
           quitar={quitar}
           alGuardar={() => retirar(clave)}
-          alDescartar={() => retirar(clave)}
+          alDescartar={() => {
+            retirar(clave);
+            document.getElementById(ANADIR)?.focus();
+          }}
         />
       ))}
       <div className="flex flex-wrap items-center gap-3">
-        <Boton variante="secundario" onClick={anadir}>
+        <Boton id={ANADIR} variante="secundario" onClick={anadir}>
           {acciones.length + nuevas.length === 0 ? "Añadir una acción" : "Añadir otra acción"}
         </Boton>
         <span role="status" className="text-sm text-muted-foreground">

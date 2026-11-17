@@ -594,6 +594,9 @@ describe("el plan de acción (maqueta 5)", () => {
     expect(html).toContain("Se quitará la acción A1 del plan, con sus 2 actividades.");
     // Las actividades viajan como JSON con su id.
     expect(html).toContain("&quot;id&quot;:21");
+    // Quitar una fila lleva el foco a «Añadir otra actividad»; volver a montar la tarjeta, a su «Guardar».
+    expect(html).toContain('id="accion-3-anadir-actividad"');
+    expect(html).toContain('id="accion-3-guardar"');
   });
 
   it("sin acciones abre una vacía con el tipo que propone la clase; se descarta sin confirmar", () => {
@@ -605,6 +608,8 @@ describe("el plan de acción (maqueta 5)", () => {
     expect(html).toContain("Descartar esta acción");
     expect(html).not.toContain("Quitar esta acción");
     expect(html).toContain("Añadir otra acción");
+    // Descartar o quitar una acción lleva el foco a «Añadir otra acción».
+    expect(html).toContain('id="plan-anadir-accion"');
     expect(html).toContain("se escriben en la pestaña «Causa raíz»");
     const conUna = renderToStaticMarkup(
       <FormularioPlan hallazgoId={1} tipoPropuesto="correctiva" acciones={[guardada]} causas={causas} usuarios={usuarios} guardar={accion} quitar={accion} />,
