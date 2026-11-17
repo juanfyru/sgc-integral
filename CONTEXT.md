@@ -1,9 +1,11 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-16**, al terminar de construir el **complemento de la
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-17**, al fusionar el **complemento de la
 > 14C** (el punto de miles en los indicadores, el soporte obligatorio con su fecha y el periodo de un dato sin categorías;
 > rama `f14c-complemento`, sobre `main` en `07cb1e6`, en el worktree `F:\sgc-integral-f14c` y contra la base aparte
-> `sgc_f14c`; **sin fusionar**; ver su sección, arriba de la de la 14C). Antes, la **Fase 14C — Datos
+> `sgc_f14c`; **fusionado en `main` el 2026-11-17 por decisión del usuario, por avance rápido, sin publicar en `origin`**,
+> con su visto bueno a las once decisiones de la ejecución y su decisión 12; ver su sección, arriba de la de la 14C).
+> Antes, la **Fase 14C — Datos
 > compartidos, desagregación y compuestos** (rama `fase-14c-datos-desagregacion-compuestos`, sobre `main` en `44d8b9f`, en el
 > worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **fusionada en `main` el 2026-11-16 por decisión del
 > usuario, por avance rápido, sin publicar en `origin`**, con su visto bueno a las 57 decisiones de la ejecución; ver su sección, arriba de la de la
@@ -29,17 +31,22 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** el **complemento de la 14C** está construido (las siete tareas de su plan) en la rama
-   `f14c-complemento` (sale de `main` en `07cb1e6`), en el worktree `F:\sgc-integral-f14c` y contra la base `sgc_f14c`,
-   **sin fusionar**. Construye las tres entregas que el usuario aprobó al cerrar la 14C: el punto de miles se rechaza
+1. **Dónde quedamos:** el **complemento de la 14C** está terminado y **fusionado en `main`** (el 2026-11-17, por decisión
+   del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se construyó (las siete tareas de su plan y
+   la decisión 12 del usuario) en la rama `f14c-complemento` (salía de `main` en `07cb1e6`), en el worktree
+   `F:\sgc-integral-f14c` y contra la base `sgc_f14c`; **la rama, el worktree y esa base se conservan** hasta que el
+   usuario pida borrarlos. Construye las tres entregas que el usuario aprobó al cerrar la 14C: el punto de miles se rechaza
    también en los formularios de los indicadores (lo que se reporta, la ficha, las metas y los límites de un dato); el
    indicador guarda desde cuándo exige soporte y cada medición, si lo debe, decidido una vez; y el periodo de un dato que
    nace sin categorías avisa a quien administra, es su tarea y el cierre lo espera. **Sin dependencias npm nuevas.** Una
    migración, la `0017`; dieciocho en total (`drizzle/0000` a `drizzle/0017`). Detalle en «Hecho (complemento de la
    14C)»; el recorrido, en «Qué probar y cómo (complemento de la 14C)»; las decisiones, en «Decisiones adicionales
    (complemento de la 14C)»; el manual, en el capítulo 8. La **verificación de cierre está hecha** (en el bloque del
-   complemento, con sus cifras). **Falta:** el visto bueno del usuario a las once decisiones de la ejecución, su decisión
-   sobre «Cerrar de nuevo» un periodo vacío y su decisión de fusionar.
+   complemento, con sus cifras). **El usuario dio su visto bueno a las once decisiones de la ejecución el 2026-11-17**
+   («las 11 quedan»), eligió **12.2** para «Cerrar de nuevo» un periodo vacío (advertir antes de cerrar, hecho antes de
+   fusionar) y pidió fusionar («opción 1»). **Falta:** aplicar la `0017` a la base `sgc` (`npm run db:preparar` en
+   `F:\sgc-integral` y reiniciar `next dev`; lo hace el usuario: hasta entonces las páginas de indicadores fallan ahí),
+   publicar `main` cuando el usuario lo pida y el recorrido del usuario («Qué probar y cómo (complemento de la 14C)»).
    **Antes, la Fase 14C — Datos compartidos, desagregación y compuestos** está terminada y **fusionada en
    `main`** (el 2026-11-16, por decisión del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se
    construyó (las dieciocho tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (salía de `main` en
@@ -54,9 +61,9 @@
    cierre está hecha** (en «Fase 14C», con sus cifras), con la revisión final de toda la rama, su ola de corrección y sus
    residuos. **El usuario dio su visto bueno a las 57 decisiones de la ejecución el 2026-11-16** («las 57 quedan»: las 39
    de la ejecución, las 3 de la Tarea 18 y las 15 de la revisión final) y respondió las cuatro preguntas (1 sí, 2 sí, 3
-   sí, 4 dejar). **Falta:** aplicar la `0015` y la `0016` a la base `sgc` (`npm run db:preparar` en `F:\sgc-integral` y
-   reiniciar `next dev`; lo hace el usuario: hasta entonces las páginas de indicadores fallan ahí) y publicar `main` cuando
-   el usuario lo pida; las tres entregas que aprobó son el complemento, arriba. **Mientras se construyó, `F:\sgc-integral`
+   sí, 4 dejar). La `0015` y la `0016` ya están en la base `sgc` (lo vio la verificación de cierre del complemento, el
+   2026-11-17). **Falta:** publicar `main` cuando el usuario lo pida; las tres entregas que aprobó son el complemento,
+   arriba. **Mientras se construyó, `F:\sgc-integral`
    no se tocó, y la base `sgc` del usuario solo se leyó.**
    **Antes, la Fase 14B — Lo que el sistema ya sabe y lo regulatorio** está terminada y **fusionada en `main`**
    (rama `fase-14b-automaticos-regulatorios`: 45 confirmaciones al cerrar la Tarea 13, más las de la tanda final de corrección,
@@ -183,11 +190,10 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) del **complemento de la 14C** (con su verificación de cierre hecha): el visto bueno del
-   usuario a sus once decisiones de la ejecución y a lo que su «Deuda técnica» marca «para el usuario» (dos; una, la de
-   «Cerrar de nuevo» un periodo vacío, para decidir antes de fusionar, como dicen los «Avisos»), su recorrido («Qué
-   probar y cómo (complemento de la 14C)»), la decisión de fusionarlo y, después, aplicar la `0017` a la base `sgc` con la `0015` y la `0016` («Avisos para el usuario (complemento de la
-   14C)»); de la **14C**, ya fusionada, el recorrido del usuario («Qué probar y cómo (Fase 14C)»). Con la 14C fusionada
+2. **Lo que sigue:** (a) del **complemento de la 14C**, ya fusionado: aplicar la `0017` a la base `sgc` («Avisos para el
+   usuario (complemento de la 14C)»), su recorrido («Qué probar y cómo (complemento de la 14C)») y lo que su «Deuda
+   técnica» marca «para el usuario» (queda una: el aviso y la tarea de los periodos vacíos, sin agrupar); de la **14C**,
+   ya fusionada, el recorrido del usuario («Qué probar y cómo (Fase 14C)»). Con la 14C fusionada
    se cerró la Fase 14 del diseño maestro. (b) el
    recorrido del usuario de la 14B, ya fusionada («Qué probar y cómo (Fase 14B)»); (c) si no se hicieron, los recorridos
    del usuario de la 14A y de su entrega complementaria (ya en `main`) y el de la 13C («Qué probar y cómo» de cada una); y
@@ -375,12 +381,14 @@ difieren; **el usuario lo aprobó el 2026-11-16** («aprobado»), con sus respue
 decisiones de su §8). Plan: `docs/superpowers/plans/2026-11-16-fase14c-complemento.md` (siete tareas, con subagentes).
 Construye las tres entregas que el usuario aprobó al cerrar la 14C (las preguntas 1 a 3 de «Decisiones adicionales (Fase
 14C)», al final). Rama `f14c-complemento` (sale de `main` en `07cb1e6`), en el worktree `F:\sgc-integral-f14c` y contra la
-base aparte `sgc_f14c`. **No está fusionada.** **Sin dependencias npm nuevas.** Una migración, la `0017`
+base aparte `sgc_f14c`. **Fusionada en `main` el 2026-11-17** por decisión del usuario («opción 1»), por avance rápido y
+sin publicar en `origin`; la rama, el worktree y la base se conservan. **Sin dependencias npm nuevas.** Una migración, la `0017`
 (`indicadores.soporte_obligatorio_desde` con su `CHECK` `indicadores_soporte_desde`, `mediciones.debe_soporte` y el relleno
 de los indicadores que ya exigían soporte); dieciocho en total (`drizzle/0000` a `drizzle/0017`). Solo añade (regla 11 de
 `AGENTS.md`): se aplica sobre una base de `sgc-suaza` y sobre la de la 14C, y no cambia la huella de ninguna ficha (el
-soporte obligatorio es dato de operación, fuera de lo firmado). Las decisiones de la ejecución **esperan el visto bueno del
-usuario** («Decisiones adicionales (complemento de la 14C)»).
+soporte obligatorio es dato de operación, fuera de lo firmado). **El usuario dio su visto bueno a las once decisiones de
+la ejecución el 2026-11-17** («las 11 quedan») y decidió la 12 («12.2»: «Cerrar de nuevo» un periodo vacío advierte antes
+de cerrar); ver «Decisiones adicionales (complemento de la 14C)».
 
 **Verificación de cierre (2026-11-17; la hizo quien coordinó la ejecución).** La cabeza del código es `11ae567`; lo
 confirmado después son solo documentos.
@@ -423,6 +431,18 @@ confirmado después son solo documentos.
   dos mediciones en curso del primero y la de octubre del segundo (reportada el 4 de noviembre), y la de septiembre del
   segundo (reportada el 4 de octubre, con su plazo vencido el 11) quedó sin marca; ninguna de otros indicadores. La copia
   se borró; `sgc` solo se leyó.
+- **La decisión 12 del usuario (12.2), antes de fusionar (2026-11-17):** «Cerrar de nuevo» un periodo vacío advierte
+  (`8758a76`, y `4d01a60`, que arregla lo que vio el navegador: la fila, de servidor, llamaba una función del módulo de
+  cliente y la página del dato respondía 500; las pruebas de pantalla no lo ven, `tests/frontera-cliente.test.ts` sí).
+  Recorrido en el navegador sobre `sgc_f14c`, con un dato por sede preparado con los ayudantes de las pruebas
+  (`coordinadora.sgc`): la fila de octubre dice «Espera sus categorías» y ofrece **Actualizar categorías** y **Cerrar de
+  nuevo**; este abre el diálogo con la advertencia y el foco en **Volver**; **Volver** lo deja como estaba y devuelve el
+  foco al botón; **Cerrar sin dato** lo deja «Cerrado sin dato», con **Reabrir**, y el foco en el título; la consola, sin
+  errores. Después, la demo se sembró otra vez (con `admin:asegurar`). Sobre `4d01a60`, con la demo recién sembrada:
+  `SEMILLA_RECIEN=1`, **280 archivos, 7067 pruebas en verde y 1 saltada** (la de siempre), salida 0, unos 493 s; una
+  corrida anterior falló en tres pruebas de trámites y visibilidad porque la siembra se hizo sin `admin:asegurar` (no
+  existía el usuario `admin`), no por el código. `npm run lint` limpio y `npm run build` sin `DATABASE_URL` en verde (con
+  el aviso de `src/lib/almacen.ts`). La fusión es por avance rápido: `main` queda con este mismo árbol.
 
 ### Hecho (complemento de la 14C)
 
@@ -479,6 +499,13 @@ confirmado después son solo documentos.
   {periodo}, no tuvo categorías con que reportarse», una frase por periodo y en pasado (decidido con la fila del periodo,
   también si lo cerró un cierre anterior; con otro periodo del mismo dato sin valor y con categorías, también «Los
   responsables del dato «…»»).
+- **«Cerrar de nuevo» un periodo vacío (decisión 12 del usuario, 12.2):** en la página del dato, si el periodo reabierto
+  tiene la lista vacía y su dimensión ya tiene alguna categoría activa (`hayCategoriasActivas`, con la misma regla que la
+  tarea de quien administra), **Cerrar de nuevo** abre un diálogo: «Este periodo no tiene categorías y su dimensión ya
+  tiene categorías activas. Si lo cierra ahora, queda cerrado sin dato.», más «Para que sus responsables lo reporten, pulse
+  antes «Actualizar categorías» en su fila.» cuando la fila lo ofrece; **Volver** o **Cerrar sin dato**. Sin categorías
+  activas, sin dimensión o con la lista llena, cierra al pulsar, como antes. El servidor no cambia
+  (`cerrarDeNuevoElDato` sigue sin mirar las categorías): se advierte, no se impide.
 - **Demo y documentos (Tarea 7):** la agenda de la semilla activa el soporte obligatorio de `CEX-ID-001` a mitad del plazo
   de un mes, con `cambiarOperacion` y la hora inyectada (ver «Qué probar y cómo», paso 0, y la decisión 6), y la semilla no
   sigue si las marcas no quedan como deben; `tests/semilla-indicadores-14c.test.ts` afirma la fecha y las dos marcas detrás
@@ -493,7 +520,7 @@ confirmado después son solo documentos.
 Para una persona del hospital, con la clave común de la demo (`Demo-SGC-2026-clave`). Las fechas son las de una siembra del
 **16 de noviembre de 2026**; sembrada otro día, el soporte se activa el día 7 del mes de la siembra (o del anterior, en sus
 primeros diez días), y lo debe el mes anterior a ese y no el que lo precede. Los pasos 1 a 5 se recorrieron en el navegador
-al cerrar (ver «Verificación de cierre», arriba); el 6 lo cubren las pruebas.
+al cerrar (ver «Verificación de cierre», arriba); el 6 lo cubren las pruebas, y el 7 se vio con un caso preparado.
 
 0. **La base.** Como en el paso 0 de «Qué probar y cómo (Fase 14C)»: en el worktree, `bash
    .superpowers/sdd/2026-11-15-fase14c-datos-desagregacion-compuestos/con-f14c.sh npm run db:seed`, después `… npm run
@@ -552,17 +579,22 @@ al cerrar (ver «Verificación de cierre», arriba); el 6 lo cubren las pruebas.
    cierran», «1 periodo de un dato compartido espera que se actualicen sus categorías: queda para el siguiente cierre.» (no
    hace falta cerrar). Una dimensión sin categorías activas no se arma así (la que usa una ficha vigente no puede quedarse
    sin ellas): ese caso, con su tarea y su cierre «Sin dato», lo cubren las pruebas.
+7. **«Cerrar de nuevo» un periodo vacío advierte** (decisión 12). La demo no lo trae y no se arma desde las pantallas: el
+   cierre del mes no cierra un periodo vacío mientras su dimensión tenga categorías activas, y la que usa una ficha vigente
+   no puede quedarse sin ellas. Lo cubre `tests/indicadores-datos-pantallas.test.tsx` y se vio en el navegador con un caso
+   preparado (ver «Verificación de cierre»): en la fila del periodo reabierto, **Cerrar de nuevo** abre el diálogo que dice
+   que se cerraría sin dato y recuerda **Actualizar categorías**; **Volver** no cambia nada; **Cerrar sin dato** lo cierra.
 
 ### Avisos para el usuario (complemento de la 14C)
 
-- **La rama no está fusionada.** Mientras se construyó, `F:\sgc-integral`, su base `sgc` y su `next dev` del 3002 no se
-  tocaron. Al fusionar, hay que aplicar la `0017` a la base `sgc` (con la `0015` y la `0016`, si aún no se aplicaron: `npm
-  run db:preparar` en `F:\sgc-integral` y reiniciar `next dev`). En la copia de `sgc` de la verificación de cierre ningún
+- **La rama está fusionada en `main`, sin publicar.** Mientras se construyó, `F:\sgc-integral`, su base `sgc` y su `next
+  dev` del 3002 no se tocaron. **Falta aplicar la `0017` a la base `sgc`** (`npm run db:preparar` en `F:\sgc-integral` y
+  reiniciar `next dev`; la `0015` y la `0016` ya están): hasta entonces las páginas de indicadores fallan ahí. En la copia de `sgc` de la verificación de cierre ningún
   indicador exige soporte: la `0017` no marca nada ni deja ningún estado viejo. **Migrar no recalcula:** en otra base, cada
   medición se ajusta la próxima vez que algo la recalcule.
-- **Las once decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (complemento de la 14C)»). Las
-  que más pesan: qué fecha límite cuenta al activar el soporte (3: lee el `vence_en` del anexo §4.2 como la fecha del
-  reporte, cambió una vez durante la ejecución y deja un caso estrecho), dónde se aplica la regla del punto de miles (1), el
+- **Las once decisiones de la ejecución tienen su visto bueno** (2026-11-17, «las 11 quedan»; «Decisiones adicionales
+  (complemento de la 14C)»). Las que más pesan: qué fecha límite cuenta al activar el soporte (3: lee el `vence_en` del
+  anexo §4.2 como la fecha del reporte y deja un caso estrecho), dónde se aplica la regla del punto de miles (1), el
   relleno ante un cambio de plazo posterior (2) y lo que dice la lista de un soporte que se debe (5).
 - **Lo que cambia para las personas:** en los formularios de los indicadores, «1.500» se rechaza (antes se guardaba 1,5);
   «1.6» y «0.125» siguen valiendo, pero un decimal de tres cifras exactas como 2,375 se escribe con coma. «012.500» no
@@ -572,8 +604,8 @@ al cerrar (ver «Verificación de cierre», arriba); el 6 lo cubren las pruebas.
 - **La demo cambia:** `CEX-ID-001` exige soporte; `lider.cex` tiene una tarea vencida más (octubre) y, al entrar, el aviso
   de vencido (sin escalamiento: su cargo superior no lo ocupa nadie en la demo). El paso 1 de «Qué probar y cómo (Fase
   14C)» sigue igual (septiembre no es tarea de nadie).
-- **Para decidir antes de fusionar** (de la revisión de la Tarea 6, ver «Deuda técnica»): «Cerrar de nuevo» un periodo
-  vacío reabierto lo cierra «Sin dato» aunque su dimensión tenga categorías activas, sin esperar ni advertirlo.
+- **«Cerrar de nuevo» un periodo vacío reabierto** lo cerraba sin dato aunque su dimensión tuviera categorías activas, sin
+  advertirlo. Usted eligió **12.2** (advertir, sin impedir): hecho antes de fusionar (decisión 12).
 
 ### Decisiones adicionales (complemento de la 14C)
 
@@ -589,9 +621,10 @@ quien administra no vence ni escala (Práctica); el texto de la página del dato
 pendiente (Práctica); el resumen del cierre cuenta aparte los periodos que esperan categorías (Práctica); y la demo trae
 un indicador con soporte activado a mitad de un plazo, no un dato por sede con un periodo vacío (Práctica).
 
-**Las de la ejecución: pendientes del visto bueno del usuario.** Las tomó quien coordinó la ejecución cuando el anexo o el
-plan callaban o un revisor halló un defecto (la sexta, quien implementó la demo). Cada una dice qué se decidió, porque qué
-y su base. El detalle está en el registro de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»).
+**Las de la ejecución: aprobadas por el usuario el 2026-11-17** («las 11 quedan»). Las tomó quien coordinó la ejecución
+cuando el anexo o el plan callaban o un revisor halló un defecto (la sexta, quien implementó la demo). Cada una dice qué se
+decidió, porque qué y su base. El detalle está en el registro de la ejecución (`progress.md` del espacio de trabajo, líneas
+«Ruling»).
 
 1. **En la ficha, las metas programadas y los límites de captura de un dato, la regla del punto de miles se aplica en las
    Server Actions, no en el dominio** (lo que se reporta cada periodo sí se valida en el dominio: `leerValor` y
@@ -651,6 +684,13 @@ y su base. El detalle está en el registro de la ejecución (`progress.md` del e
     «Casos»: …»). Porque una ficha tiene varias variables y el anexo pide el nombre cuando hay varios campos (§3.1). Base:
     Anexo §3.1.
 
+**La del usuario al cerrar (2026-11-17):**
+
+12. **«Cerrar de nuevo» un periodo vacío reabierto, con categorías activas en su dimensión, advierte antes de cerrar**
+    (respuesta «12.2», entre dejarlo así, advertir o impedir): el diálogo dice que se cerraría sin dato y recuerda
+    «Actualizar categorías»; «Cerrar sin dato» lo cierra igual. Porque «Cerrar de nuevo» es una acción explícita de quien
+    administra y la advertencia evita el olvido sin quitarle la salida. Base: Decisión del usuario (Práctica).
+
 ### Deuda técnica (complemento de la 14C)
 
 Los menores de la ejecución que no se arreglaron y siguen siendo verdad en la cabeza (comprobados; un archivo sin carpeta es
@@ -658,8 +698,9 @@ de `src/db/consultas/indicadores/`):
 
 - **Para el usuario:** un indicador anual aprobado tarde con varios meses vacíos da un aviso y una tarea por periodo y
   administrador, sin agrupar (`categorias-dato:` no está en `GRUPOS` de `src/lib/tareas.ts`).
-- **Para el usuario, para decidir antes de fusionar** (como dicen los «Avisos»): `cerrarDeNuevoElDato` cierra «Sin dato»
-  un periodo vacío reabierto aunque su dimensión tenga categorías activas, saltándose la espera de §5.4, sin advertirlo.
+- `cerrarDeNuevoElDato` sigue cerrando sin dato un periodo vacío reabierto aunque su dimensión tenga categorías activas,
+  saltándose la espera de §5.4: la decisión 12 fue advertirlo en la pantalla, no impedirlo en el servidor. Quien lo llame
+  por otro camino no ve la advertencia.
 - «012.500» no tiene la forma de la regla (empieza por cero) y se lee como 12,5, también en la meta de la importación, que
   antes la marcaba ambigua: pasa sin aviso (comprobado con `fraccion`).
 - El aviso del periodo vacío dice «actualícelas para que se pueda reportar» también cuando la dimensión no tiene categorías
