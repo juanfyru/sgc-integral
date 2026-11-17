@@ -371,6 +371,28 @@ CREATE INDEX "mejora_reportes_estado_vence_idx" ON "mejora_reportes" USING btree
 CREATE INDEX "mejora_reportes_reportado_por_idx" ON "mejora_reportes" USING btree ("reportado_por");--> statement-breakpoint
 CREATE INDEX "mejora_rondas_indicador_eficacia_idx" ON "mejora_rondas" USING btree ("indicador_eficacia_id");--> statement-breakpoint
 CREATE INDEX "mejora_seguimientos_hallazgo_registrado_por_idx" ON "mejora_seguimientos" USING btree ("hallazgo_id","registrado_por");--> statement-breakpoint
+ALTER TABLE "mejora_acciones" ADD CONSTRAINT "mejora_acciones_id_hallazgo_unico" UNIQUE("id","hallazgo_id");--> statement-breakpoint
+ALTER TABLE "mejora_actividades" ADD CONSTRAINT "mejora_actividades_id_hallazgo_unico" UNIQUE("id","hallazgo_id");--> statement-breakpoint
+ALTER TABLE "mejora_causas" ADD CONSTRAINT "mejora_causas_id_hallazgo_unico" UNIQUE("id","hallazgo_id");--> statement-breakpoint
+ALTER TABLE "mejora_rondas" ADD CONSTRAINT "mejora_rondas_id_hallazgo_unico" UNIQUE("id","hallazgo_id");--> statement-breakpoint
+ALTER TABLE "mejora_accion_causas" ADD CONSTRAINT "mejora_accion_causas_accion_coherente" FOREIGN KEY ("accion_id","hallazgo_id") REFERENCES "public"."mejora_acciones"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_accion_causas" ADD CONSTRAINT "mejora_accion_causas_causa_coherente" FOREIGN KEY ("causa_id","hallazgo_id") REFERENCES "public"."mejora_causas"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_acciones" ADD CONSTRAINT "mejora_acciones_ronda_coherente" FOREIGN KEY ("ronda_id","hallazgo_id") REFERENCES "public"."mejora_rondas"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_actividades" ADD CONSTRAINT "mejora_actividades_accion_coherente" FOREIGN KEY ("accion_id","hallazgo_id") REFERENCES "public"."mejora_acciones"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_ajustes" ADD CONSTRAINT "mejora_ajustes_ronda_coherente" FOREIGN KEY ("ronda_id","hallazgo_id") REFERENCES "public"."mejora_rondas"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_ajustes" ADD CONSTRAINT "mejora_ajustes_actividad_coherente" FOREIGN KEY ("actividad_id","hallazgo_id") REFERENCES "public"."mejora_actividades"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_analisis" ADD CONSTRAINT "mejora_analisis_ronda_coherente" FOREIGN KEY ("ronda_id","hallazgo_id") REFERENCES "public"."mejora_rondas"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_causas" ADD CONSTRAINT "mejora_causas_ronda_coherente" FOREIGN KEY ("ronda_id","hallazgo_id") REFERENCES "public"."mejora_rondas"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "mejora_seguimientos" ADD CONSTRAINT "mejora_seguimientos_actividad_coherente" FOREIGN KEY ("actividad_id","hallazgo_id") REFERENCES "public"."mejora_actividades"("id","hallazgo_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "mejora_accion_causas_causa_idx" ON "mejora_accion_causas" USING btree ("causa_id");--> statement-breakpoint
+CREATE INDEX "mejora_ajustes_actividad_idx" ON "mejora_ajustes" USING btree ("actividad_id");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_requisito_documento_idx" ON "mejora_hallazgos" USING btree ("requisito_documento_id");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_subproceso_idx" ON "mejora_hallazgos" USING btree ("subproceso_id");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_reincidente_de_idx" ON "mejora_hallazgos" USING btree ("reincidente_de");--> statement-breakpoint
+CREATE INDEX "mejora_hallazgos_derivado_de_idx" ON "mejora_hallazgos" USING btree ("derivado_de");--> statement-breakpoint
+CREATE INDEX "mejora_ocurrencias_reporte_idx" ON "mejora_ocurrencias" USING btree ("reporte_id");--> statement-breakpoint
+CREATE INDEX "mejora_reportes_hallazgo_idx" ON "mejora_reportes" USING btree ("hallazgo_id");--> statement-breakpoint
+CREATE INDEX "mejora_reportes_proceso_idx" ON "mejora_reportes" USING btree ("proceso_id");--> statement-breakpoint
 CREATE TRIGGER mejora_eventos_inmutable BEFORE UPDATE OR DELETE ON "mejora_eventos" FOR EACH ROW EXECUTE FUNCTION sgc_impedir_modificacion();--> statement-breakpoint
 CREATE TRIGGER mejora_seguimientos_inmutable BEFORE UPDATE OR DELETE ON "mejora_seguimientos" FOR EACH ROW EXECUTE FUNCTION sgc_impedir_modificacion();--> statement-breakpoint
 CREATE TRIGGER mejora_ocurrencias_inmutable BEFORE UPDATE OR DELETE ON "mejora_ocurrencias" FOR EACH ROW EXECUTE FUNCTION sgc_impedir_modificacion();--> statement-breakpoint

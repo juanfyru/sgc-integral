@@ -6,6 +6,7 @@ import {
   check,
   customType,
   date,
+  foreignKey,
   index,
   inet,
   integer,
@@ -2328,6 +2329,10 @@ export const mejoraHallazgos = pgTable(
     index("mejora_hallazgos_medicion_idx").on(t.medicionId),
     index("mejora_hallazgos_requisito_norma_idx").on(t.requisitoNormaId),
     index("mejora_hallazgos_documento_idx").on(t.documentoId),
+    index("mejora_hallazgos_requisito_documento_idx").on(t.requisitoDocumentoId),
+    index("mejora_hallazgos_subproceso_idx").on(t.subprocesoId),
+    index("mejora_hallazgos_reincidente_de_idx").on(t.reincidenteDe),
+    index("mejora_hallazgos_derivado_de_idx").on(t.derivadoDe),
     check("mejora_hallazgos_clase_valida", sql`${t.clase} IN ('no_conformidad', 'observacion', 'oportunidad')`),
     check(
       "mejora_hallazgos_origen_valido",
@@ -2389,6 +2394,8 @@ export const mejoraRondas = pgTable(
   },
   (t) => [
     unique("mejora_rondas_numero_unico").on(t.hallazgoId, t.numero),
+    // El destino de las llaves compuestas de sus hijas: una hija no cuelga de la ronda de otro hallazgo.
+    unique("mejora_rondas_id_hallazgo_unico").on(t.id, t.hallazgoId),
     index("mejora_rondas_indicador_eficacia_idx").on(t.indicadorEficaciaId),
     check("mejora_rondas_estado_plan_valido", sql`${t.estadoPlan} IN ('borrador', 'enviado', 'aprobado')`),
     check("mejora_rondas_aprobado_rol_valido", sql`${t.aprobadoRol} IN ('admin_sgc', 'gerencia')`),
@@ -2411,6 +2418,11 @@ export const mejoraAnalisis = pgTable(
   (t) => [
     index("mejora_analisis_hallazgo_idx").on(t.hallazgoId),
     index("mejora_analisis_ronda_idx").on(t.rondaId),
+    foreignKey({
+      name: "mejora_analisis_ronda_coherente",
+      columns: [t.rondaId, t.hallazgoId],
+      foreignColumns: [mejoraRondas.id, mejoraRondas.hallazgoId],
+    }).onDelete("restrict"),
     check("mejora_analisis_metodo_valido", sql`${t.metodo} IN ('cinco_porques', 'ishikawa', 'pareto', 'otro')`),
   ],
 );
@@ -2425,7 +2437,16 @@ export const mejoraCausas = pgTable(
     texto: text("texto").notNull(),
     sinAccionPorque: text("sin_accion_porque"),
   },
-  (t) => [index("mejora_causas_hallazgo_idx").on(t.hallazgoId), index("mejora_causas_ronda_idx").on(t.rondaId)],
+  (t) => [
+    unique("mejora_causas_id_hallazgo_unico").on(t.id, t.hallazgoId),
+    index("mejora_causas_hallazgo_idx").on(t.hallazgoId),
+    index("mejora_causas_ronda_idx").on(t.rondaId),
+    foreignKey({
+      name: "mejora_causas_ronda_coherente",
+      columns: [t.rondaId, t.hallazgoId],
+      foreignColumns: [mejoraRondas.id, mejoraRondas.hallazgoId],
+    }).onDelete("restrict"),
+  ],
 );
 
 export const mejoraAcciones = pgTable(
@@ -2442,8 +2463,14 @@ export const mejoraAcciones = pgTable(
     meta: text("meta"),
   },
   (t) => [
+    unique("mejora_acciones_id_hallazgo_unico").on(t.id, t.hallazgoId),
     index("mejora_acciones_hallazgo_idx").on(t.hallazgoId),
     index("mejora_acciones_ronda_idx").on(t.rondaId),
+    foreignKey({
+      name: "mejora_acciones_ronda_coherente",
+      columns: [t.rondaId, t.hallazgoId],
+      foreignColumns: [mejoraRondas.id, mejoraRondas.hallazgoId],
+    }).onDelete("restrict"),
     check("mejora_acciones_tipo_valido", sql`${t.tipo} IN ('correctiva', 'preventiva', 'mejora')`),
   ],
 );
@@ -2455,7 +2482,21 @@ export const mejoraAccionCausas = pgTable(
     accionId: ref("accion_id", () => mejoraAcciones.id).notNull(),
     causaId: ref("causa_id", () => mejoraCausas.id).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.accionId, t.causaId] }), index("mejora_accion_causas_hallazgo_idx").on(t.hallazgoId)],
+  (t) => [
+    primaryKey({ columns: [t.accionId, t.causaId] }),
+    index("mejora_accion_causas_hallazgo_idx").on(t.hallazgoId),
+    index("mejora_accion_causas_causa_idx").on(t.causaId),
+    foreignKey({
+      name: "mejora_accion_causas_accion_coherente",
+      columns: [t.accionId, t.hallazgoId],
+      foreignColumns: [mejoraAcciones.id, mejoraAcciones.hallazgoId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "mejora_accion_causas_causa_coherente",
+      columns: [t.causaId, t.hallazgoId],
+      foreignColumns: [mejoraCausas.id, mejoraCausas.hallazgoId],
+    }).onDelete("restrict"),
+  ],
 );
 
 export const mejoraActividades = pgTable(
@@ -2488,8 +2529,14 @@ export const mejoraActividades = pgTable(
   },
   (t) => [
     index("mejora_actividades_responsable_estado_idx").on(t.responsableId, t.estado),
+    unique("mejora_actividades_id_hallazgo_unico").on(t.id, t.hallazgoId),
     index("mejora_actividades_hallazgo_idx").on(t.hallazgoId),
     index("mejora_actividades_accion_idx").on(t.accionId),
+    foreignKey({
+      name: "mejora_actividades_accion_coherente",
+      columns: [t.accionId, t.hallazgoId],
+      foreignColumns: [mejoraAcciones.id, mejoraAcciones.hallazgoId],
+    }).onDelete("restrict"),
     check("mejora_actividades_avance_valido", sql`${t.avance} BETWEEN 0 AND 100`),
     check("mejora_actividades_estado_valido", sql`${t.estado} IN ('abierta', 'en_proceso', 'terminada', 'cancelada')`),
     check("mejora_actividades_verificacion_valida", sql`${t.verificacion} IN ('conforme', 'devuelta')`),
@@ -2513,6 +2560,11 @@ export const mejoraSeguimientos = pgTable(
   (t) => [
     index("mejora_seguimientos_actividad_idx").on(t.actividadId, t.fecha),
     index("mejora_seguimientos_hallazgo_registrado_por_idx").on(t.hallazgoId, t.registradoPor),
+    foreignKey({
+      name: "mejora_seguimientos_actividad_coherente",
+      columns: [t.actividadId, t.hallazgoId],
+      foreignColumns: [mejoraActividades.id, mejoraActividades.hallazgoId],
+    }).onDelete("restrict"),
     check("mejora_seguimientos_avance_valido", sql`${t.avance} BETWEEN 0 AND 100`),
   ],
 );
@@ -2543,6 +2595,18 @@ export const mejoraAjustes = pgTable(
     uniqueIndex("mejora_ajustes_un_pendiente_idx").on(t.actividadId).where(sql`estado = 'pendiente'`),
     index("mejora_ajustes_hallazgo_idx").on(t.hallazgoId),
     index("mejora_ajustes_ronda_idx").on(t.rondaId),
+    index("mejora_ajustes_actividad_idx").on(t.actividadId),
+    foreignKey({
+      name: "mejora_ajustes_ronda_coherente",
+      columns: [t.rondaId, t.hallazgoId],
+      foreignColumns: [mejoraRondas.id, mejoraRondas.hallazgoId],
+    }).onDelete("restrict"),
+    // Con la actividad nula (un «añadir») no se comprueba: MATCH SIMPLE.
+    foreignKey({
+      name: "mejora_ajustes_actividad_coherente",
+      columns: [t.actividadId, t.hallazgoId],
+      foreignColumns: [mejoraActividades.id, mejoraActividades.hallazgoId],
+    }).onDelete("restrict"),
     check("mejora_ajustes_tipo_valido", sql`${t.tipo} IN ('reprogramar', 'agregar', 'cancelar')`),
     check("mejora_ajustes_estado_valido", sql`${t.estado} IN ('pendiente', 'aprobado', 'negado')`),
   ],
@@ -2563,6 +2627,7 @@ export const mejoraOcurrencias = pgTable(
   },
   (t) => [
     index("mejora_ocurrencias_hallazgo_idx").on(t.hallazgoId),
+    index("mejora_ocurrencias_reporte_idx").on(t.reporteId),
     check("mejora_ocurrencias_origen_valido", sql`${t.origen} IN ('registro', 'reporte', 'medicion')`),
   ],
 );
@@ -2609,6 +2674,8 @@ export const mejoraReportes = pgTable(
   (t) => [
     index("mejora_reportes_estado_vence_idx").on(t.estado, t.venceEn),
     index("mejora_reportes_reportado_por_idx").on(t.reportadoPor),
+    index("mejora_reportes_hallazgo_idx").on(t.hallazgoId),
+    index("mejora_reportes_proceso_idx").on(t.procesoId),
     check("mejora_reportes_estado_valido", sql`${t.estado} IN ('recibido', 'convertido', 'sumado', 'descartado')`),
   ],
 );

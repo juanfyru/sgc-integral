@@ -82,7 +82,12 @@ export type DestinoVersion = {
  * (`registrarArchivo`); un lote de importación, solo su plantilla en `.xlsx`, una vez. `rol` distingue, dentro de un
  * mismo dueño, qué evidencia es (la de la corrección, el escaneo de una carga…); sin él, `evidencia`.
  */
-export type DestinoEvidencia = { contexto: ContextoEvidencia; contextoId: number; carpeta: string; rol?: string };
+export type DestinoEvidencia = {
+  contexto: ContextoEvidencia;
+  contextoId: number;
+  carpeta: string;
+  rol?: "evidencia" | "correccion" | "carga" | "analisis" | "verificacion";
+};
 
 function esEvidencia(destino: DestinoVersion | DestinoEvidencia): destino is DestinoEvidencia {
   return destino.contexto !== undefined && destino.contexto !== "version";

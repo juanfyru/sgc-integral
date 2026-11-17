@@ -35,9 +35,10 @@ const MEJORAMIENTO = "la cita un hallazgo de mejoramiento";
 const CITADO = "El indicador está citado en un hallazgo de mejoramiento";
 
 type Fallo = { codigo: string; restriccion: string | null } | null;
+type ErrorPg = { code?: string; constraint_name?: string; message?: string };
 
-/** El código y la restricción del error, o `null` si la consulta entró. Cada intento va en su punto de guardado. */
-async function fallo(tx: TransactionSql, consulta: () => PromiseLike<unknown>): Promise<Fallo> {
+/** El error de la consulta, o `null` si entró. Cada intento va en su punto de guardado. */
+async function errorDe(tx: TransactionSql, consulta: () => PromiseLike<unknown>): Promise<ErrorPg | null> {
   await tx`SAVEPOINT intento`;
   try {
     await consulta();
@@ -45,11 +46,17 @@ async function fallo(tx: TransactionSql, consulta: () => PromiseLike<unknown>): 
     return null;
   } catch (err) {
     await tx`ROLLBACK TO SAVEPOINT intento`;
-    const e = err as { code?: string; constraint_name?: string; message?: string };
-    // El 42501 de un trigger, no el de un privilegio: el dueño del esquema tiene todos.
-    if (e.code === "42501") expect(e.message).not.toMatch(/permission denied|permiso denegado/i);
-    return { codigo: e.code ?? "sin-codigo", restriccion: e.constraint_name ?? null };
+    return err as ErrorPg;
   }
+}
+
+/** El código y la restricción del error, o `null` si la consulta entró. */
+async function fallo(tx: TransactionSql, consulta: () => PromiseLike<unknown>): Promise<Fallo> {
+  const e = await errorDe(tx, consulta);
+  if (!e) return null;
+  // El 42501 de un trigger, no el de un privilegio: el dueño del esquema tiene todos.
+  if (e.code === "42501") expect(e.message).not.toMatch(/permission denied|permiso denegado/i);
+  return { codigo: e.code ?? "sin-codigo", restriccion: e.constraint_name ?? null };
 }
 
 const codigo = async (tx: TransactionSql, consulta: () => PromiseLike<unknown>) => (await fallo(tx, consulta))?.codigo ?? null;
@@ -456,6 +463,84 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("esquema de la migración 00
       const solo = await hallazgo(tx, b);
       expect(await codigo(tx, () => tx`DELETE FROM mejora_hallazgos WHERE id = ${solo}`)).toBeNull();
     }));
+
+  it("la hallazgo_id de cada hija es la de su padre: colgar de la ronda, la acción, la causa o la actividad de otro da 23503", () =>
+    revertida(dueno, async (tx) => {
+      const b = await base(tx);
+      const a = await hallazgo(tx, b);
+      const fa = await hijas(tx, b, a);
+      const otro = await hallazgo(tx, b);
+      const fo = await hijas(tx, b, otro);
+      // Cada fila dice ser de `otro` y cuelga de un padre de `a`; los dos están en curso, así que el trigger no interviene.
+      const intentos: Record<string, () => PromiseLike<unknown>> = {
+        mejora_analisis_ronda_coherente: () => tx`INSERT INTO mejora_analisis (hallazgo_id, ronda_id, orden, metodo)
+          VALUES (${otro}, ${fa.ronda}, 9, 'otro')`,
+        mejora_causas_ronda_coherente: () => tx`INSERT INTO mejora_causas (hallazgo_id, ronda_id, orden, texto)
+          VALUES (${otro}, ${fa.ronda}, 9, 'Causa ajena')`,
+        mejora_acciones_ronda_coherente: () => tx`INSERT INTO mejora_acciones (hallazgo_id, ronda_id, orden, tipo, descripcion)
+          VALUES (${otro}, ${fa.ronda}, 9, 'mejora', 'Acción ajena')`,
+        mejora_ajustes_ronda_coherente: () => tx`INSERT INTO mejora_ajustes (hallazgo_id, ronda_id, tipo, causa, pedido_por, pedido_en)
+          VALUES (${otro}, ${fa.ronda}, 'agregar', 'Hace falta otra actividad', ${b.usuarioId}, ${AHORA})`,
+        // Negado: la actividad ya tiene un ajuste pendiente, y el índice único saltaría antes que la llave.
+        mejora_ajustes_actividad_coherente: () => tx`INSERT INTO mejora_ajustes (hallazgo_id, ronda_id, tipo, actividad_id, causa, pedido_por, pedido_en, estado)
+          VALUES (${otro}, ${fo.ronda}, 'cancelar', ${fa.actividad}, 'La actividad ya no hace falta', ${b.usuarioId}, ${AHORA}, 'negado')`,
+        mejora_accion_causas_accion_coherente: () => tx`INSERT INTO mejora_accion_causas (hallazgo_id, accion_id, causa_id)
+          VALUES (${otro}, ${fa.accion}, ${fo.otraCausa})`,
+        mejora_accion_causas_causa_coherente: () => tx`INSERT INTO mejora_accion_causas (hallazgo_id, accion_id, causa_id)
+          VALUES (${otro}, ${fo.accion}, ${fa.otraCausa})`,
+        mejora_actividades_accion_coherente: () => tx`INSERT INTO mejora_actividades (hallazgo_id, accion_id, orden, descripcion, responsable_id, inicio, fin)
+          VALUES (${otro}, ${fa.accion}, 9, 'Actividad ajena', ${b.usuarioId}, '2026-11-05', '2026-12-01')`,
+        mejora_seguimientos_actividad_coherente: () => tx`INSERT INTO mejora_seguimientos (hallazgo_id, actividad_id, fecha, realizado, avance, registrado_por)
+          VALUES (${otro}, ${fa.actividad}, '2026-11-14', 'Seguimiento ajeno', 60, ${b.usuarioId})`,
+      };
+      const resultado: Record<string, Fallo> = {};
+      for (const [restriccion, intento] of Object.entries(intentos)) resultado[restriccion] = await fallo(tx, intento);
+      expect(resultado).toEqual(Object.fromEntries(Object.keys(intentos).map((r) => [r, { codigo: "23503", restriccion: r }])));
+      // Con su propio padre, las mismas filas entran.
+      expect(
+        await fallo(tx, () => tx`INSERT INTO mejora_actividades (hallazgo_id, accion_id, orden, descripcion, responsable_id, inicio, fin)
+          VALUES (${otro}, ${fo.accion}, 9, 'Actividad propia', ${b.usuarioId}, '2026-11-05', '2026-12-01')`),
+      ).toBeNull();
+    }));
+
+  it("mover una hija a un hallazgo terminado da 42501: el trigger mira también el hallazgo al que llega", () =>
+    revertida(dueno, async (tx) => {
+      const b = await base(tx);
+      const enCurso = await hallazgo(tx, b);
+      const f = await hijas(tx, b, enCurso);
+      const terminado = await hallazgo(tx, b);
+      await tx`UPDATE mejora_hallazgos SET estado = 'cerrado' WHERE id = ${terminado}`;
+      // Una ronda sin hijas: no tiene padre intermedio, y la de salida está en curso, así que solo la rama NEW lo rechaza.
+      const r2 = await ronda(tx, enCurso, 2);
+      const aLaRonda = await errorDe(tx, () => tx`UPDATE mejora_rondas SET hallazgo_id = ${terminado} WHERE id = ${r2}`);
+      expect(aLaRonda?.code).toBe("42501");
+      expect(aLaRonda?.message).toContain(`El hallazgo ${terminado} ya terminó y no admite cambios en mejora_rondas (UPDATE)`);
+      // En una hija con padre intermedio, el trigger (BEFORE) rechaza antes de que se compruebe la llave compuesta (al final de la sentencia).
+      const alAnalisis = await errorDe(tx, () => tx`UPDATE mejora_analisis SET hallazgo_id = ${terminado} WHERE id = ${f.analisis}`);
+      expect(alAnalisis?.code).toBe("42501");
+      expect(alAnalisis?.message).toContain(`El hallazgo ${terminado} ya terminó`);
+      // Hacia otro hallazgo en curso, la que la rechaza es la llave compuesta.
+      const otro = await hallazgo(tx, b);
+      expect(await fallo(tx, () => tx`UPDATE mejora_analisis SET hallazgo_id = ${otro} WHERE id = ${f.analisis}`)).toEqual({
+        codigo: "23503",
+        restriccion: "mejora_analisis_ronda_coherente",
+      });
+    }));
+
+  // Un índice parcial no cuenta: el de los ajustes pendientes no sirve para buscar los demás de una actividad.
+  it("toda llave foránea del módulo tiene un índice completo que la encabeza (salvo las de usuarios, que no se borran)", async () => {
+    const filtro = dueno`c.contype = 'f' AND c.confrelid <> 'usuarios'::regclass
+      AND (c.conrelid::regclass::text LIKE 'mejora\\_%' OR (c.conrelid = 'firmas'::regclass AND a.attname = 'mejora_hallazgo_id'))`;
+    const [{ n }] = await dueno`SELECT count(*)::int AS n FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1] WHERE ${filtro}`;
+    expect(n).toBeGreaterThan(30);
+    const sinIndice = await dueno`SELECT c.conrelid::regclass::text AS tabla, c.conname
+      FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+      WHERE ${filtro} AND NOT EXISTS (SELECT 1 FROM pg_index i
+        WHERE i.indrelid = c.conrelid AND i.indkey[0] = c.conkey[1] AND i.indpred IS NULL)
+      ORDER BY 1, 2`;
+    expect(sinIndice).toEqual([]);
+  });
 
   it("la criticidad es de la no conformidad", () =>
     revertida(dueno, async (tx) => {

@@ -7647,6 +7647,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mejora_accion_causas_causa_idx": {
+          "name": "mejora_accion_causas_causa_idx",
+          "columns": [
+            {
+              "expression": "causa_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -7685,6 +7700,36 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "mejora_accion_causas_accion_coherente": {
+          "name": "mejora_accion_causas_accion_coherente",
+          "tableFrom": "mejora_accion_causas",
+          "tableTo": "mejora_acciones",
+          "columnsFrom": [
+            "accion_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "mejora_accion_causas_causa_coherente": {
+          "name": "mejora_accion_causas_causa_coherente",
+          "tableFrom": "mejora_accion_causas",
+          "tableTo": "mejora_causas",
+          "columnsFrom": [
+            "causa_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -7832,10 +7877,34 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "mejora_acciones_ronda_coherente": {
+          "name": "mejora_acciones_ronda_coherente",
+          "tableFrom": "mejora_acciones",
+          "tableTo": "mejora_rondas",
+          "columnsFrom": [
+            "ronda_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "mejora_acciones_id_hallazgo_unico": {
+          "name": "mejora_acciones_id_hallazgo_unico",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "hallazgo_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "mejora_acciones_tipo_valido": {
@@ -8101,10 +8170,34 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "mejora_actividades_accion_coherente": {
+          "name": "mejora_actividades_accion_coherente",
+          "tableFrom": "mejora_actividades",
+          "tableTo": "mejora_acciones",
+          "columnsFrom": [
+            "accion_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "mejora_actividades_id_hallazgo_unico": {
+          "name": "mejora_actividades_id_hallazgo_unico",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "hallazgo_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "mejora_actividades_avance_valido": {
@@ -8287,6 +8380,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mejora_ajustes_actividad_idx": {
+          "name": "mejora_ajustes_actividad_idx",
+          "columns": [
+            {
+              "expression": "actividad_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -8351,6 +8459,36 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "mejora_ajustes_ronda_coherente": {
+          "name": "mejora_ajustes_ronda_coherente",
+          "tableFrom": "mejora_ajustes",
+          "tableTo": "mejora_rondas",
+          "columnsFrom": [
+            "ronda_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "mejora_ajustes_actividad_coherente": {
+          "name": "mejora_ajustes_actividad_coherente",
+          "tableFrom": "mejora_ajustes",
+          "tableTo": "mejora_actividades",
+          "columnsFrom": [
+            "actividad_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -8493,6 +8631,21 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "mejora_analisis_ronda_coherente": {
+          "name": "mejora_analisis_ronda_coherente",
+          "tableFrom": "mejora_analisis",
+          "tableTo": "mejora_rondas",
+          "columnsFrom": [
+            "ronda_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8616,10 +8769,34 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "mejora_causas_ronda_coherente": {
+          "name": "mejora_causas_ronda_coherente",
+          "tableFrom": "mejora_causas",
+          "tableTo": "mejora_rondas",
+          "columnsFrom": [
+            "ronda_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "mejora_causas_id_hallazgo_unico": {
+          "name": "mejora_causas_id_hallazgo_unico",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "hallazgo_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -9238,6 +9415,66 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mejora_hallazgos_requisito_documento_idx": {
+          "name": "mejora_hallazgos_requisito_documento_idx",
+          "columns": [
+            {
+              "expression": "requisito_documento_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_hallazgos_subproceso_idx": {
+          "name": "mejora_hallazgos_subproceso_idx",
+          "columns": [
+            {
+              "expression": "subproceso_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_hallazgos_reincidente_de_idx": {
+          "name": "mejora_hallazgos_reincidente_de_idx",
+          "columns": [
+            {
+              "expression": "reincidente_de",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_hallazgos_derivado_de_idx": {
+          "name": "mejora_hallazgos_derivado_de_idx",
+          "columns": [
+            {
+              "expression": "derivado_de",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -9577,6 +9814,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mejora_ocurrencias_reporte_idx": {
+          "name": "mejora_ocurrencias_reporte_idx",
+          "columns": [
+            {
+              "expression": "reporte_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -9876,6 +10128,36 @@
           "columns": [
             {
               "expression": "reportado_por",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_reportes_hallazgo_idx": {
+          "name": "mejora_reportes_hallazgo_idx",
+          "columns": [
+            {
+              "expression": "hallazgo_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mejora_reportes_proceso_idx": {
+          "name": "mejora_reportes_proceso_idx",
+          "columns": [
+            {
+              "expression": "proceso_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -10294,6 +10576,14 @@
             "hallazgo_id",
             "numero"
           ]
+        },
+        "mejora_rondas_id_hallazgo_unico": {
+          "name": "mejora_rondas_id_hallazgo_unico",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "hallazgo_id"
+          ]
         }
       },
       "policies": {},
@@ -10464,6 +10754,21 @@
           ],
           "columnsTo": [
             "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "mejora_seguimientos_actividad_coherente": {
+          "name": "mejora_seguimientos_actividad_coherente",
+          "tableFrom": "mejora_seguimientos",
+          "tableTo": "mejora_actividades",
+          "columnsFrom": [
+            "actividad_id",
+            "hallazgo_id"
+          ],
+          "columnsTo": [
+            "id",
+            "hallazgo_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
