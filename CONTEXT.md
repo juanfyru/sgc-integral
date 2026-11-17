@@ -37,9 +37,9 @@
    nace sin categorías avisa a quien administra, es su tarea y el cierre lo espera. **Sin dependencias npm nuevas.** Una
    migración, la `0017`; dieciocho en total (`drizzle/0000` a `drizzle/0017`). Detalle en «Hecho (complemento de la
    14C)»; el recorrido, en «Qué probar y cómo (complemento de la 14C)»; las decisiones, en «Decisiones adicionales
-   (complemento de la 14C)»; el manual, en el capítulo 8. **Falta:** la verificación de cierre (la hace quien coordina:
-   la suite completa con la demo recién sembrada, el build, la `0017` sobre una copia de `sgc` y el recorrido en el
-   navegador), el visto bueno del usuario a las seis decisiones de la ejecución y su decisión de fusionar.
+   (complemento de la 14C)»; el manual, en el capítulo 8. La **verificación de cierre está hecha** (en el bloque del
+   complemento, con sus cifras). **Falta:** el visto bueno del usuario a las once decisiones de la ejecución, su decisión
+   sobre «Cerrar de nuevo» un periodo vacío y su decisión de fusionar.
    **Antes, la Fase 14C — Datos compartidos, desagregación y compuestos** está terminada y **fusionada en
    `main`** (el 2026-11-16, por decisión del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se
    construyó (las dieciocho tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (salía de `main` en
@@ -183,8 +183,8 @@
    F13A-R35 (404 real en páginas). F13A-R36 ya está resuelta (F13A-AU6). Los archivos reales del
    hospital están en la raíz, sin seguimiento y excluidos en `.git/info/exclude`: nunca entran a un
    commit.
-2. **Lo que sigue:** (a) del **complemento de la 14C**: su verificación de cierre (quien coordina), el visto bueno del
-   usuario a sus seis decisiones de la ejecución y a lo que su «Deuda técnica» marca «para el usuario» (dos; una, la de
+2. **Lo que sigue:** (a) del **complemento de la 14C** (con su verificación de cierre hecha): el visto bueno del
+   usuario a sus once decisiones de la ejecución y a lo que su «Deuda técnica» marca «para el usuario» (dos; una, la de
    «Cerrar de nuevo» un periodo vacío, para decidir antes de fusionar, como dicen los «Avisos»), su recorrido («Qué
    probar y cómo (complemento de la 14C)»), la decisión de fusionarlo y, después, aplicar la `0017` a la base `sgc` con la `0015` y la `0016` («Avisos para el usuario (complemento de la
    14C)»); de la **14C**, ya fusionada, el recorrido del usuario («Qué probar y cómo (Fase 14C)»). Con la 14C fusionada
