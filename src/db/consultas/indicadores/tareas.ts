@@ -45,12 +45,12 @@ export type FaltaDePersona = Exclude<Falta, "dato">;
 /**
  * Las columnas de `mediciones m` e `indicadores i` que lee `queFalta`, con las versiones aprobadas del indicador (de mayor
  * a menor número, el orden de `versionQueRigeEntre`, cada una con sus letras propias y ajenas), las letras con valor de la
- * medición (`con_valor`, sin categoría), si debe el soporte (`debe_soporte`) y si tiene alguno, en la misma fila: el costo
- * en sentencias no depende de cuántas haya.
+ * medición (`con_valor`, sin categoría), si tiene resultado, si debe el soporte (`debe_soporte`) y si tiene alguno, en la
+ * misma fila: el costo en sentencias no depende de cuántas haya.
  */
 export const columnasDePendiente = (sql: Cliente) =>
-  sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.semaforo, m.cumple, m.incumplimiento_repetido, m.analisis, m.causa,
-    m.accion_propuesta, m.debe_soporte, i.soporte_obligatorio,
+  sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.resultado_exacto, m.semaforo, m.cumple, m.incumplimiento_repetido,
+    m.analisis, m.causa, m.accion_propuesta, m.debe_soporte, i.soporte_obligatorio,
     EXISTS (SELECT 1 FROM archivos pa WHERE pa.contexto = 'medicion' AND pa.contexto_id = m.id) AS con_soporte,
     (SELECT coalesce(json_agg(DISTINCT pl.letra), '[]'::json) FROM medicion_valores pmv JOIN indicador_variables pl ON pl.id = pmv.variable_id
       WHERE pmv.medicion_id = m.id AND pmv.categoria_id IS NULL AND pmv.valor IS NOT NULL) AS con_valor,
@@ -90,8 +90,8 @@ type VersionDePendiente = {
  * foto. Lo que nadie mide no le pide el reporte a nadie: con todos sus valores y aún sin resultado, espera el dato. El
  * soporte falta si la medición lo debe (`seDebeElSoporte`, la regla de `recalcularMedicion`: la marca, no el plazo ni el
  * estado guardado) y no tiene ninguno. Con el periodo y el nombre de la versión que lo rige. Sin las de otra periodicidad
- * (`esDeOtraPeriodicidad`): no se miden. Sin la reportada a la que no le falta nada: una abierta solo por un soporte que no
- * debe es un estado viejo (anexo del complemento de la 14C, §4.3) y no es tarea de nadie. No consulta nada.
+ * (`esDeOtraPeriodicidad`): no se miden. Sin la reportada, con su resultado, a la que no le falta nada: abierta solo por un
+ * soporte que no debe, es un estado viejo (anexo del complemento de la 14C, §4.3) y no es tarea de nadie. No consulta nada.
  */
 export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
   const salida = new Map<number, Pendiente>();
@@ -123,7 +123,7 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
       reportada &&
       f.con_soporte !== true &&
       seDebeElSoporte({ soporteObligatorio: f.soporte_obligatorio === true, marcada: f.debe_soporte === true, historica: false, noAplica: false, mide });
-    if (falta === "reporte" && reportada && !faltaSoporte) continue;
+    if (falta === "reporte" && reportada && !faltaSoporte && f.resultado_exacto !== null) continue;
     salida.set(Number(f.id), { falta, faltaSoporte, periodo, nombre: version.nombre });
   }
   return salida;
@@ -143,7 +143,7 @@ export const debeElSoporte = (p: Pick<Pendiente, "falta" | "faltaSoporte">): boo
  * Las de reportar y analizar: las mediciones de las que la persona es responsable de lo que les falta. Con el análisis y
  * el soporte pendientes, las dos: «Analizar» a quien analiza y «Reportar» a quien mide. «Falta un dato» no es tarea, salvo
  * el soporte obligatorio que quien mide debe mientras tanto (`debeElSoporte`), con el mismo texto de siempre. Una medición
- * ya reportada solo es «Reportar» si le falta el soporte (`queFalta`).
+ * ya reportada y con su resultado solo es «Reportar» si le falta el soporte (`queFalta`).
  */
 async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]> {
   const filas = await sql`SELECT * FROM (
@@ -172,7 +172,7 @@ async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]>
     const mide = f.mide as Responsabilidad | null;
     const analiza = f.analiza as Responsabilidad | null;
     const reportada = f.reportada_en !== null;
-    if (p.falta === "reporte" && mide) tareas.push(tarea("reporte", mide, reportada ? FALTA_SOPORTE : (f.proceso as string)));
+    if (p.falta === "reporte" && mide) tareas.push(tarea("reporte", mide, reportada && p.faltaSoporte ? FALTA_SOPORTE : (f.proceso as string)));
     if (p.falta === "analisis" && p.faltaSoporte && mide) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
     if (mide && debeElSoporte(p)) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
     if (p.falta === "analisis" && analiza) tareas.push(tarea("analisis", analiza, f.proceso as string));

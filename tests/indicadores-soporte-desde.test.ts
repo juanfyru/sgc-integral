@@ -737,7 +737,7 @@ describe("lo que se ve: tareas, lista, pasada y tabla del año", () => {
       expect(await enLaPantalla(tx, x, OCT_12)).toEqual({ debeSoporte: true, vencida: false });
     }));
 
-  it("una medición abierta con todo lo demás completo y sin la marca (estado viejo): ni tarea, ni vencida en la lista, ni aviso; la tabla la da por reportada", () =>
+  it("una medición abierta con todo lo demás completo y sin la marca (estado viejo): ni tarea, ni aviso; la lista y la tabla la dan por reportada", () =>
     revertida(sql, async (tx) => {
       await silenciarIndicadores(tx);
       const x = await mixto(tx);
@@ -750,12 +750,26 @@ describe("lo que se ve: tareas, lista, pasada y tabla del año", () => {
       await tx`UPDATE mediciones SET estado = 'abierta' WHERE id = ${x.medicion}`;
 
       expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toEqual({ tarea: null, vencidas: 0 });
-      const lista = await enLaLista(tx, x, OCT_12);
-      expect([lista.reporte?.vencida, lista.vencidos]).toEqual([false, 0]);
+      expect(await enLaLista(tx, x, OCT_12)).toEqual({ reporte: { texto: "Reportado", vencida: false }, vencidos: 0 });
       expect(await septiembre(tx, x, OCT_12)).toMatchObject({ estado: "reportada", faltaSoporte: false, vencida: false });
       expect((await enLaPantalla(tx, x, OCT_12)).debeSoporte).toBe(false);
       await revisarVencimientosDeIndicadores({ sql: tx, ahora: OCT_12, config });
       expect((await fila(tx, x.medicion)).aviso_vencido_en).toBeNull();
+    }));
+
+  it("la reportada sin resultado no es un estado viejo: sigue por reportar, aunque no le falte ningún valor", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CUMPLE);
+      await propagarA(tx, AHORA, [x.ind.id]);
+      // Abierta, con lo propio y el dato, pero sin resultado: algo más que el soporte la tiene así, y quien mide la revisa.
+      await tx`UPDATE mediciones SET estado = 'abierta', resultado_exacto = NULL, resultado = NULL, semaforo = NULL, cumple = NULL WHERE id = ${x.medicion}`;
+
+      const [{ nombre: proceso }] = await tx`SELECT nombre FROM procesos WHERE id = ${x.procesoId}`;
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toMatchObject({ tarea: { detalle: proceso }, vencidas: 1 });
+      expect(await enLaLista(tx, x, OCT_12)).toEqual({ reporte: { texto: "Vencido hace 2 días", vencida: true }, vencidos: 1 });
+      expect(await septiembre(tx, x, OCT_12)).toMatchObject({ estado: "por_reportar", vencida: true });
     }));
 
   it("los datos de operación traen desde cuándo exige soporte; desactivarlo la quita", () =>

@@ -188,11 +188,15 @@ function esperaUnDato(m: Row, v: VersionDeCalculo): boolean {
 
 /**
  * Lo que dice la columna «Reporte»: lo que más urge de lo pendiente o, sin pendientes, cómo quedó el último periodo
- * (`ultima`, con la versión que lo rige: uno abierto que espera un dato no espera a quien lo reporte, `esperaUnDato`).
+ * (`ultima`, con la versión que lo rige: uno abierto que espera un dato no espera a quien lo reporte, `esperaUnDato`). En un
+ * indicador activo, el último periodo abierto, ordinario, reportado y con resultado que no está pendiente es un estado viejo
+ * (abierto solo por un soporte que no debe, `queFalta`; anexo del complemento de la 14C, §4.3): «Reportado», como en la
+ * tabla del año.
  */
 function textoDeReporte(
   p: Pendientes | undefined,
   ultima: { m: Row; v: VersionDeCalculo } | undefined,
+  activo: boolean,
   ahora: Date,
   zona: string,
 ): FilaDeLista["reporte"] {
@@ -207,6 +211,8 @@ function textoDeReporte(
   const { m } = ultima;
   if (m.estado === "cerrada") return { texto: "Cerrado", vencida: false };
   if (m.estado === "reportada") return { texto: "Reportado", vencida: false };
+  const estadoViejo = activo && m.historica !== true && m.no_aplica !== true && m.reportada_en !== null && m.resultado_exacto !== null;
+  if (estadoViejo) return { texto: "Reportado", vencida: false };
   if (esperaUnDato(m, ultima.v)) return { texto: FALTA_UN_DATO, vencida: false };
   return { texto: m.historica === true ? "Por registrar" : "Por reportar", vencida: false };
 }
@@ -371,7 +377,7 @@ export async function listarIndicadores(
         .slice(0, 6)
         .reverse()
         .map(({ m }) => (conResultado(m) ? aNumero(deTexto(m.resultado_exacto as string)) : null)),
-      reporte: textoDeReporte(pend, ultima, ahora, zona),
+      reporte: textoDeReporte(pend, ultima, f.estado === "activo", ahora, zona),
       envio: f.envio_vence === null || f.envio_vence === undefined ? null : new Date(f.envio_vence as string).getTime() < ahora.getTime() ? "vencido" : "pendiente",
     };
     const requiereAccion = ultima?.m.requiere_accion === true;
