@@ -25,7 +25,8 @@ type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 
 export const CAUSA_CON_ACCIONES = "Esa causa tiene acciones: quítelas antes";
 
-function leer<T extends z.ZodType>(esquema: T, d: unknown): z.output<T> {
+/** Vuelve a validar en el dominio lo que llega; lanza `ErrorMejora` con el primer mensaje. */
+export function leer<T extends z.ZodType>(esquema: T, d: unknown): z.output<T> {
   const leido = esquema.safeParse(d);
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
   return leido.data;
@@ -56,7 +57,7 @@ export async function exigirBorrador(
 }
 
 /** La bitácora de un guardado (regla 5): el código, la ronda y el método o la cantidad, nunca el contenido. */
-async function auditar(
+export async function auditar(
   tx: TransactionSql,
   sesion: SesionFlujo,
   h: HallazgoBase,
@@ -72,7 +73,11 @@ async function auditar(
   });
 }
 
-function enBorrador<T>(
+/**
+ * Lo común a todo guardado del borrador de la ronda (el análisis aquí, el plan en `plan.ts`): el permiso, la transacción con
+ * los errores crudos traducidos y `exigirBorrador`.
+ */
+export function enBorrador<T>(
   sesion: SesionFlujo,
   hallazgoId: number,
   opciones: OpcionesFlujo | undefined,

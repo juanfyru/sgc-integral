@@ -940,6 +940,17 @@ export function describirEvento(e: EventoAuditoria): string {
       const codigo = texto(d.codigo);
       return `Respondió las preguntas de cierre del análisis ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
     }
+    case "mejora_accion_guardada":
+    case "mejora_accion_quitada": {
+      const codigo = texto(d.codigo);
+      const accion = texto(d.accion);
+      const verbo = e.accion === "mejora_accion_guardada" ? "Guardó" : "Quitó";
+      return `${verbo} ${accion ? `la acción ${accion}` : "una acción"} del plan ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
+    case "mejora_criterio_guardado": {
+      const codigo = texto(d.codigo);
+      return `Guardó el criterio de eficacia ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
     case "mejora_editar": {
       const codigo = texto(d.codigo);
       return `Editó la identificación ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
@@ -1408,6 +1419,9 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_analisis_quitado: "Quitó un análisis de causa raíz",
   mejora_causas_guardadas: "Guardó las causas raíz de un hallazgo",
   mejora_preguntas_respondidas: "Respondió las preguntas de cierre del análisis",
+  mejora_accion_guardada: "Guardó una acción del plan de un hallazgo",
+  mejora_accion_quitada: "Quitó una acción del plan de un hallazgo",
+  mejora_criterio_guardado: "Guardó el criterio de eficacia de un hallazgo",
   mejora_editar: "Editó la identificación de un hallazgo",
   mejora_cambiar_proceso: "Cambió el proceso de un hallazgo",
   ...NOMBRES_DE_MEJORA,

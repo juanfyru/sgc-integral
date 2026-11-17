@@ -1,4 +1,4 @@
-import type { Clase, Criticidad, TipoAccion } from "./tipos";
+import type { Clase, CriterioEficacia, Criticidad, EstadoActividad, TipoAccion } from "./tipos";
 
 /** Va en todo formulario del módulo con texto libre (spec §6.4). */
 export const AVISO_SIN_PACIENTES = "No escriba nombres ni documentos de pacientes o de quien se quejó. Use el número del caso.";
@@ -19,4 +19,18 @@ export const ETIQUETA_TIPO_ACCION: Record<TipoAccion, string> = {
   correctiva: "Correctiva",
   preventiva: "Preventiva",
   mejora: "De mejora",
+};
+
+export const ETIQUETA_CRITERIO: Record<CriterioEficacia, string> = {
+  no_recurrencia: "No recurrencia",
+  mejora_indicador: "Mejora del indicador asociado",
+  reduccion_pqrs: "Reducción de PQRS o eventos",
+  otro: "Otro",
+};
+
+export const ETIQUETA_ESTADO_ACTIVIDAD: Record<EstadoActividad, string> = {
+  abierta: "Abierta",
+  en_proceso: "En proceso",
+  terminada: "Terminada",
+  cancelada: "Cancelada",
 };

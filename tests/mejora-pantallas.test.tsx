@@ -8,6 +8,10 @@ import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHal
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { resolverPanelDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
+import { CriterioDeEficacia } from "@/componentes/mejoramiento/plan/CriterioDeEficacia";
+import { FormularioPlan } from "@/componentes/mejoramiento/plan/FormularioPlan";
+import { FaltasDelPlan, PlanEnLectura } from "@/componentes/mejoramiento/plan/PlanEnLectura";
+import { TarjetaDeAccion, type AccionDelFormulario } from "@/componentes/mejoramiento/plan/TarjetaDeAccion";
 import { CausasRaiz } from "@/componentes/mejoramiento/analisis/CausasRaiz";
 import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
 import { PestanasDeMetodo } from "@/componentes/mejoramiento/analisis/PestanasDeMetodo";
@@ -537,5 +541,172 @@ describe("el análisis de causa raíz (maqueta 4)", () => {
       </AnalisisEnLectura>,
     );
     expect(html).toContain("acta-de-la-reunion.pdf");
+  });
+});
+
+describe("el plan de acción (maqueta 5)", () => {
+  const accion = async () => null;
+  const causas = [{ id: 11, orden: 1, texto: "El procedimiento no asigna el registro al turno de noche" }];
+  const usuarios = [
+    { id: 7, nombre: "L. Rojas", cargo: "Regente de farmacia" },
+    { id: 8, nombre: "J. Perdomo", cargo: null },
+  ];
+  const guardada: AccionDelFormulario = {
+    id: 3,
+    orden: 1,
+    tipo: "correctiva",
+    descripcion: "Actualizar el procedimiento de cadena de frío",
+    causaIds: [11],
+    recursos: "",
+    indicadorCumplimiento: "Procedimiento publicado y socializado",
+    meta: "100 % de los auxiliares",
+    actividades: [
+      { id: 21, descripcion: "Pedir el cambio documental de FAR-PR-04", responsableId: 7, inicio: "2026-11-14", fin: "2026-11-20" },
+      { id: 22, descripcion: "Socializar la versión nueva", responsableId: 9, inicio: "2026-11-21", fin: "2026-12-05" },
+    ],
+  };
+
+  it("una tarjeta por acción: actividades en filas con nombres distintos, el aviso de pacientes y quitar con confirmación", () => {
+    const html = renderToStaticMarkup(
+      <TarjetaDeAccion
+        hallazgoId={1}
+        accion={guardada}
+        causas={causas}
+        usuarios={usuarios}
+        inactivos={[{ id: 9, nombre: "M. Cuéllar" }]}
+        guardar={accion}
+        quitar={accion}
+      />,
+    );
+    expect(html).toContain("Acción A1");
+    expect(html).toContain("1. El procedimiento no asigna el registro al turno de noche");
+    expect(html).toMatch(/name="causaIds" checked="" value="11"/);
+    expect(html).toContain("Actividad A1.1");
+    expect(html).toContain('Responsable<span class="sr-only"> de la actividad A1.2</span>');
+    expect(html).toContain('Fin<span class="sr-only"> de la actividad A1.2</span>');
+    expect(html).toContain('Quitar<span class="sr-only"> la actividad A1.1</span>');
+    expect(html).toContain("Añadir otra actividad");
+    expect(html).toContain("L. Rojas · Regente de farmacia");
+    // Un responsable guardado que ya no está activo se nombra, no se pierde.
+    expect(html).toContain("M. Cuéllar (ya no está activo)");
+    expect(html).toContain(AVISO_SIN_PACIENTES);
+    expect(html).toContain("Quitar esta acción");
+    expect(html).toContain("Se quitará la acción A1 del plan, con sus 2 actividades.");
+    // Las actividades viajan como JSON con su id.
+    expect(html).toContain("&quot;id&quot;:21");
+  });
+
+  it("sin acciones abre una vacía con el tipo que propone la clase; se descarta sin confirmar", () => {
+    const html = renderToStaticMarkup(
+      <FormularioPlan hallazgoId={1} tipoPropuesto="preventiva" acciones={[]} causas={[]} usuarios={usuarios} guardar={accion} quitar={accion} />,
+    );
+    expect(html).toContain("Acción A1 (sin guardar)");
+    expect(html).toMatch(/<option value="preventiva" selected="">Preventiva<\/option>/);
+    expect(html).toContain("Descartar esta acción");
+    expect(html).not.toContain("Quitar esta acción");
+    expect(html).toContain("Añadir otra acción");
+    expect(html).toContain("se escriben en la pestaña «Causa raíz»");
+    const conUna = renderToStaticMarkup(
+      <FormularioPlan hallazgoId={1} tipoPropuesto="correctiva" acciones={[guardada]} causas={causas} usuarios={usuarios} guardar={accion} quitar={accion} />,
+    );
+    expect(conUna).not.toContain("(sin guardar)");
+  });
+
+  it("el criterio de eficacia: la fecha que calcula el servidor, el indicador con su periodicidad y la fecha de evaluación solo fuera de la no conformidad", () => {
+    const indicadores = [{ id: 5, codigo: "FAR-ID-002", nombre: "Registros de temperatura completos", periodicidad: "mensual" as const }];
+    const nc = renderToStaticMarkup(
+      <CriterioDeEficacia
+        hallazgoId={1}
+        clase="no_conformidad"
+        criterios={["mejora_indicador"]}
+        criterioOtro={null}
+        indicadorId={5}
+        fechaEvaluacion={null}
+        indicadores={indicadores}
+        evaluableDesde="2027-03-01"
+        guardar={accion}
+      />,
+    );
+    for (const c of ["No recurrencia", "Mejora del indicador asociado", "Reducción de PQRS o eventos", "Otro"]) expect(nc).toContain(c);
+    expect(nc).toContain("Con este plan la eficacia se podrá evaluar desde el <strong>1 de marzo de 2027</strong>.");
+    expect(nc).toContain("FAR-ID-002 Registros de temperatura completos · mensual");
+    expect(nc).not.toContain("Fecha de evaluación");
+    expect(nc).toContain(AVISO_SIN_PACIENTES);
+    const obs = renderToStaticMarkup(
+      <CriterioDeEficacia
+        hallazgoId={1}
+        clase="observacion"
+        criterios={["otro"]}
+        criterioOtro="Auditoría de seguimiento"
+        indicadorId={99}
+        fechaEvaluacion="2027-01-15"
+        indicadores={indicadores}
+        evaluableDesde={null}
+        guardar={accion}
+      />,
+    );
+    expect(obs).toContain("Fecha de evaluación");
+    expect(obs).toContain('value="2027-01-15"');
+    expect(obs).toContain("Auditoría de seguimiento");
+    expect(obs).not.toContain("FAR-ID-002 Registros de temperatura completos · mensual\" selected");
+    expect(obs).toContain("aparece cuando el plan tenga actividades guardadas");
+  });
+
+  it("«4. Plan de acción» en lectura: acción, actividades, responsable, fin, avance y estado; el indicador solo a quien lo ve", () => {
+    const ronda = {
+      id: 1, numero: 1, estadoPlan: "aprobado", fechaEvaluacion: null, criterios: ["mejora_indicador", "otro"], criterioOtro: "Auditoría de seguimiento",
+      indicadorEficaciaId: 5,
+      causas: [{ id: 11, orden: 1, texto: "El procedimiento no asigna el registro", sinAccionPorque: null }],
+      acciones: [
+        {
+          id: 3, orden: 1, tipo: "correctiva", descripcion: "Actualizar el procedimiento de cadena de frío", recursos: null,
+          indicadorCumplimiento: "Procedimiento publicado", meta: null, causaIds: [11],
+          actividades: [
+            { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: true,
+              inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", avance: 60, estado: "en_proceso", reprogramaciones: 0 },
+            { id: 22, orden: 2, descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
+              inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0 },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof PlanEnLectura>[0]["ronda"];
+    const visible = { visible: true as const, codigo: "FAR-ID-002", nombre: "Registros de temperatura completos", periodicidad: "mensual" as const };
+    const html = renderToStaticMarkup(<PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={visible} />);
+    expect(html).toContain("4. Plan de acción");
+    expect(html).toContain("Aprobado");
+    expect(html).toContain("A1 · Correctiva.");
+    expect(html).toContain("Ataca la causa 1 · indicador de cumplimiento: Procedimiento publicado");
+    expect(html).toContain("A1.1");
+    expect(html).toContain("L. Rojas");
+    expect(html).toContain("60 %");
+    expect(html).toContain("En proceso");
+    expect(html).toContain("Vencida hace 4 días");
+    expect(html).toContain("mejora del indicador FAR-ID-002 «Registros de temperatura completos» (mensual), otro: Auditoría de seguimiento");
+    const oculto = renderToStaticMarkup(<PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={{ visible: false }} />);
+    expect(oculto).toContain("mejora de un indicador");
+    expect(oculto).not.toContain("FAR-ID-002");
+    expect(oculto).not.toContain("Registros de temperatura");
+  });
+
+  it("lo que le falta al plan se lista antes de enviar; el historial nombra la acción por su etiqueta", () => {
+    const con = renderToStaticMarkup(<FaltasDelPlan faltas={["Falta el análisis de causa raíz", "Defina el criterio de eficacia"]} />);
+    expect(con).toContain("Para enviar a revisión");
+    expect(con).toContain("Faltan 2 cosas:");
+    expect(con).toContain("Defina el criterio de eficacia");
+    expect(renderToStaticMarkup(<FaltasDelPlan faltas={[]} />)).toContain("tienen todo lo que se pide para enviarse");
+    const cuando = new Date("2026-11-18T15:00:00Z");
+    const historial = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        eventos={[
+          { id: 1, tipo: "accion_guardada", ronda: 1, quien: "L. Rojas", cuando, detalle: { accion: "A1", accionId: 3, actividades: 2 } },
+          { id: 2, tipo: "accion_quitada", ronda: 1, quien: "L. Rojas", cuando, detalle: { accion: "A2", accionId: 4, actividades: 1 } },
+          { id: 3, tipo: "criterio_guardado", ronda: 1, quien: "L. Rojas", cuando, detalle: { criterios: ["no_recurrencia"] } },
+        ]}
+      />,
+    );
+    expect(historial).toContain("Guardó la acción A1 del plan");
+    expect(historial).toContain("Quitó la acción A2 del plan");
+    expect(historial).toContain("Guardó el criterio de eficacia");
   });
 });

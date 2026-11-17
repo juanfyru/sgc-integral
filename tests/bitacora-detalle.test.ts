@@ -337,6 +337,15 @@ describe("frases con el detalle real", () => {
     expect(e("mejora_completar", {})).toBe("Se terminaron las actividades de un hallazgo: queda por verificar");
     expect(nombreDeAccion("mejora_aprobar_plan")).toBe("Aprobó el plan de acción de un hallazgo");
   });
+  it("las del plan en borrador: la etiqueta de la acción, nunca su texto", () => {
+    const base = { codigo: "HZ-2026-001", ronda: 1 };
+    expect(e("mejora_accion_guardada", { ...base, accion: "A1", accionId: 4, actividades: 2 })).toBe("Guardó la acción A1 del plan del hallazgo HZ-2026-001");
+    expect(e("mejora_accion_quitada", { ...base, accion: "A2", accionId: 5, actividades: 1 })).toBe("Quitó la acción A2 del plan del hallazgo HZ-2026-001");
+    expect(e("mejora_accion_quitada", {})).toBe("Quitó una acción del plan de un hallazgo");
+    expect(e("mejora_criterio_guardado", { ...base, criterios: ["no_recurrencia"], conIndicador: false })).toBe(
+      "Guardó el criterio de eficacia del hallazgo HZ-2026-001",
+    );
+  });
 });
 
 /**
@@ -421,6 +430,10 @@ const ACCIONES_ARMADAS = [
   "mejora_cargar",
   "mejora_reclasificar",
   "mejora_ajustar",
+  // mejoramiento/plan.ts: `auditar(tx, sesion, h, accion, …)` de analisis.ts.
+  "mejora_accion_guardada",
+  "mejora_accion_quitada",
+  "mejora_criterio_guardado",
   "activar_cargo",
   "desactivar_cargo",
 ];

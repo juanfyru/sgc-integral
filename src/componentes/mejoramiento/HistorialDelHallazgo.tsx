@@ -60,6 +60,9 @@ const FRASE: Record<string, string> = {
   analisis_quitado: "Quitó un análisis de causa raíz",
   causas_guardadas: "Guardó las causas raíz",
   preguntas_respondidas: "Respondió las preguntas de cierre del análisis",
+  accion_guardada: "Guardó una acción del plan",
+  accion_quitada: "Quitó una acción del plan",
+  criterio_guardado: "Guardó el criterio de eficacia",
 };
 
 /** La frase del evento; algunas dependen de su detalle (el cierre sin acción, el «no» que se cambió por «sí»). */
@@ -68,6 +71,10 @@ function fraseDe(e: Evento): string {
   if (e.tipo === "validar_correccion" && d.resultado === "sin_accion") return "Validó el cierre sin acción";
   if (e.tipo === "corregir" && d.requerida === false) return "Registró que no requiere corrección inmediata";
   if (e.tipo === "decidir_si" && "antes" in d) return "Exigió la acción correctiva después de un «no»";
+  // La etiqueta de la acción («A1») cuando la trae: el texto de la acción no va en el evento.
+  if ((e.tipo === "accion_guardada" || e.tipo === "accion_quitada") && typeof d.accion === "string" && /^A\d+$/.test(d.accion)) {
+    return `${e.tipo === "accion_guardada" ? "Guardó" : "Quitó"} la acción ${d.accion} del plan`;
+  }
   return FRASE[e.tipo] ?? e.tipo;
 }
 

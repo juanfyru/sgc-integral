@@ -7,6 +7,7 @@
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
+import { guardarAccion, guardarCriterio, quitarAccion } from "@/db/consultas/mejoramiento/plan";
 import {
   aceptarHallazgo,
   arbitrarHallazgo,
@@ -32,7 +33,9 @@ import {
   EsquemaAnulacion,
   EsquemaCambioDeProceso,
   EsquemaCorreccion,
+  EsquemaCriterio,
   EsquemaDevolucion,
+  EsquemaFormularioAccion,
   EsquemaFormularioAnalisis,
   EsquemaFormularioArbitraje,
   EsquemaFormularioCausas,
@@ -41,6 +44,7 @@ import {
   EsquemaHallazgo,
   EsquemaOcurrencia,
   EsquemaPasoDelHallazgo,
+  EsquemaQuitarAccion,
   EsquemaQuitarAnalisis,
   EsquemaRechazo,
   EsquemaReclasificacion,
@@ -281,5 +285,35 @@ export async function responderPreguntasAccion(_previo: EstadoAccion, formData: 
   return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
     const d = parsearFormulario(datos, EsquemaFormularioPreguntas);
     await responderPreguntas(sesion, d);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El plan de acción en borrador (spec 15 §10 y §11.2). Quien formula es quien actúa por el proceso; lo comprueba cada
+// función del dominio dentro de su transacción. Guardar no redirige: la página se vuelve a leer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Guarda una acción del plan con sus actividades (nueva, o `accionId` para reemplazar una de la ronda). */
+export async function guardarAccionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioAccion);
+    // `actividades` llega como JSON sin validar: `guardarAccion` lo lee con `EsquemaAccion` antes de escribir.
+    await guardarAccion(sesion, d as Parameters<typeof guardarAccion>[1]);
+  });
+}
+
+/** Quita una acción del plan con sus actividades. */
+export async function quitarAccionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaQuitarAccion);
+    await quitarAccion(sesion, d);
+  });
+}
+
+/** El criterio de eficacia de la ronda. */
+export async function guardarCriterioAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaCriterio);
+    await guardarCriterio(sesion, d);
   });
 }

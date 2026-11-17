@@ -40,6 +40,9 @@ export type ResultadoCierre = (typeof RESULTADOS_CIERRE)[number];
 export const TIPOS_ACCION = ["correctiva", "preventiva", "mejora"] as const;
 export type TipoAccion = (typeof TIPOS_ACCION)[number];
 
+export const CRITERIOS_EFICACIA = ["no_recurrencia", "mejora_indicador", "reduccion_pqrs", "otro"] as const;
+export type CriterioEficacia = (typeof CRITERIOS_EFICACIA)[number];
+
 export const METODOS_ANALISIS = ["cinco_porques", "ishikawa", "pareto", "otro"] as const;
 export type MetodoAnalisis = (typeof METODOS_ANALISIS)[number];
 

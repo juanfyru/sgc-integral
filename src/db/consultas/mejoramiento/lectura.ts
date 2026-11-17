@@ -268,6 +268,8 @@ export type ActividadDeDetalle = {
   descripcion: string;
   responsableId: number;
   responsable: string;
+  /** Si el responsable sigue activo: el formulario del borrador lo dice en lugar de perderlo. */
+  responsableActivo: boolean;
   inicio: string;
   finOriginal: string | null;
   fin: string;
@@ -298,6 +300,10 @@ export type RondaDeDetalle = {
   aprobadoRol: string | null;
   fechaEvaluacion: string | null;
   cierrePrevisto: Date | null;
+  /** El criterio de eficacia tal como se guardó (`criterios`, jsonb): quien lo pinta lo lee sin confiar en su forma. */
+  criterios: unknown;
+  criterioOtro: string | null;
+  indicadorEficaciaId: number | null;
   resultado: string | null;
   similares: boolean | null;
   similaresDetalle: string | null;
@@ -468,7 +474,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
 
   const [rondas, analisis, causas, acciones, vinculos, actividades, ajustes] = await Promise.all([
     sql`SELECT id, numero, estado_plan, formular_antes_de, enviado_en, aprobado_en, aprobado_rol, resultado, cierre_previsto,
-        similares, similares_detalle, cambios,
+        similares, similares_detalle, cambios, criterios, criterio_otro, indicador_eficacia_id,
         to_char(fecha_evaluacion, 'YYYY-MM-DD') AS fecha_evaluacion
       FROM mejora_rondas WHERE hallazgo_id = ${id} ORDER BY numero`,
     sql`SELECT id, ronda_id, orden, metodo, equipo, observaciones, contenido FROM mejora_analisis WHERE hallazgo_id = ${id} ORDER BY orden, id`,
@@ -476,7 +482,8 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     sql`SELECT id, ronda_id, orden, tipo, descripcion, recursos, indicador_cumplimiento, meta
       FROM mejora_acciones WHERE hallazgo_id = ${id} ORDER BY orden, id`,
     sql`SELECT accion_id, causa_id FROM mejora_accion_causas WHERE hallazgo_id = ${id}`,
-    sql`SELECT a.id, a.accion_id, a.orden, a.descripcion, a.responsable_id, u.nombre AS responsable, a.avance, a.estado,
+    sql`SELECT a.id, a.accion_id, a.orden, a.descripcion, a.responsable_id, u.nombre AS responsable, u.activo AS responsable_activo,
+        a.avance, a.estado,
         a.reprogramaciones, to_char(a.inicio, 'YYYY-MM-DD') AS inicio, to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original,
         to_char(a.fin, 'YYYY-MM-DD') AS fin
       FROM mejora_actividades a JOIN usuarios u ON u.id = a.responsable_id
@@ -495,6 +502,9 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     aprobadoRol: (r.aprobado_rol as string | null) ?? null,
     fechaEvaluacion: (r.fecha_evaluacion as string | null) ?? null,
     cierrePrevisto: (r.cierre_previsto as Date | null) ?? null,
+    criterios: r.criterios ?? null,
+    criterioOtro: (r.criterio_otro as string | null) ?? null,
+    indicadorEficaciaId: idONulo(r.indicador_eficacia_id),
     resultado: (r.resultado as string | null) ?? null,
     similares: (r.similares as boolean | null) ?? null,
     similaresDetalle: (r.similares_detalle as string | null) ?? null,
@@ -536,6 +546,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
             descripcion: a.descripcion as string,
             responsableId: Number(a.responsable_id),
             responsable: a.responsable as string,
+            responsableActivo: a.responsable_activo === true,
             inicio: a.inicio as string,
             finOriginal: (a.fin_original as string | null) ?? null,
             fin: a.fin as string,

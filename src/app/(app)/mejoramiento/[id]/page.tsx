@@ -19,6 +19,7 @@ import {
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
+import { PlanEnLectura, type IndicadorEnLectura } from "@/componentes/mejoramiento/plan/PlanEnLectura";
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
@@ -41,7 +42,9 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
 import { puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
-import type { DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
+import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
+import type { DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import {
   cerradosDelProceso,
   documentosVigentesVisibles,
@@ -49,13 +52,17 @@ import {
   procesosDelAlcance,
   usuariosActivos,
 } from "@/db/consultas/mejoramiento/opciones";
+import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
+import { puedeVerIndicador } from "@/lib/alcance";
+import { leerCriterios } from "@/lib/mejoramiento/eficacia";
 import { diaCorto } from "@/lib/mejoramiento/formato";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
+import type { SesionValida } from "@/lib/sesion";
 import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -105,6 +112,20 @@ function textoDelEvento(e: DetalleDeHallazgo["eventos"][number] | undefined, cla
   if (typeof d !== "object" || d === null) return null;
   const v = (d as Record<string, unknown>)[clave];
   return typeof v === "string" && v !== "" ? v : null;
+}
+
+/** Estados en que el plan de la ronda en curso es la etapa en curso: «4. Plan de acción» queda abierta. */
+const EN_EL_PLAN = new Set(["por_formular", "en_revision", "en_aprobacion", "en_ejecucion"]);
+/** Estados con el plan de la ronda en curso sin aprobar: la sección dice desde cuándo se podría evaluar con sus fechas. */
+const PLAN_SIN_APROBAR = new Set(["por_formular", "en_revision", "en_aprobacion"]);
+
+/** El indicador enlazado al criterio de la ronda, nombrado solo a quien lo ve (spec §11.2); a los demás, «un indicador». */
+async function indicadorParaQuienLee(r: RondaDeDetalle, sesion: SesionValida): Promise<IndicadorEnLectura> {
+  if (r.indicadorEficaciaId === null) return null;
+  const sql = obtenerSql();
+  const [ind, ve] = await Promise.all([indicadorDeEficacia(sql, r.indicadorEficaciaId), puedeVerIndicador(r.indicadorEficaciaId, sesion, { sql })]);
+  if (!ind) return null;
+  return ve ? { visible: true, codigo: ind.codigo, nombre: ind.nombre, periodicidad: ind.periodicidad } : { visible: false };
 }
 
 /** El último evento de alguno de esos tipos. */
@@ -270,31 +291,51 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
               ) : null}
             </SeccionCorreccion>
           ) : null}
-          {completo
-            ? await Promise.all(
-                h.rondas
-                  .filter((r) => r.analisis.length > 0 || r.causas.length > 0 || r.similares !== null || (r.numero === h.ronda && h.estado === "por_formular"))
-                  .map(async (r) => {
-                    // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí.
-                    const adjuntos = (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis");
-                    return (
-                      <AnalisisEnLectura
-                        key={`causa-${r.id}`}
-                        ronda={r}
-                        titulo={r.numero === h.ronda ? "3. Causa raíz" : `3. Causa raíz (ronda ${r.numero})`}
-                        abierta={r.numero === h.ronda && h.estado === "por_formular"}
-                      >
-                        {adjuntos.length > 0 ? (
-                          <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
-                            <h3 className="text-sm font-semibold">Adjuntos del análisis</h3>
-                            <ArchivosDe archivos={adjuntos} nombre="Adjuntos del análisis" />
-                          </div>
-                        ) : null}
-                      </AnalisisEnLectura>
-                    );
-                  }),
-              )
-            : null}
+          {await Promise.all(
+            h.rondas.map(async (r) => {
+              const enCurso = r.numero === h.ronda;
+              const conAnalisis =
+                completo && (r.analisis.length > 0 || r.causas.length > 0 || r.similares !== null || (enCurso && h.estado === "por_formular"));
+              // El plan se lee en texto también por quien solo es responsable de una actividad (spec §6.3).
+              const conPlan = r.acciones.length > 0 || leerCriterios(r.criterios).length > 0 || (enCurso && h.estado === "por_formular");
+              // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí.
+              const adjuntos = conAnalisis
+                ? (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis")
+                : [];
+              const evaluableDesde =
+                conPlan && enCurso && r.estadoPlan !== "aprobado" && PLAN_SIN_APROBAR.has(h.estado)
+                  ? (await examinarPlan(sqlArchivos, h.id, await contextoDeMejora(sqlArchivos, new Date()))).evaluableDesde
+                  : null;
+              return (
+                <div key={`ronda-${r.id}`} className="contents">
+                  {conAnalisis ? (
+                    <AnalisisEnLectura
+                      ronda={r}
+                      titulo={enCurso ? "3. Causa raíz" : `3. Causa raíz (ronda ${r.numero})`}
+                      abierta={enCurso && h.estado === "por_formular"}
+                    >
+                      {adjuntos.length > 0 ? (
+                        <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
+                          <h3 className="text-sm font-semibold">Adjuntos del análisis</h3>
+                          <ArchivosDe archivos={adjuntos} nombre="Adjuntos del análisis" />
+                        </div>
+                      ) : null}
+                    </AnalisisEnLectura>
+                  ) : null}
+                  {conPlan ? (
+                    <PlanEnLectura
+                      ronda={r}
+                      titulo={enCurso ? "4. Plan de acción" : `4. Plan de acción (ronda ${r.numero})`}
+                      abierta={enCurso && EN_EL_PLAN.has(h.estado)}
+                      indicador={await indicadorParaQuienLee(r, sesion)}
+                      evaluableDesde={evaluableDesde}
+                      hoy={hoy}
+                    />
+                  ) : null}
+                </div>
+              );
+            }),
+          )}
           {completo ? (
             <Ocurrencias
               key={`ocurrencias-${h.ocurrencias.length}`}

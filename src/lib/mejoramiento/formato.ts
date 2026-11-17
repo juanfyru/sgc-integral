@@ -23,3 +23,10 @@ export function fechaYHora(instante: Date, zona: string): string {
 export function diaCorto(instante: Date, zona: string): string {
   return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", timeZone: zona }).format(instante);
 }
+
+/** «1 de marzo de 2027» de un `yyyy-mm-dd`. */
+export function fechaLargaDeDia(dia: string): string {
+  const ms = Date.parse(`${dia}T00:00:00Z`);
+  if (Number.isNaN(ms)) return dia;
+  return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(ms);
+}

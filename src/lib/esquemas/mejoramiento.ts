@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
-import { CLASES, CRITICIDADES, METODOS_ANALISIS, ORIGENES_HALLAZGO } from "@/lib/mejoramiento/tipos";
+import { CLASES, CRITERIOS_EFICACIA, CRITICIDADES, METODOS_ANALISIS, ORIGENES_HALLAZGO, TIPOS_ACCION } from "@/lib/mejoramiento/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
 /** Un entero llega como texto del formulario o como número de la consulta. */
@@ -516,3 +516,108 @@ export const EsquemaFormularioPreguntas = z
       descripcion: d.hayCambios ? d.cambiosDescripcion : null,
     },
   }));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El plan de acción y el criterio de eficacia (spec 15 §10 y §11.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un id obligatorio: llega como número o como texto del formulario. */
+const idRequerido = (mensaje: string) =>
+  z
+    .union([z.number().int(mensaje).positive(mensaje), z.string().regex(/^\d{1,15}$/, mensaje)], { error: mensaje })
+    .transform(Number)
+    .refine((n) => Number.isSafeInteger(n) && n > 0, mensaje);
+
+/** Las casillas con el mismo nombre: ninguna, un texto o varios; o una lista que manda el dominio. */
+const variosValores = (mensaje: string) =>
+  z
+    .union([z.string(), z.number(), z.array(z.union([z.string(), z.number()]))], { error: mensaje })
+    .optional()
+    .transform((v): Array<string | number> => (v === undefined ? [] : Array.isArray(v) ? v : [v]));
+
+const camposDeLaAccion = {
+  hallazgoId: idDeHallazgo,
+  accionId: idOpcional("La acción no es válida"),
+  tipo: z.enum(TIPOS_ACCION, { error: "Elija el tipo de acción" }),
+  descripcion: textoAcotado("La descripción de la acción", 3, 2000),
+  recursos: textoOpcional("Los recursos necesarios", 1000),
+  indicadorCumplimiento: textoOpcional("El indicador de cumplimiento", 500),
+  meta: textoOpcional("La meta", 500),
+};
+
+const causasQueAtaca = z
+  .array(idRequerido("La causa elegida no es válida"), { error: "Las causas elegidas no son válidas" })
+  .max(20, "Una acción ataca veinte causas como máximo")
+  .transform((ids) => [...new Set(ids)]);
+
+const actividadDelPlan = z
+  .object({
+    id: idOpcional("Una de las actividades no es válida"),
+    descripcion: textoAcotado("La descripción de la actividad", 3, 1000),
+    responsableId: idRequerido("Elija el responsable de cada actividad"),
+    inicio: fechaDelDia("Escriba una fecha válida de inicio"),
+    fin: fechaDelDia("Escriba una fecha válida de fin"),
+  })
+  .strict()
+  .superRefine((a, ctx) => {
+    if (a.inicio > a.fin) ctx.addIssue({ code: "custom", path: ["inicio"], message: "El inicio no puede ser posterior al fin" });
+  });
+
+/**
+ * Una acción del plan con sus actividades, tal como la guarda `guardarAccion`: al menos una actividad, cada una con su
+ * responsable y un inicio no posterior a su fin. Lo que depende de la base (la ronda, las causas, que el responsable esté
+ * activo) lo mira el dominio; que el fin no sea pasado es una falta del plan (`examinarPlan`), no un error de guardado.
+ */
+export const EsquemaAccion = z
+  .object({
+    ...camposDeLaAccion,
+    causaIds: causasQueAtaca.optional().transform((v) => v ?? []),
+    actividades: z
+      .array(actividadDelPlan, { error: "Las actividades no son válidas" })
+      .min(1, "Toda acción lleva al menos una actividad")
+      .max(30, "Una acción lleva treinta actividades como máximo"),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const ids = d.actividades.flatMap((a) => (a.id ? [a.id] : []));
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["actividades"], message: "Una actividad aparece dos veces" });
+  });
+export type AccionValidada = z.output<typeof EsquemaAccion>;
+
+/** El formulario de una acción: las causas, en casillas; las actividades, como JSON que vuelve a leer `EsquemaAccion`. */
+export const EsquemaFormularioAccion = z
+  .object({
+    ...camposDeLaAccion,
+    causaIds: variosValores("Las causas elegidas no son válidas").pipe(causasQueAtaca),
+    actividades: jsonEnTexto("Las actividades no son válidas"),
+  })
+  .strict();
+
+export const EsquemaQuitarAccion = z.object({ hallazgoId: idDeHallazgo, accionId: idRequerido("La acción no es válida") }).strict();
+
+/**
+ * El criterio de eficacia de la ronda (spec §11.2), del formulario o del dominio. Lo que no aplica se descarta: la
+ * descripción sin «otro» y el indicador sin «mejora del indicador». La fecha de evaluación la descarta el dominio en la no
+ * conformidad (depende de la clase).
+ */
+export const EsquemaCriterio = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    criterios: variosValores("Elija un criterio de eficacia válido").pipe(
+      z.array(z.enum(CRITERIOS_EFICACIA, { error: "Elija un criterio de eficacia válido" })),
+    ),
+    criterioOtro: textoOpcional("La descripción del otro criterio", 500),
+    indicadorEficaciaId: idOpcional("El indicador elegido no es válido"),
+    fechaEvaluacion: fechaOpcional("Escriba una fecha de evaluación válida"),
+  })
+  .strict()
+  .transform((d) => {
+    const criterios = CRITERIOS_EFICACIA.filter((x) => d.criterios.includes(x));
+    return {
+      hallazgoId: d.hallazgoId,
+      criterios,
+      criterioOtro: criterios.includes("otro") ? d.criterioOtro : null,
+      indicadorEficaciaId: criterios.includes("mejora_indicador") ? d.indicadorEficaciaId : null,
+      fechaEvaluacion: d.fechaEvaluacion,
+    };
+  });
