@@ -27,7 +27,11 @@ import type { ContextoMejora } from "./config";
 
 export const NO_EXISTE = "El hallazgo no existe";
 
-/** Lo que acompaña a un paso: el rumbo de la tabla, el detalle del evento y, si se hizo en papel, su fecha real. */
+/**
+ * Lo que acompaña a un paso: el rumbo de la tabla, el detalle del evento y, si se hizo en papel, su fecha real. El detalle
+ * llega tal cual al evento y a la bitácora; el motor le añade `estado: { antes, despues }`, `acta` y, en la bitácora,
+ * `codigo` y `ronda`, y rechaza un detalle que ya traiga alguna de esas claves (`CLAVES_DEL_MOTOR`).
+ */
 export type Paso_x = {
   rumbo?: Rumbo;
   detalle?: Record<string, unknown>;
@@ -131,6 +135,19 @@ async function formularDeLaRonda(tx: TransactionSql, hallazgoId: number, ronda: 
 
 const conActa = (x: Paso_x) => (x.acta ? { acta: x.acta } : {});
 
+/** Las claves del detalle que pone el motor: el cambio de estado va en `estado: { antes, despues }`, aparte del de quien llama. */
+const CLAVES_DEL_MOTOR = ["estado", "codigo", "ronda", "acta"] as const;
+
+/** El detalle de quien llama, tal cual; si trae una clave del motor es un error de programación, no de la persona. */
+function detalleDeQuienLlama(x: Paso_x): Record<string, unknown> {
+  const detalle = x.detalle ?? {};
+  const chocan = CLAVES_DEL_MOTOR.filter((k) => Object.hasOwn(detalle, k));
+  if (chocan.length > 0) {
+    throw new Error(`El detalle de un paso del hallazgo no puede traer ${chocan.join(", ")}: las pone el motor`);
+  }
+  return detalle;
+}
+
 export async function dejarEvento(
   tx: TransactionSql,
   e: {
@@ -161,6 +178,7 @@ export async function nacerHallazgo(
   x: Paso_x,
   c: ContextoMejora,
 ): Promise<HallazgoBase> {
+  const detalle = detalleDeQuienLlama(x);
   // Un hallazgo nuevo no tiene estado: para `registrar` y `cargar`, `DESDE` es «nuevo» y no lo mira.
   const estado = destinoDe(accion, { ...fila, estado: "por_aceptar", correccionRequerida: null }, x.rumbo ?? {});
   const formularAntes = formularAntesDe({ registradoEn: c.ahora, fechaLimiteEnte: fila.fechaLimiteEnte }, c);
@@ -183,7 +201,7 @@ export async function nacerHallazgo(
     hallazgoId: id,
     ronda: 1,
     tipo: accion,
-    detalle: { ...x.detalle, ...conActa(x), antes: null, despues: estado },
+    detalle: { ...detalle, ...conActa(x), estado: { antes: null, despues: estado } },
     usuarioId: sesion.usuarioId,
     fuera: x.fuera,
     ocurrioEn: x.ocurrioEn ?? c.ahora,
@@ -193,7 +211,14 @@ export async function nacerHallazgo(
     accion: `mejora_${accion}`,
     entidad: ENTIDAD_HALLAZGO,
     entidadId: id,
-    detalle: { ...x.detalle, ...conActa(x), codigo: fila.codigo, titulo: fila.titulo, antes: null, despues: estado, ronda: 1 },
+    detalle: {
+      titulo: fila.titulo,
+      ...detalle,
+      ...conActa(x),
+      codigo: fila.codigo,
+      estado: { antes: null, despues: estado },
+      ronda: 1,
+    },
   });
   const h: HallazgoBase = {
     id,
@@ -228,6 +253,7 @@ export async function transicionarHallazgo(
   x: Paso_x,
   c: ContextoMejora,
 ): Promise<{ antes: EstadoHallazgo; despues: EstadoHallazgo; ronda: number }> {
+  const detalle = detalleDeQuienLlama(x);
   const { h: actual, titulo } = await releer(tx, h.id);
   if (actual.estado !== h.estado || actual.ronda !== h.ronda) throw new ErrorMejora(YA_CAMBIO);
   const antes = actual.estado;
@@ -239,7 +265,7 @@ export async function transicionarHallazgo(
     hallazgoId: actual.id,
     ronda,
     tipo: accion,
-    detalle: { ...x.detalle, ...conActa(x), antes, despues },
+    detalle: { ...detalle, ...conActa(x), estado: { antes, despues } },
     usuarioId,
     fuera: x.fuera,
     ocurrioEn: x.ocurrioEn ?? c.ahora,
@@ -258,7 +284,7 @@ export async function transicionarHallazgo(
     accion: `mejora_${accion}`,
     entidad: ENTIDAD_HALLAZGO,
     entidadId: actual.id,
-    detalle: { ...x.detalle, ...conActa(x), codigo: actual.codigo, antes, despues, ronda },
+    detalle: { ...detalle, ...conActa(x), codigo: actual.codigo, estado: { antes, despues }, ronda },
   });
   if (cambia) await avisarDelTurno(tx, { ...actual, estado: despues }, titulo, usuarioId);
   return { antes, despues, ronda };

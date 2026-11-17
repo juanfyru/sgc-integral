@@ -314,14 +314,26 @@ describe("frases con el detalle real", () => {
     expect(e("verificacion_abierta", { puntoId: 3, punto: "Farmacia", items: 8, propioPunto: false })).toBe("Abrió la verificación de Farmacia");
   });
   it("las del motor del hallazgo, con lo que guarda `flujo.ts`", () => {
-    const base = { codigo: "HZ-2026-001", antes: "por_aceptar", ronda: 1 };
-    expect(e("mejora_registrar", { ...base, antes: null, despues: "por_aceptar", titulo: "Formatos sin diligenciar" })).toBe(
-      "Registró el hallazgo HZ-2026-001 — Formatos sin diligenciar",
+    const base = { codigo: "HZ-2026-001", ronda: 1 };
+    expect(
+      e("mejora_registrar", { ...base, estado: { antes: null, despues: "por_aceptar" }, titulo: "Formatos sin diligenciar" }),
+    ).toBe("Registró el hallazgo HZ-2026-001 — Formatos sin diligenciar");
+    expect(
+      e("mejora_rechazar", { ...base, estado: { antes: "por_aceptar", despues: "rechazo" }, justificacion: "No es de este proceso" }),
+    ).toBe("Rechazó el hallazgo HZ-2026-001: No es de este proceso");
+    // El `antes` y el `despues` de quien llama (una reclasificación) no se confunden con el cambio de estado.
+    expect(
+      e("mejora_reclasificar", {
+        ...base,
+        estado: { antes: "por_formular", despues: "por_corregir" },
+        antes: { clase: "oportunidad" },
+        despues: { clase: "no_conformidad" },
+        justificacion: "Es un incumplimiento del procedimiento",
+      }),
+    ).toBe("Reclasificó el hallazgo HZ-2026-001: Es un incumplimiento del procedimiento");
+    expect(e("mejora_corregir", { ...base, estado: { antes: "por_corregir", despues: "por_decidir" } })).toBe(
+      "Registró la corrección del hallazgo HZ-2026-001",
     );
-    expect(e("mejora_rechazar", { ...base, despues: "rechazo", justificacion: "No es de este proceso" })).toBe(
-      "Rechazó el hallazgo HZ-2026-001: No es de este proceso",
-    );
-    expect(e("mejora_corregir", { ...base, despues: "por_decidir" })).toBe("Registró la corrección del hallazgo HZ-2026-001");
     expect(e("mejora_completar", {})).toBe("Se terminaron las actividades de un hallazgo: queda por verificar");
     expect(nombreDeAccion("mejora_aprobar_plan")).toBe("Aprobó el plan de acción de un hallazgo");
   });

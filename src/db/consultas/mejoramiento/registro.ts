@@ -12,7 +12,7 @@ import { esExterno } from "@/lib/mejoramiento/origenes";
 import { ErrorMejora, type Clase, type Criticidad, type HallazgoBase, type Origen } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { activosDeRol, avisarDeMejora, quienTieneElTurno } from "./avisos";
+import { activosDeRol, avisarDeMejora } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { legible, nacerHallazgo, type FilaNueva } from "./flujo";
 
@@ -103,12 +103,12 @@ function filaDe(v: HallazgoValidado): Omit<FilaNueva, "codigo" | "anio" | "conse
 }
 
 /**
- * Un hallazgo externo avisa también a Gerencia y al Admin SGC (spec §14.2): un aviso por persona, así que quien ya
- * recibió el del turno, y quien registró, no reciben este.
+ * Un hallazgo externo avisa también a cada usuario activo de Gerencia y a cada Admin SGC activo (spec §14.2), salvo a quien
+ * lo registró. Es otro aviso que el del turno (en la Fase 16 sale además de inmediato por correo): quien tiene el turno
+ * recibe los dos.
  */
 async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: string, actorId: number): Promise<void> {
-  const avisados = new Set([actorId, ...(await quienTieneElTurno(tx, h))]);
-  const destinos = (await activosDeRol(tx, ["gerencia", "admin_sgc"])).filter((u) => !avisados.has(u));
+  const destinos = (await activosDeRol(tx, ["gerencia", "admin_sgc"])).filter((u) => u !== actorId);
   await avisarDeMejora(
     tx,
     { tipo: "mejora.externo", titulo: `Hallazgo externo ${h.codigo}: prioridad alta`, hallazgoId: h.id },

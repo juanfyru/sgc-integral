@@ -85,11 +85,14 @@ describe("registrarHallazgo", () => {
       expect(evento).toMatchObject({ tipo: "registrar", ronda: 1, fuera: false });
       expect(Number(evento.usuario_id)).toBe(b.control.usuarioId);
       expect(evento.ocurrio_en).toEqual(ahora);
-      expect(evento.detalle).toMatchObject({ antes: null, despues: "por_aceptar" });
+      expect(evento.detalle).toEqual({ estado: { antes: null, despues: "por_aceptar" } });
 
       const bitacora = await tx`SELECT accion, usuario_id, detalle FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id}`;
       expect(bitacora).toHaveLength(1);
-      expect(bitacora[0]).toMatchObject({ accion: "mejora_registrar", detalle: { codigo, despues: "por_aceptar" } });
+      expect(bitacora[0]).toMatchObject({
+        accion: "mejora_registrar",
+        detalle: { codigo, ronda: 1, titulo: datosDeHallazgo(b.procesoId).titulo, estado: { antes: null, despues: "por_aceptar" } },
+      });
 
       expect(await avisos(tx, id, "mejora.turno")).toEqual(await lideresDeProceso(b.procesoId, { sql: tx }));
       expect(await avisos(tx, id, "mejora.turno")).toEqual([b.lider.usuarioId]);
@@ -108,7 +111,7 @@ describe("registrarHallazgo", () => {
       const h1 = await hallazgo(tx, nc.id);
       expect(h1.estado).toBe("por_corregir");
       expect(h1.vence_en).toEqual(venceEn("correccion", ahora, ctx));
-      expect((await eventos(tx, nc.id))[0].detalle).toMatchObject({ antes: null, despues: "por_corregir" });
+      expect((await eventos(tx, nc.id))[0].detalle).toEqual({ estado: { antes: null, despues: "por_corregir" } });
       // Nadie se avisa de lo que acaba de hacer: el único líder es quien lo registró.
       expect(await avisos(tx, nc.id, "mejora.turno")).toEqual([]);
 
@@ -181,6 +184,33 @@ describe("registrarHallazgo", () => {
       // En un origen interno la fecha del ente no se guarda.
       const interno = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { fechaLimiteEnte: "2026-12-15" }), c(AHORA, tx));
       expect((await hallazgo(tx, interno.id)).fecha_ente).toBeNull();
+    });
+  });
+
+  it("un hallazgo externo avisa a cada Gerencia y Admin SGC, aunque también tengan el turno", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const sinLider = await procesoNuevo(tx);
+      const externo = { origen: "ente_control" as const, fuente: "Visita de la Supersalud", fechaLimiteEnte: "2026-12-15" };
+
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(sinLider, externo), c(AHORA, tx));
+      const admins = await adminsActivos({ sql: tx });
+      expect(await avisos(tx, id, "mejora.turno")).toEqual(admins);
+      expect(await avisos(tx, id, "mejora.externo")).toEqual(await activosDe(tx, ["gerencia", "admin_sgc"]));
+      for (const admin of admins) {
+        const tipos = (
+          await tx`SELECT tipo FROM notificaciones WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id}
+            AND usuario_id = ${admin} ORDER BY tipo`
+        ).map((f) => f.tipo);
+        expect(tipos).toEqual(["mejora.externo", "mejora.turno"]);
+      }
+
+      // Quien lo registra no se avisa a sí mismo de ninguno de los dos.
+      const otro = await registrarHallazgo(b.admin, datosDeHallazgo(sinLider, externo), c(AHORA, tx));
+      expect(await avisos(tx, otro.id, "mejora.turno")).toEqual(admins.filter((u) => u !== b.admin.usuarioId));
+      expect(await avisos(tx, otro.id, "mejora.externo")).toEqual(
+        (await activosDe(tx, ["gerencia", "admin_sgc"])).filter((u) => u !== b.admin.usuarioId),
+      );
     });
   });
 
@@ -304,9 +334,9 @@ describe("transicionarHallazgo", () => {
       expect(nuevo.vence_en).toEqual(venceEn("correccion", ahora, ctx));
       const ev = await eventos(tx, id);
       expect(ev.map((e) => e.tipo)).toEqual(["registrar", "aceptar"]);
-      expect(ev[1].detalle).toEqual({ nota: "De acuerdo", antes: "por_aceptar", despues: "por_corregir" });
+      expect(ev[1].detalle).toEqual({ nota: "De acuerdo", estado: { antes: "por_aceptar", despues: "por_corregir" } });
       const [bitacora] = await tx`SELECT accion, detalle FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND accion = 'mejora_aceptar'`;
-      expect(bitacora.detalle).toMatchObject({ codigo: nuevo.codigo, antes: "por_aceptar", despues: "por_corregir" });
+      expect(bitacora.detalle).toEqual({ nota: "De acuerdo", codigo: nuevo.codigo, ronda: 1, estado: { antes: "por_aceptar", despues: "por_corregir" } });
 
       // Con el `h` de antes, el estado releído ya no es el suyo: nada se escribe.
       await expect(transicionarHallazgo(tx, b.lider, viejo, "rechazar", {}, ctx)).rejects.toThrow(new ErrorMejora(YA_CAMBIO));
@@ -370,7 +400,14 @@ describe("transicionarHallazgo", () => {
       expect(await quienTieneElTurno(tx, await bloquearHallazgo(tx, id))).toEqual(await adminsActivos({ sql: tx }));
 
       await transicionarHallazgo(tx, b.admin, await bloquearHallazgo(tx, id), "devolver_plan", {}, ctx2);
-      expect((await hallazgo(tx, id)).vence_en).toEqual(venceEn("reenviar", despues, ctx));
+      const devuelto = await hallazgo(tx, id);
+      expect(devuelto.estado).toBe("por_formular");
+      expect(devuelto.vence_en).toEqual(venceEn("reenviar", despues, ctx));
+      expect(devuelto.vence_en).not.toEqual(ronda.formular_antes_de);
+      // La devolución no toca el plazo de formular de la ronda.
+      const [rondaDespues] = await tx`SELECT formular_antes_de FROM mejora_rondas WHERE hallazgo_id = ${id}`;
+      expect(rondaDespues.formular_antes_de).toEqual(ronda.formular_antes_de);
+      expect(rondaDespues.formular_antes_de).toEqual(venceEn("formular", ahora, ctx));
 
       await transicionarHallazgo(tx, b.lider, await bloquearHallazgo(tx, id), "enviar_plan", { rumbo: { saltaRevision: true } }, ctx2);
       const h = await bloquearHallazgo(tx, id);
@@ -385,8 +422,7 @@ describe("transicionarHallazgo", () => {
       const avisosAntes = (await tx`SELECT count(*)::int AS n FROM notificaciones WHERE entidad_id = ${id} AND entidad = 'mejora_hallazgo'`)[0].n;
       await transicionarHallazgo(tx, b.admin, enEjecucion, "ajustar", { rumbo: { quedaEn: "en_ejecucion" } }, ctx2);
       expect((await tx`SELECT count(*)::int AS n FROM notificaciones WHERE entidad_id = ${id} AND entidad = 'mejora_hallazgo'`)[0].n).toBe(avisosAntes);
-      expect((await eventos(tx, id)).at(-1)).toMatchObject({ tipo: "ajustar", detalle: { antes: "en_ejecucion", despues: "en_ejecucion" } });
-      expect(ronda.formular_antes_de).toEqual(venceEn("formular", ahora, ctx));
+      expect((await eventos(tx, id)).at(-1)).toMatchObject({ tipo: "ajustar", detalle: { estado: { antes: "en_ejecucion", despues: "en_ejecucion" } } });
 
       // `completar` lo hace el sistema: sin sesión, el evento y la bitácora van sin usuario.
       const r = await transicionarHallazgo(tx, null, await bloquearHallazgo(tx, id), "completar", {}, ctx2);
@@ -414,7 +450,7 @@ describe("transicionarHallazgo", () => {
       const r = await transicionarHallazgo(tx, b.control, await bloquearHallazgo(tx, id), "retirar", {}, ctx);
       expect(r).toEqual({ antes: "rechazo", despues: "rechazado", ronda: 1 });
       expect(await hallazgo(tx, id)).toMatchObject({ estado: "rechazado", vence_en: null });
-      expect((await eventos(tx, id)).at(-1)).toMatchObject({ tipo: "retirar", detalle: { antes: "rechazo", despues: "rechazado" } });
+      expect((await eventos(tx, id)).at(-1)).toMatchObject({ tipo: "retirar", detalle: { estado: { antes: "rechazo", despues: "rechazado" } } });
       const [bitacora] = await tx`SELECT accion FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND accion = 'mejora_retirar'`;
       expect(bitacora).toBeDefined();
       // Nadie tiene el turno de un terminado: no hay aviso nuevo.
@@ -448,6 +484,64 @@ describe("transicionarHallazgo", () => {
       expect(await avisos(tx, id, "mejora.turno")).toEqual([b.lider.usuarioId]);
       const [bitacora] = await tx`SELECT accion FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND accion = 'mejora_reclasificar'`;
       expect(bitacora).toBeDefined();
+    });
+  });
+
+  it("llegar a por formular más tarde da el plazo de la ronda, no uno nuevo", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ctx = await contextoDeMejora(tx, ahora);
+      const { id } = await registrarHallazgo(
+        b.control,
+        datosDeHallazgo(b.procesoId, { clase: "oportunidad", criticidad: undefined }),
+        c(AHORA, tx),
+      );
+      expect((await hallazgo(tx, id)).estado).toBe("por_aceptar");
+      const [ronda] = await tx`SELECT formular_antes_de FROM mejora_rondas WHERE hallazgo_id = ${id} AND numero = 1`;
+      expect(ronda.formular_antes_de).toEqual(venceEn("formular", ahora, ctx));
+
+      const tarde = new Date("2026-11-24T15:00:00Z");
+      await transicionarHallazgo(tx, b.lider, await bloquearHallazgo(tx, id), "aceptar", {}, { ...ctx, ahora: tarde });
+      const h = await hallazgo(tx, id);
+      expect(h.estado).toBe("por_formular");
+      expect(h.vence_en).toEqual(ronda.formular_antes_de);
+      expect(h.vence_en).not.toEqual(venceEn("formular", tarde, ctx));
+    });
+  });
+
+  it("el cambio de estado va aparte del detalle de quien llama", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ctx = await contextoDeMejora(tx, ahora);
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(AHORA, tx));
+      const propio = {
+        antes: { titulo: "Formatos sin diligenciar" },
+        despues: { titulo: "Formatos de entrega de turno sin diligenciar" },
+        justificacion: "El título no decía qué formatos",
+      };
+      await transicionarHallazgo(
+        tx,
+        b.admin,
+        await bloquearHallazgo(tx, id),
+        "reclasificar",
+        { rumbo: { quedaEn: "por_aceptar" }, detalle: propio },
+        ctx,
+      );
+      const estado = { antes: "por_aceptar", despues: "por_aceptar" };
+      expect((await eventos(tx, id)).at(-1)?.detalle).toEqual({ ...propio, estado });
+      const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND accion = 'mejora_reclasificar'`;
+      expect(bitacora.detalle).toEqual({ ...propio, estado, codigo: (await hallazgo(tx, id)).codigo, ronda: 1 });
+
+      // Las claves del motor no las pone quien llama: es un error de programación, no una frase para la persona.
+      for (const clave of ["estado", "codigo", "ronda", "acta"]) {
+        const intento = transicionarHallazgo(tx, b.lider, await bloquearHallazgo(tx, id), "aceptar", { detalle: { [clave]: 1 } }, ctx);
+        const error = await intento.catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect(error).not.toBeInstanceOf(ErrorMejora);
+        expect((error as Error).message).toContain(clave);
+      }
+      expect((await eventos(tx, id)).map((e) => e.tipo)).toEqual(["registrar", "reclasificar"]);
+      expect((await hallazgo(tx, id)).estado).toBe("por_aceptar");
     });
   });
 
