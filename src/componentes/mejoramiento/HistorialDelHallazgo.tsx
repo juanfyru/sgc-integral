@@ -29,6 +29,9 @@ const FRASE: Record<string, string> = {
   cargar: "Cargó el hallazgo",
   reclasificar: "Reclasificó el hallazgo",
   ajustar: "Decidió un ajuste del plan",
+  ocurrencia: "Añadió una ocurrencia",
+  editado: "Editó la identificación",
+  proceso_cambiado: "Cambió el proceso",
 };
 
 /** El historial del hallazgo, del más antiguo al más reciente (spec 15 §16.2). Solo lo ve quien ve el hallazgo completo. */

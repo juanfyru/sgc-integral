@@ -6,15 +6,27 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
-import { alcanceProcesos, enAlcance } from "@/lib/alcance";
-import { EsquemaHallazgo, type HallazgoValidado } from "@/lib/esquemas/mejoramiento";
+import { registrarAuditoria } from "@/db/consultas/admin";
+import { alcanceProcesos, enAlcance, puedeVerHallazgo } from "@/lib/alcance";
+import {
+  EsquemaAnulacion,
+  EsquemaCambioDeProceso,
+  EsquemaHallazgo,
+  EsquemaOcurrencia,
+  EsquemaReclasificacion,
+  type HallazgoValidado,
+} from "@/lib/esquemas/mejoramiento";
 import { esExterno } from "@/lib/mejoramiento/origenes";
-import { ErrorMejora, type Clase, type Criticidad, type HallazgoBase, type Origen } from "@/lib/mejoramiento/tipos";
+import { formularAntesDe } from "@/lib/mejoramiento/plazos";
+import { destinoDeReclasificacion, type Perfil } from "@/lib/mejoramiento/reclasificar";
+import { aceptadoVaA } from "@/lib/mejoramiento/reglas";
+import { ErrorMejora, TERMINALES, type Clase, type Criticidad, type HallazgoBase, type Origen } from "@/lib/mejoramiento/tipos";
+import { DESDE, YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { activosDeRol, avisarDeMejora } from "./avisos";
+import { activosDeRol, avisarDeMejora, avisarDelTurno, ENTIDAD_HALLAZGO, lideresOAdmins } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
-import { legible, nacerHallazgo, type FilaNueva } from "./flujo";
+import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
 
 /** Los campos de la identificación (spec §7.1). Los ids y las fechas también llegan como texto del formulario. */
 export type DatosDeHallazgo = {
@@ -38,7 +50,7 @@ export type DatosDeHallazgo = {
   riesgo?: string | null;
   /** Solo en los orígenes externos: obligatoria en «Ente de control» (spec §13.4). */
   fechaLimiteEnte?: string | null;
-  /** La reincidencia la valida y la guarda la Tarea 8 (spec §7.5); hasta entonces no se guarda. */
+  /** Un hallazgo `cerrado` del mismo proceso del que este es reincidencia (spec §7.5). */
   reincidenteDe?: number | null;
   /** El reporte que se convierte lo deja `convertido` la Tarea 18 (spec §7.3); hasta entonces no se usa. */
   reporteId?: number | null;
@@ -98,7 +110,7 @@ function filaDe(v: HallazgoValidado): Omit<FilaNueva, "codigo" | "anio" | "conse
     medicionId: v.medicionId,
     riesgo: v.riesgo,
     fechaLimiteEnte: v.fechaLimiteEnte,
-    reincidenteDe: null,
+    reincidenteDe: v.reincidenteDe,
   };
 }
 
@@ -137,6 +149,7 @@ export async function registrarHallazgo(
       }
       const c = await contextoDeMejora(tx, ahora);
       await revisarIdentificacion(tx, v, c);
+      await exigirReincidencia(tx, v.reincidenteDe, v.procesoId);
       const lideres = await lideresDeProceso(v.procesoId, { sql: tx });
       const nacioAceptado = esExterno(v.origen) || lideres.length === 0 || lideres.includes(sesion.usuarioId);
       const anio = Number(fechaEnZona(c.ahora, c.zona).slice(0, 4));
@@ -144,6 +157,441 @@ export async function registrarHallazgo(
       const h = await nacerHallazgo(tx, sesion, { ...filaDe(v), codigo, anio, consecutivo }, "registrar", { rumbo: { nacioAceptado } }, c);
       if (esExterno(v.origen)) await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
       return { id: h.id, codigo: h.codigo };
+    }),
+  );
+}
+
+const SOLO_CERRADO = "Solo se marca reincidencia de un hallazgo cerrado";
+
+/**
+ * La reincidencia solo enlaza un hallazgo `cerrado` del **mismo proceso** (spec §7.5). Quien no ve el hallazgo de otro
+ * proceso recibe la misma frase que si no existiera. Solo lecturas: un cerrado ya no cambia.
+ */
+async function exigirReincidencia(tx: TransactionSql, anteriorId: number | null, procesoId: number, propioId?: number): Promise<void> {
+  if (anteriorId === null) return;
+  const [o] = await tx`SELECT proceso_id, estado FROM mejora_hallazgos WHERE id = ${anteriorId}`;
+  if (!o || anteriorId === propioId || Number(o.proceso_id) !== procesoId) throw new ErrorMejora(`${SOLO_CERRADO} del mismo proceso`);
+  if (o.estado !== "cerrado") throw new ErrorMejora(SOLO_CERRADO);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La identificación como diferencia (editar y reclasificar guardan el antes y el después en su evento)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CAMPOS = [
+  "clase", "origen", "fuente", "referenciaCaso", "detectadoEn", "procesoId", "subprocesoId", "criticidad", "titulo",
+  "descripcion", "requisitoClausula", "requisitoNormaId", "requisitoDocumentoId", "documentoId", "indicadorId",
+  "medicionId", "riesgo", "fechaLimiteEnte", "reincidenteDe",
+] as const;
+type Campo = (typeof CAMPOS)[number];
+type Identificacion = Record<Campo, string | number | null>;
+
+const idONulo = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
+
+/** La fila completa del hallazgo, con las dos fechas como texto del día. */
+async function leerFila(tx: TransactionSql, id: number) {
+  const [f] = await tx`SELECT *, to_char(detectado_en, 'YYYY-MM-DD') AS detectado, to_char(fecha_limite_ente, 'YYYY-MM-DD') AS limite
+    FROM mejora_hallazgos WHERE id = ${id}`;
+  if (!f) throw new ErrorMejora(NO_EXISTE);
+  return f;
+}
+
+function identificacionDeFila(f: Record<string, unknown>): Identificacion {
+  return {
+    clase: f.clase as string,
+    origen: f.origen as string,
+    fuente: (f.fuente as string | null) ?? null,
+    referenciaCaso: (f.referencia_caso as string | null) ?? null,
+    detectadoEn: f.detectado as string,
+    procesoId: Number(f.proceso_id),
+    subprocesoId: idONulo(f.subproceso_id),
+    criticidad: (f.criticidad as string | null) ?? null,
+    titulo: f.titulo as string,
+    descripcion: f.descripcion as string,
+    requisitoClausula: (f.requisito_clausula as string | null) ?? null,
+    requisitoNormaId: idONulo(f.requisito_norma_id),
+    requisitoDocumentoId: idONulo(f.requisito_documento_id),
+    documentoId: idONulo(f.documento_id),
+    indicadorId: idONulo(f.indicador_id),
+    medicionId: idONulo(f.medicion_id),
+    riesgo: (f.riesgo as string | null) ?? null,
+    fechaLimiteEnte: (f.limite as string | null) ?? null,
+    reincidenteDe: idONulo(f.reincidente_de),
+  };
+}
+
+function identificacionDeValidado(v: HallazgoValidado): Identificacion {
+  return Object.fromEntries(CAMPOS.map((k) => [k, v[k] ?? null])) as Identificacion;
+}
+
+/** Solo lo que cambió, con su valor de antes y su valor de después. */
+function diferencias(a: Identificacion, b: Identificacion): { antes: Partial<Identificacion>; despues: Partial<Identificacion> } {
+  const antes: Partial<Identificacion> = {};
+  const despues: Partial<Identificacion> = {};
+  for (const k of CAMPOS) {
+    if (a[k] === b[k]) continue;
+    antes[k] = a[k];
+    despues[k] = b[k];
+  }
+  return { antes, despues };
+}
+
+const hayCambios = (d: { antes: object }) => Object.keys(d.antes).length > 0;
+
+const perfilDe = (i: Identificacion): Perfil => ({
+  clase: i.clase as Clase,
+  criticidad: i.criticidad as Criticidad | null,
+  origen: i.origen as Origen,
+  reincidenteDe: i.reincidenteDe as number | null,
+});
+
+/** El cambio de proceso vuelve a avisar a los líderes del proceso nuevo, como si el hallazgo acabara de llegar a «Por aceptar». */
+async function avisarAlProcesoNuevo(tx: TransactionSql, h: HallazgoBase, procesoId: number, titulo: string, actorId: number): Promise<void> {
+  await avisarDelTurno(tx, { ...h, estado: "por_aceptar", procesoId }, titulo, actorId);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ocurrencias (spec §7.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Una ocurrencia más de un hallazgo abierto: no nace otro hallazgo. Avisa a los líderes del proceso y al Admin SGC y, si el
+ * hallazgo espera su evaluación de eficacia, además a quienes pueden verificarlo, como posible recurrencia (§11.4). Quien
+ * no ve el proceso del hallazgo recibe «no existe».
+ */
+export async function registrarOcurrencia(
+  sesion: SesionFlujo,
+  d: { hallazgoId: number; fecha: string; descripcion: string; origen?: "registro" | "reporte" | "medicion"; reporteId?: number | null },
+  opciones?: OpcionesFlujo,
+): Promise<void> {
+  requerirPermiso(sesion, "mejora.registrar");
+  const leido = EsquemaOcurrencia.safeParse(d);
+  if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
+  const o = leido.data;
+  const ahora = opciones?.ahora ?? new Date();
+  return legible(
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      const h = await bloquearHallazgo(tx, o.hallazgoId);
+      if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), h.procesoId)) {
+        throw new ErrorMejora(NO_EXISTE);
+      }
+      if (h.estado === "cerrado") throw new ErrorMejora("El hallazgo ya terminó: regístrelo como reincidencia");
+      if (TERMINALES.includes(h.estado)) throw new ErrorMejora("El hallazgo ya terminó y no admite ocurrencias");
+      const c = await contextoDeMejora(tx, ahora);
+      if (o.fecha > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora("La fecha de la ocurrencia no puede ser futura");
+      const [{ titulo }] = await tx`SELECT titulo FROM mejora_hallazgos WHERE id = ${h.id}`;
+      await tx`INSERT INTO mejora_ocurrencias (hallazgo_id, fecha, descripcion, origen, reporte_id, registrado_por, creado_en)
+        VALUES (${h.id}, ${o.fecha}, ${o.descripcion}, ${o.origen}, ${o.reporteId}, ${sesion.usuarioId}, ${c.ahora})`;
+      await dejarEvento(tx, {
+        hallazgoId: h.id,
+        ronda: h.ronda,
+        tipo: "ocurrencia",
+        detalle: { fecha: o.fecha, origen: o.origen },
+        usuarioId: sesion.usuarioId,
+        ocurrioEn: c.ahora,
+      });
+      await registrarAuditoria(tx, {
+        usuarioId: sesion.usuarioId,
+        accion: "mejora_ocurrencia",
+        entidad: ENTIDAD_HALLAZGO,
+        entidadId: h.id,
+        detalle: { codigo: h.codigo, titulo, fecha: o.fecha, origen: o.origen },
+      });
+      const lideres = await lideresDeProceso(h.procesoId, { sql: tx });
+      const admins = await activosDeRol(tx, ["admin_sgc"]);
+      const destinos = [...new Set([...lideres, ...admins])].filter((u) => u !== sesion.usuarioId);
+      await avisarDeMejora(
+        tx,
+        { tipo: "mejora.ocurrencia", titulo: `Nueva ocurrencia en ${h.codigo}`, hallazgoId: h.id },
+        destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo as string })),
+      );
+      if (h.estado === "en_espera") {
+        const verificadores = (await activosDeRol(tx, ["admin_sgc", "gerencia", "control_interno"])).filter(
+          (u) => u !== sesion.usuarioId && !destinos.includes(u),
+        );
+        await avisarDeMejora(
+          tx,
+          { tipo: "mejora.recurrencia", titulo: `Posible recurrencia en ${h.codigo}, en espera de su evaluación`, hallazgoId: h.id },
+          verificadores.map((usuarioId) => ({ usuarioId, cuerpo: titulo as string })),
+        );
+      }
+    }),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Editar, reclasificar, cambiar de proceso y anular (spec §7.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Mientras el hallazgo está «Por aceptar», quien lo registró corrige cualquier campo de la identificación menos el código;
+ * el evento `editado` guarda el antes y el después de lo que cambió. Si el origen pasa a externo, queda aceptado (§7.4).
+ */
+export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDeHallazgo, opciones?: OpcionesFlujo): Promise<void> {
+  requerirPermiso(sesion, "mejora.registrar");
+  const leido = EsquemaHallazgo.safeParse(d);
+  if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
+  const v = leido.data;
+  const ahora = opciones?.ahora ?? new Date();
+  return legible(
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      const h = await bloquearHallazgo(tx, id);
+      if (h.registradoPor !== sesion.usuarioId) {
+        throw (await puedeVerHallazgo(id, sesion, { sql: tx })) ? new ErrorPermiso() : new ErrorMejora(NO_EXISTE);
+      }
+      if (h.estado !== "por_aceptar") throw new ErrorMejora(YA_CAMBIO);
+      if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
+        throw new ErrorPermiso();
+      }
+      const c = await contextoDeMejora(tx, ahora);
+      await revisarIdentificacion(tx, v, c);
+      await exigirReincidencia(tx, v.reincidenteDe, v.procesoId, h.id);
+      const f = await leerFila(tx, h.id);
+      const antes = identificacionDeFila(f);
+      const despues = identificacionDeValidado(v);
+      const cambios = diferencias(antes, despues);
+      if (!hayCambios(cambios)) throw new ErrorMejora("No cambió ningún dato del hallazgo");
+      await tx`UPDATE mejora_hallazgos SET clase = ${v.clase}, origen = ${v.origen}, fuente = ${v.fuente},
+          referencia_caso = ${v.referenciaCaso}, detectado_en = ${v.detectadoEn}, proceso_id = ${v.procesoId},
+          subproceso_id = ${v.subprocesoId}, criticidad = ${v.criticidad}, titulo = ${v.titulo}, descripcion = ${v.descripcion},
+          requisito_clausula = ${v.requisitoClausula}, requisito_norma_id = ${v.requisitoNormaId},
+          requisito_documento_id = ${v.requisitoDocumentoId}, documento_id = ${v.documentoId}, indicador_id = ${v.indicadorId},
+          medicion_id = ${v.medicionId}, riesgo = ${v.riesgo}, fecha_limite_ente = ${v.fechaLimiteEnte},
+          reincidente_de = ${v.reincidenteDe}
+        WHERE id = ${h.id}`;
+      if (antes.fechaLimiteEnte !== despues.fechaLimiteEnte) {
+        const formularAntes = formularAntesDe({ registradoEn: f.registrado_en as Date, fechaLimiteEnte: v.fechaLimiteEnte }, c);
+        await tx`UPDATE mejora_rondas SET formular_antes_de = ${formularAntes} WHERE hallazgo_id = ${h.id} AND numero = 1`;
+      }
+      await dejarEvento(tx, {
+        hallazgoId: h.id,
+        ronda: h.ronda,
+        tipo: "editado",
+        detalle: { antes: cambios.antes, despues: cambios.despues },
+        usuarioId: sesion.usuarioId,
+        ocurrioEn: c.ahora,
+      });
+      await registrarAuditoria(tx, {
+        usuarioId: sesion.usuarioId,
+        accion: "mejora_editar",
+        entidad: ENTIDAD_HALLAZGO,
+        entidadId: h.id,
+        detalle: { codigo: h.codigo, campos: Object.keys(cambios.antes) },
+      });
+      if (antes.procesoId !== despues.procesoId) await avisarAlProcesoNuevo(tx, h, v.procesoId, v.titulo, sesion.usuarioId);
+      if (!esExterno(antes.origen as Origen) && esExterno(v.origen)) {
+        await transicionarHallazgo(
+          tx,
+          sesion,
+          h,
+          "reclasificar",
+          { rumbo: { quedaEn: aceptadoVaA(v.clase) }, detalle: { justificacion: "El origen pasó a externo al editar el registro" } },
+          c,
+        );
+        await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
+      }
+    }),
+  );
+}
+
+const FIRMADA = "La identificación ya se firmó: no se puede reclasificar";
+
+/**
+ * El Admin SGC corrige la identificación, con justificación, hasta que se envía el plan de la ronda 1 (spec §7.6). La
+ * descripción no se reescribe: la nota queda en el evento. Las consecuencias salen de la tabla de §7.6
+ * (`destinoDeReclasificacion`) y el estado cambia siempre por `transicionarHallazgo`; si cambia, el plazo de formular se
+ * cuenta de nuevo desde este acto (§13.3).
+ */
+export async function reclasificarHallazgo(
+  sesion: SesionFlujo,
+  d: {
+    hallazgoId: number;
+    clase: Clase;
+    criticidad: Criticidad | null;
+    origen: Origen;
+    fuente: string | null;
+    referenciaCaso?: string | null;
+    titulo: string;
+    requisitoClausula: string | null;
+    requisitoNormaId: number | null;
+    requisitoDocumentoId: number | null;
+    reincidenteDe: number | null;
+    fechaLimiteEnte: string | null;
+    nota: string | null;
+    justificacion: string;
+  },
+  opciones?: OpcionesFlujo,
+): Promise<void> {
+  requerirPermiso(sesion, "mejora.gestionar");
+  const leido = EsquemaReclasificacion.safeParse(d);
+  if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
+  const r = leido.data;
+  const ahora = opciones?.ahora ?? new Date();
+  return legible(
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      const h = await bloquearHallazgo(tx, r.hallazgoId);
+      if (!(DESDE.reclasificar as readonly string[]).includes(h.estado)) throw new ErrorMejora(YA_CAMBIO);
+      const [ronda] = await tx`SELECT enviado_en FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
+      if (h.ronda > 1 || ronda?.enviado_en) throw new ErrorMejora(FIRMADA);
+      const c = await contextoDeMejora(tx, ahora);
+      const f = await leerFila(tx, h.id);
+      const antes = identificacionDeFila(f);
+      const unida = EsquemaHallazgo.safeParse({
+        ...antes,
+        clase: r.clase,
+        criticidad: r.criticidad,
+        origen: r.origen,
+        fuente: r.fuente,
+        referenciaCaso: r.referenciaCaso ?? antes.referenciaCaso,
+        titulo: r.titulo,
+        requisitoClausula: r.requisitoClausula,
+        requisitoNormaId: r.requisitoNormaId,
+        requisitoDocumentoId: r.requisitoDocumentoId,
+        reincidenteDe: r.reincidenteDe,
+        fechaLimiteEnte: r.fechaLimiteEnte,
+      });
+      if (!unida.success) throw new ErrorMejora(unida.error.issues[0].message);
+      const v = unida.data;
+      await exigirReincidencia(tx, v.reincidenteDe, h.procesoId, h.id);
+      const despues = identificacionDeValidado(v);
+      const cambios = diferencias(antes, despues);
+      if (!hayCambios(cambios) && !r.nota) throw new ErrorMejora("No cambió ningún dato de la identificación");
+      const quedaEn = destinoDeReclasificacion(perfilDe(antes), perfilDe(despues), h.estado, {
+        correccionRegistrada: f.correccion_registrada_en !== null,
+      });
+      const cambiaElEstado = quedaEn !== h.estado;
+      const cambiaLaFecha = antes.fechaLimiteEnte !== despues.fechaLimiteEnte;
+      if (cambiaElEstado || cambiaLaFecha) {
+        const formularAntes = formularAntesDe(
+          { registradoEn: cambiaElEstado ? c.ahora : (f.registrado_en as Date), fechaLimiteEnte: v.fechaLimiteEnte },
+          c,
+        );
+        await tx`UPDATE mejora_rondas SET formular_antes_de = ${formularAntes} WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
+        if (!cambiaElEstado && h.estado === "por_formular") {
+          await tx`UPDATE mejora_hallazgos SET vence_en = ${formularAntes}, aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${h.id}`;
+        }
+      }
+      await tx`UPDATE mejora_hallazgos SET clase = ${v.clase}, criticidad = ${v.criticidad}, origen = ${v.origen},
+          fuente = ${v.fuente}, referencia_caso = ${v.referenciaCaso}, titulo = ${v.titulo},
+          requisito_clausula = ${v.requisitoClausula}, requisito_norma_id = ${v.requisitoNormaId},
+          requisito_documento_id = ${v.requisitoDocumentoId}, reincidente_de = ${v.reincidenteDe},
+          fecha_limite_ente = ${v.fechaLimiteEnte}
+        WHERE id = ${h.id}`;
+      await transicionarHallazgo(
+        tx,
+        sesion,
+        h,
+        "reclasificar",
+        {
+          rumbo: { quedaEn },
+          detalle: {
+            antes: cambios.antes,
+            despues: cambios.despues,
+            justificacion: r.justificacion,
+            ...(r.nota ? { nota: r.nota } : {}),
+          },
+        },
+        c,
+      );
+      if (!esExterno(antes.origen as Origen) && esExterno(v.origen)) await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
+    }),
+  );
+}
+
+/** El proceso solo se cambia mientras el hallazgo está «Por aceptar», y avisa a los líderes del proceso nuevo (spec §7.6). */
+export async function cambiarProceso(
+  sesion: SesionFlujo,
+  d: { hallazgoId: number; procesoId: number; justificacion: string },
+  opciones?: OpcionesFlujo,
+): Promise<void> {
+  requerirPermiso(sesion, "mejora.gestionar");
+  const leido = EsquemaCambioDeProceso.safeParse(d);
+  if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
+  const r = leido.data;
+  const ahora = opciones?.ahora ?? new Date();
+  return legible(
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      const h = await bloquearHallazgo(tx, r.hallazgoId);
+      if (h.estado !== "por_aceptar") throw new ErrorMejora(YA_CAMBIO);
+      if (h.procesoId === r.procesoId) throw new ErrorMejora("Elija un proceso distinto del actual");
+      const [nuevo] = await tx`SELECT nombre, activo FROM procesos WHERE id = ${r.procesoId}`;
+      if (!nuevo?.activo) throw new ErrorMejora("Elija un proceso activo");
+      const c = await contextoDeMejora(tx, ahora);
+      const [viejo] = await tx`SELECT p.nombre, h.titulo FROM mejora_hallazgos h JOIN procesos p ON p.id = h.proceso_id WHERE h.id = ${h.id}`;
+      // El subproceso es del proceso anterior, y una reincidencia solo vale dentro de su proceso.
+      await tx`UPDATE mejora_hallazgos SET proceso_id = ${r.procesoId}, subproceso_id = NULL, reincidente_de = NULL WHERE id = ${h.id}`;
+      await dejarEvento(tx, {
+        hallazgoId: h.id,
+        ronda: h.ronda,
+        tipo: "proceso_cambiado",
+        detalle: {
+          antes: { procesoId: h.procesoId, proceso: viejo.nombre },
+          despues: { procesoId: r.procesoId, proceso: nuevo.nombre },
+          justificacion: r.justificacion,
+        },
+        usuarioId: sesion.usuarioId,
+        ocurrioEn: c.ahora,
+      });
+      await registrarAuditoria(tx, {
+        usuarioId: sesion.usuarioId,
+        accion: "mejora_cambiar_proceso",
+        entidad: ENTIDAD_HALLAZGO,
+        entidadId: h.id,
+        detalle: { codigo: h.codigo, antes: viejo.nombre, despues: nuevo.nombre, justificacion: r.justificacion },
+      });
+      await avisarAlProcesoNuevo(tx, h, r.procesoId, viejo.titulo as string, sesion.usuarioId);
+    }),
+  );
+}
+
+/**
+ * Anula un hallazgo no terminado, con justificación (spec §7.6): queda «Anulado» con su código y su historia. Sus
+ * actividades sin terminar pasan a canceladas, y el motivo y esas cancelaciones se escriben **antes** del cambio de estado:
+ * un hallazgo anulado ya no admite escrituras (trigger `sgc_impedir_si_hallazgo_terminado`). Avisa a los líderes, a los
+ * responsables de las actividades que se cancelaron y a Gerencia si el plan lo había aprobado ella.
+ */
+export async function anularHallazgo(
+  sesion: SesionFlujo,
+  d: { hallazgoId: number; justificacion: string },
+  opciones?: OpcionesFlujo,
+): Promise<void> {
+  requerirPermiso(sesion, "mejora.gestionar");
+  const leido = EsquemaAnulacion.safeParse(d);
+  if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
+  const r = leido.data;
+  const ahora = opciones?.ahora ?? new Date();
+  return legible(
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      const h = await bloquearHallazgo(tx, r.hallazgoId);
+      if (TERMINALES.includes(h.estado)) throw new ErrorMejora(YA_CAMBIO);
+      const c = await contextoDeMejora(tx, ahora);
+      const [{ titulo }] = await tx`SELECT titulo FROM mejora_hallazgos WHERE id = ${h.id}`;
+      const canceladas = await tx`UPDATE mejora_actividades SET estado = 'cancelada', cancelada_en = ${c.ahora}
+        WHERE hallazgo_id = ${h.id} AND estado IN ('abierta', 'en_proceso') RETURNING responsable_id`;
+      await tx`UPDATE mejora_hallazgos SET anulado_motivo = ${r.justificacion} WHERE id = ${h.id}`;
+      await transicionarHallazgo(
+        tx,
+        sesion,
+        h,
+        "anular",
+        { detalle: { justificacion: r.justificacion, actividadesCanceladas: canceladas.length } },
+        c,
+      );
+      const responsables = canceladas.length
+        ? (
+            await tx`SELECT id FROM usuarios WHERE activo AND id = ANY(${canceladas.map((a) => Number(a.responsable_id))}::bigint[])`
+          ).map((u) => Number(u.id))
+        : [];
+      const [aprobo] = await tx`SELECT 1 FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND aprobado_rol = 'gerencia' AND aprobado_en IS NOT NULL LIMIT 1`;
+      const gerencia = aprobo ? await activosDeRol(tx, ["gerencia"]) : [];
+      const destinos = [...new Set([...(await lideresOAdmins(tx, h.procesoId)), ...responsables, ...gerencia])].filter(
+        (u) => u !== sesion.usuarioId,
+      );
+      await avisarDeMejora(
+        tx,
+        { tipo: "mejora.anulado", titulo: `Se anuló ${h.codigo}`, hallazgoId: h.id },
+        destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo as string })),
+      );
     }),
   );
 }

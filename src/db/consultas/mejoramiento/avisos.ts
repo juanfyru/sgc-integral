@@ -33,7 +33,7 @@ export async function actuaPorElProceso(tx: Cliente, sesion: SesionFlujo, proces
 }
 
 /** Los líderes activos del proceso o, si no tiene ninguno, los Admin SGC activos. */
-async function lideresOAdmins(tx: Cliente, procesoId: number): Promise<number[]> {
+export async function lideresOAdmins(tx: Cliente, procesoId: number): Promise<number[]> {
   const lideres = await lideresDeProceso(procesoId, { sql: tx });
   return lideres.length > 0 ? lideres : adminsActivos({ sql: tx });
 }

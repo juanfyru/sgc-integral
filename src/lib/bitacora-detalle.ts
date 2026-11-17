@@ -916,6 +916,20 @@ export function describirEvento(e: EventoAuditoria): string {
       const fecha = typeof d.fecha === "string" ? d.fecha : "";
       return `Quitó${fecha ? ` el ${fecha}` : " un día"} del calendario de mejoramiento`;
     }
+    // ── Mejoramiento (15A): lo que se hace sobre un hallazgo sin cambiar su estado
+    case "mejora_ocurrencia": {
+      const codigo = texto(d.codigo);
+      return `Añadió una ocurrencia ${codigo ? `al hallazgo ${codigo}` : "a un hallazgo"}`;
+    }
+    case "mejora_editar": {
+      const codigo = texto(d.codigo);
+      return `Editó la identificación ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
+    case "mejora_cambiar_proceso": {
+      const codigo = texto(d.codigo);
+      const a = texto(d.despues);
+      return `Cambió el proceso ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${a ? ` a ${a}` : ""}${conMotivo(d.justificacion)}`;
+    }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1370,6 +1384,9 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_config_guardada: "Guardó la configuración de mejoramiento",
   mejora_dia_agregado: "Añadió un día al calendario de mejoramiento",
   mejora_dia_quitado: "Quitó un día del calendario de mejoramiento",
+  mejora_ocurrencia: "Añadió una ocurrencia a un hallazgo",
+  mejora_editar: "Editó la identificación de un hallazgo",
+  mejora_cambiar_proceso: "Cambió el proceso de un hallazgo",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

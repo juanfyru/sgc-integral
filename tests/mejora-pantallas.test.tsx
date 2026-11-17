@@ -113,6 +113,15 @@ describe("FormularioHallazgo", () => {
   const props = { accion: vi.fn(async () => null), procesos: [{ id: 3, nombre: "Farmacia" }], hoy: "2026-11-18", diasParaAceptar: 3 };
   const pintar = (valores?: Record<string, string>) => renderToStaticMarkup(<FormularioHallazgo {...props} valores={valores} />);
 
+  it("lleva el panel de parecidos del proceso y la salida elegida viaja en el formulario (distinto por omisión)", () => {
+    const html = pintar();
+    expect(html).toContain("Parecidos en Farmacia");
+    const relacion = html.match(/<input[^>]*name="relacion"[^>]*>/)![0];
+    expect(relacion).toContain('value="distinto"');
+    expect(relacion).toContain('form="formulario-hallazgo"');
+    expect(html).toContain('id="formulario-hallazgo"');
+  });
+
   it("siempre muestra el aviso de datos de pacientes", () => {
     expect(pintar()).toContain(AVISO_SIN_PACIENTES);
   });

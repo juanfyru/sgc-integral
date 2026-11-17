@@ -190,3 +190,74 @@ export const EsquemaHallazgo = z
   }));
 
 export type HallazgoValidado = z.output<typeof EsquemaHallazgo>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ocurrencias, reclasificación, anulación y cambio de proceso (spec 15 §7.5 y §7.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** El id de un hallazgo: llega como número o como texto del formulario. */
+const idDeHallazgo = z
+  .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "El hallazgo no es válido" })
+  .transform(Number)
+  .refine((n) => Number.isSafeInteger(n) && n > 0, "El hallazgo no es válido");
+
+/** La justificación de un acto que cambia lo registrado: al menos diez caracteres. */
+export const justificacion = textoAcotado("La justificación", 10, 1000);
+
+export const EsquemaOcurrencia = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    fecha: z
+      .string({ error: "Escriba la fecha de la ocurrencia" })
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Escriba una fecha válida de la ocurrencia")
+      .refine(esFechaReal, "Escriba una fecha válida de la ocurrencia"),
+    descripcion: textoAcotado("La descripción de la ocurrencia", 10, 4000),
+    origen: z.enum(["registro", "reporte", "medicion"], { error: "El origen de la ocurrencia no es válido" }).optional(),
+    reporteId: idOpcional("El reporte no es válido"),
+  })
+  .strict()
+  .transform((d) => ({ ...d, origen: d.origen ?? ("registro" as const) }));
+export type OcurrenciaValidada = z.output<typeof EsquemaOcurrencia>;
+
+export const EsquemaReclasificacion = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    clase: z.enum(CLASES, { error: "Elija la clase del hallazgo" }),
+    criticidad: z
+      .enum(CRITICIDADES, { error: "Elija una criticidad válida" })
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    origen: z.enum(ORIGENES_HALLAZGO, { error: "Elija el origen del hallazgo" }),
+    fuente: textoOpcional("La fuente", 200),
+    referenciaCaso: textoOpcional("La referencia del caso", 100),
+    titulo: z
+      .string({ error: "Escriba el título" })
+      .trim()
+      .min(1, "Escriba el título")
+      .max(150, "El título no puede pasar de 150 caracteres"),
+    requisitoClausula: textoOpcional("La cláusula incumplida", 200),
+    requisitoNormaId: idOpcional("La norma elegida no es válida"),
+    requisitoDocumentoId: idOpcional("El documento del requisito no es válido"),
+    reincidenteDe: idOpcional("El hallazgo anterior no es válido"),
+    fechaLimiteEnte: fechaOpcional("Escriba una fecha límite de respuesta al ente válida"),
+    nota: textoOpcional("La nota", 1000),
+    justificacion,
+  })
+  .strict();
+export type ReclasificacionValidada = z.output<typeof EsquemaReclasificacion>;
+
+export const EsquemaAnulacion = z.object({ hallazgoId: idDeHallazgo, justificacion }).strict();
+
+export const EsquemaCambioDeProceso = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    procesoId: z
+      .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "Elija el proceso" })
+      .transform(Number),
+    justificacion,
+  })
+  .strict();
+
+/** La salida que quien registra eligió ante los parecidos: `ocurrencia:<id>`, `reincidencia:<id>` o `distinto`. */
+export const RELACION_DE_REGISTRO = /^(?:(ocurrencia|reincidencia):(\d{1,15})|distinto)$/;

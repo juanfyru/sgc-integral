@@ -5,6 +5,7 @@ import { useActionState, useState } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
+import { ParecidosDelProceso } from "@/componentes/mejoramiento/ParecidosDelProceso";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { ORIGENES, esExterno, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
 import { AVISO_SIN_PACIENTES, ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
@@ -23,7 +24,7 @@ type Props = {
   diasParaAceptar: number;
   /** Lo escrito antes de un rechazo, o los valores iniciales. */
   valores?: Record<string, string | string[]>;
-  /** Los parecidos del mismo proceso (tarea 8) caben a la derecha del formulario. */
+  /** Lo que se muestra a la derecha, bajo los parecidos del mismo proceso. */
   lateral?: React.ReactNode;
 };
 
@@ -49,10 +50,16 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
   const externo = origen !== "" && esExterno(origen as Origen);
   const origenDelCaso = origen !== "" && pideReferenciaDelCaso(origen as Origen);
   const unico = procesos.length === 1 ? String(procesos[0].id) : "";
+  const [procesoId, setProcesoId] = useState<string>(texto(v, "procesoId", unico));
+  // Lo que se compara con los demás hallazgos se toma al salir de cada campo, no en cada tecla.
+  const [titulo, setTitulo] = useState<string>(texto(v, "titulo"));
+  const [descripcion, setDescripcion] = useState<string>(texto(v, "descripcion"));
+  const [relacion, setRelacion] = useState<string>(texto(v, "relacion", "distinto"));
+  const esOcurrencia = relacion.startsWith("ocurrencia:");
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
+      <form id="formulario-hallazgo" action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
         {estado?.ok === false ? (
           <p role="alert" className="rounded-md border border-estado-critico/40 bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
             {estado.error}
@@ -84,7 +91,7 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
             <input type="date" required max={hoy} defaultValue={texto(v, "detectadoEn", hoy)} className={claseControl} />
           </Campo>
           <Campo etiqueta="Proceso" nombre="procesoId" ayuda={procesos.length === 0 ? "No tiene procesos activos a su cargo." : undefined}>
-            <select required defaultValue={texto(v, "procesoId", unico)} className={claseControl}>
+            <select required value={procesoId} onChange={(e) => setProcesoId(e.target.value)} className={claseControl}>
               <option value="">Elija el proceso</option>
               {procesos.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -124,10 +131,26 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
           <input type="text" required maxLength={200} defaultValue={texto(v, "fuente")} autoComplete="off" className={claseControl} />
         </Campo>
         <Campo etiqueta="Título" nombre="titulo">
-          <input type="text" required maxLength={150} defaultValue={texto(v, "titulo")} autoComplete="off" className={claseControl} />
+          <input
+            type="text"
+            required
+            maxLength={150}
+            defaultValue={texto(v, "titulo")}
+            onBlur={(e) => setTitulo(e.currentTarget.value)}
+            autoComplete="off"
+            className={claseControl}
+          />
         </Campo>
         <Campo etiqueta="Descripción, con la evidencia objetiva" nombre="descripcion" ayuda={AVISO_SIN_PACIENTES}>
-          <textarea required minLength={10} maxLength={4000} rows={5} defaultValue={texto(v, "descripcion")} className={claseControl} />
+          <textarea
+            required
+            minLength={10}
+            maxLength={4000}
+            rows={5}
+            defaultValue={texto(v, "descripcion")}
+            onBlur={(e) => setDescripcion(e.currentTarget.value)}
+            className={claseControl}
+          />
         </Campo>
         <fieldset className="flex flex-col gap-3 rounded-md border border-border p-3">
           <legend className="px-1 text-sm font-medium">{esNc ? "Requisito incumplido" : "Requisito incumplido (opcional)"}</legend>
@@ -178,11 +201,20 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
             Cancelar
           </Link>
           <Boton type="submit" variante="primario" pendiente={pendiente}>
-            Registrar el hallazgo
+            {esOcurrencia ? "Añadir la ocurrencia" : "Registrar el hallazgo"}
           </Boton>
         </div>
       </form>
-      {lateral ? <aside className="min-w-0">{lateral}</aside> : null}
+      <aside className="flex min-w-0 flex-col gap-4">
+        <ParecidosDelProceso
+          procesoId={procesoId}
+          proceso={procesos.find((p) => String(p.id) === procesoId)?.nombre ?? null}
+          texto={`${titulo} ${descripcion}`}
+          relacion={relacion}
+          alCambiar={setRelacion}
+        />
+        {lateral}
+      </aside>
     </div>
   );
 }

@@ -5,15 +5,68 @@
 // Las de la configuración viven en `src/app/admin/acciones-mejoramiento.ts`.
 
 import { mutacion, type EstadoAccion } from "@/app/admin/comun";
-import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
-import { EsquemaHallazgo } from "@/lib/esquemas/mejoramiento";
+import {
+  anularHallazgo,
+  reclasificarHallazgo,
+  registrarHallazgo,
+  registrarOcurrencia,
+} from "@/db/consultas/mejoramiento/registro";
+import {
+  EsquemaAnulacion,
+  EsquemaHallazgo,
+  EsquemaOcurrencia,
+  EsquemaReclasificacion,
+  RELACION_DE_REGISTRO,
+} from "@/lib/esquemas/mejoramiento";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { parsearFormulario } from "@/lib/validacion";
 
-/** Registra un hallazgo y lleva a su página. Los parecidos y las evidencias llegan en las tareas 8 y 9. */
+/**
+ * Registra un hallazgo y lleva a su página. Ante los parecidos del mismo proceso, `relacion` dice la salida que se eligió
+ * (spec §7.5): `ocurrencia:<id>` no crea un hallazgo, añade una ocurrencia al abierto; `reincidencia:<id>` lo enlaza a uno
+ * cerrado; `distinto` (o ausente) nace normal. Las evidencias llegan en la tarea 9.
+ */
 export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
-    const hallazgo = await registrarHallazgo(sesion, parsearFormulario(datos, EsquemaHallazgo));
+    const d = parsearFormulario(datos, EsquemaHallazgo, { omitir: ["relacion"] });
+    const relacion = RELACION_DE_REGISTRO.exec(String(datos.get("relacion") ?? "distinto"));
+    if (!relacion) throw new Error("La salida elegida ante los parecidos no es válida");
+    if (relacion[1] === "ocurrencia") {
+      const hallazgoId = Number(relacion[2]);
+      await registrarOcurrencia(sesion, { hallazgoId, fecha: d.detectadoEn, descripcion: d.descripcion });
+      return rutaDeHallazgo(hallazgoId);
+    }
+    const hallazgo = await registrarHallazgo(sesion, {
+      ...d,
+      reincidenteDe: relacion[1] === "reincidencia" ? Number(relacion[2]) : null,
+    });
     return rutaDeHallazgo(hallazgo.id);
+  });
+}
+
+/** Una ocurrencia más de un hallazgo abierto, desde su página (spec §7.5). */
+export async function registrarOcurrenciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaOcurrencia);
+    await registrarOcurrencia(sesion, { ...d, origen: "registro", reporteId: null });
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Reclasifica un hallazgo, con justificación: solo el Admin SGC (spec §7.6). */
+export async function reclasificarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaReclasificacion);
+    await reclasificarHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Anula un hallazgo no terminado, con justificación: solo el Admin SGC (spec §7.6). */
+export async function anularHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaAnulacion);
+    await anularHallazgo(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
   });
 }

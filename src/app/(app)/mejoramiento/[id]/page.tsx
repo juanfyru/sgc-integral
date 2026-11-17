@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import { anularHallazgoAccion, reclasificarHallazgoAccion, registrarOcurrenciaAccion } from "@/app/acciones-mejoramiento";
+import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
+import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
+import { Ocurrencias } from "@/componentes/mejoramiento/Ocurrencias";
 import { Recorrido, type PasoDeRecorrido } from "@/componentes/mejoramiento/Recorrido";
 import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
 import { InsigniasDelHallazgo } from "@/componentes/mejoramiento/InsigniasDelHallazgo";
@@ -7,9 +11,14 @@ import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentif
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { cerradosDelProceso, documentosVigentesVisibles, normasQueRigen } from "@/db/consultas/mejoramiento/opciones";
 import { diaCorto } from "@/lib/mejoramiento/formato";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
+import { TERMINALES } from "@/lib/mejoramiento/tipos";
+import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
+import { puede } from "@/lib/permisos";
+import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirHallazgo } from "../_comun";
 
@@ -59,6 +68,15 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   const h = await exigirHallazgo(sesion, id);
   const zona = zonaHoraria();
   const completo = h.ve === "completo";
+  const terminado = TERMINALES.includes(h.estado);
+  const gestiona = completo && !terminado && puede(sesion, "mejora.gestionar");
+  // La identificación forma parte de lo firmado desde que se envía el plan de la ronda 1 (spec §7.6).
+  const firmada = h.ronda > 1 || h.rondas.some((r) => r.numero === 1 && r.enviadoEn !== null);
+  const reclasificable = gestiona && (DESDE.reclasificar as readonly string[]).includes(h.estado) && !firmada;
+  const [normas, documentos, cerrados] = reclasificable
+    ? await Promise.all([normasQueRigen(), documentosVigentesVisibles(sesion), cerradosDelProceso(h.procesoId, h.id)])
+    : [[], [], []];
+  const clave = `${h.estado}-${h.eventos.length}`;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -78,6 +96,45 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
           <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} />
+          {completo ? (
+            <Ocurrencias
+              key={`ocurrencias-${h.ocurrencias.length}`}
+              hallazgoId={h.id}
+              ocurrencias={h.ocurrencias}
+              puedeAnadir={!terminado && puede(sesion, "mejora.registrar")}
+              hoy={fechaEnZona(new Date(), zona)}
+              accion={registrarOcurrenciaAccion}
+            />
+          ) : null}
+          {gestiona ? (
+            <div className="flex flex-wrap gap-2">
+              {reclasificable ? (
+                <DialogoReclasificar
+                  key={`reclasificar-${clave}`}
+                  datos={{
+                    hallazgoId: h.id,
+                    codigo: h.codigo,
+                    clase: h.clase,
+                    criticidad: h.criticidad,
+                    origen: h.origen,
+                    fuente: h.fuente,
+                    referenciaCaso: h.referenciaCaso,
+                    titulo: h.titulo,
+                    requisitoClausula: h.requisitoClausula,
+                    requisitoNormaId: h.requisitoNormaId,
+                    requisitoDocumentoId: h.requisitoDocumentoId,
+                    reincidenteDeId: h.reincidenteDe && "id" in h.reincidenteDe ? h.reincidenteDe.id : null,
+                    fechaLimiteEnte: h.fechaLimiteEnte,
+                  }}
+                  normas={normas}
+                  documentos={documentos}
+                  cerrados={cerrados}
+                  accion={reclasificarHallazgoAccion}
+                />
+              ) : null}
+              <DialogoAnular key={`anular-${clave}`} hallazgoId={h.id} codigo={h.codigo} accion={anularHallazgoAccion} />
+            </div>
+          ) : null}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <LoQueSigue texto={h.loQueSigue} />

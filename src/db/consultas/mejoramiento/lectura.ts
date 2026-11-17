@@ -329,6 +329,8 @@ export type DetalleDeHallazgo = {
   procesoId: number;
   proceso: string;
   requisitoClausula: string | null;
+  requisitoNormaId: number | null;
+  requisitoDocumentoId: number | null;
   riesgo: string | null;
   estado: EstadoHallazgo;
   etiqueta: string;
@@ -351,7 +353,7 @@ export type DetalleDeHallazgo = {
   decision: { accionRequerida: boolean | null; justificacion: string | null; decididaEn: Date | null };
   cierre: { resultado: ResultadoCierre | null; cerradoEn: Date | null; lecciones: string | null; anuladoMotivo: string | null };
   rondas: RondaDeDetalle[];
-  ocurrencias: Array<{ id: number; fecha: string; descripcion: string; origen: string }>;
+  ocurrencias: Array<{ id: number; fecha: string; descripcion: string; origen: string; quien: string }>;
   eventos: Array<{ id: number; tipo: string; ronda: number; detalle: unknown; quien: string | null; cuando: Date; fuera: boolean }>;
   turno: string;
   loQueSigue: string;
@@ -508,8 +510,9 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
 
   const completo = ve === "completo";
   const ocurrencias = completo
-    ? await sql`SELECT id, descripcion, origen, to_char(fecha, 'YYYY-MM-DD') AS fecha
-        FROM mejora_ocurrencias WHERE hallazgo_id = ${id} ORDER BY mejora_ocurrencias.fecha, id`
+    ? await sql`SELECT o.id, o.descripcion, o.origen, to_char(o.fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS quien
+        FROM mejora_ocurrencias o JOIN usuarios u ON u.id = o.registrado_por
+        WHERE o.hallazgo_id = ${id} ORDER BY o.fecha, o.id`
     : [];
   const eventos = completo
     ? await sql`SELECT e.id, e.tipo, e.ronda, e.detalle, e.fuera, e.ocurrio_en, u.nombre AS quien
@@ -532,6 +535,8 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     procesoId: h.procesoId,
     proceso: f.proceso as string,
     requisitoClausula: (f.requisito_clausula as string | null) ?? null,
+    requisitoNormaId: idONulo(f.requisito_norma_id),
+    requisitoDocumentoId: idONulo(f.requisito_documento_id),
     riesgo: (f.riesgo as string | null) ?? null,
     estado: h.estado,
     etiqueta: etiquetaDeEstado(h),
@@ -570,6 +575,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       fecha: o.fecha as string,
       descripcion: o.descripcion as string,
       origen: o.origen as string,
+      quien: o.quien as string,
     })),
     eventos: eventos.map((e) => ({
       id: Number(e.id),

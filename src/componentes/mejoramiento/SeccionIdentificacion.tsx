@@ -41,7 +41,6 @@ export function SeccionIdentificacion({
     | "registradoEn"
     | "fechaLimiteEnte"
     | "reincidenteDe"
-    | "ocurrencias"
   >;
   zona: string;
   abierta: boolean;
@@ -83,18 +82,6 @@ export function SeccionIdentificacion({
             </Dato>
           ) : null}
         </dl>
-        {h.ocurrencias.length > 0 ? (
-          <div className="mt-4">
-            <h3 className="text-sm font-semibold">Otras ocurrencias</h3>
-            <ul className="mt-1 list-disc pl-5 text-sm">
-              {h.ocurrencias.map((o) => (
-                <li key={o.id}>
-                  {fechaDeDia(o.fecha)}: {o.descripcion}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
       </div>
     </details>
   );
