@@ -109,6 +109,8 @@ describe("rutas que reciben el cuerpo de una subida", () => {
     "/api/mejoramiento/hallazgos/5/archivos/7",
     "/api/mejoramiento/hallazgos/x/archivos",
     "/api/mejoramiento/hallazgos/5",
+    "/api/mejoramiento/rondas/5",
+    "/api/mejoramiento/actividades/5",
     "/api/mejoramiento/rondas/5/archivos/7",
     "/api/mejoramiento/rondas/x/archivos",
     "/api/mejoramiento/actividades/5/archivos/7",

@@ -74,7 +74,9 @@ const esId = (n: number) => Number.isSafeInteger(n) && n > 0;
 
 /**
  * Lee el dueño. Con `bloquear`, el hallazgo `FOR SHARE` (choca con el `FOR UPDATE` de `transicionarHallazgo`: el estado que
- * se lee es el que rige al escribir la fila) o, en un reporte, el reporte `FOR UPDATE` (dos subidas a la vez cuentan bien).
+ * se lee es el que rige al escribir la fila) o, en un reporte, el reporte `FOR UPDATE`, y los archivos del reporte se cuentan
+ * en otra sentencia, después del candado: en READ COMMITTED cada sentencia toma su propia foto, así quien esperó el candado
+ * cuenta el archivo que la otra subida acaba de confirmar (dos subidas a la vez respetan el tope).
  */
 async function cargarDueno(sql: Cliente, contexto: string, id: number, bloquear: boolean): Promise<Dueno | null> {
   if (!esId(id)) return null;
@@ -91,9 +93,12 @@ async function cargarDueno(sql: Cliente, contexto: string, id: number, bloquear:
         a.responsable_id, a.estado AS estado_actividad
       FROM mejora_actividades a JOIN mejora_hallazgos h ON h.id = a.hallazgo_id WHERE a.id = ${id} ${candado("SHARE", "h, a")}`;
   } else if (contexto === "mejora_reporte") {
-    [f] = await sql`SELECT r.reportado_por, r.estado AS estado_reporte, r.hallazgo_id,
-        (SELECT count(*) FROM archivos a WHERE a.contexto = 'mejora_reporte' AND a.contexto_id = r.id) AS archivos
+    [f] = await sql`SELECT r.reportado_por, r.estado AS estado_reporte, r.hallazgo_id
       FROM mejora_reportes r WHERE r.id = ${id} ${candado("UPDATE", "r")}`;
+    if (f) {
+      const [n] = await sql`SELECT count(*) AS n FROM archivos WHERE contexto = 'mejora_reporte' AND contexto_id = ${id}`;
+      f = { ...f, archivos: n.n };
+    }
   } else {
     return null;
   }
@@ -148,10 +153,9 @@ function cerrado(d: DestinoDeMejora, f: Dueno): string | null {
       if (d.rol === "carga" && !f.cargado) return "El hallazgo no es uno cargado: no lleva el escaneo de la carga";
       return null;
     case "mejora_ronda":
-      if (d.rol === "analisis") {
-        if (estado !== "por_formular") return "El análisis ya no está abierto: no admite más archivos";
-        return f.rondaNumero === f.ronda ? null : "Esta no es la ronda en curso del hallazgo";
-      }
+      // Una ronda anterior queda congelada y a la vista (spec §8.7): solo la del hallazgo admite archivos.
+      if (f.rondaNumero !== f.ronda) return RONDA_CONGELADA;
+      if (d.rol === "analisis") return estado === "por_formular" ? null : "El análisis ya no está abierto: no admite más archivos";
       return estado === "por_verificar" || estado === "en_espera" ? null : "La verificación no está abierta: no admite más archivos";
     case "mejora_actividad":
       if (estado !== "en_ejecucion") return "El hallazgo no está en ejecución: la actividad no admite más archivos";
@@ -160,6 +164,8 @@ function cerrado(d: DestinoDeMejora, f: Dueno): string | null {
         : null;
   }
 }
+
+const RONDA_CONGELADA = "Esa ronda ya está congelada: solo la ronda en curso admite archivos";
 
 const SIN_PERMISO = "Sin permiso para adjuntar este archivo";
 
@@ -199,14 +205,16 @@ export async function exigirDestinoAbierto(
   usuarioId: number,
   rol?: string,
 ): Promise<void> {
+  if (contexto in ROLES_POR_DESTINO && rol === undefined) {
+    throw new Error(`exigirDestinoAbierto: el destino ${contexto} exige el rol del archivo`);
+  }
   const f = await cargarDueno(tx, contexto, contextoId, true);
   if (!f) throw new ErrorMejora(SIN_DUENO);
   const [u] = await tx`SELECT rol FROM usuarios WHERE id = ${usuarioId} AND activo`;
   if (!u) throw new ErrorMejora(SIN_PERMISO);
   const roles: readonly string[] = ROLES_POR_DESTINO[contexto as keyof typeof ROLES_POR_DESTINO] ?? [];
-  const elegido = rol ?? roles[0];
-  if (roles.length > 0 && !roles.includes(elegido ?? "")) throw new ErrorMejora("El rol del archivo no es válido para este destino");
-  const destino = { contexto, id: contextoId, ...(roles.length > 0 ? { rol: elegido } : {}) } as DestinoDeMejora;
+  if (roles.length > 0 && !roles.includes(rol ?? "")) throw new ErrorMejora("El rol del archivo no es válido para este destino");
+  const destino = { contexto, id: contextoId, ...(roles.length > 0 ? { rol } : {}) } as DestinoDeMejora;
   const r = await evaluar(tx, { usuarioId, rol: u.rol }, destino, f);
   if (r && !r.ok) throw new ErrorMejora(r.error);
 }
@@ -249,6 +257,7 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   if (!f) return NO_EXISTE;
   const destino = { contexto: a.contexto, id: a.contextoId, rol: a.rol } as DestinoDeMejora;
   const esReporte = a.contexto === "mejora_reporte";
+  if (a.contexto === "mejora_ronda" && f.rondaNumero !== f.ronda) return RONDA_CONGELADA;
   if (!esReporte && (TERMINALES as readonly string[]).includes(f.estado ?? "")) {
     return "El hallazgo ya terminó: sus archivos no se quitan";
   }
@@ -290,14 +299,17 @@ export async function quitarArchivoDeMejora(
 ): Promise<void> {
   if (!esId(archivoId)) throw new ErrorMejora(NO_EXISTE);
   const ruta = await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    // Orden de candados: el dueño (el hallazgo, o el reporte) primero y la fila de `archivos` después, como al subir.
     const [a] = await tx`SELECT id, ruta, nombre_original, contexto, contexto_id, rol FROM archivos
-      WHERE id = ${archivoId} AND version_id IS NULL AND contexto = ANY(${CONTEXTOS_DE_MEJORA}) FOR UPDATE`;
+      WHERE id = ${archivoId} AND version_id IS NULL AND contexto = ANY(${CONTEXTOS_DE_MEJORA})`;
     if (!a || !(await puedeAbrirArchivoDeMejora({ contexto: a.contexto, contextoId: Number(a.contexto_id) }, sesion, { sql: tx }))) {
       throw new ErrorMejora(NO_EXISTE);
     }
     const contextoId = Number(a.contexto_id);
     const motivo = await porQueNoSeQuita(tx, sesion, { id: archivoId, contexto: a.contexto, contextoId, rol: a.rol }, true);
     if (motivo) throw new ErrorMejora(motivo);
+    const [vigente] = await tx`SELECT id FROM archivos WHERE id = ${archivoId} FOR UPDATE`;
+    if (!vigente) throw new ErrorMejora(NO_EXISTE);
     await tx`DELETE FROM archivos WHERE id = ${archivoId}`;
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,

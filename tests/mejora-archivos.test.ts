@@ -104,6 +104,8 @@ describe("autorizarSubida: el hallazgo", () => {
       await estado(tx, h.id, "en_ejecucion", { cargado: true });
       expect((await autorizarSubida(b.admin, d, subida(tx))).ok).toBe(true);
       expect(await autorizarSubida(b.lider, d, subida(tx))).toMatchObject({ ok: false, estado: 403 });
+      expect(await autorizarSubida(b.consulta, d, subida(tx))).toMatchObject({ ok: false, estado: 404 });
+      expect(await autorizarSubida(b.admin, { ...d, id: 987654321 }, subida(tx))).toMatchObject({ ok: false, estado: 404 });
       await estado(tx, h.id, "en_ejecucion", { cargado: false });
       expect(await autorizarSubida(b.admin, d, subida(tx))).toMatchObject({ ok: false, estado: 409 });
       await estado(tx, h.id, "cerrado", { cargado: true });
@@ -138,8 +140,36 @@ describe("autorizarSubida: la ronda", () => {
       await estado(tx, h.id, "en_espera");
       expect((await autorizarSubida(b.control, d, subida(tx))).ok).toBe(true);
       expect(await autorizarSubida(b.lider, d, subida(tx))).toMatchObject({ ok: false, estado: 403 });
+      expect(await autorizarSubida(b.consulta, d, subida(tx))).toMatchObject({ ok: false, estado: 404 });
+      expect(await autorizarSubida(b.control, { ...d, id: 987654321 }, subida(tx))).toMatchObject({ ok: false, estado: 404 });
       await estado(tx, h.id, "por_formular");
       expect(await autorizarSubida(b.control, d, subida(tx))).toMatchObject({ ok: false, estado: 409 });
+    }));
+
+  it("una ronda anterior queda congelada: ni subir ni quitar, tampoco el Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const { b, h } = await escena(tx);
+      const r1 = await rondaPorSql(tx, h.id, 1);
+      await rondaPorSql(tx, h.id, 2);
+      await estado(tx, h.id, "por_verificar", { ronda: 2 });
+      const d = { contexto: "mejora_ronda", id: r1, rol: "verificacion" } as const;
+      expect(await autorizarSubida(b.control, d, subida(tx))).toMatchObject({ ok: false, estado: 409 });
+      await expect(exigirDestinoAbierto(tx, "mejora_ronda", r1, b.control.usuarioId, "verificacion")).rejects.toBeInstanceOf(ErrorTramite);
+      // El archivo ya estaba cuando la ronda era la en curso.
+      await estado(tx, h.id, "por_verificar", { ronda: 1 });
+      const { id } = await registrarArchivo(
+        {
+          versionId: null, rol: "verificacion", ruta: `mejoramiento/rondas/${r1}/${Date.now()}-v.pdf`, nombreOriginal: "v.pdf",
+          extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "d".repeat(64),
+          contexto: "mejora_ronda", contextoId: r1,
+        },
+        b.control.usuarioId,
+        { sql: tx },
+      );
+      await estado(tx, h.id, "por_verificar", { ronda: 2 });
+      await expect(quitarArchivoDeMejora(b.admin, id, { sql: tx })).rejects.toThrow(/congelada/);
+      await expect(quitarArchivoDeMejora(b.control, id, { sql: tx })).rejects.toThrow(/congelada/);
+      expect(await tx`SELECT 1 FROM archivos WHERE id = ${id}`).toHaveLength(1);
     }));
 });
 
@@ -264,7 +294,7 @@ describe("quitar", () => {
         return id;
       };
       const f1 = await subir("uno.pdf");
-      await expect(quitarArchivoDeMejora(b.control, f1, { sql: tx })).rejects.toThrow();
+      await expect(quitarArchivoDeMejora(b.control, f1, { sql: tx })).rejects.toThrow("No puede quitar este archivo");
       await quitarArchivoDeMejora(b.lider, f1, { sql: tx });
       expect(await tx`SELECT 1 FROM archivos WHERE id = ${f1}`).toHaveLength(0);
       const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'eliminar_archivo' AND entidad_id = ${f1}`;
@@ -277,13 +307,89 @@ describe("quitar", () => {
 
       const f3 = await subir("tres.pdf");
       await estado(tx, h.id, "cerrado");
-      await expect(quitarArchivoDeMejora(b.admin, f3, { sql: tx })).rejects.toThrow();
-      await expect(quitarArchivoDeMejora(b.lider, f3, { sql: tx })).rejects.toThrow();
+      await expect(quitarArchivoDeMejora(b.admin, f3, { sql: tx })).rejects.toThrow("El hallazgo ya terminó");
+      await expect(quitarArchivoDeMejora(b.lider, f3, { sql: tx })).rejects.toThrow("El hallazgo ya terminó");
       expect(await tx`SELECT 1 FROM archivos WHERE id = ${f3}`).toHaveLength(1);
       // Quien no ve el archivo no lo quita ni sabe que existe.
       await expect(quitarArchivoDeMejora(b.consulta, f3, { sql: tx })).rejects.toThrow(/no existe/);
       await expect(quitarArchivoDeMejora(b.admin, 987654321, { sql: tx })).rejects.toThrow(/no existe/);
     }));
+});
+
+describe("quitar un archivo de corrección y exigirDestinoAbierto por rol", () => {
+  it("quien lo subió ya no puede cuando su paso se cerró; el Admin SGC sí, mientras el hallazgo no termine", () =>
+    revertida(sql, async (tx) => {
+      const { b, h } = await escena(tx);
+      await estado(tx, h.id, "por_corregir");
+      const { id: f1 } = await registrarArchivo(
+        {
+          versionId: null, rol: "correccion", ruta: `mejoramiento/hallazgos/${h.id}/${Date.now()}-c1.pdf`, nombreOriginal: "c1.pdf",
+          extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "e".repeat(64),
+          contexto: "mejora_hallazgo", contextoId: h.id,
+        },
+        b.lider.usuarioId,
+        { sql: tx },
+      );
+      await estado(tx, h.id, "por_decidir");
+      await expect(quitarArchivoDeMejora(b.lider, f1, { sql: tx })).rejects.toThrow("No puede quitar este archivo");
+      await quitarArchivoDeMejora(b.admin, f1, { sql: tx });
+      expect(await tx`SELECT 1 FROM archivos WHERE id = ${f1}`).toHaveLength(0);
+    }));
+
+  it("exigirDestinoAbierto: corrección y análisis, y el rol es obligatorio donde hay roles", () =>
+    revertida(sql, async (tx) => {
+      const { b, h } = await escena(tx);
+      const r1 = await rondaPorSql(tx, h.id, 1);
+      await estado(tx, h.id, "por_corregir");
+      await exigirDestinoAbierto(tx, "mejora_hallazgo", h.id, b.lider.usuarioId, "correccion");
+      await estado(tx, h.id, "por_formular");
+      await expect(exigirDestinoAbierto(tx, "mejora_hallazgo", h.id, b.lider.usuarioId, "correccion")).rejects.toBeInstanceOf(ErrorTramite);
+      await exigirDestinoAbierto(tx, "mejora_ronda", r1, b.lider.usuarioId, "analisis");
+      await estado(tx, h.id, "en_revision");
+      await expect(exigirDestinoAbierto(tx, "mejora_ronda", r1, b.lider.usuarioId, "analisis")).rejects.toBeInstanceOf(ErrorTramite);
+      const sinRol = exigirDestinoAbierto(tx, "mejora_hallazgo", h.id, b.lider.usuarioId);
+      await expect(sinRol).rejects.toThrow(/rol/);
+      await expect(sinRol).rejects.not.toBeInstanceOf(ErrorTramite);
+    }));
+});
+
+describe("el tope de tres archivos de un reporte con subidas simultáneas", () => {
+  it("la segunda transacción ve el archivo que la primera acaba de confirmar", async () => {
+    // Datos confirmados (dos conexiones distintas): se limpian en `finally`; el usuario lleva nombre único y no se borra.
+    const reportante = await sql.begin((tx) => usuarioDePrueba(tx, { rol: "consulta" }));
+    const [r] = await sql`INSERT INTO mejora_reportes (reportado_por, reportado_en, descripcion, visto_en, estado, vence_en)
+      VALUES (${reportante.usuarioId}, ${AHORA}, 'Algo que vi', '2026-11-16', 'recibido', ${AHORA}) RETURNING id`;
+    const reporteId = Number(r.id);
+    try {
+      for (let i = 0; i < 2; i += 1) await archivoPorSql(sql as unknown as TransactionSql, "mejora_reporte", reporteId);
+      const datosDe = (nombre: string) => ({
+        versionId: null, rol: "evidencia", ruta: `mejoramiento/reportes/${reporteId}/${Date.now()}-${nombre}`, nombreOriginal: nombre,
+        extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "f".repeat(64),
+        contexto: "mejora_reporte", contextoId: reporteId,
+      });
+      const subir = (nombre: string) => registrarArchivo(datosDe(nombre), reportante.usuarioId);
+      // La primera sube dentro de una transacción abierta; la segunda se encola en el candado del reporte; entonces confirma la
+      // primera. La segunda debe contar el archivo recién confirmado.
+      let segunda!: Promise<unknown>;
+      const primera = sql.begin(async (tx) => {
+        await registrarArchivo(datosDe("x.pdf"), reportante.usuarioId, { sql: tx });
+        segunda = subir("y.pdf").then(
+          () => ({ status: "fulfilled" as const }),
+          (reason: unknown) => ({ status: "rejected" as const, reason }),
+        );
+        await new Promise((resolver) => setTimeout(resolver, 300));
+      });
+      await primera;
+      const resultado = (await segunda) as { status: string; reason?: unknown };
+      expect(resultado.status).toBe("rejected");
+      expect(resultado.reason).toBeInstanceOf(ErrorTramite);
+      const [{ n }] = await sql`SELECT count(*)::int AS n FROM archivos WHERE contexto = 'mejora_reporte' AND contexto_id = ${reporteId}`;
+      expect(n).toBe(3);
+    } finally {
+      await sql`DELETE FROM archivos WHERE contexto = 'mejora_reporte' AND contexto_id = ${reporteId}`;
+      await sql`DELETE FROM mejora_reportes WHERE id = ${reporteId}`;
+    }
+  });
 });
 
 describe("registrarArchivo", () => {
