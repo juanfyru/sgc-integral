@@ -134,9 +134,49 @@ describe("destinoDe, fila por fila", () => {
     expect(ACCIONES_HALLAZGO).toHaveLength(25);
   });
 
+  // Copiada a mano de la columna «Desde» del spec §8.2 (y de las filas fijadas por el controlador); nunca derivada de DESDE.
+  const ESPERADO: Record<AccionHallazgo, readonly EstadoHallazgo[] | "nuevo" | "no_terminal"> = {
+    registrar: "nuevo",
+    aceptar: ["por_aceptar"],
+    rechazar: ["por_aceptar"],
+    retirar: ["rechazo"],
+    sostener: ["rechazo"],
+    confirmar_hallazgo: ["arbitraje"],
+    confirmar_rechazo: ["arbitraje"],
+    corregir: ["por_corregir"],
+    decidir_si: ["por_decidir", "por_validar"],
+    decidir_no: ["por_decidir"],
+    validar_correccion: ["por_validar"],
+    devolver_correccion: ["por_validar"],
+    enviar_plan: ["por_formular"],
+    devolver_plan: ["en_revision", "en_aprobacion"],
+    revisar_plan: ["en_revision"],
+    aprobar_plan: ["en_aprobacion"],
+    completar: ["en_ejecucion"],
+    verificar_implementacion: ["por_verificar"],
+    evaluar_eficaz: ["en_espera"],
+    evaluar_no_eficaz: ["en_espera"],
+    cerrar: ["por_cerrar"],
+    anular: "no_terminal",
+    cargar: "nuevo",
+    reclasificar: ["por_aceptar", "rechazo", "arbitraje", "por_corregir", "por_decidir", "por_validar", "por_formular"],
+    ajustar: ["en_ejecucion", "por_verificar"],
+  };
+
+  it("DESDE es la tabla del spec §8.2", () => {
+    expect(DESDE).toEqual(ESPERADO);
+  });
+
+  it("destinos prohibidos explícitos", () => {
+    expect(() => destinoDe("decidir_si", h({ estado: "por_formular" }), {})).toThrow(YA_CAMBIO);
+    expect(() => destinoDe("revisar_plan", h({ estado: "en_aprobacion" }), {})).toThrow(YA_CAMBIO);
+    expect(() => destinoDe("aprobar_plan", h({ estado: "en_revision" }), {})).toThrow(YA_CAMBIO);
+    expect(() => destinoDe("corregir", h({ estado: "por_decidir" }), {})).toThrow(YA_CAMBIO);
+  });
+
   it("ningún salto fuera de la tabla", () => {
     for (const accion of ACCIONES_HALLAZGO) {
-      const desde = DESDE[accion];
+      const desde = ESPERADO[accion];
       if (desde === "nuevo") continue;
       for (const estado of ESTADOS_HALLAZGO) {
         const permitido = desde === "no_terminal" ? !TERMINALES.includes(estado) : desde.includes(estado);
