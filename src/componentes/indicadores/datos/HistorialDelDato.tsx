@@ -1,7 +1,7 @@
 import { IconoFormato } from "@/componentes/documentos/IconoFormato";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
-import { CerrarDeNuevoDato, DialogoReabrirDato } from "@/componentes/indicadores/cierre/DialogoReabrir";
+import { advertenciaDelPeriodoVacio, CerrarDeNuevoDato, DialogoReabrirDato } from "@/componentes/indicadores/cierre/DialogoReabrir";
 import { ActualizarCategoriasDelDato } from "@/componentes/indicadores/medicion/ActualizarCategorias";
 import type { EventoDeDato, PeriodoDeDato } from "@/db/consultas/indicadores/datos-periodos";
 import type { ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
@@ -112,7 +112,10 @@ function Soportes({ datoId, soportes }: { datoId: number; soportes: Soporte[] })
  * el de antes; quién lo reportó y quién lo corrigió; sus soportes y su estado. Con `editable` (quien puede reportar el dato),
  * desde su fila se corrige un periodo reportado sin cerrar y se reporta uno pendiente que se pide. Con `administra`, se
  * reabre un periodo cerrado (con la lista de lo que se reabre en cascada, `reaperturas`, anexo 14C §3.5), se cierra de
- * nuevo uno reabierto y se actualizan las categorías de uno pendiente de un dato con dimensión (§5.7). Debajo, el historial de cada periodo, de solo inserción: qué había, qué quedó, quién y cuándo.
+ * nuevo uno reabierto y se actualizan las categorías de uno pendiente de un dato con dimensión (§5.7). Si el reabierto tiene
+ * la lista vacía y su dimensión ya tiene categorías activas (`categoriasActivas`, `hayCategoriasActivas`), «Cerrar de nuevo»
+ * lo advierte antes de cerrarlo sin dato (complemento de la 14C, decisión 12 del usuario). Debajo, el historial de cada
+ * periodo, de solo inserción: qué había, qué quedó, quién y cuándo.
  */
 export function HistorialDelDato({
   datoId,
@@ -122,6 +125,7 @@ export function HistorialDelDato({
   editable,
   administra = false,
   reaperturas = new Map(),
+  categoriasActivas = false,
   ahora,
 }: {
   datoId: number;
@@ -131,6 +135,8 @@ export function HistorialDelDato({
   editable: boolean;
   administra?: boolean;
   reaperturas?: Map<number, ReaperturaEnTexto>;
+  /** La dimensión del dato tiene hoy alguna categoría activa (`hayCategoriasActivas`). */
+  categoriasActivas?: boolean;
   ahora: Date;
 }) {
   const conAcciones = editable || administra;
@@ -150,6 +156,7 @@ export function HistorialDelDato({
         {periodos.map((p) => {
           const correccion = ultimaCorreccion(historiales.get(p.id) ?? []);
           const antes = correccion ? objeto(objeto(correccion.detalle).antes).valor : undefined;
+          const actualiza = administra && p.estado === "pendiente" && p.sePide && p.categorias !== null;
           return (
             <tr key={p.id}>
               <td className={`${celda} whitespace-nowrap`}>{etiquetaDePeriodo(p.periodo, true)}</td>
@@ -180,14 +187,16 @@ export function HistorialDelDato({
                     {editable && seReportaDesdeLaFila(p) ? (
                       <AccionDelPeriodo datoId={datoId} periodo={paraReportar(p, ahora)} soportes={soportes.get(p.id) ?? []} />
                     ) : null}
-                    {administra && p.estado === "pendiente" && p.sePide && p.categorias !== null ? (
-                      <ActualizarCategoriasDelDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo)} />
-                    ) : null}
+                    {actualiza ? <ActualizarCategoriasDelDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo)} /> : null}
                     {administra && p.estado === "cerrado" && reaperturas.has(p.id) ? (
                       <DialogoReabrirDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo, true)} reapertura={reaperturas.get(p.id)!} />
                     ) : null}
                     {administra && p.estado !== "cerrado" && p.reabierto ? (
-                      <CerrarDeNuevoDato periodoId={p.id} etiqueta={etiquetaDePeriodo(p.periodo, true)} />
+                      <CerrarDeNuevoDato
+                        periodoId={p.id}
+                        etiqueta={etiquetaDePeriodo(p.periodo, true)}
+                        advertencia={p.sinCategorias && categoriasActivas ? advertenciaDelPeriodoVacio(actualiza) : null}
+                      />
                     ) : null}
                   </div>
                 </td>

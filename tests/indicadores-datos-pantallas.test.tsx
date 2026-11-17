@@ -48,6 +48,7 @@ vi.mock("@/app/admin/acciones-indicadores", () => ({
 
 import PaginaDato from "@/app/(app)/indicadores/datos/[id]/page";
 import PaginaDatos from "@/app/(app)/indicadores/datos/page";
+import { advertenciaDelPeriodoVacio, FormularioCerrarConAdvertencia } from "@/componentes/indicadores/cierre/DialogoReabrir";
 import { cifraDeDato, conPuntoDeMiles } from "@/componentes/indicadores/datos/comun";
 import { CamposDelDato } from "@/componentes/indicadores/datos/FormularioDato";
 import { EsquemaDatoDeLaPersona } from "@/lib/esquemas/indicadores-datos";
@@ -488,7 +489,79 @@ describe("reabrir y cerrar de nuevo un periodo del dato (anexo 14C, §3.5)", () 
       const suya = await pagina(responsable, datoId);
       expect(suya).not.toContain("Reabrir<");
       expect(suya).not.toContain("Cerrar de nuevo");
+      // Sin dimensión, «Cerrar de nuevo» cierra al pulsar: es el botón del formulario, no abre un diálogo.
+      expect(delAdmin).toMatch(/<button[^>]*type="submit"[^>]*>Cerrar de nuevo<span class="sr-only"> julio de 2026<\/span>/);
+      expect(delAdmin).not.toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Cerrar de nuevo</);
     }));
+
+  /**
+   * Decisión 12 del usuario (complemento de la 14C): el reabierto con la lista vacía se cerraría sin dato aunque su dimensión
+   * ya tenga categorías activas. «Cerrar de nuevo» lo advierte en un diálogo antes de cerrar; sin categorías activas no hay
+   * nada que advertir y cierra al pulsar, como siempre.
+   */
+  it("con la lista vacía y categorías activas en su dimensión, «Cerrar de nuevo» abre un diálogo; sin activas, cierra al pulsar", () =>
+    enTransaccion(async (tx) => {
+      consecutivo += 1;
+      const dimension = await dimensionDePrueba(tx, `ZZ Sedes ${Date.now() % 100_000_000}${consecutivo}`, ["Sede norte", "Sede sur"]);
+      // Las sedes se registraron después del periodo: su lista nace vacía (complemento de la 14C, §5).
+      await tx`UPDATE dimension_categorias SET creado_en = now() WHERE dimension_id = ${dimension.id}`;
+      const procesoId = await procesoNuevo(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const datoId = await datoDePrueba(tx, { procesoId, nombre: NOMBRE, dimensionId: dimension.id, responsables: [responsable.usuarioId] });
+      await indicadorDePrueba(tx, {
+        procesoId,
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T4",
+        aprobadaEn: DIC_2025,
+        dimensionId: dimension.id,
+        variables: { B: { datoId } },
+      });
+      await asegurarPeriodosDeDatos({ sql: tx, datoIds: [datoId] });
+      const admin = await sesionAdmin(tx);
+      const [vacio] = await tx`UPDATE variable_valores SET reabierto_por = ${admin.usuarioId}, reabierto_en = ${OCT_9},
+        reapertura_justificacion = 'Faltaban dos sedes' WHERE variable_id = ${datoId} AND periodo = '2026-10' RETURNING categorias`;
+      expect(vacio.categorias).toEqual([]);
+      const conActivas = await pagina(admin, datoId);
+      expect(conActivas).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Cerrar de nuevo<span class="sr-only"> octubre de 2026<\/span>/);
+      // La fila ofrece también «Actualizar categorías», que el diálogo nombra.
+      expect(conActivas).toContain("Actualizar categorías");
+
+      // Con una sola activa ya advierte; sin ninguna, el botón directo.
+      await tx`UPDATE dimension_categorias SET activo = false WHERE id = ${dimension.categorias[0]}`;
+      expect(await pagina(admin, datoId)).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Cerrar de nuevo</);
+      await tx`UPDATE dimension_categorias SET activo = false WHERE dimension_id = ${dimension.id}`;
+      const sinActivas = await pagina(admin, datoId);
+      expect(sinActivas).toMatch(/<button[^>]*type="submit"[^>]*>Cerrar de nuevo<span class="sr-only"> octubre de 2026<\/span>/);
+      expect(sinActivas).not.toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Cerrar de nuevo</);
+      // Quien no administra no ve el botón, con o sin advertencia.
+      expect(await pagina(responsable, datoId)).not.toContain("Cerrar de nuevo");
+    }));
+
+  it("el diálogo advierte que se cierra sin dato, nombra «Actualizar categorías» solo si la fila lo ofrece y manda solo el id", () => {
+    const formulario = (conActualizar: boolean) =>
+      renderToStaticMarkup(
+        <FormularioCerrarConAdvertencia
+          id={41}
+          titulo="Cerrar de nuevo julio de 2026"
+          advertencia={advertenciaDelPeriodoVacio(conActualizar)}
+          enviar={() => {}}
+          estado={null}
+          pendiente={false}
+          alCerrar={() => {}}
+        />,
+      );
+    const con = formulario(true);
+    expect(con).toContain(
+      "Este periodo no tiene categorías y su dimensión ya tiene categorías activas. Si lo cierra ahora, queda cerrado sin dato. Para que sus responsables lo reporten, pulse antes «Actualizar categorías» en su fila.",
+    );
+    expect(con).toContain(">Volver<");
+    expect(con).toContain(">Cerrar sin dato<");
+    expect(con.match(/<input /g)).toHaveLength(1);
+    expect(con).toContain('<input type="hidden" name="id" value="41"/>');
+    const sin = formulario(false);
+    expect(sin).toContain("Si lo cierra ahora, queda cerrado sin dato.");
+    expect(sin).not.toContain("Actualizar categorías");
+  });
 });
 
 describe("los campos del dato (CamposDelDato)", () => {

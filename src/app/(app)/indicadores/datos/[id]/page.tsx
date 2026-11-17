@@ -8,7 +8,7 @@ import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componen
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { datoBorrable, indicadoresQueLoUsan, opcionesDeDato, pestanaDeDatos } from "@/db/consultas/indicadores/datos";
-import { asegurarPeriodosDeDatos, historialesDeDato, periodosDeDato } from "@/db/consultas/indicadores/datos-periodos";
+import { asegurarPeriodosDeDatos, hayCategoriasActivas, historialesDeDato, periodosDeDato } from "@/db/consultas/indicadores/datos-periodos";
 import { soportesDeDato } from "@/db/consultas/indicadores/datos-soporte";
 import { reaperturaEnTexto, type ReaperturaEnTexto } from "@/db/consultas/indicadores/reapertura";
 import { puedeReportarDato } from "@/lib/alcance";
@@ -53,6 +53,10 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
       if (lista) reaperturas.set(p.id, lista);
     }
   }
+  // «Cerrar de nuevo» un reabierto con la lista vacía advierte si su dimensión ya tiene categorías activas (complemento de la
+  // 14C, decisión 12 del usuario): solo se consulta si hay uno así y quien lee lo puede cerrar.
+  const vacioReabierto = administra && (periodos ?? []).some((p) => p.reabierto && p.estado !== "cerrado" && p.sinCategorias);
+  const categoriasActivas = vacioReabierto ? await hayCategoriasActivas(dato.id) : false;
   // Del más reciente al más viejo: el último que se pide es el más antiguo. Primero el que se puede reportar; el que espera sus
   // categorías (complemento de la 14C, §5.3), solo si no hay otro.
   const pedidos = (periodos ?? []).filter((p) => p.sePide);
@@ -110,6 +114,7 @@ export default async function PaginaDato({ params }: { params: Promise<{ id: str
           editable={reporta}
           administra={administra}
           reaperturas={reaperturas}
+          categoriasActivas={categoriasActivas}
           ahora={ahora}
         />
       </section>

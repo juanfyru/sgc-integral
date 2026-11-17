@@ -712,6 +712,25 @@ const NADIE_PUEDE_REPORTARLO = "Nadie puede reportarlo hasta que tenga categorí
 const SIN_CATEGORIAS_ACTIVAS = "Su dimensión no tiene categorías activas: créelas o actívelas primero";
 
 /**
+ * La dimensión del dato tiene hoy alguna categoría activa, para un `SELECT` sobre `variables_compartidas d` (falso sin
+ * dimensión). Una sola regla para lo que dice la tarea de quien administra (`tareasDeCategoriasPendientes`) y para lo que
+ * advierte «Cerrar de nuevo» un periodo vacío (`hayCategoriasActivas`).
+ */
+const dimensionConActivas = (sql: Cliente) =>
+  sql`EXISTS (SELECT 1 FROM dimension_categorias dc WHERE dc.dimension_id = d.dimension_id AND dc.activo)`;
+
+/**
+ * ¿La dimensión del dato tiene hoy alguna categoría activa? Falso sin dimensión o si el dato no existe. La usa la página del
+ * dato para advertir, antes de «Cerrar de nuevo» un periodo reabierto con la lista vacía, que se cierra sin dato aunque ya
+ * podría reportarse con «Actualizar categorías» (complemento de la 14C, decisión 12 del usuario). Solo lee.
+ */
+export async function hayCategoriasActivas(datoId: number, opciones?: { sql?: Cliente }): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT ${dimensionConActivas(sql)} AS hay FROM variables_compartidas d WHERE d.id = ${datoId}`;
+  return f?.hay === true;
+}
+
+/**
  * «Actualizar las categorías de Total facturado en el mes, octubre de 2026» (complemento de la 14C, §5.2): una tarea por periodo
  * que se pide y no tiene categorías (`periodoSinCategorias`), solo de quien administra indicadores (para los demás no se
  * consulta nada), con el enlace a la página del dato, donde está «Actualizar categorías». No vence ni escala: es
@@ -720,8 +739,7 @@ const SIN_CATEGORIAS_ACTIVAS = "Su dimensión no tiene categorías activas: cré
  */
 export async function tareasDeCategoriasPendientes(sql: Cliente, sesion: SujetoVisibilidad): Promise<Tarea[]> {
   if (!puede(sesion, "indicadores.administrar")) return [];
-  const filas = await sql`SELECT vv.id, vv.variable_id, vv.periodo, d.nombre,
-      EXISTS (SELECT 1 FROM dimension_categorias dc WHERE dc.dimension_id = d.dimension_id AND dc.activo) AS hay_activas
+  const filas = await sql`SELECT vv.id, vv.variable_id, vv.periodo, d.nombre, ${dimensionConActivas(sql)} AS hay_activas
     FROM variable_valores vv JOIN variables_compartidas d ON d.id = vv.variable_id
     WHERE ${periodoQueSePide(sql)} AND ${periodoSinCategorias(sql)} AND ${filtroDatos(sql, sesion)}
     ORDER BY vv.desde, vv.id`;

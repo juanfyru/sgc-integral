@@ -724,7 +724,11 @@ revise la lista y vuelva a intentarlo»; el diálogo queda abierto con la lista 
 usted escribió. Al reabrir un dato se avisa también a sus responsables;
 su fecha límite no se mueve. **Cerrar de nuevo** no cierra una medición cuya fuente sigue abierta
 («Su fuente sigue abierta: ciérrela primero»): cierre primero el periodo del dato, también con
-**Cerrar de nuevo**.
+**Cerrar de nuevo**. Si ese periodo no tiene categorías y su dimensión ya tiene alguna activa,
+**Cerrar de nuevo** se lo advierte antes de cerrarlo: «Este periodo no tiene categorías y su
+dimensión ya tiene categorías activas. Si lo cierra ahora, queda cerrado sin dato.» (con «Para que
+sus responsables lo reporten, pulse antes «Actualizar categorías» en su fila» cuando la fila lo
+ofrece). **Volver** lo deja como estaba; **Cerrar sin dato** lo cierra igual.
 
 La justificación es texto libre y la lee quien ve cualquiera de las mediciones reabiertas: no
 nombre en ella un indicador restringido.
@@ -1349,6 +1353,8 @@ que nace vacío ese día (con fecha límite el 26: no nace vencido).
   cierre lo cierra «Sin dato» con esa razón cuando vence (mientras sigue en plazo, lo espera como a
   cualquier otro periodo). Cree o active las categorías en **Dimensiones**
   (sección 12.1) y vuelva a pulsar **Actualizar categorías**.
+- Si lo reabre después de cerrado y su dimensión ya tiene categorías activas, **Cerrar de nuevo**
+  le advierte que lo cerraría sin dato y le recuerda **Actualizar categorías** (sección 6.6).
 
 **Qué periodos se piden.** Solo los que necesita algún indicador activo, desde el periodo en curso
 al aprobarse su ficha (un indicador anual aprobado en noviembre pide los meses de ese año). Un

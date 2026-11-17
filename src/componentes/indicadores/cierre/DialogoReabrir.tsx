@@ -171,8 +171,8 @@ export function DialogoReabrirDato({ periodoId, etiqueta, reapertura }: { period
 }
 
 /**
- * «Cerrar de nuevo» lo reabierto (F14-DC31; anexo 14C, §3.5), con el último cierre y como esté, sin confirmación. Tras
- * cerrarlo, la fila cambia y este botón se va: el foco pasa al título de la página.
+ * «Cerrar de nuevo» lo reabierto (F14-DC31; anexo 14C, §3.5), con el último cierre y como esté, sin confirmación (la única
+ * excepción es `CerrarConAdvertencia`). Tras cerrarlo, la fila cambia y este botón se va: el foco pasa al título de la página.
  */
 function CerrarOtraVez({ accion, id, etiqueta }: { accion: Accion; id: number; etiqueta: string }) {
   const [hecho, setHecho] = useState(false);
@@ -199,7 +199,101 @@ export function CerrarDeNuevo({ medicionId, etiqueta }: { medicionId: number; et
   return <CerrarOtraVez accion={cerrarDeNuevoAccion} id={medicionId} etiqueta={etiqueta} />;
 }
 
-/** «Cerrar de nuevo» un periodo reabierto de un dato compartido. */
-export function CerrarDeNuevoDato({ periodoId, etiqueta }: { periodoId: number; etiqueta: string }) {
-  return <CerrarOtraVez accion={cerrarDeNuevoElDatoCompartido} id={periodoId} etiqueta={etiqueta} />;
+/**
+ * Lo que advierte «Cerrar de nuevo» un periodo reabierto de un dato con la lista de categorías vacía cuando su dimensión ya
+ * tiene categorías activas (complemento de la 14C, decisión 12 del usuario): se cerraría sin dato aunque ya podría
+ * reportarse. Nombra «Actualizar categorías» solo si la fila lo ofrece (`conActualizar`).
+ */
+export function advertenciaDelPeriodoVacio(conActualizar: boolean): string {
+  const base = "Este periodo no tiene categorías y su dimensión ya tiene categorías activas. Si lo cierra ahora, queda cerrado sin dato.";
+  return conActualizar ? `${base} Para que sus responsables lo reporten, pulse antes «Actualizar categorías» en su fila.` : base;
+}
+
+/**
+ * El formulario del diálogo de `CerrarConAdvertencia`, sin estado propio: la advertencia y la confirmación. Manda solo el id,
+ * como el botón directo: el servidor cierra igual (la decisión 12 fue advertir, no impedir).
+ */
+export function FormularioCerrarConAdvertencia({
+  id,
+  titulo,
+  advertencia,
+  enviar,
+  estado,
+  pendiente,
+  alCerrar,
+}: {
+  id: number;
+  titulo: string;
+  advertencia: string;
+  enviar: (formData: FormData) => void;
+  estado: EstadoAccion;
+  pendiente: boolean;
+  alCerrar: () => void;
+}) {
+  return (
+    <form action={enviar} className="flex flex-col gap-4 p-5">
+      <input type="hidden" name="id" value={id} />
+      <p aria-hidden="true" className="font-semibold">
+        {titulo}
+      </p>
+      <p className="text-sm text-muted-foreground">{advertencia}</p>
+      <ErrorAccion estado={estado} />
+      <div className="flex flex-wrap justify-end gap-2">
+        <Boton variante="secundario" onClick={alCerrar}>
+          Volver
+        </Boton>
+        <Boton type="submit" pendiente={pendiente}>
+          {pendiente ? "Cerrando…" : "Cerrar sin dato"}
+        </Boton>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * «Cerrar de nuevo» con un paso más: el botón, con el mismo texto que el directo, abre un diálogo que advierte antes de cerrar
+ * (`FormularioCerrarConAdvertencia`). Tras cerrar, la fila cambia y este botón se va: el foco pasa al título de la página.
+ */
+function CerrarConAdvertencia({ accion, id, etiqueta, advertencia }: { accion: Accion; id: number; etiqueta: string; advertencia: string }) {
+  const [abierto, setAbierto] = useState(false);
+  const [hecho, setHecho] = useState(false);
+  const cerrar = () => setAbierto(false);
+  const [estado, enviar, pendiente] = useAccionDeDialogo(accion, () => {
+    setHecho(true);
+    cerrar();
+  });
+  useTituloAlDesaparecer(abierto || hecho);
+  const titulo = `Cerrar de nuevo ${etiqueta.toLowerCase()}`;
+  return (
+    <>
+      <Boton variante="secundario" tamano="sm" onClick={() => setAbierto(true)} aria-haspopup="dialog" className="whitespace-nowrap">
+        Cerrar de nuevo<span className="sr-only">{` ${etiqueta.toLowerCase()}`}</span>
+      </Boton>
+      <Dialogo abierto={abierto} alCerrar={cerrar} titulo={titulo} className={CLASE_DIALOGO}>
+        {abierto ? (
+          <FormularioCerrarConAdvertencia
+            id={id}
+            titulo={titulo}
+            advertencia={advertencia}
+            enviar={enviar}
+            estado={estado}
+            pendiente={pendiente}
+            alCerrar={cerrar}
+          />
+        ) : null}
+      </Dialogo>
+    </>
+  );
+}
+
+/**
+ * «Cerrar de nuevo» un periodo reabierto de un dato compartido. Con `advertencia` (el periodo está vacío y su dimensión ya
+ * tiene categorías activas: `advertenciaDelPeriodoVacio`), advierte antes de cerrar; sin ella, cierra al pulsar.
+ */
+export function CerrarDeNuevoDato({ periodoId, etiqueta, advertencia = null }: { periodoId: number; etiqueta: string; advertencia?: string | null }) {
+  return advertencia ? (
+    <CerrarConAdvertencia accion={cerrarDeNuevoElDatoCompartido} id={periodoId} etiqueta={etiqueta} advertencia={advertencia} />
+  ) : (
+    <CerrarOtraVez accion={cerrarDeNuevoElDatoCompartido} id={periodoId} etiqueta={etiqueta} />
+  );
 }
