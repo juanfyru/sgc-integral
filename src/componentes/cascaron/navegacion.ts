@@ -13,6 +13,7 @@ export type IconoNav =
   | "tipos"
   | "configuracion"
   | "indicadores-config"
+  | "mejoramiento-config"
   | "mapa"
   | "entidad"
   | "estructura"
@@ -108,6 +109,13 @@ export const NAVEGACION: readonly EntradaNav[] = [
     icono: "indicadores-config",
     grupo: "administracion",
     permiso: "indicadores.administrar",
+  },
+  {
+    href: "/admin/mejoramiento",
+    etiqueta: "Configuración de mejoramiento",
+    icono: "mejoramiento-config",
+    grupo: "administracion",
+    permiso: "mejora.gestionar",
   },
   { href: "/admin/mapa", etiqueta: "Mapa de procesos", icono: "mapa", grupo: "documentos", permiso: "mapa.administrar" },
   {

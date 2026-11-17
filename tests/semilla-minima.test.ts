@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import { CAMPOS_PARAMETROS, PARAMETROS_DEFECTO } from "@/db/consultas/indicadores/maestros";
+import { CAMPOS_FORMATO, CAMPOS_MEJORA, CONFIG_MEJORA_DEFECTO } from "@/db/consultas/mejoramiento/config";
 import * as e from "@/db/esquema";
 import { sembrarBase, TIPOS_NORMA, type Db } from "@/db/semillas/minima";
 
@@ -79,5 +80,15 @@ describe("sembrarBase", () => {
     for (const tabla of [e.objetivos, e.indicadores, e.indicadorVersiones, e.dimensiones, e.variablesCompartidas]) {
       expect(sembrado.has(tabla)).toBe(false);
     }
+  });
+
+  it("deja las quince claves de mejoramiento con sus valores por omisión (Fase 15A)", async () => {
+    const configuracion = new Map(((await loQueSiembra()).get(e.configuracion) ?? []).map((f) => [f.clave, f.valor]));
+    const esperadas = Object.fromEntries([
+      ...CAMPOS_MEJORA.map((c) => [c.clave, String(c.leer(CONFIG_MEJORA_DEFECTO))]),
+      ...CAMPOS_FORMATO.map((f) => [f.clave, ""]),
+    ]);
+    expect(Object.keys(esperadas)).toHaveLength(15);
+    expect(Object.fromEntries(Object.keys(esperadas).map((k) => [k, configuracion.get(k)]))).toEqual(esperadas);
   });
 });

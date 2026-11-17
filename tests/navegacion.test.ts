@@ -5,7 +5,7 @@ import { GRUPOS, NAVEGACION, entradasVisibles, esActiva } from "@/componentes/ca
 describe("navegación por módulos y rol", () => {
   it("consulta ve Inicio, Buscar, Normograma e Indicadores; admin ve las veintidós", () => {
     expect(entradasVisibles({ rol: "consulta" }).map((e) => e.href)).toEqual(["/", "/buscar", "/normograma", "/indicadores"]);
-    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(22);
+    expect(entradasVisibles({ rol: "admin_sgc" })).toHaveLength(23);
   });
   it("Trámites: consulta solo si participa; gerencia y líder siempre; va después de Buscar", () => {
     const hrefs = (s: Parameters<typeof entradasVisibles>[0]) => entradasVisibles(s).map((e) => e.href);

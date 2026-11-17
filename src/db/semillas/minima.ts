@@ -25,6 +25,25 @@ export const ITEMS_VERIFICACION: ReadonlyArray<readonly [string, boolean]> = [
 ];
 
 /** Maestro editable de tipos de norma del normograma (spec 13C §10.1). */
+/** Las quince claves de configuración de mejoramiento (Fase 15A) con su valor por omisión; los tres formatos, sin documento. */
+export const CLAVES_DE_MEJORA: ReadonlyArray<readonly [string, string]> = [
+  ["mej_plazo_clasificar_dias", "3"],
+  ["mej_plazo_aceptar_dias", "3"],
+  ["mej_plazo_decision_dias", "3"],
+  ["mej_plazo_correccion_dias", "3"],
+  ["mej_plazo_formular_dias", "10"],
+  ["mej_plazo_reenviar_dias", "5"],
+  ["mej_plazo_revisar_dias", "3"],
+  ["mej_plazo_aprobar_dias", "3"],
+  ["mej_plazo_verificar_dias", "5"],
+  ["mej_plazo_evaluar_dias", "5"],
+  ["mej_recordatorio_alta_dias", "15"],
+  ["mej_recordatorio_dias", "30"],
+  ["mej_formato_registro_documento_id", ""],
+  ["mej_formato_porques_documento_id", ""],
+  ["mej_formato_ishikawa_documento_id", ""],
+];
+
 export const TIPOS_NORMA: ReadonlyArray<string> = [
   "Ley",
   "Decreto",
@@ -142,6 +161,7 @@ export async function sembrarBase(
     { clave: "ind_plazo_reporte_dias", valor: "10" },
     { clave: "ind_incumplimiento_periodos", valor: "3" },
     { clave: "ind_variacion_confirmar_pct", valor: "30" },
+    ...CLAVES_DE_MEJORA.map(([clave, valor]) => ({ clave, valor })),
   ]);
 
   const tipos = await db

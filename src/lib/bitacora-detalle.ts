@@ -852,6 +852,22 @@ export function describirEvento(e: EventoAuditoria): string {
         ? "Guardó los parámetros de indicadores sin cambios"
         : `Guardó los parámetros de indicadores (${cambios} ${cambios === 1 ? "cambio" : "cambios"})`;
     }
+    // ── Mejoramiento (15A): configuración y calendario
+    case "mejora_config_guardada": {
+      const cambios = Object.keys(typeof d.cambios === "object" && d.cambios !== null ? d.cambios : {}).length;
+      return cambios === 0
+        ? "Guardó la configuración de mejoramiento sin cambios"
+        : `Guardó la configuración de mejoramiento (${cambios} ${cambios === 1 ? "cambio" : "cambios"})`;
+    }
+    case "mejora_dia_agregado": {
+      const fecha = typeof d.fecha === "string" ? d.fecha : "";
+      const que = d.tipo === "habil" ? "como hábil el festivo" : "como no hábil el día";
+      return `Marcó ${que}${fecha ? ` ${fecha}` : ""} en el calendario de mejoramiento`;
+    }
+    case "mejora_dia_quitado": {
+      const fecha = typeof d.fecha === "string" ? d.fecha : "";
+      return `Quitó${fecha ? ` el ${fecha}` : " un día"} del calendario de mejoramiento`;
+    }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1298,6 +1314,9 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   indicador_maestro_activado: "Activó o desactivó un elemento de los maestros de indicadores",
   indicador_maestro_borrado: "Borró un elemento de los maestros de indicadores",
   indicador_parametros_guardados: "Guardó los parámetros de indicadores",
+  mejora_config_guardada: "Guardó la configuración de mejoramiento",
+  mejora_dia_agregado: "Añadió un día al calendario de mejoramiento",
+  mejora_dia_quitado: "Quitó un día del calendario de mejoramiento",
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",
   dato_compartido_activado: "Activó un dato compartido",
