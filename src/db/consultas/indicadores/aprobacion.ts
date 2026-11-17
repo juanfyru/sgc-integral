@@ -1247,12 +1247,18 @@ export async function fichaDeVersion(sesion: SujetoVisibilidad, versionId: numbe
   };
 }
 
-export type OperacionLeida = DatosOperacion & { mide: string[]; analiza: string[]; seguimiento: string[] };
+/**
+ * Los datos de operación tal como se leen: con los designados y, aparte de `DatosOperacion` (lo que se cambia, se compara y
+ * queda en la bitácora), desde cuándo exige soporte (`soporte_obligatorio_desde`, anexo del complemento de la 14C §4.1), que
+ * dicen la ficha técnica, el impreso y el Excel.
+ */
+export type OperacionLeida = DatosOperacion & { soporteDesde: Date | null; mide: string[]; analiza: string[]; seguimiento: string[] };
 
 /** Los datos de operación del indicador (spec §7.3) y sus designados activos: no se versionan ni se firman. */
 export async function operacionDeIndicador(indicadorId: number, opciones?: { sql?: Cliente }): Promise<OperacionLeida> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [i] = await sql`SELECT plazo_reporte_dias, inicio_medicion, soporte_obligatorio, nivel_acceso FROM indicadores WHERE id = ${indicadorId}`;
+  const [i] = await sql`SELECT plazo_reporte_dias, inicio_medicion, soporte_obligatorio, soporte_obligatorio_desde, nivel_acceso
+    FROM indicadores WHERE id = ${indicadorId}`;
   if (!i) throw new ErrorIndicador("El indicador no existe");
   const designados = await sql`SELECT d.funcion, u.nombre FROM indicador_designados d
     JOIN usuarios u ON u.id = d.usuario_id AND u.activo
@@ -1262,6 +1268,7 @@ export async function operacionDeIndicador(indicadorId: number, opciones?: { sql
     plazoReporteDias: Number(i.plazo_reporte_dias),
     inicioMedicion: (i.inicio_medicion as string | null) ?? "",
     soporteObligatorio: i.soporte_obligatorio as boolean,
+    soporteDesde: i.soporte_obligatorio_desde === null ? null : new Date(i.soporte_obligatorio_desde as string),
     nivelAcceso: i.nivel_acceso as DatosOperacion["nivelAcceso"],
     mide: de("mide"),
     analiza: de("analiza"),

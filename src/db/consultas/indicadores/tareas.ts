@@ -29,7 +29,7 @@ import { enlaceDeVersion } from "./aprobacion";
 import { tareasDeConstancias } from "./constancias";
 import { tareasDeDatos } from "./datos-periodos";
 import { tareasDeImpactosDeIndicadores } from "./impactos";
-import { analisisDe, conMayuscula, esDeOtraPeriodicidad } from "./mediciones";
+import { analisisDe, conMayuscula, esDeOtraPeriodicidad, seDebeElSoporte } from "./mediciones";
 import { enlaceDeObservaciones } from "./observaciones";
 
 /**
@@ -45,12 +45,12 @@ export type FaltaDePersona = Exclude<Falta, "dato">;
 /**
  * Las columnas de `mediciones m` e `indicadores i` que lee `queFalta`, con las versiones aprobadas del indicador (de mayor
  * a menor número, el orden de `versionQueRigeEntre`, cada una con sus letras propias y ajenas), las letras con valor de la
- * medición (`con_valor`, sin categoría) y si tiene algún soporte, en la misma fila: el costo en sentencias no depende de
- * cuántas haya.
+ * medición (`con_valor`, sin categoría), si debe el soporte (`debe_soporte`) y si tiene alguno, en la misma fila: el costo
+ * en sentencias no depende de cuántas haya.
  */
 export const columnasDePendiente = (sql: Cliente) =>
   sql`m.id, m.indicador_id, m.periodo, m.vence_en, m.reportada_en, m.semaforo, m.cumple, m.incumplimiento_repetido, m.analisis, m.causa,
-    m.accion_propuesta, i.soporte_obligatorio,
+    m.accion_propuesta, m.debe_soporte, i.soporte_obligatorio,
     EXISTS (SELECT 1 FROM archivos pa WHERE pa.contexto = 'medicion' AND pa.contexto_id = m.id) AS con_soporte,
     (SELECT coalesce(json_agg(DISTINCT pl.letra), '[]'::json) FROM medicion_valores pmv JOIN indicador_variables pl ON pl.id = pmv.variable_id
       WHERE pmv.medicion_id = m.id AND pmv.categoria_id IS NULL AND pmv.valor IS NOT NULL) AS con_valor,
@@ -68,9 +68,8 @@ export const esPendiente = (sql: Cliente) => sql`m.estado = 'abierta' AND NOT m.
 
 /**
  * `falta` es lo primero que falta (con los datos, el análisis; si no, el reporte); `faltaSoporte`, que además falta el
- * soporte obligatorio de una medición ya reportada, que es de quien mide aunque falte el análisis. Con `falta: "dato"`
- * (quien mide ya entregó lo suyo y espera un valor ajeno), el soporte se le pide solo mientras la medición sigue en plazo
- * (`debeElSoporte`).
+ * soporte que debe una medición ya reportada (`seDebeElSoporte`, anexo del complemento de la 14C §4.2), que es de quien mide
+ * aunque falte el análisis o el dato (`debeElSoporte`).
  */
 export type Pendiente = { falta: Falta; faltaSoporte: boolean; periodo: Periodo; nombre: string | null };
 
@@ -89,8 +88,10 @@ type VersionDePendiente = {
  * o el sistema aún no la reporta, el dato (`"dato"`), que no es de nadie; con todo, el análisis exigido si no está (la regla
  * del estado guardado, `analisisCompleto`). Un automático cuenta como uno que nadie mide y cuyo único valor ajeno es su
  * foto. Lo que nadie mide no le pide el reporte a nadie: con todos sus valores y aún sin resultado, espera el dato. El
- * soporte obligatorio falta solo en lo que alguien mide (como en `recalcularMedicion`). Con el periodo y el nombre
- * de la versión que lo rige. Sin las de otra periodicidad (`esDeOtraPeriodicidad`): no se miden. No consulta nada.
+ * soporte falta si la medición lo debe (`seDebeElSoporte`, la regla de `recalcularMedicion`: la marca, no el plazo ni el
+ * estado guardado) y no tiene ninguno. Con el periodo y el nombre de la versión que lo rige. Sin las de otra periodicidad
+ * (`esDeOtraPeriodicidad`): no se miden. Sin la reportada a la que no le falta nada: una abierta solo por un soporte que no
+ * debe es un estado viejo (anexo del complemento de la 14C, §4.3) y no es tarea de nadie. No consulta nada.
  */
 export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
   const salida = new Map<number, Pendiente>();
@@ -118,7 +119,11 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
       : faltaSegunOrigen({ mide, reportada, faltanAjenas, analisisCompleto: analisisCompleto(exigido, analisisDe(f)) });
     // Con todo y sin resultado, lo que nadie mide espera al sistema (su «No aplica» o su cálculo), no un reporte de alguien.
     const falta: Falta = segun === "reporte" && !mide ? "dato" : segun;
-    const faltaSoporte = reportada && mide && f.soporte_obligatorio === true && f.con_soporte !== true;
+    const faltaSoporte =
+      reportada &&
+      f.con_soporte !== true &&
+      seDebeElSoporte({ soporteObligatorio: f.soporte_obligatorio === true, marcada: f.debe_soporte === true, historica: false, noAplica: false, mide });
+    if (falta === "reporte" && reportada && !faltaSoporte) continue;
     salida.set(Number(f.id), { falta, faltaSoporte, periodo, nombre: version.nombre });
   }
   return salida;
@@ -127,21 +132,20 @@ export function queFalta(filas: readonly Row[]): Map<number, Pendiente> {
 const FALTA_SOPORTE = "Falta el soporte obligatorio";
 
 /**
- * ¿Quien mide debe el soporte de una medición que además espera un dato (`falta: "dato"` con `faltaSoporte`)? Solo mientras
- * siga en plazo: «soporte obligatorio» rige hacia adelante y no queda guardado cuándo se activó, pero una medición en plazo
- * que ya tiene lo propio y no tiene soporte solo puede estar así porque se activó dentro de su plazo. Vencido el plazo no se
- * distingue de la que lo recibió ya vencida, y bajo «Falta un dato» nada vence: deja de pedirse, y el dato que llegue
- * después la deja reportada (`recalcularMedicion`). La regla única de la tarea y de la lista.
+ * ¿Quien mide debe el soporte de una medición que además espera un dato (`falta: "dato"` con `faltaSoporte`)? Lo debe como
+ * cualquier soporte (anexo del complemento de la 14C, §4.4): se puede adjuntar sin el dato, así que es su tarea, por reportar
+ * y vencida con la fecha límite de la medición, y la pasada avisa y escala. El dato, en cambio, no es de nadie. La regla
+ * única de la tarea, la lista y la pasada.
  */
-export const debeElSoporte = (p: Pick<Pendiente, "falta" | "faltaSoporte">, venceEn: Date, ahora: Date): boolean =>
-  p.falta === "dato" && p.faltaSoporte && venceEn.getTime() >= ahora.getTime();
+export const debeElSoporte = (p: Pick<Pendiente, "falta" | "faltaSoporte">): boolean => p.falta === "dato" && p.faltaSoporte;
 
 /**
  * Las de reportar y analizar: las mediciones de las que la persona es responsable de lo que les falta. Con el análisis y
  * el soporte pendientes, las dos: «Analizar» a quien analiza y «Reportar» a quien mide. «Falta un dato» no es tarea, salvo
- * el soporte obligatorio que quien mide debe mientras tanto (`debeElSoporte`), con el mismo texto de siempre.
+ * el soporte obligatorio que quien mide debe mientras tanto (`debeElSoporte`), con el mismo texto de siempre. Una medición
+ * ya reportada solo es «Reportar» si le falta el soporte (`queFalta`).
  */
-async function deMediciones(sql: Cliente, sesion: SesionFlujo, ahora: Date): Promise<Tarea[]> {
+async function deMediciones(sql: Cliente, sesion: SesionFlujo): Promise<Tarea[]> {
   const filas = await sql`SELECT * FROM (
       SELECT ${columnasDePendiente(sql)}, i.codigo, p.nombre AS proceso,
         ${responsableDe(sql, sesion, "mide")} AS mide, ${responsableDe(sql, sesion, "analiza")} AS analiza
@@ -170,7 +174,7 @@ async function deMediciones(sql: Cliente, sesion: SesionFlujo, ahora: Date): Pro
     const reportada = f.reportada_en !== null;
     if (p.falta === "reporte" && mide) tareas.push(tarea("reporte", mide, reportada ? FALTA_SOPORTE : (f.proceso as string)));
     if (p.falta === "analisis" && p.faltaSoporte && mide) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
-    if (mide && debeElSoporte(p, new Date(f.vence_en as string), ahora)) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
+    if (mide && debeElSoporte(p)) tareas.push(tarea("reporte", mide, FALTA_SOPORTE));
     if (p.falta === "analisis" && analiza) tareas.push(tarea("analisis", analiza, f.proceso as string));
   }
   return tareas;
@@ -257,7 +261,7 @@ export async function tareasDeIndicadores(
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const [mediciones, constancias, datos, impactos, observaciones, porAprobar, devueltas] = await Promise.all([
-    deMediciones(sql, sesion, ahora),
+    deMediciones(sql, sesion),
     tareasDeConstancias(sql, sesion),
     tareasDeDatos(sql, sesion),
     tareasDeImpactosDeIndicadores(sql, sesion),

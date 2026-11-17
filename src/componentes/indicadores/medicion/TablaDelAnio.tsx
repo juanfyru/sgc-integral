@@ -5,8 +5,7 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
-import { ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
-import { analisisDeFila, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
+import { analisisDeFila, estadoEnTexto, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
 import { textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { textoAcumulaDesde } from "@/lib/indicadores/resultados";
@@ -54,14 +53,9 @@ function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: Entrada
 
 function Estado({ f, historial, periodosSinCumplir }: { f: FilaDelAnio; historial: EntradaDeHistorial[] | null; periodosSinCumplir: number }) {
   const marcas = marcasDeFila(f, periodosSinCumplir);
-  // Un histórico abierto sin datos no se reporta: se registra en la tabla del año (spec §8.8). Solo cambia la etiqueta.
-  const etiqueta =
-    f.historica && f.estado === "por_reportar"
-      ? "Por registrar"
-      : f.estado === "por_venir" || f.estado === "sin_dato"
-        ? null
-        : ETIQUETA_ESTADO[f.estado];
-  const estado = etiqueta === null ? null : `${etiqueta}${f.vencida ? " · vencida" : ""}`;
+  // El estado con la regla del Excel (`estadoEnTexto`): un histórico abierto sin datos se registra en la tabla del año
+  // («Por registrar», spec §8.8) y, bajo «Falta un dato», el soporte que quien mide debe mientras tanto.
+  const estado = f.estado === "por_venir" || f.estado === "sin_dato" ? null : estadoEnTexto(f);
   return (
     <div className="flex flex-col items-start gap-1">
       <InsigniaSemaforo semaforo={f.semaforo} cumple={f.cumple} noAplica={f.noAplica} conResultado={f.resultado !== null} />

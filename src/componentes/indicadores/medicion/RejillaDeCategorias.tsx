@@ -370,7 +370,7 @@ export function RejillaDeCategorias({
         {avisoDeCritico ? <p className={`${AVISO} border-l-estado-critico`}>{avisoDeCritico}</p> : null}
         {avisoDeFalta ? <p className={`${AVISO} border-l-estado-atencion`}>{avisoDeFalta}</p> : null}
         <AvisosDeFalta variables={conAviso} mide />
-        {datos.soporteObligatorio && !datos.historica ? (
+        {datos.debeSoporte ? (
           <p className="text-sm">
             {datos.soportes > 0
               ? `Soporte obligatorio en este indicador: ${cuenta(datos.soportes, "archivo adjunto", "archivos adjuntos")}.`

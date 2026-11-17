@@ -86,6 +86,7 @@ import {
   listaDe,
   mide,
   reglaDelPeriodo,
+  seDebeElSoporte,
   texto,
   tramos,
   valoresPorLetra,
@@ -177,6 +178,11 @@ export type DatosDeReporte = {
   motivo: string | null;
   reportada: boolean;
   soporteObligatorio: boolean;
+  /**
+   * Esta medición debe el soporte (`seDebeElSoporte`, anexo del complemento de la 14C §4.2): la misma regla con que el
+   * servidor rechaza un reporte sin él. Si no lo debe, el soporte es opcional aunque el indicador lo exija.
+   */
+  debeSoporte: boolean;
   soportes: number;
   /** El Admin SGC mide porque nadie más puede (spec §6.1). Nunca en lo que no mide nadie (`mide`). */
   sinMedidor: boolean;
@@ -268,8 +274,18 @@ async function datosDeReporte(sql: Cliente, sesion: SujetoVisibilidad, ctx: Cont
   const nombres = Object.fromEntries(version.variables.map((v) => [v.letra, ocultas.has(v.letra) ? COMPONENTE_OCULTO : v.nombre]));
   const automatica = version.origenDato === "automatico";
   const alguienMide = mide(version);
-  // Mientras falta el dato que calcula el sistema o uno ajeno, nadie está atrasado (anexo 14B, §4; anexo 14C, §3.1).
-  const faltaDato = esperaUnDato(m, version, guardados);
+  // Con la regla del rechazo de un reporte sin soporte (`exigirElSoporte`): reportar con datos le quita el «No aplica».
+  const debeSoporte = seDebeElSoporte({
+    soporteObligatorio: indicador.soporteObligatorio,
+    marcada: m.debe_soporte === true,
+    historica: m.historica === true,
+    noAplica: false,
+    mide: alguienMide,
+  });
+  const soportes = await contarSoportes(sql, m.id);
+  // Mientras falta el dato que calcula el sistema o uno ajeno, nadie está atrasado (anexo 14B, §4; anexo 14C, §3.1), salvo
+  // quien mide por el soporte que debe y no ha adjuntado (anexo del complemento de la 14C, §4.4).
+  const nadieAtrasado = esperaUnDato(m, version, guardados) && !(debeSoporte && soportes === 0);
   const ajenas = await ajenasDeReporte(sql, ctx.periodo, version, guardados, ocultas);
   const motivo = (m.no_aplica_motivo as string | null) ?? null;
   const contagio =
@@ -288,14 +304,15 @@ async function datosDeReporte(sql: Cliente, sesion: SujetoVisibilidad, ctx: Cont
     periodo: m.periodo as string,
     etiqueta: conMayuscula(ctx.periodo.etiqueta),
     vence: diaEnPalabras(vence),
-    vencida: !faltaDato && m.historica !== true && ahora.getTime() > vence.getTime(),
+    vencida: !nadieAtrasado && m.historica !== true && ahora.getTime() > vence.getTime(),
     estado: m.estado as EstadoMedicion,
     historica: m.historica === true,
     noAplica: m.no_aplica === true,
     motivo: contagio ?? motivo,
     reportada: m.reportada_en !== null,
     soporteObligatorio: indicador.soporteObligatorio && alguienMide,
-    soportes: await contarSoportes(sql, m.id),
+    debeSoporte,
+    soportes,
     sinMedidor: alguienMide && ctx.capacidad.sinMedidor,
     mide: alguienMide,
     automatica,
@@ -540,6 +557,11 @@ export type FilaDelAnio = {
    * reporta ni la corrige (quien analiza la ve en su pantalla de solo lectura), pero sus históricos sí se registran.
    */
   nadieLoMide?: true;
+  /**
+   * Bajo «Falta un dato», quien mide debe además el soporte y no ha adjuntado ninguno (`seDebeElSoporte`, anexo del
+   * complemento de la 14C §4.4): la fila lo dice, y vence con la fecha límite de la medición.
+   */
+  faltaSoporte?: true;
   /** Cuándo tomó el sistema los datos de un automático (anexo 14B, §5.4); `null` sin foto. */
   fotoEn: Date | null;
   /** Cuándo los tomará, en uno que los espera; `null` si no los espera o nunca los tomará (`cuandoSeToma`). */
@@ -646,7 +668,8 @@ export async function leerPeriodos(
   const inicio = periodoDe(String(anios.desde), zona)!.desde;
   const fin = periodoDe(String(anios.hasta + 1), zona)!.desde;
   const [mediciones, metas] = await Promise.all([
-    sql`SELECT * FROM mediciones WHERE indicador_id IN ${sql(ids)} AND desde >= ${inicio} AND desde < ${fin}`,
+    sql`SELECT m.*, EXISTS (SELECT 1 FROM archivos a WHERE a.contexto = 'medicion' AND a.contexto_id = m.id) AS con_soporte
+      FROM mediciones m WHERE m.indicador_id IN ${sql(ids)} AND m.desde >= ${inicio} AND m.desde < ${fin}`,
     sql`SELECT indicador_id, periodo, meta, meta_max FROM indicador_metas
       WHERE indicador_id IN ${sql(ids)} AND left(periodo, 4)::int BETWEEN ${anios.desde} AND ${anios.hasta}`,
   ]);
@@ -1478,11 +1501,14 @@ function filaDeMedicion(
   const datos = noAplica || resultado !== null;
   const automatica = version.origenDato === "automatico";
   const alguienMide = mide(version);
-  // Con los datos y el análisis, lo que deja abierta una medición es el soporte que falta: se muestra por reportar. Lo que
-  // nadie mide no lleva soporte (`recalcularMedicion`).
-  const faltaSoporte = datos && conAnalisis && m.estado === "abierta" && soporteObligatorio && alguienMide && !historica && !noAplica;
+  // El soporte que la medición debe y no tiene, con la regla de `recalcularMedicion` (`seDebeElSoporte`): lo dicen su marca y
+  // sus soportes (`con_soporte`, de `leerPeriodos`), no el estado guardado. Con los datos y el análisis, se muestra por
+  // reportar. Lo que nadie mide no lleva soporte.
+  const sinSoporte =
+    m.con_soporte !== true && seDebeElSoporte({ soporteObligatorio, marcada: m.debe_soporte === true, historica, noAplica, mide: alguienMide });
   // Un automático sin datos espera el cálculo del sistema (anexo 14B, §4) y una ficha manual, el valor ajeno que no digita
-  // quien la mide (anexo 14C, §3.1): «Falta un dato», que nunca está vencido.
+  // quien la mide (anexo 14C, §3.1): «Falta un dato», que no está vencido salvo por el soporte que quien mide debe mientras
+  // tanto (anexo del complemento de la 14C, §4.4).
   const faltaDatoAjeno = esperaUnDato(m, version, valores);
   const vence = new Date(m.vence_en as string);
   const visible = estadoVisible(
@@ -1490,12 +1516,13 @@ function filaDeMedicion(
       estado: m.estado as EstadoMedicion,
       vence,
       historica,
-      datosCompletos: datos && !faltaSoporte,
+      datosCompletos: datos && !(conAnalisis && sinSoporte),
       faltaDatoAjeno,
       faltaAnalisis: datos && !conAnalisis,
     },
     ahora,
   );
+  const faltaSoporte = visible.estado === "falta_dato" && sinSoporte;
   const motivo = (m.no_aplica_motivo as string | null) ?? null;
   return {
     periodo: p.clave,
@@ -1503,7 +1530,7 @@ function filaDeMedicion(
     version: version.numero,
     medicionId: id,
     estado: visible.estado,
-    vencida: faltaDatoAjeno ? false : visible.vencida,
+    vencida: faltaDatoAjeno && !faltaSoporte ? false : visible.vencida,
     vence: diaEnPalabras(vence),
     historica,
     noAplica,
@@ -1529,6 +1556,7 @@ function filaDeMedicion(
     accionPropuesta: (m.accion_propuesta as string | null) ?? null,
     automatica,
     ...(!automatica && !alguienMide ? { nadieLoMide: true as const } : {}),
+    ...(faltaSoporte ? { faltaSoporte: true as const } : {}),
     ...laFoto(m, p, version, ahora),
     enCritico: m.categorias_en_critico === null || m.categorias_en_critico === undefined ? null : Number(m.categorias_en_critico),
     // Quien la lee la pone con la versión con que se calculó (`leerPeriodos`).

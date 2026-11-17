@@ -768,12 +768,12 @@ describe("el soporte obligatorio de una medición que espera su dato", () => {
       expect((await fila(tx, x.medicion)).debe_soporte).toBe(true);
       expect((await tareaDeMedir(tx, x.mide, x.medicion, OCT_6)).tarea).not.toBeNull();
 
-      // La reescribe la Tarea 5: regla nueva del soporte. Lo debe desde el 6, así que pasado el 10 la tarea, la lista y la
-      // pasada deben decir que está vencido (anexo del complemento, §4.4); hasta entonces lo siguen aproximando por el plazo.
+      // Lo debe desde el 6 y se puede adjuntar sin el dato: pasado el 10, la tarea, la lista y la pasada lo dan por vencido,
+      // con la fecha límite de la medición (anexo del complemento, §4.4).
       await revisarVencimientosDeIndicadores({ sql: tx, ahora: OCT_12, config });
-      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toEqual({ tarea: null, vencidas: 0 });
-      expect(await enLaLista(tx, x.mide, x, OCT_12)).toBe("Falta un dato");
-      expect((await fila(tx, x.medicion)).aviso_vencido_en).toBeNull();
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toMatchObject({ tarea: { detalle: SOPORTE, vence: VENCE_SEPTIEMBRE }, vencidas: 1 });
+      expect(await enLaLista(tx, x.mide, x, OCT_12)).toBe("Vencido hace 2 días");
+      expect((await fila(tx, x.medicion)).aviso_vencido_en).toEqual(OCT_12);
 
       // Cuando llega, con su plazo ya vencido, cumple y lo sigue debiendo: queda abierta por el soporte (§4.5, caso 3).
       await reportarElDato(tx, x.responsable, x.datoId, "2026-09", "40000000", TARDE);

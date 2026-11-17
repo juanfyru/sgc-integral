@@ -15,20 +15,27 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 }
 
 import { obtenerSql } from "@/db/cliente";
+import { CONFIG_DOCUMENTAL_DEFECTO } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { analizar } from "@/db/consultas/indicadores/analisis";
-import { aprobarFichas, enviarAAprobacion } from "@/db/consultas/indicadores/aprobacion";
+import { aprobarFichas, enviarAAprobacion, operacionDeIndicador } from "@/db/consultas/indicadores/aprobacion";
 import { abrirCambio, crearIndicador, fichaParaEditar, guardarBorrador } from "@/db/consultas/indicadores/fichas";
+import { medicionParaReportar, tablaDelAnio } from "@/db/consultas/indicadores/lectura";
+import { listarIndicadores } from "@/db/consultas/indicadores/lista";
 import { asegurarMediciones, marcarNoAplica, quitarNoAplica, reportar } from "@/db/consultas/indicadores/mediciones";
 import { cambiarOperacion, duplicar } from "@/db/consultas/indicadores/operacion";
 import { reabrirEnCascada } from "@/db/consultas/indicadores/reapertura";
+import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { revisarVencimientosDeIndicadores } from "@/db/consultas/indicadores/vencimientos";
 import type { DatosFicha } from "@/lib/esquemas/indicadores";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { estadoEnTexto } from "@/lib/indicadores/ficha-en-texto";
 import { fechaLimiteDeReporte } from "@/lib/indicadores/periodos";
 import { ErrorIndicador } from "@/lib/indicadores/tipos";
+import type { Tarea } from "@/lib/tareas";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { indicadorDePrueba, type IndicadorDePrueba } from "./utiles/indicadores";
+import { indicadorDePrueba, silenciarIndicadores, type IndicadorDePrueba } from "./utiles/indicadores";
 import {
   activarSoporte,
   AHORA,
@@ -447,11 +454,18 @@ const adjuntarSoporte = (tx: TransactionSql, medicionId: number) =>
   tx`INSERT INTO archivos (rol, ruta, nombre_original, extension, mime, tamano_bytes, hash_sha256, contexto, contexto_id)
     VALUES ('evidencia', ${`zz/${unico()}.pdf`}, 'soporte.pdf', 'pdf', 'application/pdf', 10, ${"a".repeat(64)}, 'medicion', ${medicionId})`;
 
+const idsDeTareas = (r: { tareas: Tarea[] }) => r.tareas.map((t) => t.id);
+
 const marcaDe = async (tx: TransactionSql, medicionId: number) => (await fila(tx, medicionId)).debe_soporte as boolean;
 const estadoYMarca = async (tx: TransactionSql, medicionId: number) => {
   const m = await fila(tx, medicionId);
   return [m.estado as string, m.debe_soporte as boolean];
 };
+
+/** Lo propio de septiembre en el mixto: con B en 1.284.300.000 es el 3 % (crítico); con 40.000.000, el 96 % (cumple). */
+const LO_MIO = { A: "38529000" };
+const CRITICO = "1284300000";
+const CUMPLE = "40000000";
 
 /**
  * La marca de cada medición (anexo del complemento, §4.2) en los casos de §4.5, sobre el mixto de `utiles/mixto.ts`:
@@ -461,10 +475,6 @@ const estadoYMarca = async (tx: TransactionSql, medicionId: number) => {
  */
 describe("la marca de cada medición", () => {
   const ZONA = zonaHoraria();
-  /** Lo propio de septiembre: con B en 1.284.300.000 es el 3 % (crítico); con 40.000.000, el 96 % (cumple). */
-  const LO_MIO = { A: "38529000" };
-  const CRITICO = "1284300000";
-  const CUMPLE = "40000000";
   const EXIGE = "Este indicador exige un soporte: adjúntelo antes de reportar";
   const ANALISIS = "La glosa bajó por la revisión previa de las cuentas.";
   const CAUSA = "Las cuentas de urgencias se glosaron completas";
@@ -481,6 +491,10 @@ describe("la marca de cada medición", () => {
       expect([m.semaforo, m.estado, m.debe_soporte]).toEqual(["critico", "abierta", false]);
       expect(m.vence_en).toEqual(fechaLimite(dia("2026-10-20"), 10, ZONA));
       expect(await falta(tx, x.medicion)).toBe("analisis");
+      // Pide el análisis y no el soporte: quien analiza tiene su tarea y quien mide, ninguna.
+      const del20 = { sql: tx, ahora: dia("2026-10-20") };
+      expect(idsDeTareas(await tareasDeIndicadores(x.mide, del20))).not.toContain(`medir:${x.medicion}`);
+      expect(idsDeTareas(await tareasDeIndicadores(x.analiza, del20))).toContain(`analizar:${x.medicion}`);
 
       // Con el análisis que pide queda reportada: el soporte no se le debe.
       await analizar(x.analiza, { medicionId: x.medicion, causa: CAUSA, accionPropuesta: ACCION }, { sql: tx, ahora: dia("2026-10-21") });
@@ -659,5 +673,100 @@ describe("la marca de cada medición", () => {
       await tx`UPDATE mediciones SET estado = 'cerrada' WHERE id = ${y.medicion}`;
       await reabrir(y.medicion, dia("2026-10-08"));
       expect(await estadoYMarca(tx, y.medicion)).toEqual(["reportada", true]);
+    }));
+});
+
+/**
+ * Lo que se ve (anexo del complemento, §4.4): las tareas, la lista, la pasada y la tabla del año preguntan lo mismo que
+ * `recalcularMedicion`, la marca y si hay soporte, y no el estado guardado ni el plazo. Un soporte que se debe mientras la
+ * medición espera su dato es de quien mide, como cualquier soporte, y vence con la fecha límite de la medición. Sobre el
+ * mixto de `utiles/mixto.ts`: septiembre vence el 10 de octubre y quien mide reporta lo suyo el 5, sin soporte.
+ */
+describe("lo que se ve: tareas, lista, pasada y tabla del año", () => {
+  const config = { ...CONFIG_DOCUMENTAL_DEFECTO, escalamientoDias: 3 };
+  const OCT_12 = dia("2026-10-12");
+  const SOPORTE = "Falta el soporte obligatorio";
+  type Mixto = Awaited<ReturnType<typeof mixto>>;
+
+  const tareaDeMedir = async (tx: TransactionSql, sesion: SesionFlujo, medicionId: number, ahora: Date) => {
+    const { tareas, vencidas } = await tareasDeIndicadores(sesion, { sql: tx, ahora });
+    return { tarea: tareas.find((t) => t.id === `medir:${medicionId}`) ?? null, vencidas };
+  };
+  const enLaLista = async (tx: TransactionSql, x: Mixto, ahora: Date) => {
+    const { filas, resumen } = await listarIndicadores(x.mide, { procesoId: x.procesoId }, { sql: tx, ahora });
+    return { reporte: filas.find((f) => f.id === x.ind.id)?.reporte, vencidos: resumen.vencidos };
+  };
+  const septiembre = async (tx: TransactionSql, x: Mixto, ahora: Date) => {
+    const f = (await tablaDelAnio(x.mide, x.ind.id, 2026, { sql: tx, ahora })).find((p) => p.periodo === "2026-09")!;
+    return { estado: f.estado, faltaSoporte: f.faltaSoporte === true, vencida: f.vencida, texto: estadoEnTexto(f) };
+  };
+  const enLaPantalla = async (tx: TransactionSql, x: Mixto, ahora: Date) => {
+    const d = await medicionParaReportar(x.mide, x.ind.codigo, "2026-09", { sql: tx, ahora });
+    return { debeSoporte: d?.debeSoporte, vencida: d?.vencida };
+  };
+  const avisosDe = async (tx: TransactionSql, usuarioId: number) =>
+    (await tx`SELECT tipo, titulo FROM notificaciones WHERE usuario_id = ${usuarioId} ORDER BY id`).map((n) => ({ tipo: n.tipo, titulo: n.titulo }));
+
+  it("caso 3, el 12: sin el dato y con el plazo vencido, la tarea, la lista, la pasada y la tabla dicen que debe el soporte, vencido", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await activarSoporte(tx, x.ind.id, dia("2026-10-06"));
+      expect(await falta(tx, x.medicion)).toBe("dato");
+      const vence = (await fila(tx, x.medicion)).vence_en as Date;
+
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toMatchObject({ tarea: { detalle: SOPORTE, vence }, vencidas: 1 });
+      expect(await enLaLista(tx, x, OCT_12)).toEqual({ reporte: { texto: "Vencido hace 2 días", vencida: true }, vencidos: 1 });
+      expect(await septiembre(tx, x, OCT_12)).toEqual({
+        estado: "falta_dato",
+        faltaSoporte: true,
+        vencida: true,
+        texto: "Falta un dato · falta el soporte · vencida",
+      });
+      expect(await enLaPantalla(tx, x, OCT_12)).toEqual({ debeSoporte: true, vencida: true });
+      await revisarVencimientosDeIndicadores({ sql: tx, ahora: OCT_12, config });
+      expect((await fila(tx, x.medicion)).aviso_vencido_en).toEqual(OCT_12);
+      expect(await avisosDe(tx, x.mide.usuarioId)).toContainEqual({ tipo: "indicadores.vencido", titulo: "Tiene 1 indicador por reportar con el plazo vencido" });
+
+      // Con el soporte adjunto ya no se debe nada de quien mide: solo espera el dato, que no es de nadie ni vence.
+      await adjuntarSoporte(tx, x.medicion);
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toEqual({ tarea: null, vencidas: 0 });
+      expect(await enLaLista(tx, x, OCT_12)).toEqual({ reporte: { texto: "Falta un dato", vencida: false }, vencidos: 0 });
+      expect(await septiembre(tx, x, OCT_12)).toEqual({ estado: "falta_dato", faltaSoporte: false, vencida: false, texto: "Falta un dato" });
+      expect(await enLaPantalla(tx, x, OCT_12)).toEqual({ debeSoporte: true, vencida: false });
+    }));
+
+  it("una medición abierta con todo lo demás completo y sin la marca (estado viejo): ni tarea, ni vencida en la lista, ni aviso; la tabla la da por reportada", () =>
+    revertida(sql, async (tx) => {
+      await silenciarIndicadores(tx);
+      const x = await mixto(tx);
+      await reportarLoMio(tx, x.mide, x.medicion, LO_MIO);
+      await reportarElDato(tx, x.responsable, x.datoId, "2026-09", CUMPLE);
+      await propagarA(tx, AHORA, [x.ind.id]);
+      expect(await estadoYMarca(tx, x.medicion)).toEqual(["reportada", false]);
+      // Como la dejaba la regla de antes de la 0017: abierta solo por un soporte que esta medición no debe (anexo §4.3).
+      await tx`UPDATE indicadores SET soporte_obligatorio = true, soporte_obligatorio_desde = ${dia("2026-10-06")} WHERE id = ${x.ind.id}`;
+      await tx`UPDATE mediciones SET estado = 'abierta' WHERE id = ${x.medicion}`;
+
+      expect(await tareaDeMedir(tx, x.mide, x.medicion, OCT_12)).toEqual({ tarea: null, vencidas: 0 });
+      const lista = await enLaLista(tx, x, OCT_12);
+      expect([lista.reporte?.vencida, lista.vencidos]).toEqual([false, 0]);
+      expect(await septiembre(tx, x, OCT_12)).toMatchObject({ estado: "reportada", faltaSoporte: false, vencida: false });
+      expect((await enLaPantalla(tx, x, OCT_12)).debeSoporte).toBe(false);
+      await revisarVencimientosDeIndicadores({ sql: tx, ahora: OCT_12, config });
+      expect((await fila(tx, x.medicion)).aviso_vencido_en).toBeNull();
+    }));
+
+  it("los datos de operación traen desde cuándo exige soporte; desactivarlo la quita", () =>
+    revertida(sql, async (tx) => {
+      const x = await mixto(tx);
+      expect(await operacionDeIndicador(x.ind.id, { sql: tx })).toMatchObject({ soporteObligatorio: false, soporteDesde: null });
+      // Las 10 de la noche del 12 en la zona de la instalación: ya es el 13 en UTC.
+      const desde = new Date("2026-10-13T03:00:00Z");
+      await activarSoporte(tx, x.ind.id, desde);
+      expect(await operacionDeIndicador(x.ind.id, { sql: tx })).toMatchObject({ soporteObligatorio: true, soporteDesde: desde });
+      await desactivarSoporte(tx, x.ind.id, dia("2026-10-20"));
+      expect(await operacionDeIndicador(x.ind.id, { sql: tx })).toMatchObject({ soporteObligatorio: false, soporteDesde: null });
     }));
 });

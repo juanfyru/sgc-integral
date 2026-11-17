@@ -650,6 +650,7 @@ describe("FichaImpresa", () => {
       plazoReporteDias: 5,
       inicioMedicion: "2026-T1",
       soporteObligatorio: true,
+      soporteDesde: new Date("2026-10-13T03:00:00Z"),
       nivelAcceso: "general",
       mide: ["Persona Que Medía"],
       analiza: ["Persona Que Analiza"],
@@ -785,12 +786,51 @@ describe("FichaImpresa", () => {
     expect(camposDeFicha(base).estructura.map((c) => c.termino)).toContain("Responsables de medir");
   });
 
+  it("la ficha técnica, el impreso y el Excel dicen desde cuándo exige soporte, en la zona de la instalación (complemento 14C, §4.4)", () =>
+    revertida(sql, async (tx) => {
+      const FRASE = "Sí: cada reporte lleva su soporte, desde el 12 de octubre de 2026";
+      // Las 10 de la noche del 12 en la zona de la instalación: ya es el 13 en UTC.
+      const desde = new Date("2026-10-13T03:00:00Z");
+      const operacion: OperacionLeida = {
+        plazoReporteDias: 5,
+        inicioMedicion: "2026-T1",
+        soporteObligatorio: true,
+        soporteDesde: desde,
+        nivelAcceso: "general",
+        mide: [],
+        analiza: [],
+        seguimiento: [],
+      };
+      const ficha = fichaCompleta();
+      const html = renderToStaticMarkup(<FichaTecnica ficha={ficha} operacion={operacion} />);
+      expect(html.slice(html.indexOf(">Datos de operación<"))).toContain(`>${FRASE}</dd>`);
+      expect(camposDeOperacion(operacion, ficha.contenido)).toContainEqual({ termino: "Soporte obligatorio", valor: FRASE });
+      expect(camposDeOperacion({ ...operacion, soporteObligatorio: false, soporteDesde: null }, ficha.contenido)).toContainEqual({
+        termino: "Soporte obligatorio",
+        valor: "No",
+      });
+
+      // El impreso y el Excel de un indicador que lo exige desde esa hora, leídos de la base.
+      const p = await proceso(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: p.id, periodicidad: "trimestral", inicioMedicion: "2026-T1", aprobadaEn: APROBADA, soporteObligatorio: true });
+      await tx`UPDATE indicadores SET soporte_obligatorio_desde = ${desde} WHERE id = ${ind.id}`;
+      const admin = await sesionAdmin(tx);
+      const impresa = await impreso(tx, admin, ind);
+      expect(impresa.slice(impresa.indexOf(">Datos de operación<"))).toContain(FRASE);
+      const libro = new ExcelJS.Workbook();
+      await libro.xlsx.load((await construirExcelDeIndicador((await impresionDelAnio(admin, ind.codigo, 2026, opc(tx)))!, META)) as unknown as ArrayBuffer);
+      const filas: string[] = [];
+      libro.getWorksheet("Ficha")!.eachRow((fila) => filas.push((fila.values as unknown[]).slice(1).map((v) => String(v ?? "")).join(" | ")));
+      expect(filas.join("\n")).toContain(`Soporte obligatorio | ${FRASE}`);
+    }));
+
   it("los datos de operación de un automático dicen que nadie mide, no muestran el soporte y, en uno de flujo, rotulan la espera (14B, Tarea 4)", () => {
     const base = fichaCompleta();
     const operacion: OperacionLeida = {
       plazoReporteDias: 5,
       inicioMedicion: "2026-T1",
       soporteObligatorio: true,
+      soporteDesde: new Date("2026-10-13T03:00:00Z"),
       nivelAcceso: "general",
       mide: ["Persona Que Medía"],
       analiza: ["Persona Que Analiza"],

@@ -152,7 +152,10 @@ export type FilaDeLista = {
 /** `bienSinAlcanzar` son los Bien que no alcanzan la meta: van también en `bien` (spec 14A §3.1). */
 export type ResumenDeLista = { bien: number; bienSinAlcanzar: number; atencion: number; critico: number; sinDato: number; noAplica: number; vencidos: number };
 
-/** `faltaDato`: una medición espera el dato que calcula el sistema (anexo 14B, §4); no cuenta como por reportar ni vencida. */
+/**
+ * `faltaDato`: una medición espera el dato que calcula el sistema (anexo 14B, §4) o uno ajeno (anexo 14C, §3.1); no cuenta
+ * como por reportar ni vencida, salvo por el soporte que quien mide debe mientras tanto (`debeElSoporte`).
+ */
 type Pendientes = {
   porReportar: boolean;
   faltaAnalisis: boolean;
@@ -286,19 +289,19 @@ export async function listarIndicadores(
     const id = Number(m.indicador_id);
     const acc = pendientesDe.get(id) ?? { porReportar: false, faltaAnalisis: false, faltaDato: false, vencidas: 0, masAntigua: null };
     pendientesDe.set(id, acc);
-    // Lo que espera el dato del sistema no es de nadie: ni por reportar ni vencido. Salvo el soporte obligatorio que quien
-    // mide debe mientras tanto, en plazo (`debeElSoporte`, como su tarea): por reportar, nunca vencido.
+    // Lo que espera el dato del sistema o uno ajeno no es de nadie: ni por reportar ni vencido. Salvo el soporte obligatorio
+    // que quien mide debe mientras tanto (`debeElSoporte`, como su tarea), que es por reportar y vence como cualquier soporte.
     if (falta.falta === "dato") {
       acc.faltaDato = true;
-      if (debeElSoporte(falta, new Date(m.vence_en as string), ahora)) acc.porReportar = true;
-      continue;
+      if (!debeElSoporte(falta)) continue;
     }
     if (falta.falta === "reporte" || falta.faltaSoporte) acc.porReportar = true;
     if (falta.falta === "analisis") acc.faltaAnalisis = true;
     const vence = new Date(m.vence_en as string);
     if (ahora.getTime() > vence.getTime()) {
       acc.vencidas += 1;
-      if (!acc.masAntigua || vence.getTime() < acc.masAntigua.vence.getTime()) acc.masAntigua = { vence, falta: falta.falta };
+      const deQuien: FaltaDePersona = falta.falta === "analisis" ? "analisis" : "reporte";
+      if (!acc.masAntigua || vence.getTime() < acc.masAntigua.vence.getTime()) acc.masAntigua = { vence, falta: deQuien };
     }
   }
   const recientesDe = agrupar(recientes, (m) => Number(m.indicador_id));

@@ -31,20 +31,22 @@ function Quitar({ soporte }: { soporte: Soporte }) {
 /**
  * Los soportes de una medición (spec §8.2): la lista con su formato y su tamaño (cada uno, un enlace de descarga) y, para
  * quien puede medir antes del cierre (`editable`), subir uno más y quitar uno. Quien ve la medición pero no sus soportes
- * no recibe este componente (la página no los lee). El servidor vuelve a comprobar cada subida y cada quitada.
+ * no recibe este componente (la página no los lee). El servidor vuelve a comprobar cada subida y cada quitada. Sin
+ * soportes, pide uno solo si esa medición lo debe (`debeSoporte`, anexo del complemento de la 14C §4.4); si no, el soporte es
+ * opcional, como en un indicador sin soporte obligatorio.
  */
 export function Soportes({
   medicionId,
   codigo,
   soportes,
   editable,
-  obligatorio = false,
+  debeSoporte = false,
 }: {
   medicionId: number;
   codigo: string;
   soportes: Soporte[];
   editable: boolean;
-  obligatorio?: boolean;
+  debeSoporte?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border px-4 py-3">
@@ -64,7 +66,7 @@ export function Soportes({
         </ul>
       ) : (
         <p className="text-sm text-muted-foreground">
-          {obligatorio && editable ? "Este indicador exige un soporte: adjúntelo antes de reportar." : "Sin soportes adjuntos."}
+          {debeSoporte && editable ? "Este indicador exige un soporte: adjúntelo antes de reportar." : "Sin soportes adjuntos."}
         </p>
       )}
       {editable ? (

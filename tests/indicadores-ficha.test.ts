@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analisisCompleto, analisisExigido, cumpleDeFila, cumpleDeMedicion, esRepetido, estadoVisible, ETIQUETA_ESTADO } from "@/lib/indicadores/estados";
 import { camposCambiados, CAMPOS_MAYORES, huellaDeFicha, tipoDeCambio, type ContenidoFicha } from "@/lib/indicadores/ficha";
+import { camposDeOperacion, estadoEnTexto } from "@/lib/indicadores/ficha-en-texto";
 
 const base = (): ContenidoFicha => ({
   nombre: "Oportunidad en la atención",
@@ -328,5 +329,35 @@ describe("estados de una medición", () => {
   it("las etiquetas de cada estado", () => {
     expect(ETIQUETA_ESTADO.falta_dato).toBe("Falta un dato");
     expect(Object.keys(ETIQUETA_ESTADO)).toHaveLength(5);
+  });
+});
+
+describe("lo que dicen la ficha técnica, el impreso y el Excel del soporte obligatorio (complemento 14C, §4.4)", () => {
+  const operacion = (soporteObligatorio: boolean, soporteDesde: Date | null) => ({
+    plazoReporteDias: 10,
+    inicioMedicion: "2026-01",
+    soporteObligatorio,
+    soporteDesde,
+    nivelAcceso: "general" as const,
+    mide: [],
+    analiza: [],
+    seguimiento: [],
+  });
+  const soporte = (o: ReturnType<typeof operacion>) => camposDeOperacion(o, base()).find((c) => c.termino === "Soporte obligatorio")?.valor;
+
+  it("dice desde cuándo, con el día en la zona de la instalación", () => {
+    // Las 10 de la noche del 12 en Bogotá: ya es el 13 en UTC.
+    expect(soporte(operacion(true, new Date("2026-10-13T03:00:00Z")))).toBe("Sí: cada reporte lleva su soporte, desde el 12 de octubre de 2026");
+    expect(soporte(operacion(true, new Date("2026-01-01T15:00:00Z")))).toBe("Sí: cada reporte lleva su soporte, desde el 1 de enero de 2026");
+    expect(soporte(operacion(false, null))).toBe("No");
+  });
+});
+
+describe("el estado escrito de una fila del año (complemento 14C, §4.4)", () => {
+  const fila = { estado: "falta_dato" as const, vencida: false, historica: false };
+  it("bajo «Falta un dato», que falta el soporte; vencida, si pasó la fecha límite", () => {
+    expect(estadoEnTexto(fila)).toBe("Falta un dato");
+    expect(estadoEnTexto({ ...fila, faltaSoporte: true })).toBe("Falta un dato · falta el soporte");
+    expect(estadoEnTexto({ ...fila, faltaSoporte: true, vencida: true })).toBe("Falta un dato · falta el soporte · vencida");
   });
 });

@@ -282,7 +282,7 @@ export function FormularioReporte({
           </div>
         ) : null}
 
-        {datos.soporteObligatorio && !datos.historica ? (
+        {datos.debeSoporte ? (
           <p className="text-sm">
             {datos.soportes > 0
               ? `Soporte obligatorio en este indicador: ${cuenta(datos.soportes, "archivo adjunto", "archivos adjuntos")}.`

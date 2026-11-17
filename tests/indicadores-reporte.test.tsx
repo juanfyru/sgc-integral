@@ -124,6 +124,7 @@ const DATOS: DatosDeReporte = {
   motivo: null,
   reportada: false,
   soporteObligatorio: true,
+  debeSoporte: true,
   soportes: 0,
   sinMedidor: false,
   mide: true,
@@ -233,6 +234,18 @@ describe("FormularioReporte y ResultadoEnVivo", () => {
     // Hay un control «No aplica en este periodo», con su motivo.
     expect(html).toContain(">No aplica en este periodo</summary>");
     expect(html).toContain('name="motivo"');
+  });
+
+  it("el aviso del soporte obligatorio sale solo si esa medición lo debe (complemento 14C, §4.4)", () => {
+    const EXIGE = "Este indicador exige un soporte: adjúntelo antes de reportar.";
+    // El indicador lo exige, pero esta medición no lo debe: el soporte es opcional y no se dice nada, como sin soporte obligatorio.
+    const opcional = renderToStaticMarkup(<FormularioReporte datos={{ ...DATOS, soporteObligatorio: true, debeSoporte: false }} volver="/x" />);
+    expect(opcional).not.toContain(EXIGE);
+    expect(opcional).not.toContain("Soporte obligatorio en este indicador");
+    expect(renderToStaticMarkup(<FormularioReporte datos={{ ...DATOS, soporteObligatorio: true, debeSoporte: true }} volver="/x" />)).toContain(EXIGE);
+    expect(renderToStaticMarkup(<FormularioReporte datos={{ ...DATOS, debeSoporte: true, soportes: 2 }} volver="/x" />)).toContain(
+      "Soporte obligatorio en este indicador: 2 archivos adjuntos.",
+    );
   });
 
   it("ResultadoEnVivo con 3 y 5: 60 %, «Crítico» y la frase", () => {
@@ -462,6 +475,28 @@ describe("las páginas", () => {
       // Cerrada, los soportes se ven pero ya no se suben ni se quitan.
       expect(cerrada).toContain(">Soportes</h2>");
       expect(cerrada).not.toContain("Arrastre los archivos aquí");
+    }));
+
+  it("/indicadores/[codigo]/reportar/[periodo]: «Este indicador exige un soporte» solo si esa medición lo debe (complemento 14C, §4.4)", () =>
+    enTransaccion(async (tx) => {
+      const EXIGE = "Este indicador exige un soporte: adjúntelo antes de reportar.";
+      const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+      const ind = await indicadorDePrueba(tx, {
+        periodicidad: "trimestral",
+        inicioMedicion: "2026-T1",
+        aprobadaEn: APROBADA,
+        mide: [mide.usuarioId],
+        soporteObligatorio: true,
+      });
+      contexto.sesion = valida(mide);
+      // Nace mientras el indicador lo exige: lo debe, y lo dicen el formulario y la zona de soportes.
+      const debe = await reporte(ind.codigo, "2026-T1");
+      expect(debe.split(EXIGE)).toHaveLength(3);
+      // Sin la marca, el soporte es opcional: ni el formulario ni la zona de soportes lo piden.
+      await tx`UPDATE mediciones SET debe_soporte = false WHERE indicador_id = ${ind.id} AND periodo = '2026-T1'`;
+      const opcional = await reporte(ind.codigo, "2026-T1");
+      expect(opcional).not.toContain("Este indicador exige un soporte");
+      expect(opcional).toContain("Sin soportes adjuntos.");
     }));
 
   it("/indicadores/[codigo]/reportar/[periodo]: un indicador sin variables propias tiene «Soportes» con los de sus datos; un mixto los tiene junto a la variable", () =>
@@ -1125,6 +1160,7 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
   const conDato = (ajena: Partial<VariableAjena> = {}): DatosDeReporte => ({
     ...DATOS,
     soporteObligatorio: false,
+    debeSoporte: false,
     variables: [
       { ...DATOS.variables[0], nombre: "Valor glosado en el mes" },
       { ...DATOS.variables[1], nombre: "Total facturado en el mes", descripcion: null, fuente: null, ajena: { ...AJENA_DATO, ...ajena } },
@@ -1331,6 +1367,40 @@ describe("la variable que no digita quien mide (anexo 14C, §3.1)", () => {
     expect(html).not.toContain('>Ver<span class="sr-only"> junio de 2026</span>');
     // Sin la marca, quien mide reporta la misma fila.
     expect(tabla([fila({ estado: "por_reportar" })])).toContain('>Reportar<span class="sr-only"> septiembre de 2026</span>');
+  });
+
+  it("la tabla del año: bajo «Falta un dato», que falta el soporte, vencida si pasó la fecha límite (complemento 14C, §4.4)", () => {
+    const fila = (o: Partial<FilaDelAnio>): FilaDelAnio => ({
+      ...({} as FilaDelAnio),
+      periodo: "2026-09",
+      etiqueta: "Septiembre de 2026",
+      version: 1,
+      medicionId: 41,
+      estado: "falta_dato",
+      vencida: false,
+      vence: "10 de octubre de 2026",
+      historica: false,
+      noAplica: false,
+      valores: [],
+      resultado: null,
+      semaforo: null,
+      cumple: null,
+      meta: "≥ 90 %",
+      analisis: null,
+      causa: null,
+      accionPropuesta: null,
+      automatica: false,
+      fotoEn: null,
+      seCalcula: null,
+      ...o,
+    });
+    const tabla = (f: FilaDelAnio) =>
+      renderToStaticMarkup(<TablaDelAnio filas={[f]} variables={[]} anio={2026} codigo="ZZ-1" puedeMedir={false} puedeAnalizar={false} />);
+    expect(tabla(fila({ faltaSoporte: true, vencida: true }))).toContain(">Falta un dato · falta el soporte · vencida</span>");
+    expect(tabla(fila({ faltaSoporte: true }))).toContain(">Falta un dato · falta el soporte</span>");
+    const soloElDato = tabla(fila({}));
+    expect(soloElDato).toContain(">Falta un dato</span>");
+    expect(soloElDato).not.toContain("falta el soporte");
   });
 
   it("la tabla del año: junto a la cifra de una variable tomada que acumula desde después, desde cuándo (anexo 14C, §6.3)", () => {

@@ -13,6 +13,7 @@ import {
   origenEnTexto,
   reglaDeFicha,
   sinVariablesPropias,
+  soporteEnTexto,
   TENDENCIA,
   unidadDeFicha,
 } from "@/lib/indicadores/ficha-en-texto";
@@ -202,7 +203,7 @@ export function FichaTecnica({
           <Dato termino="Quién hace seguimiento">{operacion.seguimiento.length > 0 ? operacion.seguimiento.join(", ") : ninguno}</Dato>
           <Dato termino={segun.rotuloPlazo}>{`${operacion.plazoReporteDias} días después del cierre del periodo`}</Dato>
           <Dato termino="Inicio de medición">{operacion.inicioMedicion ? etiquetaDePeriodo(operacion.inicioMedicion) : ninguno}</Dato>
-          {segun.conSoporte ? <Dato termino="Soporte obligatorio">{operacion.soporteObligatorio ? "Sí: cada reporte lleva su soporte" : "No"}</Dato> : null}
+          {segun.conSoporte ? <Dato termino="Soporte obligatorio">{soporteEnTexto(operacion)}</Dato> : null}
           <Dato termino="Nivel de acceso">
             <Insignia variante="neutra">{operacion.nivelAcceso === "restringido" ? "Restringido" : "General"}</Insignia>
           </Dato>

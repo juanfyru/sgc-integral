@@ -5,8 +5,9 @@
  */
 import type { FichaLeida, FirmaDeFicha, ImportadaDe, OperacionLeida } from "@/db/consultas/indicadores/aprobacion";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
-import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { MESES, periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { cuenta } from "@/lib/plural";
+import { fechaEnZona } from "@/lib/tramites/plazos";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { horaLocal, zonaHoraria } from "@/lib/zona-horaria";
 import { calculoDe, ETIQUETA_ALCANCE } from "./calculos/registro";
@@ -249,6 +250,17 @@ export function operacionSegunOrigen(c: Pick<ContenidoFicha, "origenDato" | "cal
   return { mide: NADIE_MIDE, conSoporte: false, rotuloPlazo: calculoDe(c.calculo)?.clase === "flujo" ? ESPERA_ANTES_DE_CALCULAR : plazo };
 }
 
+/**
+ * «Sí: cada reporte lleva su soporte, desde el 12 de octubre de 2026» (anexo del complemento de la 14C, §4.4: el día en que se
+ * activó, en la zona de la instalación) o «No». La ficha en pantalla, el impreso y el Excel.
+ */
+export function soporteEnTexto(o: Pick<OperacionLeida, "soporteObligatorio" | "soporteDesde">): string {
+  if (!o.soporteObligatorio) return "No";
+  if (!o.soporteDesde) return "Sí: cada reporte lleva su soporte";
+  const [anio, mes, dia] = fechaEnZona(o.soporteDesde, zonaHoraria()).split("-").map(Number);
+  return `Sí: cada reporte lleva su soporte, desde el ${dia} de ${MESES[mes - 1]} de ${anio}`;
+}
+
 /** Los datos de operación (spec §7.3), que no se versionan ni se firman, según el origen de la versión que se muestra. */
 export function camposDeOperacion(o: OperacionLeida, c: Pick<ContenidoFicha, "origenDato" | "calculo" | "variables">): CampoDeTexto[] {
   const segun = operacionSegunOrigen(c);
@@ -258,7 +270,7 @@ export function camposDeOperacion(o: OperacionLeida, c: Pick<ContenidoFicha, "or
     { termino: "Quién hace seguimiento", valor: o.seguimiento.length > 0 ? o.seguimiento.join(", ") : NINGUNO },
     { termino: segun.rotuloPlazo, valor: `${o.plazoReporteDias} días después del cierre del periodo` },
     { termino: "Inicio de medición", valor: o.inicioMedicion ? periodoEnPalabras(o.inicioMedicion) : NINGUNO },
-    ...(segun.conSoporte ? [{ termino: "Soporte obligatorio", valor: o.soporteObligatorio ? "Sí: cada reporte lleva su soporte" : "No" }] : []),
+    ...(segun.conSoporte ? [{ termino: "Soporte obligatorio", valor: soporteEnTexto(o) }] : []),
     { termino: "Nivel de acceso", valor: o.nivelAcceso === "restringido" ? "Restringido" : "General" },
   ];
 }
@@ -327,12 +339,16 @@ export function semaforoDeResultado(semaforo: Semaforo | null, noAplica: boolean
   return noAplica ? "No aplica" : conResultado ? "Sin meta" : "Sin dato";
 }
 
-/** El estado de la medición: «Reportada», «Falta el análisis · vencida», «Por registrar», «Por venir», «Sin dato». */
-export function estadoEnTexto(f: Pick<FilaDelAnio, "estado" | "vencida" | "historica">): string {
+/**
+ * El estado de la medición: «Reportada», «Falta el análisis · vencida», «Por registrar», «Por venir», «Sin dato»; bajo «Falta
+ * un dato», el soporte que quien mide debe mientras tanto («Falta un dato · falta el soporte · vencida», anexo del complemento
+ * de la 14C §4.4). El de la tabla del año y el Excel.
+ */
+export function estadoEnTexto(f: Pick<FilaDelAnio, "estado" | "vencida" | "historica" | "faltaSoporte">): string {
   if (f.estado === "por_venir") return "Por venir";
   if (f.estado === "sin_dato") return "Sin dato";
   const etiqueta = f.historica && f.estado === "por_reportar" ? "Por registrar" : ETIQUETA_ESTADO[f.estado];
-  return `${etiqueta}${f.vencida ? " · vencida" : ""}`;
+  return `${etiqueta}${f.faltaSoporte ? " · falta el soporte" : ""}${f.vencida ? " · vencida" : ""}`;
 }
 
 /** La columna «Cumple»: «Sí», «No» o vacía (sin resultado o sin meta). */

@@ -2,8 +2,8 @@
  * Los recordatorios de los indicadores (spec 14 §10.2, F14-DC34): la pasada que `revisarVencimientos` suma después de la
  * de vigencia. Abre los periodos que terminaron (`asegurarMediciones`, indicador por indicador), toma las fotos de los
  * automáticos que ya tocan (`tomarFotos`, anexo 14B §5.4: un resultado que no cumple avisa y pide el análisis en la misma
- * pasada) y, sobre las mediciones ordinarias abiertas (`esPendiente`, sin las de otra periodicidad ni las que esperan el
- * dato del sistema: `queFalta`), manda:
+ * pasada) y, sobre las mediciones ordinarias abiertas (`esPendiente`, sin las de otra periodicidad ni las que esperan un
+ * dato, salvo por el soporte que quien mide debe mientras tanto: `queFalta` y `debeElSoporte`), manda:
  *
  * 1. El aviso previo (`aviso_previo_en`), cuando faltan los días del parámetro para la fecha límite: uno por persona.
  * 2. El de vencido (`aviso_vencido_en`), pasada la fecha límite: uno por persona a quienes miden (o a quienes analizan,
@@ -43,14 +43,15 @@ import { obtenerParametros } from "./maestros";
 import { asegurarMediciones } from "./mediciones";
 import { correrPaso, diaYMes } from "./pasada";
 import { propagarSinFallar } from "./propagacion";
-import { columnasDePendiente, esPendiente, queFalta, type FaltaDePersona as Falta } from "./tareas";
+import { columnasDePendiente, debeElSoporte, esPendiente, queFalta, type FaltaDePersona as Falta } from "./tareas";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; escalamientoDias: number; avisoPrevioDias: number };
 type Resultado = { avisados: number; escalados: number };
 
 /**
- * Lo que falta es siempre de alguien: «Falta un dato» (un automático que espera su cálculo) no entra a ningún paso. El
- * `grupo` de `correrPaso` es el indicador.
+ * Lo que falta es siempre de alguien: «Falta un dato» (un automático que espera su cálculo o un valor ajeno) no entra a
+ * ningún paso, salvo el soporte que quien mide debe mientras tanto (`debeElSoporte`), que entra como un reporte (anexo del
+ * complemento de la 14C, §4.4). El `grupo` de `correrPaso` es el indicador.
  */
 type Medicion = { id: number; grupo: number; indicadorId: number; procesoId: number; proceso: string; vence: Date; falta: Falta };
 
@@ -112,7 +113,7 @@ async function leer(sql: Cliente, c: Contexto, paso: Paso, ids?: number[]): Prom
   const pendientes = queFalta(filas);
   return filas.flatMap((f) => {
     const p = pendientes.get(Number(f.id));
-    if (!p || p.falta === "dato") return [];
+    if (!p || (p.falta === "dato" && !debeElSoporte(p))) return [];
     const m: Medicion = {
       id: Number(f.id),
       grupo: Number(f.indicador_id),
@@ -120,7 +121,8 @@ async function leer(sql: Cliente, c: Contexto, paso: Paso, ids?: number[]): Prom
       procesoId: Number(f.proceso_id),
       proceso: f.proceso as string,
       vence: new Date(f.vence_en as string),
-      falta: p.falta,
+      // El soporte que quien mide debe mientras espera el dato es suyo, como un reporte.
+      falta: p.falta === "dato" ? "reporte" : p.falta,
     };
     return paso.queda(m, c) ? [m] : [];
   });

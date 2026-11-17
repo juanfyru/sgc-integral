@@ -141,7 +141,7 @@ export default async function PaginaReportar({ params }: Params) {
               codigo={datos.codigo}
               soportes={soportes}
               editable={datos.mide && datos.estado !== "cerrada"}
-              obligatorio={datos.soporteObligatorio && !datos.historica}
+              debeSoporte={datos.debeSoporte}
             />
           ) : null}
           {conLosDeDatos ? <SoportesDeLosDatos variables={datos.variables} soportes={soportesDeDatos} sinPropias={!datos.mide} /> : null}

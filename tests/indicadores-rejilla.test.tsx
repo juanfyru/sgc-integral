@@ -78,6 +78,7 @@ const DATOS: DatosDeReporte = {
   motivo: null,
   reportada: false,
   soporteObligatorio: false,
+  debeSoporte: false,
   soportes: 0,
   sinMedidor: false,
   mide: true,
@@ -194,6 +195,15 @@ describe("RejillaDeCategorias (maquetas 9 y 10)", () => {
     expect(html).toContain("Lo guardado hasta ahora no se pierde.");
     const dos = rejilla({ categorias: SEDES.map((c) => (c.id === 13 || c.id === 12 ? { ...c, valores: { A: null, B: null } } : c)) });
     expect(dos).toContain("Faltan 2 categorías: Puesto de salud 1, Puesto de salud 2");
+  });
+
+  it("el aviso del soporte obligatorio sale solo si esa medición lo debe (complemento 14C, §4.4)", () => {
+    const EXIGE = "Este indicador exige un soporte: adjúntelo antes de reportar.";
+    // El indicador lo exige, pero esta medición no lo debe: como en un indicador sin soporte obligatorio.
+    const opcional = rejilla({ soporteObligatorio: true, debeSoporte: false });
+    expect(opcional).not.toContain(EXIGE);
+    expect(opcional).not.toContain("Soporte obligatorio en este indicador");
+    expect(rejilla({ soporteObligatorio: true, debeSoporte: true })).toContain(EXIGE);
   });
 
   it("un «No aplica» que puso el sistema se muestra con su motivo, sin casilla ni originales de fila", () => {
