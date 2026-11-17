@@ -11,6 +11,15 @@ const formulario = (campos: Record<string, string>) => {
   return fd;
 };
 const rechazo = (campo: string) => `${campo}: ${SIN_PUNTOS_DE_MILES}`;
+/** El mensaje exacto con que se rechaza (`toThrow` con texto solo pide que lo contenga). */
+const mensajeDe = (f: () => unknown) => {
+  try {
+    f();
+  } catch (e) {
+    return (e as Error).message;
+  }
+  return null;
+};
 const variables = (extra: Record<string, string> = {}) =>
   JSON.stringify([
     { letra: "A", nombre: "Ejecutadas", consolidacion: "suma", admiteNegativos: false, ...extra },
@@ -71,9 +80,17 @@ describe("EsquemaFicha: sin puntos de miles", () => {
     expect(JSON.parse(ficha({ semaforoModo: "rangos", rangos: RANGOS("2,375") }).rangos!).bien[0].valor).toBe("2.375");
   });
 
-  it("un límite de captura de la ficha con punto de miles se rechaza; con coma se guarda con punto", () => {
-    expect(() => ficha({ variables: variables({ capturaMin: "1.500" }) })).toThrow(rechazo("El mínimo de captura"));
-    expect(() => ficha({ variables: variables({ capturaMax: "1.500" }) })).toThrow(rechazo("El máximo de captura"));
+  it("un límite de captura de la ficha con punto de miles se rechaza con el nombre de su variable; con coma se guarda con punto", () => {
+    expect(mensajeDe(() => ficha({ variables: variables({ capturaMin: "1.500" }) }))).toBe(`El mínimo de captura de «Ejecutadas»: ${SIN_PUNTOS_DE_MILES}`);
+    // En B, con A bien escrita: el mensaje dice de cuál de las dos es.
+    const enB = JSON.stringify([
+      { letra: "A", nombre: "Ejecutadas", consolidacion: "suma", admiteNegativos: false, capturaMax: "1500" },
+      { letra: "B", nombre: "Programadas", consolidacion: "suma", admiteNegativos: false, capturaMax: "1.500" },
+    ]);
+    expect(mensajeDe(() => ficha({ variables: enB }))).toBe(`El máximo de captura de «Programadas»: ${SIN_PUNTOS_DE_MILES}`);
+    // Sin nombre, con la letra.
+    const sinNombre = JSON.stringify([{ letra: "B", nombre: " ", consolidacion: "suma", admiteNegativos: false, capturaMax: "1.500" }]);
+    expect(mensajeDe(() => ficha({ variables: sinNombre }))).toBe(`El máximo de captura de B: ${SIN_PUNTOS_DE_MILES}`);
     const v = ficha({ variables: variables({ capturaMin: "2,375", capturaMax: "1500" }) }).variables;
     expect([v[0].capturaMin, v[0].capturaMax]).toEqual(["2.375", "1500"]);
   });

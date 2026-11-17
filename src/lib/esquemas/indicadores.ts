@@ -151,6 +151,28 @@ function esquemasDeFicha(estricto: boolean) {
     })
     .strict();
 
+  /**
+   * En la frontera de la persona, un límite de captura con punto de miles dice de qué variable es (anexo del complemento de
+   * la 14C, §3.1: la ficha tiene varias): «El máximo de captura de «Programadas»: …»; sin nombre, con su letra. Mira el texto
+   * tal como llegó, antes de que el lector cambie la coma por punto; si no hay punto de miles, lo lee `EsquemaVariable`.
+   */
+  const VariableDeLaPersona = z.preprocess((valor, ctx) => {
+    if (typeof valor !== "object" || valor === null || Array.isArray(valor)) return valor;
+    const v = valor as Record<string, unknown>;
+    const nombre = typeof v.nombre === "string" && v.nombre.trim() !== "" ? `«${v.nombre.trim()}»` : null;
+    const deCual = nombre ?? (typeof v.letra === "string" && /^[A-Z]$/.test(v.letra) ? v.letra : null);
+    for (const [clave, campo] of [
+      ["capturaMin", "El mínimo de captura"],
+      ["capturaMax", "El máximo de captura"],
+    ] as const) {
+      const texto = v[clave];
+      if (typeof texto !== "string" || !tienePuntoDeMiles(texto)) continue;
+      ctx.addIssue({ code: "custom", message: `${deCual ? `${campo} de ${deCual}` : campo}: ${SIN_PUNTOS_DE_MILES}`, path: [clave] });
+      return z.NEVER;
+    }
+    return valor;
+  }, EsquemaVariable);
+
   const EsquemaPrueba = z
     .object({
       valores: z
@@ -238,7 +260,7 @@ function esquemasDeFicha(estricto: boolean) {
       formula: opcional("La fórmula", 300),
       variables: enJson(
         z
-          .array(EsquemaVariable, { error: "Declare al menos una variable" })
+          .array(estricto ? VariableDeLaPersona : EsquemaVariable, { error: "Declare al menos una variable" })
           .min(1, "Declare al menos una variable")
           .max(26, "Una ficha admite hasta 26 variables"),
         "Las variables no tienen un formato válido",

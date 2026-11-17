@@ -212,6 +212,9 @@ describe("FormularioFicha", () => {
     expect(campoDeMasOpciones("La línea base debe ser un número")).toBe("ficha-lineaBaseValor");
     expect(campoDeMasOpciones("El mínimo del resultado no puede pasar del máximo")).toBe("ficha-resultadoMin");
     expect(campoDeMasOpciones("El mínimo de captura de A no puede pasar del máximo")).toBe("ficha-detalle-variables");
+    expect(
+      campoDeMasOpciones("El máximo de captura de «Programadas»: Escriba el valor sin puntos de miles (1731); para decimales use la coma (1,731)"),
+    ).toBe("ficha-detalle-variables");
     expect(campoDeMasOpciones("El inicio de medición debe ser un periodo trimestral")).toBe("ficha-inicioMedicion");
     expect(campoDeMasOpciones("El procedimiento debe ser un documento del proceso")).toBe("ficha-procedimientoDocumentoId");
     // Lo que está a la vista no abre nada.
