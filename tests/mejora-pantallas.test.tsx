@@ -1328,6 +1328,12 @@ describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => 
     expect(html).toContain('name="causa"');
     expect(html).toContain('minLength="10"');
     expect(html).toContain("Mientras se decide, la actividad sigue contando como vencida.");
+    expect(html).not.toContain("Corregir antes del");
+    // Una devuelta: la fecha que rige es la de corregir, y es la que se mueve (revisión final, I1).
+    const devuelta = renderToStaticMarkup(
+      <DialogoPedirAjuste hallazgoId={14} actividadId={22} etiqueta="A2.1" fin="2026-12-15" finOriginal="2026-12-15" corregirAntesDe="2026-11-20" hoy="2026-11-18" accion={accion} />,
+    );
+    expect(sinEtiquetas(devuelta)).toContain(`Corregir antes del${fechaDeDia("2026-11-20")} (la fecha que se mueve)`);
     expect(aviso(html)).toBe(1);
   });
 

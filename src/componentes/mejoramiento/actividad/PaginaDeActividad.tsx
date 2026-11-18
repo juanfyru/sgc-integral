@@ -189,6 +189,7 @@ export function PaginaDeActividad({
               etiqueta={a.etiqueta}
               fin={a.fin}
               finOriginal={a.finOriginal}
+              corregirAntesDe={devuelta ? a.corregirAntesDe : null}
               hoy={hoy}
               accion={acciones.pedirAjuste}
             />

@@ -15,7 +15,8 @@ const CLASE_DIALOGO = "m-auto w-full max-w-lg rounded-lg border border-border bg
 /**
  * «Pedir ajuste de fecha» de una actividad (spec 15 §10.6, maqueta 6): la fecha original, que se conserva siempre; la nueva, de
  * hoy en adelante; y la causa del retraso. Lo decide quien aprobó el plan y, mientras tanto, la actividad sigue contando como
- * vencida. El servidor vuelve a comprobar quién lo pide y cada fecha.
+ * vencida. En una actividad devuelta en la verificación (`corregirAntesDe`) la fecha que rige es la de corregir, y es la que la
+ * reprogramación mueve. El servidor vuelve a comprobar quién lo pide y cada fecha.
  */
 export function DialogoPedirAjuste({
   hallazgoId,
@@ -23,6 +24,7 @@ export function DialogoPedirAjuste({
   etiqueta,
   fin,
   finOriginal,
+  corregirAntesDe = null,
   hoy,
   accion,
 }: {
@@ -31,6 +33,8 @@ export function DialogoPedirAjuste({
   etiqueta: string;
   fin: string;
   finOriginal: string | null;
+  /** La fecha para corregir de una actividad devuelta, o nula. */
+  corregirAntesDe?: string | null;
   hoy: string;
   accion: AccionDelPaso;
 }) {
@@ -58,6 +62,12 @@ export function DialogoPedirAjuste({
               <>
                 <dt className="text-muted-foreground">Fin vigente</dt>
                 <dd>{fechaDeDia(fin)}</dd>
+              </>
+            ) : null}
+            {corregirAntesDe ? (
+              <>
+                <dt className="text-muted-foreground">Corregir antes del</dt>
+                <dd>{`${fechaDeDia(corregirAntesDe)} (la fecha que se mueve)`}</dd>
               </>
             ) : null}
           </dl>
