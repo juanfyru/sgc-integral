@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { CalendarRange, FileSearch, Filter, Gauge, Scale, SearchX, TimerOff } from "lucide-react";
+import { CalendarRange, ClipboardCheck, FileSearch, Filter, Gauge, Scale, SearchX, TimerOff } from "lucide-react";
 import { CampoBusqueda } from "@/componentes/busqueda/CampoBusqueda";
 import { TarjetaResultado } from "@/componentes/busqueda/TarjetaResultado";
 import { InsigniaNorma } from "@/componentes/normograma/TablaNormas";
@@ -15,10 +15,12 @@ import {
   type RespuestaBusqueda,
 } from "@/db/consultas/busqueda";
 import { buscarIndicadores, type ResultadoIndicador } from "@/db/consultas/indicadores/busqueda";
+import { buscarHallazgos, type ResultadoHallazgo } from "@/db/consultas/mejoramiento/busqueda";
 import { buscarNormas, type ResultadoNorma } from "@/db/consultas/normograma/busqueda";
 import { obtenerDetalleProceso } from "@/db/consultas/procesos";
-import { INDICADORES_EN_LA_BUSQUEDA } from "@/lib/busqueda-rapida";
+import { HALLAZGOS_EN_LA_BUSQUEDA, INDICADORES_EN_LA_BUSQUEDA } from "@/lib/busqueda-rapida";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { crearLimitador } from "@/lib/limite";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -95,6 +97,7 @@ export default async function PaginaBuscar({
 
   let normas: ResultadoNorma[] = [];
   let indicadores: ResultadoIndicador[] = [];
+  let hallazgos: ResultadoHallazgo[] = [];
 
   if (conCriterios) {
     if (!permitirBusqueda(String(sesion.usuarioId))) {
@@ -102,10 +105,12 @@ export default async function PaginaBuscar({
     } else {
       // El normograma se lee con cualquier sesión: las normas no retiradas que coinciden con el texto, sin los filtros
       // de documento (tipo, proceso, fechas), que no les aplican.
-      [respuesta, normas, indicadores] = await Promise.all([
+      // Los hallazgos, con la regla de la lista (`filtroHallazgos`): solo los que la persona ve.
+      [respuesta, normas, indicadores, hallazgos] = await Promise.all([
         buscarDocumentos(filtros, sesion),
         filtros.q?.trim() ? buscarNormas(filtros.q, NORMAS_EN_LA_BUSQUEDA) : Promise.resolve([]),
         filtros.q?.trim() ? buscarIndicadores(filtros.q, sesion, INDICADORES_EN_LA_BUSQUEDA) : Promise.resolve([]),
+        filtros.q?.trim() ? buscarHallazgos(filtros.q, sesion, HALLAZGOS_EN_LA_BUSQUEDA) : Promise.resolve([]),
       ]);
       if (filtros.q?.trim()) {
         await registrarBusqueda(filtros.q, respuesta.total).catch((err) =>
@@ -365,6 +370,7 @@ export default async function PaginaBuscar({
             )}
             {normas.length > 0 ? <GrupoNormas normas={normas} /> : null}
             {indicadores.length > 0 ? <GrupoIndicadores indicadores={indicadores} /> : null}
+            {hallazgos.length > 0 ? <GrupoHallazgos hallazgos={hallazgos} /> : null}
           </section>
         </div>
       )}
@@ -421,6 +427,33 @@ function GrupoIndicadores({ indicadores }: { indicadores: ResultadoIndicador[] }
               <span className="block break-words text-muted-foreground">{i.proceso}</span>
             </span>
             {i.retirado ? <Insignia variante="sin-dato">Retirado</Insignia> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** El grupo «Hallazgos» debajo de los indicadores: el código, el título y en qué estado va, con el enlace a su página. */
+function GrupoHallazgos({ hallazgos }: { hallazgos: ResultadoHallazgo[] }) {
+  return (
+    <section aria-labelledby="titulo-hallazgos" className="mt-8">
+      <h2 id="titulo-hallazgos" className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <ClipboardCheck className="size-4 text-muted-foreground" aria-hidden="true" />
+        Hallazgos
+      </h2>
+      <ul className="space-y-2">
+        {hallazgos.map((h) => (
+          <li key={h.id} className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+            <span className="min-w-0 flex-1">
+              <Link
+                href={rutaDeHallazgo(h.id)}
+                className="rounded font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
+              >
+                <span className="font-mono text-xs">{h.codigo}</span> {h.titulo}
+              </Link>
+            </span>
+            <Insignia variante="neutra">{h.etiqueta}</Insignia>
           </li>
         ))}
       </ul>

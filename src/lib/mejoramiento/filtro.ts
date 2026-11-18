@@ -1,6 +1,9 @@
 /** El filtro de la lista de hallazgos, leído de la URL: un valor que no se entiende se ignora. Sin Node ni BD. */
 import type { FiltroDeLista } from "@/db/consultas/mejoramiento/lectura";
-import { ORIGENES_HALLAZGO, CLASES, CRITICIDADES, ESTADOS_HALLAZGO } from "./tipos";
+import { etiquetaDeEstado } from "./estados";
+import { ORIGENES } from "./origenes";
+import { ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "./textos";
+import { ORIGENES_HALLAZGO, CLASES, CRITICIDADES, ESTADOS_HALLAZGO, type EstadoHallazgo } from "./tipos";
 
 type Parametros = Record<string, string | string[] | undefined>;
 
@@ -9,6 +12,41 @@ const dentro = <T extends string>(lista: readonly T[], v: string | undefined): T
   v !== undefined && (lista as readonly string[]).includes(v) ? (v as T) : undefined;
 
 export const ESTADOS_ESPECIALES = ["abiertos", "reabiertos", "sin_accion", "por_evaluar"] as const;
+
+/** Los estados del filtro que no son un estado guardado, con su nombre en el selector (y en el Excel y la bitácora). */
+export const ETIQUETA_ESTADO_ESPECIAL: Record<(typeof ESTADOS_ESPECIALES)[number], string> = {
+  abiertos: "Abiertos",
+  reabiertos: "Reabiertos",
+  sin_accion: "Cerrados sin acción",
+  por_evaluar: "Por evaluar la eficacia",
+};
+
+/** El nombre del filtro de estado, como lo dice el selector de la lista. */
+export function etiquetaDelFiltroDeEstado(estado: NonNullable<FiltroDeLista["estado"]>): string {
+  return Object.hasOwn(ETIQUETA_ESTADO_ESPECIAL, estado)
+    ? ETIQUETA_ESTADO_ESPECIAL[estado as keyof typeof ETIQUETA_ESTADO_ESPECIAL]
+    : etiquetaDeEstado({ estado: estado as EstadoHallazgo, resultadoCierre: null, correccionRequerida: null });
+}
+
+const ETIQUETA_ORIGEN = new Map<string, string>(ORIGENES.map((o) => [o.clave, o.etiqueta]));
+
+/**
+ * Los filtros de la lista en palabras, uno por parte («Proceso: Urgencias», «Estado: Por aceptar», «Solo vencidos»), en el orden
+ * del formulario: la línea de filtros del Excel. El proceso por su nombre en `procesos` (los del alcance de quien exporta); uno que
+ * ya no está, «no disponible».
+ */
+export function filtrosEnPalabras(f: FiltroDeLista, procesos: ReadonlyArray<{ id: number; nombre: string }>): string[] {
+  return [
+    f.q ? `Texto: «${f.q}»` : null,
+    f.procesoId !== undefined ? `Proceso: ${procesos.find((p) => p.id === f.procesoId)?.nombre ?? "no disponible"}` : null,
+    f.origen ? `Origen: ${ETIQUETA_ORIGEN.get(f.origen) ?? f.origen}` : null,
+    f.clase ? `Clase: ${ETIQUETA_CLASE[f.clase]}` : null,
+    f.criticidad ? `Criticidad: ${ETIQUETA_CRITICIDAD[f.criticidad]}` : null,
+    f.estado ? `Estado: ${etiquetaDelFiltroDeEstado(f.estado)}` : null,
+    f.soloVencidos ? "Solo vencidos" : null,
+    f.esperanSuDecision ? "Esperan su decisión" : null,
+  ].filter((x): x is string => x !== null);
+}
 
 export function filtroDeConsulta(p: Parametros): FiltroDeLista {
   const filtro: FiltroDeLista = {};

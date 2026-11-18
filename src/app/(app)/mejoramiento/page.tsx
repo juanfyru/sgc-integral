@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ClipboardCheck, Plus } from "lucide-react";
+import { ClipboardCheck, FileSpreadsheet, Plus } from "lucide-react";
 import { FiltrosDeHallazgos } from "@/componentes/mejoramiento/FiltrosDeHallazgos";
 import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
@@ -20,7 +20,7 @@ import { adondeVaSinLista } from "@/lib/mejoramiento/rutas";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
-import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
+import { consultaDeFiltro, filtroDeConsulta } from "@/lib/mejoramiento/filtro";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Mejoramiento" };
@@ -58,6 +58,8 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
     contarReportesPorClasificar(sesion),
   ]);
   const registra = puede(sesion, "mejora.registrar");
+  // El Excel lleva los filtros puestos (spec §16.3); es una descarga auditada: un enlace simple, sin precarga.
+  const consulta = consultaDeFiltro(filtro);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -69,11 +71,21 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
             : "Hallazgos, planes de acción y su seguimiento."
         }
         acciones={
-          registra ? (
-            <Link href="/mejoramiento/nuevo" className={`${claseBoton("primario")} ${FOCO}`}>
-              <Plus aria-hidden="true" className="size-4" />
-              Registrar hallazgo
-            </Link>
+          veAlgo || registra ? (
+            <>
+              {veAlgo ? (
+                <a href={`/mejoramiento/excel${consulta ? `?${consulta}` : ""}`} className={`${claseBoton("secundario")} ${FOCO}`}>
+                  <FileSpreadsheet aria-hidden="true" className="size-4" />
+                  Excel
+                </a>
+              ) : null}
+              {registra ? (
+                <Link href="/mejoramiento/nuevo" className={`${claseBoton("primario")} ${FOCO}`}>
+                  <Plus aria-hidden="true" className="size-4" />
+                  Registrar hallazgo
+                </Link>
+              ) : null}
+            </>
           ) : null
         }
       />

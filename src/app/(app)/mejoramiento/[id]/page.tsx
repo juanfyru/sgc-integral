@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Printer } from "lucide-react";
 import {
   aceptarHallazgoAccion,
   anularHallazgoAccion,
@@ -43,7 +44,7 @@ import { PanelDeFirmas, firmasDelEnvio } from "@/componentes/mejoramiento/plan/P
 import { ParecidosDeOtrosProcesos } from "@/componentes/mejoramiento/plan/ParecidosDeOtrosProcesos";
 import { PasoAprobar } from "@/componentes/mejoramiento/plan/PasoAprobar";
 import { DevolverPlan, PasoRevisar } from "@/componentes/mejoramiento/plan/PasoRevisar";
-import { PlanEnLectura, type IndicadorEnLectura } from "@/componentes/mejoramiento/plan/PlanEnLectura";
+import { PlanEnLectura } from "@/componentes/mejoramiento/plan/PlanEnLectura";
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
@@ -82,7 +83,6 @@ import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/m
 import { FALTA_EL_FORMATO } from "@/db/consultas/mejoramiento/carga-confirmada";
 import { revisoresDe } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
-import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
 import type { ActividadDeDetalle, DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import {
   cerradosDelProceso,
@@ -96,22 +96,20 @@ import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { aprobacionEnVigor, oficiosPosibles } from "@/db/consultas/mejoramiento/registro";
 import { datosDeEvaluacion, huellaDeLoVisto } from "@/db/consultas/mejoramiento/verificacion";
-import { puedeVerIndicador } from "@/lib/alcance";
 import { leerCambios } from "@/lib/mejoramiento/analisis";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import { fechaDelAjustePasada, razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
-import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
+import { rutaDeFormular, rutaDeImprimir } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { ErrorMejora, estaAbierta, SE_AJUSTA_EN, TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
-import type { SesionValida } from "@/lib/sesion";
 import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { exigirHallazgo } from "../_comun";
+import { exigirHallazgo, indicadorParaQuienLee } from "../_comun";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Hallazgo" };
@@ -182,15 +180,6 @@ function cambiosPedidos(cambios: unknown): string | null {
   if (!c) return null;
   const cuales = [c.documentos ? "documentos" : null, c.riesgos ? "matriz de riesgos" : null, c.controles ? "controles" : null].filter(Boolean);
   return cuales.length > 0 ? cuales.join(", ") : null;
-}
-
-/** El indicador enlazado al criterio de la ronda, nombrado solo a quien lo ve (spec §11.2); a los demás, «un indicador». */
-async function indicadorParaQuienLee(r: RondaDeDetalle, sesion: SesionValida): Promise<IndicadorEnLectura> {
-  if (r.indicadorEficaciaId === null) return null;
-  const sql = obtenerSql();
-  const [ind, ve] = await Promise.all([indicadorDeEficacia(sql, r.indicadorEficaciaId), puedeVerIndicador(r.indicadorEficaciaId, sesion, { sql })]);
-  if (!ind) return null;
-  return ve ? { visible: true, codigo: ind.codigo, nombre: ind.nombre, periodicidad: ind.periodicidad } : { visible: false };
 }
 
 /** El último evento de alguno de esos tipos. */
@@ -675,6 +664,15 @@ export default async function PaginaHallazgo({
         }
         titulo={h.titulo}
         descripcion={`${h.proceso} · registró: ${h.registradoPor}`}
+        acciones={
+          // El SGC-FO-AC-01 y los formatos de sus análisis los imprime quien ve el hallazgo completo (spec §16.4).
+          completo ? (
+            <Link href={rutaDeImprimir(h.id)} className={claseBoton("secundario")}>
+              <Printer aria-hidden="true" className="size-4" />
+              Imprimir
+            </Link>
+          ) : null
+        }
       />
       <Recorrido pasos={pasosConFechas(h, zona)} />
       {seccionCarga}

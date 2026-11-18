@@ -1,7 +1,10 @@
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { periodosDeDatos } from "@/lib/indicadores/cierre";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "@/lib/indicadores/filtros";
-import type { AccionHallazgo } from "@/lib/mejoramiento/tipos";
+import { ESTADOS_ESPECIALES, etiquetaDelFiltroDeEstado } from "@/lib/mejoramiento/filtro";
+import { ORIGENES } from "@/lib/mejoramiento/origenes";
+import { ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
+import { ESTADOS_HALLAZGO, type AccionHallazgo } from "@/lib/mejoramiento/tipos";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION } from "@/lib/normograma/tipos";
 import { cuenta } from "@/lib/plural";
 import type { Accion } from "@/lib/tramites/transiciones";
@@ -245,6 +248,38 @@ function filtrosDeLista(v: unknown): (string | null)[] {
     f.participo === true ? "donde participa" : null,
     texto(f.texto) ? `con el texto «${texto(f.texto)}»` : null,
     f.retirados === true ? "con los retirados" : null,
+  ];
+}
+
+const ETIQUETA_ORIGEN_DE_MEJORA: Record<string, string> = Object.fromEntries(ORIGENES.map((o) => [o.clave, o.etiqueta]));
+const ESTADOS_DEL_FILTRO: readonly string[] = [...ESTADOS_HALLAZGO, ...ESTADOS_ESPECIALES];
+
+/**
+ * Los filtros de la lista de hallazgos que guarda su Excel (Mejoramiento, 15A), cada uno con su nombre; el proceso se guarda por
+ * su id y no se nombra.
+ */
+function filtrosDeMejora(v: unknown): (string | null)[] {
+  const f = objeto(v);
+  if (!f) return [];
+  const de = (mapa: Record<string, string>, valor: unknown) => {
+    const t = etiquetaTal(mapa, valor);
+    return t ? minuscula(t) : null;
+  };
+  const origen = de(ETIQUETA_ORIGEN_DE_MEJORA, f.origen);
+  const clase = de(ETIQUETA_CLASE, f.clase);
+  const criticidad = de(ETIQUETA_CRITICIDAD, f.criticidad);
+  const estado = texto(f.estado);
+  return [
+    deUnProceso(f.procesoId),
+    origen ? `de origen «${origen}»` : null,
+    clase ? `de clase «${clase}»` : null,
+    criticidad ? `de criticidad «${criticidad}»` : null,
+    estado && ESTADOS_DEL_FILTRO.includes(estado)
+      ? `en estado «${minuscula(etiquetaDelFiltroDeEstado(estado as (typeof ESTADOS_HALLAZGO)[number]))}»`
+      : null,
+    f.soloVencidos === true ? "solo los vencidos" : null,
+    f.esperanSuDecision === true ? "los que esperan su decisión" : null,
+    texto(f.q) ? `con el texto «${texto(f.q)}»` : null,
   ];
 }
 
@@ -1361,6 +1396,9 @@ export function describirEvento(e: EventoAuditoria): string {
     // ── Indicadores (14A): los Excel
     case "exporto_ficha_indicador":
       return `Emitió el Excel de la ficha y los resultados de ${cod ?? "un indicador"}${numero(d.anio) === null ? "" : ` (${numero(d.anio)})`}`;
+    // ── Mejoramiento (15A): el Excel de la lista (la matriz del SGC-FO-28), con sus filtros
+    case "mejora_exporto_hallazgos":
+      return `Emitió la matriz de hallazgos de mejoramiento${entreParentesis(filtrosDeMejora(d.filtros))}`;
     case "exporto_resultados_indicadores": {
       const anio = numero(d.anio);
       return `Emitió los resultados de los indicadores${anio === null ? "" : ` de ${anio}`}${entreParentesis(filtrosDeLista(d.filtros))}`;
@@ -1559,6 +1597,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_reporte_descartado: "Descartó un reporte",
   mejora_respuesta_ente: "Registró la respuesta al ente de un hallazgo",
   mejora_carga_confirmada: "Adjuntó el formato firmado de la carga de un hallazgo",
+  mejora_exporto_hallazgos: "Emitió la matriz de hallazgos de mejoramiento",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

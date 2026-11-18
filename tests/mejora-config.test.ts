@@ -21,10 +21,11 @@ import {
   quitarDiaDeCalendario,
   type ConfigMejora,
 } from "@/db/consultas/mejoramiento/config";
+import { encabezadoDeFormato } from "@/db/consultas/mejoramiento/formatos";
 import { SIN_AJUSTES } from "@/lib/dias-habiles";
 import { formularAntesDe, quedanDiasHabiles, venceEn } from "@/lib/mejoramiento/plazos";
 import { ErrorPermiso } from "@/lib/permisos";
-import { finDeFecha } from "@/lib/tramites/plazos";
+import { fechaEnZona, finDeFecha } from "@/lib/tramites/plazos";
 import { documentoLibre, opc, sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -115,6 +116,32 @@ describe("documentosParaFormato", () => {
       // Guardar sin tocarlo lo conserva.
       await guardarConfigMejora(admin, await obtenerConfigMejora({ sql: tx }), opc(tx));
       expect((await obtenerConfigMejora({ sql: tx })).formatos.registro).toBe(doc.id);
+    });
+  });
+});
+
+describe("encabezadoDeFormato", () => {
+  it("devuelve el código y la versión vigente del documento elegido, y null cuando ese documento deja de tener versión vigente", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const doc = await documentoLibre(tx, { proceso: "CEX", tipo: "FO" });
+      // La vigente es la 2 (la 1 quedó obsoleta), aprobada el 15 de marzo: su fecha de emisión.
+      await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${doc.id}`;
+      await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
+        VALUES (${doc.id}, 2, 'vigente', 'Prueba', '2026-03-15')`;
+      const formatos = { registro: doc.id, porques: null, ishikawa: null };
+      await guardarConfigMejora(admin, { ...CONFIG_MEJORA_DEFECTO, formatos }, opc(tx));
+
+      const e = await encabezadoDeFormato(tx, "registro");
+      expect(e).toEqual({ codigo: doc.codigo, version: 2, emitidoEn: expect.any(Date) });
+      // El día de la aprobación, también en la zona de la instalación (no el anterior por la hora UTC).
+      expect(fechaEnZona(e!.emitidoEn, ZONA)).toBe("2026-03-15");
+      // Sin documento elegido, sin encabezado.
+      expect(await encabezadoDeFormato(tx, "porques")).toBeNull();
+      expect(await encabezadoDeFormato(tx, "ishikawa")).toBeNull();
+
+      await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${doc.id}`;
+      expect(await encabezadoDeFormato(tx, "registro")).toBeNull();
     });
   });
 });

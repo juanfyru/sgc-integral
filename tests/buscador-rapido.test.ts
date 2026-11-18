@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -59,12 +61,14 @@ describe("el grupo «Normas» de la paleta", () => {
     tipo: "MN",
     ruta: "/documentos/sog-mn-01",
   };
-  it("separa los documentos, las normas y los indicadores: cada grupo en el orden en que llegó", () => {
+  it("separa los documentos, las normas, los indicadores y los hallazgos: cada grupo en el orden en que llegó", () => {
     const indicador = { ...documento, grupo: "indicador" as const, codigo: "GTH-IND-01", ruta: "/indicadores/GTH-IND-01" };
+    const hallazgo = { ...documento, grupo: "hallazgo" as const, codigo: "HZ-2026-004", tipo: "Por aceptar", ruta: "/mejoramiento/4" };
     const otra = { ...norma, codigo: "Resolución 2003 de 2014", ruta: "/normograma/8", tipo: "Derogada" };
-    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra], indicadores: [] });
+    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra], indicadores: [], hallazgos: [] });
     expect(gruposDeResultados([indicador, norma, documento]).indicadores).toEqual([indicador]);
-    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [], indicadores: [] });
+    expect(gruposDeResultados([hallazgo, indicador, documento]).hallazgos).toEqual([hallazgo]);
+    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [], indicadores: [], hallazgos: [] });
   });
 });
 
@@ -75,6 +79,16 @@ describe("los grupos de la paleta", () => {
     const html = renderToStaticMarkup(createElement(GrupoPaleta, { titulo: "Normas", vacio: false }, createElement("li", null, "Resolución 3100 de 2019")));
     expect(html).toContain(">Normas</p>");
     expect(html).toContain('<ul role="group" aria-label="Normas"><li>Resolución 3100 de 2019</li></ul>');
+  });
+
+  it("el grupo «Hallazgos» sigue el patrón de los demás: encabezado y grupo con nombre", async () => {
+    const { GrupoPaleta } = await import("@/componentes/cascaron/Buscador");
+    const html = renderToStaticMarkup(createElement(GrupoPaleta, { titulo: "Hallazgos", vacio: false }, createElement("li", null, "HZ-2026-004")));
+    expect(html).toContain(">Hallazgos</p>");
+    expect(html).toContain('<ul role="group" aria-label="Hallazgos"><li>HZ-2026-004</li></ul>');
+    // La paleta lo pinta debajo de los indicadores.
+    const paleta = readFileSync(path.resolve(import.meta.dirname, "../src/componentes/cascaron/Buscador.tsx"), "utf8");
+    expect(paleta.indexOf('<GrupoPaleta titulo="Hallazgos"')).toBeGreaterThan(paleta.indexOf('<GrupoPaleta titulo="Indicadores"'));
   });
 
   it("el grupo «Indicadores» sigue el patrón de los demás: encabezado y grupo con nombre", async () => {

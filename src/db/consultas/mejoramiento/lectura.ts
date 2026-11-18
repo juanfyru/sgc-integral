@@ -16,12 +16,14 @@ import {
   puedeVerHallazgo,
   puedeVerificar,
   quienesVerifican,
+  vistaCompletaDeHallazgo,
 } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { leerCriterios, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
+import type { ActividadDeExcel, FilaDeExcel } from "@/lib/mejoramiento/excel";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import {
@@ -34,9 +36,14 @@ import {
   type EstadoActividad,
   type EstadoHallazgo,
   type HallazgoBase,
+  type EstadoAjuste,
+  type MetodoAnalisis,
   type MetodoDeVerificacion,
   type Origen,
   type ResultadoCierre,
+  type TipoAccion,
+  type TipoAjuste,
+  estaAbierta,
 } from "@/lib/mejoramiento/tipos";
 import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -356,6 +363,184 @@ export async function veAlgunHallazgo(sesion: SesionFlujo, opciones?: Opciones):
   const sql = opciones?.sql ?? obtenerSql();
   const [f] = await sql`SELECT EXISTS (SELECT 1 FROM mejora_hallazgos h WHERE ${filtroHallazgos(sql, sesion)}) AS ve`;
   return f?.ve === true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El Excel de la lista
+
+/** El resultado y el criterio de eficacia de una ronda, sin nombrar el indicador enlazado (spec §11.2 y §16.3). */
+function eficaciaDeRonda(r: Record<string, unknown> | undefined): FilaDeExcel["eficacia"] {
+  if (!r) return null;
+  return {
+    resultado: r.resultado === "eficaz" || r.resultado === "no_eficaz" ? r.resultado : null,
+    criterios: leerCriterios(r.criterios),
+    criterioOtro: textoONulo(r.criterio_otro),
+  };
+}
+
+/** Lo que Gerencia respondió a una escalada, como lo guarda su evento (`responderEscalada`): la nota y el acta, si la hubo. */
+function escaladaDe(detalle: unknown): ActividadDeExcel["escalada"] {
+  if (typeof detalle !== "object" || detalle === null) return null;
+  const d = detalle as Record<string, unknown>;
+  const nota = textoONulo(d.nota);
+  if (nota === null) return null;
+  const acta = typeof d.acta === "object" && d.acta !== null ? (d.acta as Record<string, unknown>) : null;
+  const numero = textoONulo(acta?.numero);
+  const fecha = textoONulo(acta?.fecha);
+  return { nota, acta: numero && fecha ? { numero, fecha } : null };
+}
+
+/** Agrupa las filas por la clave que se les dé, en su orden. */
+function agrupar<T>(filas: readonly T[], clave: (f: T) => string): Map<string, T[]> {
+  const m = new Map<string, T[]>();
+  for (const f of filas) {
+    const k = clave(f);
+    const lista = m.get(k);
+    if (lista) lista.push(f);
+    else m.set(k, [f]);
+  }
+  return m;
+}
+
+/**
+ * Las filas del Excel de la lista (spec §16.3 y Apéndice A.6): los hallazgos que `listarHallazgos` muestra con `filtro`, en su
+ * orden, con una fila por actividad de un plan aprobado (`fin_original`) de cualquier ronda y una por hallazgo sin ninguna. Toda
+ * fila pasa otra vez por `filtroHallazgos`. Quien ve el hallazgo solo por una actividad (§6.3) recibe de las que no abre
+ * (`puedeVerActividad`: la suya o una en que registró un seguimiento) lo que la página le muestra en texto: sin sus archivos, sus
+ * seguimientos ni sus ajustes; la respuesta de Gerencia a una escalada, solo quien lo ve completo. El indicador del criterio no se
+ * nombra. Cinco consultas para todo el libro, nunca una por fila.
+ */
+export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista, opciones?: Opciones): Promise<FilaDeExcel[]> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  const hoy = fechaEnZona(ahora, zonaHoraria());
+  const { filas: lista } = await listarHallazgos(sesion, filtro, { sql, ahora });
+  if (lista.length === 0) return [];
+  const ids = sql.array(lista.map((f) => f.id));
+  const [hallazgos, rondas, actividades, causas, analisis] = await Promise.all([
+    sql`SELECT h.id, h.codigo, h.titulo, h.descripcion, h.origen, h.fuente, h.ronda, h.estado, h.resultado_cierre,
+        h.correccion_requerida, to_char(h.cerrado_en, 'YYYY-MM-DD') AS cerrado, p.nombre AS proceso,
+        ${vistaCompletaDeHallazgo(sql, sesion)} AS completo
+      FROM mejora_hallazgos h JOIN procesos p ON p.id = h.proceso_id
+      WHERE h.id = ANY(${ids}::bigint[]) AND ${filtroHallazgos(sql, sesion)}`,
+    sql`SELECT hallazgo_id, numero, resultado, criterios, criterio_otro FROM mejora_rondas WHERE hallazgo_id = ANY(${ids}::bigint[])`,
+    sql`SELECT a.id, a.hallazgo_id, a.accion_id, a.orden, a.descripcion, a.responsable_id, u.nombre AS responsable, cg.nombre AS cargo,
+        a.avance, a.estado, a.verificacion, a.reprogramaciones, to_char(a.inicio, 'YYYY-MM-DD') AS inicio,
+        to_char(a.fin, 'YYYY-MM-DD') AS fin, to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original,
+        to_char(${venceLaActividad(sql)}, 'YYYY-MM-DD') AS vence, ${cargaResuelta(sql)} AS entregada,
+        ac.orden AS accion_orden, ac.tipo, ac.descripcion AS accion, r.numero AS ronda,
+        (SELECT count(*) FROM archivos f WHERE f.contexto = 'mejora_actividad' AND f.contexto_id = a.id AND f.version_id IS NULL) AS evidencias,
+        EXISTS (SELECT 1 FROM mejora_seguimientos s WHERE s.actividad_id = a.id AND s.registrado_por = ${sesion.usuarioId}) AS siguio,
+        seg.fecha AS seg_fecha, seg.realizado AS seg_realizado, seg.barreras AS seg_barreras,
+        aj.tipo AS aj_tipo, aj.estado AS aj_estado, aj.causa AS aj_causa, to_char(aj.decidido_en, 'YYYY-MM-DD') AS aj_decidido,
+        ud.nombre AS aj_decidio, esc.detalle AS escalada
+      FROM mejora_actividades a
+      JOIN mejora_hallazgos h ON h.id = a.hallazgo_id
+      JOIN mejora_acciones ac ON ac.id = a.accion_id
+      JOIN mejora_rondas r ON r.id = ac.ronda_id
+      JOIN usuarios u ON u.id = a.responsable_id
+      LEFT JOIN cargos cg ON cg.id = u.cargo_id
+      LEFT JOIN LATERAL (SELECT to_char(s.fecha, 'YYYY-MM-DD') AS fecha, s.realizado, s.barreras FROM mejora_seguimientos s
+        WHERE s.actividad_id = a.id ORDER BY s.fecha DESC, s.id DESC LIMIT 1) seg ON true
+      LEFT JOIN LATERAL (SELECT x.tipo, x.estado, x.causa, x.decidido_en, x.decidido_por FROM mejora_ajustes x
+        WHERE x.actividad_id = a.id ORDER BY x.pedido_en DESC, x.id DESC LIMIT 1) aj ON true
+      LEFT JOIN usuarios ud ON ud.id = aj.decidido_por
+      LEFT JOIN LATERAL (SELECT e.detalle FROM mejora_eventos e WHERE e.hallazgo_id = a.hallazgo_id AND e.tipo = 'escalada_respondida'
+        AND e.detalle->>'actividadId' = a.id::text ORDER BY e.id DESC LIMIT 1) esc ON true
+      WHERE a.hallazgo_id = ANY(${ids}::bigint[]) AND a.fin_original IS NOT NULL
+      ORDER BY r.numero, ac.orden, ac.id, a.orden, a.id`,
+    sql`SELECT v.accion_id, c.texto FROM mejora_accion_causas v JOIN mejora_causas c ON c.id = v.causa_id
+      WHERE v.hallazgo_id = ANY(${ids}::bigint[]) ORDER BY c.orden, c.id`,
+    sql`SELECT x.hallazgo_id, r.numero AS ronda, x.metodo FROM mejora_analisis x JOIN mejora_rondas r ON r.id = x.ronda_id
+      WHERE x.hallazgo_id = ANY(${ids}::bigint[]) ORDER BY x.orden, x.id`,
+  ]);
+
+  const visibles = new Map(hallazgos.map((f) => [Number(f.id), f]));
+  const rondaDe = new Map(rondas.map((r) => [`${r.hallazgo_id}:${r.numero}`, r as Record<string, unknown>]));
+  const causasDe = agrupar(causas, (x) => String(x.accion_id));
+  const metodosDe = agrupar(analisis, (x) => `${x.hallazgo_id}:${x.ronda}`);
+  const actividadesDe = agrupar(actividades, (x) => String(x.hallazgo_id));
+
+  const filas: FilaDeExcel[] = [];
+  for (const { id } of lista) {
+    const h = visibles.get(id);
+    if (!h) continue;
+    const completo = h.completo === true;
+    const rondaEnCurso = Number(h.ronda);
+    const base = (ronda: number): Omit<FilaDeExcel, "actividad"> => ({
+      codigo: h.codigo as string,
+      ronda,
+      proceso: h.proceso as string,
+      origen: h.origen as Origen,
+      fuente: textoONulo(h.fuente),
+      titulo: h.titulo as string,
+      descripcion: h.descripcion as string,
+      eficacia: eficaciaDeRonda(rondaDe.get(`${id}:${ronda}`)),
+      // La decisión del cierre, en las filas de la ronda que se cerró.
+      cierre:
+        h.estado === "cerrado" && ronda === rondaEnCurso
+          ? {
+              etiqueta: etiquetaDeEstado({
+                estado: "cerrado",
+                resultadoCierre: (h.resultado_cierre as ResultadoCierre | null) ?? null,
+                correccionRequerida: (h.correccion_requerida as boolean | null) ?? null,
+              }),
+              en: (h.cerrado as string | null) ?? null,
+            }
+          : null,
+    });
+    const suyas = actividadesDe.get(String(id)) ?? [];
+    if (suyas.length === 0) {
+      filas.push({ ...base(rondaEnCurso), actividad: null });
+      continue;
+    }
+    for (const a of suyas) {
+      const ronda = Number(a.ronda);
+      // La regla de `puedeVerActividad`, con lo ya leído: quien ve el hallazgo completo, su responsable o quien siguió en ella.
+      const abre = completo || Number(a.responsable_id) === sesion.usuarioId || a.siguio === true;
+      const estado = a.estado as EstadoActividad;
+      const vence = a.vence as string;
+      filas.push({
+        ...base(ronda),
+        actividad: {
+          etiqueta: `A${Number(a.accion_orden)}.${Number(a.orden)}`,
+          tipo: a.tipo as TipoAccion,
+          accion: a.accion as string,
+          descripcion: a.descripcion as string,
+          causas: (causasDe.get(String(a.accion_id)) ?? []).map((x) => x.texto as string),
+          metodos: (metodosDe.get(`${id}:${ronda}`) ?? []).map((x) => x.metodo as MetodoAnalisis),
+          responsable: a.responsable as string,
+          cargo: textoONulo(a.cargo),
+          inicio: a.inicio as string,
+          fin: a.fin as string,
+          finOriginal: a.fin_original as string,
+          avance: Number(a.avance),
+          estado,
+          verificacion: a.verificacion === "conforme" || a.verificacion === "devuelta" ? a.verificacion : null,
+          // La regla de la pasada (`venceLaActividad`); la de una carga sin su formato firmado no vence todavía.
+          vencida: a.entregada === true && estaAbierta(estado) && vence < hoy ? { vence, hoy } : null,
+          reprogramada: Number(a.reprogramaciones) > 0,
+          evidencias: abre ? Number(a.evidencias) : null,
+          ultimoSeguimiento:
+            abre && a.seg_fecha
+              ? { fecha: a.seg_fecha as string, realizado: a.seg_realizado as string, barreras: textoONulo(a.seg_barreras) }
+              : null,
+          ajuste:
+            abre && a.aj_tipo
+              ? {
+                  tipo: a.aj_tipo as TipoAjuste,
+                  estado: a.aj_estado as EstadoAjuste,
+                  causa: a.aj_causa as string,
+                  decididoPor: textoONulo(a.aj_decidio),
+                  decididoEn: textoONulo(a.aj_decidido),
+                }
+              : null,
+          escalada: completo ? escaladaDe(a.escalada) : null,
+        },
+      });
+    }
+  }
+  return filas;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

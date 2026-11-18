@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation";
+import type { IndicadorEnLectura } from "@/componentes/mejoramiento/plan/PlanEnLectura";
+import { obtenerSql } from "@/db/cliente";
 import { leerActividad, type DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
-import { leerHallazgo, type DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
+import { leerHallazgo, type DetalleDeHallazgo, type RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
+import { puedeVerIndicador } from "@/lib/alcance";
 import type { SesionValida } from "@/lib/sesion";
 
 /**
@@ -34,5 +38,17 @@ export async function exigirActividad(sesion: SesionValida, segmento: string): P
   return actividad;
 }
 
+/**
+ * El indicador enlazado al criterio de eficacia de una ronda, nombrado solo a quien lo ve (spec 15 §11.2, `puedeVerIndicador`); a
+ * los demás, «un indicador». Lo leen la página del hallazgo y su impreso.
+ */
+export async function indicadorParaQuienLee(r: Pick<RondaDeDetalle, "indicadorEficaciaId">, sesion: SesionValida): Promise<IndicadorEnLectura> {
+  if (r.indicadorEficaciaId === null) return null;
+  const sql = obtenerSql();
+  const [ind, ve] = await Promise.all([indicadorDeEficacia(sql, r.indicadorEficaciaId), puedeVerIndicador(r.indicadorEficaciaId, sesion, { sql })]);
+  if (!ind) return null;
+  return ve ? { visible: true, codigo: ind.codigo, nombre: ind.nombre, periodicidad: ind.periodicidad } : { visible: false };
+}
+
 /** Las rutas del módulo viven en `src/lib/mejoramiento/rutas.ts`; las páginas y las acciones las toman de aquí. */
-export { rutaDeActividad, rutaDeFormular, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+export { rutaDeActividad, rutaDeFormular, rutaDeHallazgo, rutaDeImprimir } from "@/lib/mejoramiento/rutas";

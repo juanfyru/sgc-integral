@@ -1,5 +1,5 @@
 import { fechaDeDia, fechaLargaDeDia } from "./formato";
-import type { Clase, CriterioEficacia, Criticidad, EstadoActividad, EstadoAjuste, MetodoDeVerificacion, TipoAccion } from "./tipos";
+import type { Clase, CriterioEficacia, Criticidad, EstadoActividad, EstadoAjuste, MetodoAnalisis, MetodoDeVerificacion, TipoAccion } from "./tipos";
 
 /**
  * El aviso a cada responsable cuando su actividad le llega (spec §8.6, §14.2 y §15): es la «delegación». Al aprobarse el plan y,
@@ -38,6 +38,14 @@ export const ETIQUETA_CRITERIO: Record<CriterioEficacia, string> = {
   mejora_indicador: "Mejora del indicador asociado",
   reduccion_pqrs: "Reducción de PQRS o eventos",
   otro: "Otro",
+};
+
+/** El método de un análisis de causa raíz (spec §9.1), como lo nombran la página, los impresos y el Excel. */
+export const ETIQUETA_METODO_ANALISIS: Record<MetodoAnalisis, string> = {
+  cinco_porques: "5 porqués",
+  ishikawa: "Ishikawa (6M)",
+  pareto: "Pareto",
+  otro: "Otro método",
 };
 
 /** Cómo verificó quien verifica la implementación (spec §11.4, maqueta 7). */

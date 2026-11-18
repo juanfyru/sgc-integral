@@ -1,8 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { buscarDocumentos } from "@/db/consultas/busqueda";
 import { buscarIndicadores } from "@/db/consultas/indicadores/busqueda";
+import { buscarHallazgos } from "@/db/consultas/mejoramiento/busqueda";
 import { buscarNormas } from "@/db/consultas/normograma/busqueda";
 import {
+  HALLAZGOS_EN_LA_PALETA,
   INDICADORES_EN_LA_PALETA,
   LARGO_MINIMO_CONSULTA,
   NORMAS_EN_LA_PALETA,
@@ -11,6 +13,7 @@ import {
 } from "@/lib/busqueda-rapida";
 import { crearLimitador } from "@/lib/limite";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { ETIQUETA_ESTADO_NORMA } from "@/lib/normograma/tipos";
 import { sesionDePeticion } from "@/lib/sesion-actual";
 
@@ -21,8 +24,8 @@ const permitirBusqueda = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 
 /**
  * Búsqueda rápida de la paleta Ctrl K: los documentos con versión vigente que el usuario puede ver y, debajo, hasta
- * cuatro normas no retiradas (el normograma se lee con cualquier sesión) y, debajo, hasta cuatro indicadores de los que
- * ve (activos o retirados).
+ * cuatro normas no retiradas (el normograma se lee con cualquier sesión), debajo, hasta cuatro indicadores de los que
+ * ve (activos o retirados) y, debajo, hasta cuatro hallazgos de mejoramiento de los que ve (`filtroHallazgos`).
  */
 export async function GET(peticion: NextRequest) {
   const sesion = await sesionDePeticion(peticion);
@@ -41,10 +44,11 @@ export async function GET(peticion: NextRequest) {
     return NextResponse.json({ resultados: [] satisfies ResultadoRapido[] });
   }
 
-  const [{ resultados }, normas, indicadores] = await Promise.all([
+  const [{ resultados }, normas, indicadores, hallazgos] = await Promise.all([
     buscarDocumentos({ q, limite: 8 }, sesion),
     buscarNormas(q, NORMAS_EN_LA_PALETA),
     buscarIndicadores(q, sesion, INDICADORES_EN_LA_PALETA),
+    buscarHallazgos(q, sesion, HALLAZGOS_EN_LA_PALETA),
   ]);
   return NextResponse.json({
     resultados: [
@@ -76,6 +80,16 @@ export async function GET(peticion: NextRequest) {
           tituloResaltado: null,
           tipo: i.retirado ? "Retirado" : i.proceso,
           ruta: rutaDeIndicador(i.codigo),
+        }),
+      ),
+      ...hallazgos.map(
+        (h): ResultadoRapido => ({
+          grupo: "hallazgo",
+          codigo: h.codigo,
+          titulo: h.titulo,
+          tituloResaltado: null,
+          tipo: h.etiqueta,
+          ruta: rutaDeHallazgo(h.id),
         }),
       ),
     ],

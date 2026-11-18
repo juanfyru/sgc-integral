@@ -6,10 +6,10 @@ export const LARGO_MINIMO_CONSULTA = 2;
 /**
  * Un resultado de la paleta: un documento (código, título resaltado y sigla del tipo) o una norma (su nombre
  * «Resolución 3100 de 2019» en `codigo`, su título y su estado en `tipo`) o un indicador (su código, su nombre y, en
- * `tipo`, su proceso o «Retirado»).
+ * `tipo`, su proceso o «Retirado») o un hallazgo de mejoramiento (su código, su título y, en `tipo`, en qué estado va).
  */
 export type ResultadoRapido = {
-  grupo: "documento" | "norma" | "indicador";
+  grupo: "documento" | "norma" | "indicador" | "hallazgo";
   codigo: string;
   titulo: string;
   tituloResaltado: string | null;
@@ -26,16 +26,27 @@ export const INDICADORES_EN_LA_PALETA = 4;
 /** Hasta cuántos indicadores trae la página «Buscar», debajo de las normas. */
 export const INDICADORES_EN_LA_BUSQUEDA = 5;
 
-/** Los grupos de la paleta en su orden: los documentos, las normas y los indicadores (las flechas recorren ese orden). */
+/** Hasta cuántos hallazgos trae la paleta, debajo de los indicadores (spec 15 §16.2). */
+export const HALLAZGOS_EN_LA_PALETA = 4;
+
+/** Hasta cuántos hallazgos trae la página «Buscar», debajo de los indicadores. */
+export const HALLAZGOS_EN_LA_BUSQUEDA = 5;
+
+/**
+ * Los grupos de la paleta en su orden: los documentos, las normas, los indicadores y los hallazgos (las flechas recorren ese
+ * orden).
+ */
 export function gruposDeResultados(resultados: ResultadoRapido[]): {
   documentos: ResultadoRapido[];
   normas: ResultadoRapido[];
   indicadores: ResultadoRapido[];
+  hallazgos: ResultadoRapido[];
 } {
   return {
     documentos: resultados.filter((r) => r.grupo === "documento"),
     normas: resultados.filter((r) => r.grupo === "norma"),
     indicadores: resultados.filter((r) => r.grupo === "indicador"),
+    hallazgos: resultados.filter((r) => r.grupo === "hallazgo"),
   };
 }
 

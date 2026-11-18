@@ -10,6 +10,10 @@ export const rutaDeActividad = (id: number) => `/mejoramiento/actividades/${id}`
 /** La página donde se formula la causa raíz y el plan de un hallazgo. */
 export const rutaDeFormular = (id: number) => `/mejoramiento/${id}/formular`;
 
+/** Los impresos de un hallazgo (spec §16.4): el SGC-FO-AC-01 o, con `analisis`, el formato de ese análisis. */
+export const rutaDeImprimir = (id: number, analisis?: number) =>
+  `/mejoramiento/${id}/imprimir${analisis === undefined ? "" : `?analisis=${analisis}`}`;
+
 /**
  * Si la persona se queda en la lista de hallazgos (spec 15 §16.1): la ve quien ve algún hallazgo y, aunque esté vacía, quien
  * registra o ve todos (`mejora.registrar`, `mejora.ver_todo`), que es su lugar de trabajo. Una sola regla para la redirección de

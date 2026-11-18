@@ -1368,3 +1368,24 @@ describe("dimensiones y categorías de indicadores (14C)", () => {
     expect(nombreDeAccion("categoria_movida")).toBe("Cambió el orden de una categoría");
   });
 });
+
+describe("el Excel de los hallazgos de mejoramiento (15A, Tarea 21)", () => {
+  const frase = (detalle: Record<string, unknown>) =>
+    describirEvento({ accion: "mejora_exporto_hallazgos", entidad: "mejora_hallazgo", entidadId: null, detalle });
+  it("dice los filtros con su nombre, sin los ids", () => {
+    expect(frase({ filtros: {} })).toBe("Emitió la matriz de hallazgos de mejoramiento");
+    expect(frase({})).toBe("Emitió la matriz de hallazgos de mejoramiento");
+    expect(
+      frase({
+        filtros: { procesoId: 3, origen: "auditoria_interna", clase: "no_conformidad", criticidad: "alta", estado: "por_aceptar", soloVencidos: true, q: "neveras" },
+      }),
+    ).toBe(
+      "Emitió la matriz de hallazgos de mejoramiento (de un proceso, de origen «auditoría interna», de clase «no conformidad», " +
+        "de criticidad «alta», en estado «por aceptar», solo los vencidos, con el texto «neveras»)",
+    );
+    expect(frase({ filtros: { estado: "reabiertos", esperanSuDecision: true } })).toBe(
+      "Emitió la matriz de hallazgos de mejoramiento (en estado «reabiertos», los que esperan su decisión)",
+    );
+    expect(nombreDeAccion("mejora_exporto_hallazgos")).toBe("Emitió la matriz de hallazgos de mejoramiento");
+  });
+});

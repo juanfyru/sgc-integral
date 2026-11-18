@@ -3,16 +3,12 @@ import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import type { FiltroDeLista } from "@/db/consultas/mejoramiento/lectura";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
+import { ETIQUETA_ESTADO_ESPECIAL } from "@/lib/mejoramiento/filtro";
 import { ORIGENES } from "@/lib/mejoramiento/origenes";
 import { ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
 import { ESTADOS_HALLAZGO } from "@/lib/mejoramiento/tipos";
 
-const ESTADOS_ESPECIALES: Array<[string, string]> = [
-  ["abiertos", "Abiertos"],
-  ["reabiertos", "Reabiertos"],
-  ["sin_accion", "Cerrados sin acción"],
-  ["por_evaluar", "Por evaluar la eficacia"],
-];
+const ESTADOS_ESPECIALES = Object.entries(ETIQUETA_ESTADO_ESPECIAL);
 
 function Selector({
   nombre,

@@ -827,6 +827,16 @@ export function filtroHallazgos(sql: Cliente, sujeto: SujetoVisibilidad) {
 }
 
 /**
+ * Si la persona ve el hallazgo `h` completo, para el SQL sobre `mejora_hallazgos h`: con `mejora.ver_todo`, el líder de su
+ * proceso o quien lo registró. Lo que `filtroHallazgos` deja pasar y esto no, lo ve solo por una actividad (en texto). Una sola
+ * regla para `participacionEnHallazgo` y para las lecturas de una lista que deciden campo por campo (el Excel).
+ */
+export function vistaCompletaDeHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (puede(sujeto, "mejora.ver_todo")) return sql`true`;
+  return sql`(${liderDelProcesoDelHallazgo(sql, sujeto)} OR ${registroElHallazgo(sql, sujeto)})`;
+}
+
+/**
  * Cómo ve la persona un hallazgo: `"completo"` (rol, líder del proceso o quien lo registró), `"actividad"` (solo por ser
  * responsable de una actividad: lo ve en texto) o `null` (no existe o no lo ve: la misma respuesta).
  */
@@ -836,10 +846,8 @@ export async function participacionEnHallazgo(
   opciones?: { sql?: Cliente },
 ): Promise<"completo" | "actividad" | null> {
   const sql = opciones?.sql ?? obtenerSql();
-  const todo = puede(sujeto, "mejora.ver_todo") ? sql`true` : sql`false`;
   const [f] = await sql`
-    SELECT (${todo} OR ${liderDelProcesoDelHallazgo(sql, sujeto)} OR ${registroElHallazgo(sql, sujeto)}) AS completo,
-      ${esResponsableEnElHallazgo(sql, sujeto)} AS actividad
+    SELECT ${vistaCompletaDeHallazgo(sql, sujeto)} AS completo, ${esResponsableEnElHallazgo(sql, sujeto)} AS actividad
     FROM mejora_hallazgos h WHERE h.id = ${hallazgoId}`;
   if (!f) return null;
   if (f.completo === true) return "completo";

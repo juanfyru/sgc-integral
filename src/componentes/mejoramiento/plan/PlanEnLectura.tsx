@@ -74,7 +74,8 @@ function detallesDeAccion(a: AccionDeDetalle, ordenDeCausa: Map<number, number>)
     .join(" · ");
 }
 
-function textoDelCriterio(ronda: RondaDeDetalle, indicador: IndicadorEnLectura): string | null {
+/** El criterio de eficacia de la ronda en palabras; el indicador enlazado se nombra solo a quien lo ve (spec §11.2). */
+export function textoDelCriterio(ronda: Pick<RondaDeDetalle, "criterios" | "criterioOtro">, indicador: IndicadorEnLectura): string | null {
   const criterios = leerCriterios(ronda.criterios);
   if (criterios.length === 0) return null;
   return criterios
