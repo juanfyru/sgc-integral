@@ -1607,6 +1607,20 @@ describe("verificar la implementación, evaluar la eficacia y cerrar (maqueta 7)
     expect(aviso(devuelta)).toBe(2);
   });
 
+  it("PasoVerificar: los archivos de la verificación van fuera de su formulario (cada «Quitar» es un formulario propio)", () => {
+    const html = renderToStaticMarkup(
+      <PasoVerificar hallazgoId={14} actividades={actividades} hoy="2026-12-07" accion={accion}>
+        <form id="hijo-archivos" />
+      </PasoVerificar>,
+    );
+    const formulario = html.slice(html.indexOf("<form"), html.indexOf("</form>") + "</form>".length);
+    expect(formulario).not.toContain("hijo-archivos");
+    expect(html).toContain('id="hijo-archivos"');
+    // «Guardar la verificación» envía el formulario de la verificación aunque quede fuera de él.
+    const id = formulario.match(/^<form[^>]*id="([^"]+)"/)![1];
+    expect(html).toMatch(new RegExp(`<button(?=[^>]*type="submit")(?=[^>]*form="${id}")[^>]*>Guardar la verificación</button>`));
+  });
+
   const datos = (extra?: Partial<DatosDeEvaluacion>): DatosDeEvaluacion => ({
     minima: "2027-03-01",
     r: "2026-12-05",
