@@ -432,6 +432,26 @@ describe("frases con el detalle real", () => {
     expect(e("mejora_cerrar", { ...base, huella: "a".repeat(64) })).toBe("Cerró el hallazgo HZ-2026-001");
     expect(nombreDeAccion("mejora_evaluar_no_eficaz")).toBe("Evaluó como no eficaz el plan de un hallazgo");
   });
+  it("los reportes de funcionarios (Tarea 18): el id, el código y el estado; nunca lo que se vio ni el motivo", () => {
+    const estado = (despues: string) => ({ antes: "recibido", despues });
+    expect(e("mejora_reporte_enviado", { reporteId: 12, procesoId: 3, estado: { antes: null, despues: "recibido" } })).toBe(
+      "Envió el reporte n.º 12 de una posible no conformidad",
+    );
+    expect(e("mejora_reporte_convertido", { reporteId: 12, hallazgoId: 40, codigo: "HZ-2026-004", estado: estado("convertido") })).toBe(
+      "Convirtió el reporte n.º 12 en el hallazgo HZ-2026-004",
+    );
+    expect(e("mejora_reporte_sumado", { reporteId: 12, hallazgoId: 40, codigo: "HZ-2026-004", estado: estado("sumado") })).toBe(
+      "Añadió el reporte n.º 12 como ocurrencia del hallazgo HZ-2026-004",
+    );
+    expect(e("mejora_reporte_descartado", { reporteId: 12, estado: estado("descartado") })).toBe("Descartó el reporte n.º 12");
+    // Sin el id en el detalle, el de la entidad.
+    expect(e("mejora_reporte_descartado", {})).toBe("Descartó el reporte n.º 1");
+    expect(e("mejora_registrar", { codigo: "HZ-2026-004", ronda: 1, titulo: "Nevera sin registro", reporteId: 12 })).toBe(
+      "Registró el hallazgo HZ-2026-004 — Nevera sin registro, desde el reporte n.º 12",
+    );
+    expect(nombreDeAccion("mejora_reporte_convertido")).toBe("Convirtió un reporte en hallazgo");
+    expect(nombreDeAccion("mejora_reporte_sumado")).toBe("Añadió un reporte como ocurrencia de un hallazgo");
+  });
 });
 
 /**

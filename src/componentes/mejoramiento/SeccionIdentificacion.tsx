@@ -43,7 +43,8 @@ export function SeccionIdentificacion({
     | "registradoEn"
     | "fechaLimiteEnte"
     | "reincidenteDe"
-  >;
+  > &
+    Partial<Pick<DetalleDeHallazgo, "naceDeUnReporte" | "reportadoPor">>;
   zona: string;
   abierta: boolean;
   /** Las notas que se añadieron al reclasificar: la descripción no se reescribe (spec 15 §7.6). */
@@ -81,6 +82,10 @@ export function SeccionIdentificacion({
           <Dato etiqueta="Lo registró">
             {h.registradoPor}, {fechaYHora(h.registradoEn, zona)}
           </Dato>
+          {h.naceDeUnReporte ? (
+            // Quién reportó lo ven solo los roles de control (spec 15 §6.3, F15-DC5): la lectura lo deja nulo para los demás.
+            <Dato etiqueta="Nació de un reporte">{h.reportadoPor ? `Reportado por ${h.reportadoPor}` : "Reportado por un funcionario"}</Dato>
+          ) : null}
           {h.reincidenteDe && "id" in h.reincidenteDe ? (
             <Dato etiqueta="Reincidencia de">
               <Link

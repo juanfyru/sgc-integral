@@ -7,6 +7,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { misActividades } from "@/db/consultas/mejoramiento/actividades";
 import { veAlgunHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { contarReportesPorClasificar } from "@/db/consultas/mejoramiento/reportes";
 import { estaAbierta } from "@/lib/mejoramiento/tipos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -27,7 +28,11 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 export default async function PaginaMisActividades() {
   const sesion = await exigirSesion();
   const ahora = new Date();
-  const [actividades, veHallazgos] = await Promise.all([misActividades(sesion, { ahora }), veAlgunHallazgo(sesion)]);
+  const [actividades, veHallazgos, porClasificar] = await Promise.all([
+    misActividades(sesion, { ahora }),
+    veAlgunHallazgo(sesion),
+    contarReportesPorClasificar(sesion),
+  ]);
   const pendientes = actividades.filter((a) => estaAbierta(a.estado)).length;
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -48,7 +53,7 @@ export default async function PaginaMisActividades() {
           ) : null
         }
       />
-      <PestanasMejoramiento activa="actividades" visibles={pestanasVisibles(sesion, { veHallazgos })} />
+      <PestanasMejoramiento activa="actividades" visibles={pestanasVisibles(sesion, { veHallazgos })} numeros={{ reportes: porClasificar }} />
       <MisActividades actividades={actividades} hoy={fechaEnZona(ahora, zonaHoraria())} />
     </div>
   );

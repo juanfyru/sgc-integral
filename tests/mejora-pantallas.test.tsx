@@ -79,6 +79,12 @@ import {
   tomarBorrador,
 } from "@/lib/mejoramiento/borrador-evaluacion";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
+import { ClasificarReporte } from "@/componentes/mejoramiento/reportes/ClasificarReporte";
+import { FormularioReporte } from "@/componentes/mejoramiento/reportes/FormularioReporte";
+import { MisReportes } from "@/componentes/mejoramiento/reportes/MisReportes";
+import { ReportesRecibidos } from "@/componentes/mejoramiento/reportes/ReportesRecibidos";
+import type { MiReporte, ReporteDeLaLista } from "@/db/consultas/mejoramiento/reportes";
+import { etiquetaDeReporte } from "@/lib/mejoramiento/reportes";
 
 // La zona de carga de la evidencia (en la página de una actividad) pide el enrutador del cliente.
 vi.mock("next/navigation", async (importar) => ({
@@ -264,9 +270,21 @@ describe("fraseDeLoQueSigue (el armador real)", () => {
 });
 
 describe("PestanasMejoramiento", () => {
-  it("ofrece «Hallazgos» a quien los ve y «Mis actividades» a toda sesión; «Mis reportes» llega en la tarea 18", () => {
-    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: true })).toEqual(["hallazgos", "actividades"]);
-    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: false })).toEqual(["actividades"]);
+  it("ofrece «Hallazgos» a quien los ve, «Reportes recibidos» a los roles de control y «Mis actividades» y «Mis reportes» a toda sesión", () => {
+    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: true })).toEqual(["hallazgos", "actividades", "mis-reportes"]);
+    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: false })).toEqual(["actividades", "mis-reportes"]);
+    expect(pestanasVisibles({ rol: "lider_proceso" }, { veHallazgos: true })).toEqual(["hallazgos", "actividades", "mis-reportes"]);
+    for (const rol of ["admin_sgc", "gerencia", "control_interno"] as const) {
+      expect(pestanasVisibles({ rol }, { veHallazgos: true })).toEqual(["hallazgos", "reportes", "actividades", "mis-reportes"]);
+    }
+    const enlaces = renderToStaticMarkup(
+      <PestanasMejoramiento activa="mis-reportes" visibles={["reportes", "mis-reportes"]} numeros={{ reportes: 2 }} />,
+    );
+    expect(enlaces).toContain('href="/mejoramiento/reportes?vista=recibidos"');
+    expect(enlaces).toContain("Reportes recibidos · 2");
+    const mis = enlaces.match(/<a[^>]*>Mis reportes<\/a>/)![0];
+    expect(mis).toContain('href="/mejoramiento/reportes"');
+    expect(mis).toContain('aria-current="page"');
     const html = renderToStaticMarkup(<PestanasMejoramiento activa="hallazgos" visibles={["hallazgos"]} />);
     expect(html).toContain("Hallazgos");
     expect(html).toContain('aria-current="page"');
@@ -2211,5 +2229,165 @@ describe("Tarea 17, ronda 2: el borrador de la evaluación vive en la pestaña y
     expect(fuente).not.toContain("localStorage");
     expect(fuente).not.toMatch(/onChange=\{[^}]*guardar/);
     expect(fuente).toContain("alEnviar=");
+  });
+});
+
+describe("Tarea 18: los reportes de funcionarios", () => {
+  const ZONA = "America/Bogota";
+  const accion = vi.fn(async () => null);
+
+  it("la etiqueta de quien reportó: recibido, en trámite, cerrado (también rechazado o anulado) y descartado", () => {
+    expect(etiquetaDeReporte("recibido", null)).toBe("Recibido");
+    expect(etiquetaDeReporte("convertido", "por_aceptar")).toBe("En trámite");
+    expect(etiquetaDeReporte("sumado", "en_espera")).toBe("En trámite");
+    for (const terminal of ["cerrado", "rechazado", "anulado"]) expect(etiquetaDeReporte("convertido", terminal)).toBe("Cerrado");
+    expect(etiquetaDeReporte("descartado", null)).toBe("Descartado");
+  });
+
+  it("el formulario de reportar lleva el aviso de pacientes, el proceso opcional («No sé») y no deja una fecha futura", () => {
+    const html = renderToStaticMarkup(<FormularioReporte accion={accion} procesos={[{ id: 3, nombre: "Farmacia" }]} hoy="2026-11-18" />);
+    expect(html).toContain(AVISO_SIN_PACIENTES);
+    const descripcion = html.match(/<textarea[^>]*name="descripcion"[^>]*>/)![0];
+    expect(descripcion).toMatch(/minLength="10"/i);
+    expect(descripcion).toMatch(/maxLength="2000"/i);
+    const visto = html.match(/<input[^>]*name="vistoEn"[^>]*>/)![0];
+    expect(visto).toContain('type="date"');
+    expect(visto).toContain('max="2026-11-18"');
+    expect(html).toMatch(/<option value=""[^>]*>No sé<\/option>/);
+    expect(html).toContain("Farmacia");
+    expect(html).toContain('name="referenciaCaso"');
+    expect(html).toContain("hasta tres archivos");
+    expect(html).toContain("Enviar el reporte");
+  });
+
+  const mio = (extra: Partial<MiReporte>): MiReporte => ({
+    id: 7,
+    cuando: new Date("2026-11-17T15:00:00Z"),
+    vistoEn: "2026-11-16",
+    descripcion: "La nevera marcaba 12 grados",
+    etiqueta: "Recibido",
+    motivo: null,
+    archivos: 0,
+    puedeAdjuntar: true,
+    ...extra,
+  });
+
+  it("«Mis reportes»: la etiqueta con texto, el motivo del descarte y el enlace para adjuntar mientras se puede", () => {
+    const html = renderToStaticMarkup(
+      <MisReportes
+        zona={ZONA}
+        reportes={[
+          { reporte: mio({}), archivos: [] },
+          { reporte: mio({ id: 8, etiqueta: "En trámite", puedeAdjuntar: false }), archivos: [] },
+          { reporte: mio({ id: 9, etiqueta: "Descartado", motivo: "La nevera se calibró ese día", puedeAdjuntar: false }), archivos: [] },
+        ]}
+      />,
+    );
+    expect(html).toContain("Recibido");
+    expect(html).toContain("En trámite");
+    expect(html).toContain("Descartado");
+    expect(html).toContain("Motivo: La nevera se calibró ese día");
+    expect(html).toContain('href="/mejoramiento/reportar?reporte=7"');
+    expect(html).not.toContain("reporte=8");
+    expect(html).not.toMatch(/href="\/mejoramiento\/\d/);
+    const vacio = renderToStaticMarkup(<MisReportes zona={ZONA} reportes={[]} />);
+    expect(vacio).toContain("Aún no ha enviado reportes");
+    expect(vacio).toContain('href="/mejoramiento/reportar"');
+  });
+
+  const recibido = (extra: Partial<ReporteDeLaLista>): ReporteDeLaLista => ({
+    id: 7,
+    cuando: new Date("2026-11-17T15:00:00Z"),
+    reportadoPor: "Marta Ruiz",
+    descripcion: "La nevera marcaba 12 grados",
+    vistoEn: "2026-11-16",
+    procesoId: 3,
+    proceso: "Farmacia",
+    referenciaCaso: "EA-0417",
+    estado: "recibido",
+    vence: new Date("2026-11-21T04:59:59Z"),
+    motivo: null,
+    hallazgo: null,
+    archivos: 0,
+    ...extra,
+  });
+  const parecido = { id: 40, codigo: "HZ-2026-040", titulo: "Nevera sin registro", etiqueta: "En ejecución", proceso: "Farmacia" };
+
+  it("«Reportes recibidos»: quién reportó, y clasificar solo a quien gestiona y solo lo recibido", () => {
+    const filas = [
+      { reporte: recibido({}), archivos: [], quitables: [], parecidos: [parecido] },
+      {
+        reporte: recibido({ id: 8, estado: "convertido", hallazgo: { id: 41, codigo: "HZ-2026-041", titulo: "Otro" } }),
+        archivos: [],
+        quitables: [],
+        parecidos: null,
+      },
+      { reporte: recibido({ id: 9, estado: "descartado", motivo: "No corresponde" }), archivos: [], quitables: [], parecidos: null },
+    ];
+    const pintar = (gestiona: boolean, f = filas) =>
+      renderToStaticMarkup(<ReportesRecibidos filas={f} gestiona={gestiona} zona={ZONA} ahora={AHORA} sumar={accion} descartar={accion} />);
+    const html = pintar(true);
+    expect(html).toContain("Marta Ruiz");
+    expect(html).toContain("Por clasificar");
+    expect(html).toContain("EA-0417");
+    expect(html).toContain('href="/mejoramiento/nuevo?reporte=7"');
+    expect(html).not.toContain("reporte=8");
+    expect(html).toContain('href="/mejoramiento/41"');
+    expect(html).toContain("Motivo: No corresponde");
+    // Gerencia y Control Interno ven la lista sin clasificar.
+    const soloLee = pintar(false);
+    expect(soloLee).toContain("Marta Ruiz");
+    expect(soloLee).not.toContain("Convertir en hallazgo");
+    expect(soloLee).not.toContain("Descartar el reporte");
+    expect(pintar(true, [])).toContain("No hay reportes recibidos");
+  });
+
+  it("clasificar ofrece convertir, añadir a un parecido abierto y descartar con el aviso de pacientes", () => {
+    const html = renderToStaticMarkup(<ClasificarReporte reporteId={7} parecidos={[parecido]} conProceso sumar={accion} descartar={accion} />);
+    expect(html).toContain("Convertir en hallazgo");
+    expect(html).toContain('href="/mejoramiento/nuevo?reporte=7"');
+    expect(html).toContain("Añadir a un hallazgo abierto");
+    const radio = html.match(/<input[^>]*name="hallazgoId"[^>]*>/)![0];
+    expect(radio).toContain('type="radio"');
+    expect(radio).toContain('value="40"');
+    expect(html).toContain("HZ-2026-040");
+    expect(html).toMatch(/<input[^>]*name="reporteId"[^>]*value="7"/);
+    expect(html).toContain("Descartar el reporte");
+    expect(html).toContain(AVISO_SIN_PACIENTES);
+    const sin = renderToStaticMarkup(<ClasificarReporte reporteId={7} parecidos={[]} conProceso sumar={accion} descartar={accion} />);
+    expect(sin).toContain("No hay hallazgos abiertos que se le parezcan en su proceso");
+    expect(sin).not.toContain('name="hallazgoId"');
+  });
+
+  it("registrar desde un reporte lleva su id oculto y lo dice", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        accion={accion}
+        procesos={[{ id: 3, nombre: "Farmacia" }]}
+        hoy="2026-11-18"
+        diasParaAceptar={3}
+        valores={{ descripcion: "La nevera marcaba 12 grados", procesoId: "3", referenciaCaso: "EA-0417", detectadoEn: "2026-11-16" }}
+        reporte={{ id: 7, reportadoPor: "Marta Ruiz", vistoEn: "2026-11-16" }}
+      />,
+    );
+    expect(html).toMatch(/<input[^>]*name="reporteId"[^>]*value="7"/);
+    expect(html).toMatch(/Convierte el reporte de <span[^>]*>Marta Ruiz<\/span>/);
+    expect(html).toContain("La nevera marcaba 12 grados");
+    // La referencia copiada se conserva aunque el origen elegido no la pida.
+    expect(html).toContain('value="EA-0417"');
+  });
+
+  it("la identificación dice «Reportado por un funcionario» o el nombre, según quién mira", () => {
+    const h = {
+      clase: "oportunidad", origen: "otro", fuente: null, referenciaCaso: null, detectadoEn: "2026-11-10", proceso: "Farmacia",
+      requisitoClausula: null, riesgo: null, descripcion: "Descripción", registradoPor: "Ana",
+      registradoEn: new Date("2026-11-10T15:00:00Z"), fechaLimiteEnte: null, reincidenteDe: null,
+    } as const;
+    const pintar = (naceDeUnReporte: boolean, reportadoPor: string | null) =>
+      renderToStaticMarkup(<SeccionIdentificacion hallazgo={{ ...h, naceDeUnReporte, reportadoPor }} zona={ZONA} abierta />);
+    expect(pintar(true, null)).toContain("Reportado por un funcionario");
+    expect(pintar(true, "Marta Ruiz")).toContain("Reportado por Marta Ruiz");
+    expect(pintar(true, "Marta Ruiz")).not.toContain("un funcionario");
+    expect(pintar(false, null)).not.toContain("Reportado por");
   });
 });

@@ -29,6 +29,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { activosDeRol, avisarDeMejora, avisarDelTurno, ENTIDAD_HALLAZGO, lideresOAdmins, verificadoresActivos } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
+import { bloquearReporteRecibido, dejarClasificado } from "./reportes-base";
 
 /** Los campos de la identificación (spec §7.1). Los ids y las fechas también llegan como texto del formulario. */
 export type DatosDeHallazgo = {
@@ -59,7 +60,10 @@ export type DatosDeHallazgo = {
    * registrar: editar y reclasificar no lo cambian.
    */
   derivadoDe?: number | null;
-  /** El reporte que se convierte lo deja `convertido` la Tarea 18 (spec §7.3); hasta entonces no se usa. */
+  /**
+   * El reporte de un funcionario que se convierte en este hallazgo (spec §7.3): solo con `mejora.gestionar` y solo si sigue
+   * «Recibido»; queda `convertido`, con este hallazgo, en la misma transacción. Solo al registrar.
+   */
   reporteId?: number | null;
 };
 
@@ -137,7 +141,9 @@ async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: str
 
 /**
  * Registra un hallazgo (spec §7.4). Nace aceptado si el origen es externo, si quien registra lidera ese proceso o si el
- * proceso no tiene ningún líder activo (F15-DC3: también cuando registra Control Interno); si no, «Por aceptar».
+ * proceso no tiene ningún líder activo (F15-DC3: también cuando registra Control Interno); si no, «Por aceptar». Con
+ * `reporteId`, convierte ese reporte (spec §7.3): lo clasifica el Admin SGC, el reporte se bloquea primero (el hallazgo aún no
+ * existe) y debe seguir «Recibido»; el plazo de formular corre desde ahora, la conversión, y no desde el reporte (§13.3).
  */
 export async function registrarHallazgo(
   sesion: SesionFlujo,
@@ -148,9 +154,12 @@ export async function registrarHallazgo(
   const leido = EsquemaHallazgo.safeParse(d);
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
   const v = leido.data;
+  // Clasificar un reporte es del Admin SGC (spec §6.1), aunque registrar lo puedan otros.
+  if (v.reporteId !== null) requerirPermiso(sesion, "mejora.gestionar");
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
         throw new ErrorPermiso();
       }
@@ -168,10 +177,17 @@ export async function registrarHallazgo(
         sesion,
         { ...filaDe(v), derivadoDe: v.derivadoDe, codigo, anio, consecutivo },
         "registrar",
-        // El evento y la bitácora llevan el id del de origen, nunca su texto.
-        { rumbo: { nacioAceptado }, ...(v.derivadoDe !== null ? { detalle: { derivadoDe: v.derivadoDe } } : {}) },
+        // El evento y la bitácora llevan el id del de origen y el del reporte, nunca su texto.
+        {
+          rumbo: { nacioAceptado },
+          detalle: {
+            ...(v.derivadoDe !== null ? { derivadoDe: v.derivadoDe } : {}),
+            ...(reporte ? { reporteId: reporte.id } : {}),
+          },
+        },
         c,
       );
+      if (reporte) await dejarClasificado(tx, sesion, reporte, { estado: "convertido", hallazgo: h }, c.ahora);
       if (esExterno(v.origen)) await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
       return { id: h.id, codigo: h.codigo };
     }),

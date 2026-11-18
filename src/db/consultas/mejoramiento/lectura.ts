@@ -498,6 +498,15 @@ export type DetalleDeHallazgo = {
   registradoPor: string;
   registradoPorId: number;
   registradoEn: Date;
+  /** Si nació de convertir el reporte de un funcionario (spec §7.3). */
+  naceDeUnReporte: boolean;
+  /**
+   * El nombre de quien reportó, solo para `mejora.ver_todo` (F15-DC5); para los demás, nulo, y la página dice «Reportado por un
+   * funcionario».
+   */
+  reportadoPor: string | null;
+  /** El reporte del que nació, para listar sus archivos: solo a quien ve el hallazgo completo. */
+  reporteId: number | null;
   cargado: boolean;
   /** El hallazgo anterior solo si quien mira puede verlo; si no, sin id ni nombre. */
   reincidenteDe: { id: number; codigo: string; titulo: string } | { visible: false } | null;
@@ -866,13 +875,17 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     SELECT h.*, p.nombre AS proceso, ur.nombre AS registrador, uc.nombre AS correccion_responsable, uv.nombre AS validador,
       uz.nombre AS cerrador,
       to_char(h.detectado_en, 'YYYY-MM-DD') AS detectado, to_char(h.fecha_limite_ente, 'YYYY-MM-DD') AS limite_ente,
-      to_char(h.correccion_implementada_en, 'YYYY-MM-DD') AS implementada
+      to_char(h.correccion_implementada_en, 'YYYY-MM-DD') AS implementada,
+      rep.id AS reporte_id, urep.nombre AS reportero
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
     JOIN usuarios ur ON ur.id = h.registrado_por
     LEFT JOIN usuarios uc ON uc.id = h.correccion_responsable_id
     LEFT JOIN usuarios uv ON uv.id = h.validada_por
     LEFT JOIN usuarios uz ON uz.id = h.cerrado_por
+    LEFT JOIN LATERAL (SELECT r.id, r.reportado_por FROM mejora_reportes r
+      WHERE r.hallazgo_id = h.id AND r.estado = 'convertido' ORDER BY r.id LIMIT 1) rep ON true
+    LEFT JOIN usuarios urep ON urep.id = rep.reportado_por
     WHERE h.id = ${id}`;
   if (!f) return null;
   const h = aBase(f);
@@ -1139,6 +1152,10 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     registradoPor: f.registrador as string,
     registradoPorId: Number(f.registrado_por),
     registradoEn: f.registrado_en as Date,
+    naceDeUnReporte: f.reporte_id !== null,
+    // La identidad de quien reportó, solo a los roles de control (cultura de reporte no punitiva, F15-DC5).
+    reportadoPor: f.reporte_id !== null && puede(sesion, "mejora.ver_todo") ? (f.reportero as string) : null,
+    reporteId: f.reporte_id !== null && ve === "completo" ? Number(f.reporte_id) : null,
     cargado: f.cargado === true,
     reincidenteDe: reincidente,
     marcas: marcasDeHallazgo(h, {

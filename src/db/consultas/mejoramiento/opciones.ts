@@ -15,6 +15,12 @@ export async function procesosDelAlcance(sesion: SesionFlujo, opciones?: { sql?:
   return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string }));
 }
 
+/** Todos los procesos activos: en qué proceso vio algo quien reporta (spec 15 §7.3), sea cual sea su alcance. */
+export async function procesosActivos(opciones?: { sql?: Cliente }): Promise<Array<{ id: number; nombre: string }>> {
+  const filas = await (opciones?.sql ?? obtenerSql())`SELECT id, nombre FROM procesos WHERE activo ORDER BY nombre`;
+  return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string }));
+}
+
 /** Las normas del normograma que rigen (vigentes o modificadas), para elegir el requisito incumplido; las lee toda sesión. */
 export async function normasQueRigen(opciones?: { sql?: Cliente }): Promise<Array<{ id: number; nombre: string; titulo: string }>> {
   const sql = opciones?.sql ?? obtenerSql();

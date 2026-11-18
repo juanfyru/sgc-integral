@@ -7,6 +7,7 @@ import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { ParecidosDelProceso } from "@/componentes/mejoramiento/ParecidosDelProceso";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
+import { fechaDeDia } from "@/lib/mejoramiento/formato";
 import { ORIGENES, esExterno, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
 import { AVISO_SIN_PACIENTES, ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
 import { CLASES, CRITICIDADES, type Clase, type Criticidad, type Origen } from "@/lib/mejoramiento/tipos";
@@ -30,6 +31,11 @@ type Props = {
   edicion?: { hallazgoId: number };
   /** El hallazgo en cuya verificación se encontró este, distinto (spec §11.4): viaja en `derivadoDe` y queda enlazado. */
   derivado?: { id: number; codigo: string; titulo: string };
+  /**
+   * El reporte de un funcionario que se convierte (spec §7.3): viaja en `reporteId` y el registro lo deja «En trámite»; si se elige
+   * una ocurrencia entre los parecidos, se suma a ese hallazgo. Lo ve solo quien clasifica (`mejora.ver_todo`).
+   */
+  reporte?: { id: number; reportadoPor: string; vistoEn: string };
 };
 
 const texto = (v: Record<string, string | string[]> | undefined, c: string, defecto = ""): string => {
@@ -44,7 +50,7 @@ const NOTA = "rounded-md border border-border bg-muted px-3 py-2 text-sm";
  * y del origen aparece y desaparece (la criticidad, la referencia del caso, la fecha límite al ente) y las notas dicen lo
  * que ese hallazgo llevará. Los nombres de los campos son los de `EsquemaHallazgo`, que es estricto.
  */
-export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral, edicion, derivado }: Props) {
+export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral, edicion, derivado, reporte }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const v = estado?.valores ?? valores;
   const [clase, setClase] = useState<string>(texto(v, "clase"));
@@ -53,6 +59,8 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
   const esNc = clase === "no_conformidad";
   const externo = origen !== "" && esExterno(origen as Origen);
   const origenDelCaso = origen !== "" && pideReferenciaDelCaso(origen as Origen);
+  // La referencia copiada de un reporte se conserva aunque el origen elegido no la pida.
+  const conReferencia = origenDelCaso || (reporte !== undefined && !edicion && texto(v, "referenciaCaso") !== "");
   const unico = procesos.length === 1 ? String(procesos[0].id) : "";
   const [procesoId, setProcesoId] = useState<string>(texto(v, "procesoId", unico));
   // Lo que se compara con los demás hallazgos se toma al salir de cada campo, no en cada tecla.
@@ -70,6 +78,15 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
             <input type="hidden" name="derivadoDe" value={derivado.id} />
             <p className={NOTA}>
               Derivado de <span className="font-semibold">{derivado.codigo}</span> {derivado.titulo}: queda enlazado a él.
+            </p>
+          </>
+        ) : null}
+        {reporte && !edicion ? (
+          <>
+            <input type="hidden" name="reporteId" value={reporte.id} />
+            <p className={NOTA}>
+              Convierte el reporte de <span className="font-semibold">{reporte.reportadoPor}</span> de lo que vio el{" "}
+              {fechaDeDia(reporte.vistoEn)}: al registrarlo, el reporte queda en trámite. Complete la clase, el origen y lo demás.
             </p>
           </>
         ) : null}
@@ -125,9 +142,13 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
               </select>
             </Campo>
           ) : null}
-          {origenDelCaso ? (
-            <Campo etiqueta="Referencia del caso" nombre="referenciaCaso" ayuda="El número del caso, por ejemplo el de la PQRSF o el del evento.">
-              <input type="text" required maxLength={100} defaultValue={texto(v, "referenciaCaso")} autoComplete="off" className={claseControl} />
+          {conReferencia ? (
+            <Campo
+              etiqueta={origenDelCaso ? "Referencia del caso" : "Referencia del caso (opcional)"}
+              nombre="referenciaCaso"
+              ayuda="El número del caso, por ejemplo el de la PQRSF o el del evento."
+            >
+              <input type="text" required={origenDelCaso} maxLength={100} defaultValue={texto(v, "referenciaCaso")} autoComplete="off" className={claseControl} />
             </Campo>
           ) : null}
           {externo ? (

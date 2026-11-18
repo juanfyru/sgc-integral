@@ -15,6 +15,7 @@ import { formularAntesDe, venceEn, type Paso } from "@/lib/mejoramiento/plazos";
 import { destinoDe, YA_CAMBIO, type Rumbo } from "@/lib/mejoramiento/transiciones";
 import {
   ErrorMejora,
+  TERMINALES,
   type AccionHallazgo,
   type Clase,
   type Criticidad,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/mejoramiento/tipos";
 import { avisarDelTurno, ENTIDAD_HALLAZGO } from "./avisos";
 import type { ContextoMejora } from "./config";
+import { avisarAQuienesReportaron } from "./reportes-base";
 
 export const NO_EXISTE = "El hallazgo no existe";
 
@@ -330,6 +332,8 @@ export async function transicionarHallazgo(
   if (cambia && !x.sinAvisoDelTurno) {
     await avisarDelTurno(tx, { ...actual, estado: despues, ronda: rondaSiguiente }, titulo, usuarioId);
   }
+  // Quien reportó lo que dio origen al hallazgo (o se le sumó) sabe que terminó, sin su contenido (spec §7.3).
+  if (cambia && TERMINALES.includes(despues)) await avisarAQuienesReportaron(tx, actual.id, usuarioId);
   return { antes, despues, ronda: rondaSiguiente };
 }
 

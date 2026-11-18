@@ -245,6 +245,9 @@ export default async function PaginaHallazgo({
   const evidencias = archivos.filter((a) => a.rol === "evidencia");
   const puedeSubirEvidencia = completo && (await autorizarSubida(sesion, { contexto: "mejora_hallazgo", id: h.id, rol: "evidencia" })).ok;
   const quitables = await archivosQuitables(sqlArchivos, sesion, evidencias, dueno);
+  // La evidencia del reporte del que nació (spec §7.3): la abre quien ve el hallazgo completo; ya no se sube ni se quita.
+  const delReporte =
+    h.reporteId !== null ? await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: h.reporteId }) : [];
 
   // «2. Corrección», desde que la no conformidad está por corregir (las etapas que faltan no aparecen). Una corrección ya
   // registrada se sigue viendo aunque el hallazgo deje de ser no conformidad: queda como historia (spec §7.6).
@@ -582,13 +585,21 @@ export default async function PaginaHallazgo({
         <div className="flex min-w-0 flex-col gap-4">
           <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} notas={notas}>
             {completo ? (
-              <ArchivosDe
-                archivos={evidencias}
-                quitables={quitables}
-                direccionDeSubida={puedeSubirEvidencia ? `/api/mejoramiento/hallazgos/${h.id}/archivos` : null}
-                nombre="Zona de carga de las evidencias del hallazgo"
-                vacio="Sin evidencias adjuntas."
-              />
+              <>
+                <ArchivosDe
+                  archivos={evidencias}
+                  quitables={quitables}
+                  direccionDeSubida={puedeSubirEvidencia ? `/api/mejoramiento/hallazgos/${h.id}/archivos` : null}
+                  nombre="Zona de carga de las evidencias del hallazgo"
+                  vacio="Sin evidencias adjuntas."
+                />
+                {delReporte.length > 0 ? (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">Las que llegaron con el reporte</p>
+                    <ArchivosDe archivos={delReporte} />
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </SeccionIdentificacion>
           {conCorreccion ? (

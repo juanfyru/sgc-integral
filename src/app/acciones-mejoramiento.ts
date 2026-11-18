@@ -33,6 +33,7 @@ import {
   registrarHallazgo,
   registrarOcurrencia,
 } from "@/db/consultas/mejoramiento/registro";
+import { descartarReporte, enviarReporte, sumarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { cerrarHallazgo, evaluarEficacia, LO_VISTO_CAMBIO, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
@@ -41,6 +42,7 @@ import {
   EsquemaCambioDeProceso,
   EsquemaCorreccion,
   EsquemaCriterio,
+  EsquemaDescarte,
   EsquemaDevolucion,
   EsquemaDevolverPlan,
   EsquemaEscalar,
@@ -66,13 +68,16 @@ import {
   EsquemaReasignar,
   EsquemaRechazo,
   EsquemaReclasificacion,
+  EsquemaReporte,
   EsquemaSeguimiento,
   EsquemaSostener,
+  EsquemaSumarReporte,
   RELACION_DE_REGISTRO,
   camposDeLaVerificacion,
   decisionesDeLaVerificacion,
   idsDeLaVerificacion,
 } from "@/lib/esquemas/mejoramiento";
+import { RUTA_REPORTES_RECIBIDOS, rutaDeReportar } from "@/lib/mejoramiento/reportes";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { parsearFormulario } from "@/lib/validacion";
@@ -80,7 +85,8 @@ import { parsearFormulario } from "@/lib/validacion";
 /**
  * Registra un hallazgo y lleva a su página. Ante los parecidos del mismo proceso, `relacion` dice la salida que se eligió
  * (spec §7.5): `ocurrencia:<id>` no crea un hallazgo, añade una ocurrencia al abierto; `reincidencia:<id>` lo enlaza a uno
- * cerrado; `distinto` (o ausente) nace normal. Las evidencias llegan en la tarea 9.
+ * cerrado; `distinto` (o ausente) nace normal. Desde un reporte (`reporteId`, spec §7.3), registrar lo convierte y elegir una
+ * ocurrencia lo suma a ese hallazgo: el reporte nunca queda sin clasificar.
  */
 export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
@@ -89,7 +95,11 @@ export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: F
     if (!relacion) throw new Error("La salida elegida ante los parecidos no es válida");
     if (relacion[1] === "ocurrencia") {
       const hallazgoId = Number(relacion[2]);
-      await registrarOcurrencia(sesion, { hallazgoId, fecha: d.detectadoEn, descripcion: d.descripcion });
+      if (d.reporteId !== null) {
+        await sumarReporte(sesion, { reporteId: d.reporteId, hallazgoId });
+      } else {
+        await registrarOcurrencia(sesion, { hallazgoId, fecha: d.detectadoEn, descripcion: d.descripcion });
+      }
       return rutaDeHallazgo(hallazgoId);
     }
     const hallazgo = await registrarHallazgo(sesion, {
@@ -97,6 +107,36 @@ export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: F
       reincidenteDe: relacion[1] === "reincidencia" ? Number(relacion[2]) : null,
     });
     return rutaDeHallazgo(hallazgo.id);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los reportes de funcionarios (spec 15 §7.3). Reportar lo hace cualquiera (`mejora.reportar`); clasificar, el Admin SGC
+// (`mejora.gestionar`). Convertir va por `registrarHallazgoAccion`, con el `reporteId` del registro.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Envía el reporte de una posible no conformidad y lleva al paso de sus archivos (hasta tres). */
+export async function enviarReporteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.reportar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaReporte);
+    const { id } = await enviarReporte(sesion, d);
+    return rutaDeReportar(id);
+  });
+}
+
+/** El Admin SGC añade un reporte como ocurrencia de un hallazgo abierto. */
+export async function sumarReporteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    await sumarReporte(sesion, parsearFormulario(datos, EsquemaSumarReporte));
+    return RUTA_REPORTES_RECIBIDOS;
+  });
+}
+
+/** El Admin SGC descarta un reporte con su motivo, que quien reportó lee. */
+export async function descartarReporteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    await descartarReporte(sesion, parsearFormulario(datos, EsquemaDescarte));
+    return RUTA_REPORTES_RECIBIDOS;
   });
 }
 

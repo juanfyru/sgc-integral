@@ -37,7 +37,7 @@ export const ROLES_POR_DESTINO = {
 } as const;
 
 /** Un reporte admite como mucho tres archivos (spec 15 §10). */
-const MAXIMO_POR_REPORTE = 3;
+export const MAXIMO_POR_REPORTE = 3;
 
 const NO_EXISTE = "El archivo no existe";
 const SIN_DUENO = "Ya no existe a qué adjuntar el archivo";

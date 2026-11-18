@@ -88,3 +88,24 @@ export async function parecidosDeOtrosProcesos(
   const evaluables = await evaluablesDe(sql, filas, opciones?.ahora);
   return filas.map((f) => ({ ...aParecido(f, evaluables), proceso: f.proceso as string }));
 }
+
+/**
+ * Los hallazgos **abiertos** que se parecen a un reporte de funcionario, para sumarlo como ocurrencia (spec §7.3 y §7.5): hasta
+ * cinco, del proceso que dice el reporte o, si dice «no sé», de todos. Los ve solo quien clasifica (el Admin SGC, que ve todo).
+ */
+export async function abiertosParecidosAlReporte(
+  sql: Cliente,
+  x: { procesoId: number | null; texto: string; ahora?: Date },
+): Promise<Array<HallazgoParecido & { proceso: string }>> {
+  const delProceso = x.procesoId !== null ? sql`AND h.proceso_id = ${x.procesoId}` : sql``;
+  const filas = await sql`SELECT h.id, h.codigo, h.titulo, h.estado, h.resultado_cierre, h.correccion_requerida, h.registrado_en,
+      p.nombre AS proceso
+    FROM mejora_hallazgos h
+    JOIN procesos p ON p.id = h.proceso_id
+    WHERE h.estado NOT IN ${sql([...TERMINALES])} ${delProceso}
+      AND similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, x.texto)}) >= ${UMBRAL}
+    ORDER BY similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, x.texto)}) DESC, h.id
+    LIMIT ${MAXIMO}`;
+  const evaluables = await evaluablesDe(sql, filas, x.ahora);
+  return filas.map((f) => ({ ...aParecido(f, evaluables), proceso: f.proceso as string }));
+}

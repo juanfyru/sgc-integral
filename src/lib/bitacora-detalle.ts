@@ -543,6 +543,12 @@ function operacionAlPublicar(d: Record<string, unknown>): string {
   return frases.length > 0 ? `. ${frases.join(" ")}` : "";
 }
 
+/** «el reporte n.º 12» de un reporte de funcionario (por el detalle o, si no lo trae, la entidad), o «un reporte». */
+function elReporte(d: Record<string, unknown>, entidadId: number | null | undefined): string {
+  const id = numero(d.reporteId) ?? (typeof entidadId === "number" && entidadId > 0 ? entidadId : null);
+  return id === null ? "un reporte" : `el reporte n.º ${id}`;
+}
+
 /** Cómo se nombra el hallazgo en una frase: con su código, o «un hallazgo» si el detalle no lo trae. */
 type HallazgoEnFrase = { el: string; del: string };
 const SIN_CODIGO: HallazgoEnFrase = { el: "un hallazgo", del: "de un hallazgo" };
@@ -645,7 +651,8 @@ function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): st
     fraseDeLaEficacia(accion, d, h) ??
     (accion === "validar_correccion" && d.resultado === "sin_accion" ? `Validó el cierre sin acción ${h.del}` : FRASES_DE_MEJORA[accion](h));
   const titulo = accion === "registrar" || accion === "cargar" ? texto(d.titulo) : null;
-  return `${frase}${titulo ? ` — ${titulo}` : ""}${conMotivo(d.justificacion)}`;
+  const reporte = accion === "registrar" ? numero(d.reporteId) : null;
+  return `${frase}${titulo ? ` — ${titulo}` : ""}${reporte !== null ? `, desde el reporte n.º ${reporte}` : ""}${conMotivo(d.justificacion)}`;
 }
 
 const NOMBRES_DE_MEJORA: Record<string, string> = Object.fromEntries(
@@ -1050,6 +1057,20 @@ export function describirEvento(e: EventoAuditoria): string {
       const numeroDeActa = texto(acta.numero);
       return `Respondió la escalada a Gerencia de ${cual}${numeroDeActa ? ` (acta ${numeroDeActa})` : ""}`;
     }
+    // ── Mejoramiento (15A): los reportes de funcionarios (el id del reporte, el código del hallazgo y el estado; nunca lo que se
+    // vio, la referencia del caso ni el motivo del descarte). Quién reportó es el usuario de la fila de «enviado».
+    case "mejora_reporte_enviado":
+      return `Envió ${elReporte(d, e.entidadId)} de una posible no conformidad`;
+    case "mejora_reporte_convertido": {
+      const codigo = texto(d.codigo);
+      return `Convirtió ${elReporte(d, e.entidadId)} en ${codigo ? `el hallazgo ${codigo}` : "un hallazgo"}`;
+    }
+    case "mejora_reporte_sumado": {
+      const codigo = texto(d.codigo);
+      return `Añadió ${elReporte(d, e.entidadId)} como ocurrencia ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
+    case "mejora_reporte_descartado":
+      return `Descartó ${elReporte(d, e.entidadId)}`;
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1521,6 +1542,10 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_ajuste_negado: "Negó un ajuste del plan de un hallazgo",
   mejora_escalada: "Escaló a Gerencia una actividad vencida",
   mejora_escalada_respondida: "Respondió una escalada a Gerencia",
+  mejora_reporte_enviado: "Envió un reporte de una posible no conformidad",
+  mejora_reporte_convertido: "Convirtió un reporte en hallazgo",
+  mejora_reporte_sumado: "Añadió un reporte como ocurrencia de un hallazgo",
+  mejora_reporte_descartado: "Descartó un reporte",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

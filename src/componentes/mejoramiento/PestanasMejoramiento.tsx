@@ -1,22 +1,27 @@
 import Link from "next/link";
-import type { SujetoPermiso } from "@/lib/permisos";
+import { RUTA_MIS_REPORTES, RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
+import { puede, type SujetoPermiso } from "@/lib/permisos";
 
 const PESTANAS = [
   { clave: "hallazgos", etiqueta: "Hallazgos", href: "/mejoramiento" },
-  { clave: "reportes", etiqueta: "Reportes recibidos", href: "/mejoramiento/reportes" },
+  { clave: "reportes", etiqueta: "Reportes recibidos", href: RUTA_REPORTES_RECIBIDOS },
   { clave: "actividades", etiqueta: "Mis actividades", href: "/mejoramiento/actividades" },
-  { clave: "mis-reportes", etiqueta: "Mis reportes", href: "/mejoramiento/reportar" },
+  { clave: "mis-reportes", etiqueta: "Mis reportes", href: RUTA_MIS_REPORTES },
 ] as const;
 
 export type Pestana = (typeof PESTANAS)[number]["clave"];
 
 /**
- * Quién ve cada pestaña (spec 15 §16.1): «Hallazgos», quien ve alguno; «Mis actividades», toda sesión. Las de «Reportes
- * recibidos» y «Mis reportes» se abren cuando existan sus páginas (Tarea 18): una pestaña que lleva a «no encontrado» no se
- * ofrece.
+ * Quién ve cada pestaña (spec 15 §16.1): «Hallazgos», quien ve alguno; «Reportes recibidos», los roles de control
+ * (`mejora.ver_todo`); «Mis actividades» y «Mis reportes», toda sesión (todos pueden reportar).
  */
-export function pestanasVisibles(_sujeto: SujetoPermiso, x: { veHallazgos: boolean }): Pestana[] {
-  return x.veHallazgos ? ["hallazgos", "actividades"] : ["actividades"];
+export function pestanasVisibles(sujeto: SujetoPermiso, x: { veHallazgos: boolean }): Pestana[] {
+  return [
+    ...(x.veHallazgos ? (["hallazgos"] as const) : []),
+    ...(puede(sujeto, "mejora.ver_todo") ? (["reportes"] as const) : []),
+    "actividades",
+    "mis-reportes",
+  ];
 }
 
 export function PestanasMejoramiento({

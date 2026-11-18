@@ -1105,3 +1105,48 @@ export const EsquemaFormularioEvaluacion = z
 export const EsquemaFormularioCierre = z
   .object({ hallazgoId: idDeHallazgo, lecciones: z.string().optional(), cambiosAtendidos: z.string().optional(), ...firma })
   .strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los reportes de funcionarios (spec 15 §7.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const QUE_VIO_CORTO = "Cuente qué vio, en al menos 10 caracteres";
+export const MOTIVO_DEL_DESCARTE = "Escriba el motivo del descarte en al menos 10 caracteres";
+
+/**
+ * El reporte de un funcionario, del formulario o del dominio: qué vio (de 10 a 2.000 caracteres), cuándo, en qué proceso
+ * (vacío es «no sé») y, si aplica, la referencia del caso. Que el día no sea futuro y que el proceso esté activo los mira el
+ * dominio.
+ */
+export const EsquemaReporte = z
+  .object({
+    descripcion: z
+      .string({ error: QUE_VIO_CORTO })
+      .trim()
+      .min(10, QUE_VIO_CORTO)
+      .max(2000, "Lo que vio no puede pasar de 2000 caracteres"),
+    vistoEn: fechaDelDia("Escriba una fecha válida en que lo vio"),
+    procesoId: idOpcional("El proceso elegido no es válido"),
+    referenciaCaso: textoOpcional("La referencia del caso", 100),
+  })
+  .strict();
+export type ReporteValidado = z.output<typeof EsquemaReporte>;
+
+const idDeReporte = idRequerido("El reporte no es válido");
+
+/** Añadir el reporte como ocurrencia de un hallazgo abierto (spec §7.3 y §7.5). */
+export const EsquemaSumarReporte = z
+  .object({ reporteId: idDeReporte, hallazgoId: idRequerido("Elija el hallazgo abierto al que lo añade") })
+  .strict();
+
+/** Descartar el reporte, con su motivo (al menos diez caracteres): quien reportó lo lee. */
+export const EsquemaDescarte = z
+  .object({
+    reporteId: idDeReporte,
+    motivo: z
+      .string({ error: MOTIVO_DEL_DESCARTE })
+      .trim()
+      .min(10, MOTIVO_DEL_DESCARTE)
+      .max(1000, "El motivo no puede pasar de 1000 caracteres"),
+  })
+  .strict();
