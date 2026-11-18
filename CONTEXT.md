@@ -4,7 +4,7 @@
 > mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree `F:\sgc-integral-f15a` y contra
 > la base aparte `sgc_f15a`; **fusionada en `main` el 2026-11-18 por decisión del usuario, por avance rápido, y `main`
 > publicado en `origin` ese mismo día** (`a218f4d`, CI en verde), con la `0018` aplicada a la base `sgc`; ver su sección,
-> arriba de la del complemento de la 14C). **Lo siguiente es la Fase 15B** (punto 1 del punto de reanudación). El 2026-11-17 el usuario aprobó el **diseño de la
+> arriba de la del complemento de la 14C). **Lo siguiente es ejecutar la Fase 15B:** su anexo y su plan están aprobados desde el 2026-11-18 y falta construirla, con subagentes y en otra sesión (punto 1 del punto de reanudación). El 2026-11-17 el usuario aprobó el **diseño de la
 > Fase 15** (`docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`; tres entregas, 15A, 15B y 15C) y
 > el plan de la 15A. Ese mismo día, antes, se fusionó el
 > **complemento de la
@@ -38,7 +38,22 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 15A está construida** (2026-11-18): las 22 tareas de su plan (las 21 primeras, cada una
+1. **Dónde quedamos:** la **Fase 15B tiene su anexo y su plan aprobados** (2026-11-18) y **no se ha empezado a construir**.
+   El usuario aprobó el anexo («aprobado el anexo, continuemos con el plan de la 15B») y el plan («apruebo el plan»), y pidió
+   ejecutarlo **con subagentes, en otra sesión**. Anexo:
+   `docs/superpowers/specs/2026-11-18-fase15b-planes-y-enganches-design.md` (amplía §17 del spec 15 y manda sobre él; su §1
+   dice en qué; decisiones del usuario B1 a B8 y C1 a C3, en su §2; 47 decisiones de Claude, en su §17). Plan:
+   `docs/superpowers/plans/2026-11-18-fase15b-planes-y-enganches.md` (dieciséis tareas; una migración, la `0019`; sin
+   dependencias npm nuevas). **Para empezar:** la skill de ejecución con subagentes sobre ese plan, desde el Paso 0 de su
+   Tarea 1 (worktree `F:\sgc-integral-f15b`, rama `fase-15b-planes-enganches`, base aparte `sgc_f15b`, su guarda
+   `con-f15b.sh` y el puerto 3016 para los puntos de control; ni el worktree ni la base existen todavía). Las maquetas
+   aprobadas («están ok»; no versionadas) están en `.superpowers/brainstorm/963-1795030914/content/pantallas-15b.html`: el
+   Paso 0 las copia al espacio de trabajo. **Lo que cambió respecto de lo que este archivo decía:** el formato del ente **ya
+   no espera ninguna plantilla**: el usuario pidió diseñarlo (trece columnas, anexo §4), y «efecto», «unidad de medida» y
+   «cantidad» no existen. **Siguen pendientes del usuario, sin bloquear:** el visto bueno a las 46 decisiones de la 15A y su
+   recorrido; los tres hallazgos abiertos en papel, con sus formatos; y registrar los formatos como documentos (ahora
+   también el SGC-FO-14, para el encabezado de su impreso).
+   **Antes:** la **Fase 15A está construida** (2026-11-18): las 22 tareas de su plan (las 21 primeras, cada una
    con su revisión), en la rama `fase-15a-mejoramiento` del worktree `F:\sgc-integral-f15a`, contra la base `sgc_f15a`, y
    **fusionada en `main` el 2026-11-18** por decisión del usuario («fusionemos en main»), por avance rápido, con la `0018`
    aplicada a la base `sgc` (después de un respaldo), y **`main` publicado en `origin`** ese mismo día (`a218f4d`, el CI de
@@ -51,16 +66,12 @@
    y la revisión de toda la rama están hechas** (2026-11-18, «Verificación de cierre (Fase 15A)»), con su ola de
    corrección. **Falta:** el visto bueno del usuario a las 46 decisiones de la ejecución y de la revisión final, y su
    recorrido sobre la demo («Qué probar y cómo (Fase 15A)»).
-   **Lo siguiente: la Fase 15B — Planes y enganches** (spec §17; en la tabla de entregas, «15B»). Se empieza como la 15A:
-   primero las preguntas de diseño y el **anexo de la 15B** (§17 está escrito «al nivel de lo ya decidido» y su anexo se
-   escribe al empezar), que el usuario aprueba; después el plan, que también aprueba, y la ejecución en un worktree y una
-   base aparte (`fase-15b-…`, `sgc_f15b`, con su guarda como `con-f15a.sh`). Lo que trae: el plan de mejoramiento que agrupa
-   hallazgos (`PM-AAAA-NN`) con su SGC-FO-14 por proceso; el formato del ente; los objetivos; «abrir hallazgo» desde un
-   documento, un proceso, un indicador con «Requiere acción de mejora», una verificación de un punto de uso y un impacto de
-   norma; y el cambio documental desde una actividad. **Necesita del usuario la plantilla del ente de control y de qué ente
-   es** (spec §28): sin ella, el formato del ente queda fuera del anexo. Arrastra los menores de la 15A que se dejaron para
-   ella («Deuda técnica (Fase 15A)», el primer punto). Los tres hallazgos abiertos en papel se cargan en la 15A y se
-   agrupan en su plan en la 15B. La 15C (el SGC-FO-28, el Pareto y cuatro cálculos automáticos) espera a la 15B.
+   **Lo siguiente es ejecutar la 15B** (arriba). Trae: el plan de mejoramiento que agrupa hallazgos (`PM-AAAA-NN`), con su
+   SGC-FO-14 de un plan y consolidado por proceso y año; el Excel para el ente; los objetivos; «abrir hallazgo» desde un
+   documento, un proceso, un indicador con «Requiere acción de mejora», un hallazgo de verificación de un punto de uso y un
+   impacto de norma; el cambio documental desde una actividad; y los menores de la 15A que su anexo nombra (§11). Los tres
+   hallazgos abiertos en papel se cargan con lo de la 15A y se agrupan en su plan con la 15B. La 15C (el SGC-FO-28, el
+   Pareto y cuatro cálculos automáticos) espera a la 15B.
    **Antes:** la **Fase 15 — Planes de mejoramiento** tuvo su **diseño aprobado por el usuario el 2026-11-17**
    («aprobado el spec, continuemos con el plan de la 15A»). El spec es uno solo para las
    tres entregas: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`. **15A**, el hallazgo de
