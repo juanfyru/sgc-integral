@@ -182,7 +182,7 @@ async function resolverTurno(
   const ids = await recordar(m, clave, () => quienTieneElTurno(tx, h));
   switch (turno) {
     case "lideres": {
-      if (ids.length === 0) return { ids, texto: NADIE_ACEPTA_TURNO };
+      if (ids.length === 0 && h.estado === "por_aceptar") return { ids, texto: NADIE_ACEPTA_TURNO };
       const lideres = await recordar(m, `hay-lideres:${h.procesoId}`, () => lideresDeProceso(h.procesoId, { sql: tx }));
       return { ids, texto: lideres.length > 0 ? "La líder del proceso" : ADMIN };
     }
