@@ -384,7 +384,7 @@ async function loQueSeMuestra(
   h: HallazgoBase,
   ahora: Date,
   zona: string,
-): Promise<{ r: string; ronda: RondaEnCurso; datos: DatosDeEvaluacion }> {
+): Promise<{ r: string; indicadorId: number | null; ronda: RondaEnCurso; datos: DatosDeEvaluacion }> {
   const fm = await fechaMinimaDe(sql, h.id, zona);
   if (!fm) throw new ErrorMejora(YA_CAMBIO);
   const ronda = await rondaEnCurso(sql, h);
@@ -398,6 +398,7 @@ async function loQueSeMuestra(
     WHERE hallazgo_id = ${h.id} AND fecha > ${fm.r} ORDER BY fecha, id`;
   return {
     r: fm.r,
+    indicadorId: fm.indicador?.id ?? null,
     ronda,
     datos: {
       minima: fm.minima,
@@ -443,7 +444,17 @@ async function huellaDelPlanAprobado(sql: Cliente, h: Pick<HallazgoBase, "id" | 
 type Evaluacion = {
   h: HallazgoBase;
   ronda: RondaEnCurso;
-  visto: { r: string; minima: string; indicador: DatosDeEvaluacion["indicador"]; ocurrencias: DatosDeEvaluacion["ocurrencias"] };
+  /**
+   * Lo que la pantalla mostró (spec §11.4), con el id del indicador enlazado: quien pinte el evento después nombra el indicador
+   * y sus cifras solo a quien `puedeVerIndicador` (ruling 4), sin suponer que la ronda sigue enlazando el mismo.
+   */
+  visto: {
+    r: string;
+    minima: string;
+    indicadorId: number | null;
+    indicador: DatosDeEvaluacion["indicador"];
+    ocurrencias: DatosDeEvaluacion["ocurrencias"];
+  };
   huella: string;
   ocurrencias: number;
   /** Si el mismo acto cierra (evalúa «eficaz» el Admin SGC): lo del cierre y su huella. */
@@ -464,7 +475,7 @@ async function validarEvaluacion(
   const h = await existente(sql, v.hallazgoId);
   await exigirVerificador(sql, sesion, h.id);
   if (h.estado !== "en_espera") throw new ErrorMejora(YA_CAMBIO);
-  const { r, ronda, datos } = await loQueSeMuestra(sql, sesion, h, c.ahora, c.zona);
+  const { r, indicadorId, ronda, datos } = await loQueSeMuestra(sql, sesion, h, c.ahora, c.zona);
   if (v.criterios.includes("mejora_indicador")) {
     if (datos.indicador === null) throw new ErrorMejora(SIN_INDICADOR_ENLAZADO);
     if (datos.indicadorRetirado) throw new ErrorMejora(INDICADOR_RETIRADO);
@@ -477,7 +488,7 @@ async function validarEvaluacion(
   const cierra = eficaz && puede(sesion, "mejora.gestionar");
   if (cierra) exigirLoDelCierre(v.lecciones, v.cambiosAtendidos, ronda.cambios);
 
-  const visto = { r, minima: datos.minima, indicador: datos.indicador, ocurrencias: datos.ocurrencias };
+  const visto = { r, minima: datos.minima, indicadorId, indicador: datos.indicador, ocurrencias: datos.ocurrencias };
   const huella = huellaDeEvaluacion({
     huellaDelPlan: await huellaDelPlanAprobado(sql, h),
     resultado: v.resultado,

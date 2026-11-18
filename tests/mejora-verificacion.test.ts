@@ -9,9 +9,12 @@ import { obtenerSql } from "@/db/cliente";
 import { ErrorTramite } from "@/db/consultas/flujo/contrato";
 import { reasignarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
+import { quitarAnalisis } from "@/db/consultas/mejoramiento/analisis";
+import { enviarPlan } from "@/db/consultas/mejoramiento/aprobacion";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, dejarEvento } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { ACCION_AJENA, guardarAccion, quitarAccion } from "@/db/consultas/mejoramiento/plan";
 import { registrarOcurrencia } from "@/db/consultas/mejoramiento/registro";
 import {
   cerrarHallazgo,
@@ -31,7 +34,7 @@ import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, versionTrimestral } from "./utiles/indicadores";
-import { baseDeMejora, c, hallazgoEn, terminarTodas, type BaseDeMejora } from "./utiles/mejoramiento";
+import { baseDeMejora, c, hallazgoEn, planDePrueba, terminarTodas, type BaseDeMejora } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -427,6 +430,61 @@ describe("evaluarEficacia", () => {
       expect(formular.map((a) => Number(a.usuario_id))).toContain(b.lider.usuarioId);
     }));
 
+  it("la ronda 2 se formula y se envía con su propia firma; lo de la ronda 1 no se toca desde ella", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const AHORA = "2026-12-10T15:00:00Z";
+      await evaluarEficacia(
+        b.control,
+        evaluacion(h.id, { resultado: "no_eficaz", hasta: "2026-12-10", justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre" }),
+        c(AHORA, tx),
+      );
+      const foto = async () => ({
+        analisis: await tx`SELECT * FROM mejora_analisis WHERE hallazgo_id = ${h.id} ORDER BY id`,
+        causas: await tx`SELECT * FROM mejora_causas WHERE hallazgo_id = ${h.id} ORDER BY id`,
+        acciones: await tx`SELECT * FROM mejora_acciones WHERE hallazgo_id = ${h.id} ORDER BY id`,
+        actividades: await tx`SELECT * FROM mejora_actividades WHERE hallazgo_id = ${h.id} ORDER BY id`,
+      });
+      const deLaRonda1 = await foto();
+      const [analisis1] = deLaRonda1.analisis;
+      const [accion1] = deLaRonda1.acciones;
+      const [actividad1] = deLaRonda1.actividades;
+      const o = c("2026-12-11T15:00:00Z", tx);
+      await expect(quitarAnalisis(b.lider, { hallazgoId: h.id, analisisId: Number(analisis1.id) }, o)).rejects.toThrow("El análisis no existe en esta ronda");
+      await expect(quitarAccion(b.lider, { hallazgoId: h.id, accionId: Number(accion1.id) }, o)).rejects.toThrow(ACCION_AJENA);
+      await expect(
+        guardarAccion(
+          b.lider,
+          {
+            hallazgoId: h.id,
+            accionId: Number(accion1.id),
+            tipo: "correctiva",
+            descripcion: "Reescribir la acción de la ronda anterior",
+            causaIds: [],
+            actividades: [
+              { id: Number(actividad1.id), descripcion: "Otra cosa", responsableId: b.lider.usuarioId, inicio: "2026-12-11", fin: "2026-12-30" },
+            ],
+          },
+          o,
+        ),
+      ).rejects.toThrow(ACCION_AJENA);
+      expect(await foto()).toEqual(deLaRonda1);
+
+      // La ronda 2 empieza vacía, se formula y se envía con su propia «Elaboró».
+      await planDePrueba(tx, b, h.id);
+      await enviarPlan(b.lider, { hallazgoId: h.id, credenciales: CLAVE }, o);
+      expect(await bloquearHallazgo(tx, h.id)).toMatchObject({ estado: "en_revision", ronda: 2 });
+      const elaboro = await tx`SELECT ronda FROM firmas WHERE mejora_hallazgo_id = ${h.id} AND firma = 'elaboro' ORDER BY id`;
+      expect(elaboro.map((f) => f.ronda)).toEqual([1, 2]);
+      const despues = await foto();
+      expect(despues.analisis.slice(0, deLaRonda1.analisis.length)).toEqual(deLaRonda1.analisis);
+      expect(despues.causas.slice(0, deLaRonda1.causas.length)).toEqual(deLaRonda1.causas);
+      expect(despues.acciones.slice(0, deLaRonda1.acciones.length)).toEqual(deLaRonda1.acciones);
+      expect(despues.actividades.slice(0, deLaRonda1.actividades.length)).toEqual(deLaRonda1.actividades);
+      expect(despues.acciones.length).toBeGreaterThan(deLaRonda1.acciones.length);
+    }));
+
   it("eficaz por Control Interno queda «Por cerrar»; el Admin SGC cierra con «Cerró» y avisa a los líderes, a quien registró y a Gerencia", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
@@ -614,7 +672,10 @@ describe("el indicador enlazado", () => {
         c(CON_INDICADOR, tx),
       );
       const [evento] = await eventosDe(tx, h.id, "evaluar_eficaz");
-      const visto = (evento.detalle as { visto: { indicador: { filas: { momento: string }[] }; ocurrencias: { descripcion: string }[] } }).visto;
+      const visto = (
+        evento.detalle as { visto: { indicadorId: number; indicador: { filas: { momento: string }[] }; ocurrencias: { descripcion: string }[] } }
+      ).visto;
+      expect(visto.indicadorId).toBe(ind.id);
       expect(new Set(visto.indicador.filas.map((f) => f.momento))).toEqual(new Set(["antes", "durante", "despues"]));
       expect(visto.ocurrencias.map((o) => o.descripcion)).toEqual([OCURRENCIA]);
       expect((evento.detalle as { justificacion: string }).justificacion).toBe(JUSTIFICACION);

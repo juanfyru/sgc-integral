@@ -163,7 +163,11 @@ export async function planDePrueba(
     await guardarAnalisis(quien, { hallazgoId, metodo: "cinco_porques", contenido: { niveles: [{ respuesta: "Nadie asignó el registro al turno de noche" }] } }, o);
     await guardarCausas(quien, { hallazgoId, causas: [{ texto: "El procedimiento no asigna el registro al turno de noche" }] }, o);
     await responderPreguntas(quien, { hallazgoId, similares: false, cambios: { documentos: false, riesgos: false, controles: false } }, o);
-    causaIds = (await tx`SELECT id FROM mejora_causas WHERE hallazgo_id = ${hallazgoId} ORDER BY orden, id`).map((f) => Number(f.id));
+    // Las de la ronda en curso: en la ronda 2 las de la 1 siguen ahí, congeladas.
+    causaIds = (
+      await tx`SELECT c.id FROM mejora_causas c JOIN mejora_rondas r ON r.id = c.ronda_id
+        WHERE c.hallazgo_id = ${hallazgoId} AND r.numero = ${h.ronda} ORDER BY c.orden, c.id`
+    ).map((f) => Number(f.id));
   }
   const fin = x?.fin ?? "2026-12-15";
   const inicio = fin < "2026-11-17" ? fin : "2026-11-17";
