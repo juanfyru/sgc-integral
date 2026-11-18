@@ -4,7 +4,9 @@
  * orígenes de un hallazgo y los borrados que ya existían y ahora conocen lo nuevo. Nada queda confirmado: todo corre dentro
  * de una transacción que se revierte.
  */
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import postgres from "postgres";
@@ -19,6 +21,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba } from "./utiles/indicadores";
 import { sesionAdmin, tramiteEn } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
+import { sinRevisionAbierta, vigenteFuera } from "./utiles/vigencia";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
@@ -328,15 +331,28 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("esquema de la migración 00
         expect(await tx`SELECT 1 FROM objetivos WHERE id = ${libre}`).toHaveLength(0);
       }));
 
-    it("deshacer la carga de un documento que cita un reporte responde con su mensaje y no con el 23503", () =>
-      revertida(sql, async (tx) => {
-        const b = await base(tx);
-        const [d] = await tx`SELECT id FROM documentos ORDER BY id LIMIT 1`;
-        await tx`INSERT INTO mejora_reportes (reportado_por, reportado_en, descripcion, visto_en, vence_en, documento_id)
-          VALUES (${b.usuarioId}, ${AHORA}, 'Un reporte sobre el documento', '2026-11-10', ${AHORA}, ${d.id})`;
-        const err = await deshacerCargaEn(tx, Number(d.id), "Carga equivocada", b.usuarioId, AHORA).then(() => null, (e: unknown) => e);
-        expect((err as Error | null)?.message).toBe("Un reporte de mejoramiento cita este documento");
-        expect((err as { code?: string }).code).toBeUndefined();
-      }));
+    it("deshacer la carga de un documento que cita un reporte se puede: el reporte conserva su documento", async () => {
+      const previo = process.env.ALMACEN_RUTA;
+      const almacen = mkdtempSync(path.join(tmpdir(), "sgc-esquema-15b-"));
+      process.env.ALMACEN_RUTA = almacen;
+      try {
+        await revertida(sql, async (tx) => {
+          await sinRevisionAbierta(tx);
+          await tx`INSERT INTO configuracion (clave, valor) VALUES ('publicacion_directa', '1') ON CONFLICT (clave) DO UPDATE SET valor = '1'`;
+          const b = await base(tx);
+          const doc = await vigenteFuera(tx, { fechaAprobacion: "2025-01-10", proceso: "GTH" });
+          const [r] = await tx`INSERT INTO mejora_reportes (reportado_por, reportado_en, descripcion, visto_en, vence_en, documento_id)
+            VALUES (${b.usuarioId}, ${AHORA}, 'Un reporte sobre el documento', '2026-11-10', ${AHORA}, ${doc.id}) RETURNING id`;
+          await deshacerCargaEn(tx, doc.id, "Carga equivocada", b.usuarioId, AHORA);
+          expect(await tx`SELECT 1 FROM documento_versiones WHERE documento_id = ${doc.id} AND estado = 'vigente'`).toHaveLength(0);
+          const [despues] = await tx`SELECT documento_id FROM mejora_reportes WHERE id = ${r.id}`;
+          expect(Number(despues.documento_id)).toBe(doc.id);
+        });
+      } finally {
+        if (previo === undefined) delete process.env.ALMACEN_RUTA;
+        else process.env.ALMACEN_RUTA = previo;
+        rmSync(almacen, { recursive: true, force: true });
+      }
+    });
   });
 });

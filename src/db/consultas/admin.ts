@@ -712,9 +712,6 @@ export async function deshacerCargaEn(
 ): Promise<void> {
   const razon = motivo.trim();
   if (!razon) throw new Error("Escriba el motivo");
-  // Un reporte de mejoramiento (15B) cita el documento: la llave foránea no llega a la persona como un `23503`.
-  const [citado] = await tx`SELECT 1 FROM mejora_reportes WHERE documento_id = ${documentoId} LIMIT 1`;
-  if (citado) throw new Error("Un reporte de mejoramiento cita este documento");
   await exigirInterno(tx, { documentoId });
   await exigirCargaAbierta(tx);
   const impedimento = impedimentoDeDeshacer(await situacionBloqueada(tx, documentoId));
