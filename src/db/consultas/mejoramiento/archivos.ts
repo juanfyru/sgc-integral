@@ -13,6 +13,7 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { puedeAbrirArchivoDeMejora, puedeVerificar, type SujetoVisibilidad } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
+import { MAXIMO_POR_REPORTE } from "@/lib/mejoramiento/reportes";
 import { ErrorMejora, TERMINALES } from "@/lib/mejoramiento/tipos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
 import { actuaPorElProceso } from "./avisos";
@@ -36,8 +37,8 @@ export const ROLES_POR_DESTINO = {
   mejora_ronda: ["analisis", "verificacion"],
 } as const;
 
-/** Un reporte admite como mucho tres archivos (spec 15 §10). */
-export const MAXIMO_POR_REPORTE = 3;
+// El tope de archivos de un reporte vive en `src/lib/mejoramiento/reportes.ts` (lo pinta también el formulario de reportar).
+export { MAXIMO_POR_REPORTE };
 
 const NO_EXISTE = "El archivo no existe";
 const SIN_DUENO = "Ya no existe a qué adjuntar el archivo";

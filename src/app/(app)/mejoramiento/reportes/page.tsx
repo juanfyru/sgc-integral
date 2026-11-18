@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Megaphone, Plus } from "lucide-react";
+import { Megaphone } from "lucide-react";
 import { descartarReporteAccion, sumarReporteAccion } from "@/app/acciones-mejoramiento";
 import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
 import { MisReportes } from "@/componentes/mejoramiento/reportes/MisReportes";
@@ -26,8 +26,9 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 /**
  * Los reportes de funcionarios (spec 15 §7.3 y §16.1), para toda sesión. «Mis reportes» (por omisión): los que envió la persona,
  * con su etiqueta y nada del hallazgo. Con `?vista=recibidos`, a los roles de control (`mejora.ver_todo`), «Reportes recibidos»:
- * todos, con quién reportó, y al Admin SGC su clasificación; a los demás ese valor se ignora y ven «Mis reportes». La lista de
- * hallazgos trae aquí a quien no ve ninguno ni tiene actividades.
+ * los que esperan y los clasificados en los últimos 90 días, con quién reportó, y al Admin SGC su clasificación; a los demás ese
+ * valor se ignora y ven «Mis reportes». La lista de hallazgos trae aquí a quien no ve ninguno, no registra ni ve todo, ni tiene
+ * actividades (`adondeVaSinLista`).
  */
 export default async function PaginaReportes({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sesion = await exigirSesion();
@@ -41,18 +42,22 @@ export default async function PaginaReportes({ searchParams }: { searchParams: P
   let contenido: React.ReactNode;
   let descripcion: string;
   if (recibidos) {
-    const lista = await reportesRecibidos(sesion);
+    const lista = await reportesRecibidos(sesion, { ahora });
     const filas: FilaDeReporteRecibido[] = [];
     for (const reporte of lista) {
+      // Las consultas por fila (archivos, parecidos), solo para los que esperan: lo clasificado se lee en su hallazgo.
+      if (reporte.estado !== "recibido") {
+        filas.push({ reporte, archivos: [], quitables: [], parecidos: null });
+        continue;
+      }
       const dueno = { contexto: "mejora_reporte", contextoId: reporte.id } as const;
       const archivos = reporte.archivos > 0 ? await archivosDe(sql, sesion, dueno) : [];
-      const clasifica = gestiona && reporte.estado === "recibido";
       filas.push({
         reporte,
         archivos,
-        quitables: clasifica && archivos.length > 0 ? await archivosQuitables(sql, sesion, archivos, dueno) : [],
-        parecidos: clasifica
-          ? (await abiertosParecidosAlReporte(sql, { procesoId: reporte.procesoId, texto: reporte.descripcion, ahora })).map((p) => ({
+        quitables: gestiona && archivos.length > 0 ? await archivosQuitables(sql, sesion, archivos, dueno) : [],
+        parecidos: gestiona
+          ? (await abiertosParecidosAlReporte(sql, sesion, { procesoId: reporte.procesoId, texto: reporte.descripcion, ahora })).map((p) => ({
               id: p.id,
               codigo: p.codigo,
               titulo: p.titulo,
@@ -89,18 +94,10 @@ export default async function PaginaReportes({ searchParams }: { searchParams: P
         titulo={recibidos ? "Reportes recibidos" : "Mis reportes"}
         descripcion={descripcion}
         acciones={
-          <>
-            <Link href={rutaDeReportar()} className={`${claseBoton("primario")} ${FOCO}`}>
-              <Megaphone aria-hidden="true" className="size-4" />
-              Reportar
-            </Link>
-            {puede(sesion, "mejora.registrar") && !veHallazgos ? (
-              <Link href="/mejoramiento/nuevo" className={`${claseBoton("secundario")} ${FOCO}`}>
-                <Plus aria-hidden="true" className="size-4" />
-                Registrar hallazgo
-              </Link>
-            ) : null}
-          </>
+          <Link href={rutaDeReportar()} className={`${claseBoton("primario")} ${FOCO}`}>
+            <Megaphone aria-hidden="true" className="size-4" />
+            Reportar
+          </Link>
         }
       />
       <PestanasMejoramiento

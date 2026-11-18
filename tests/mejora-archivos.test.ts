@@ -291,6 +291,16 @@ describe("quién abre qué", () => {
       expect(await archivoServible(b.lider, a, subida(tx))).not.toBeNull();
       expect(await archivoServible(otro.lider, a, subida(tx))).toBeNull();
     }));
+
+  it("sumado como ocurrencia (Tarea 18, ronda 1): también quien ve completo el hallazgo al que se sumó", () =>
+    revertida(sql, async (tx) => {
+      const { b, otro, h } = await escena(tx);
+      const r = await reportePorSql(tx, b.consulta.usuarioId, { estado: "sumado", hallazgoId: h.id });
+      const a = await archivoPorSql(tx, "mejora_reporte", r);
+      expect(await archivoServible(b.lider, a, subida(tx))).not.toBeNull();
+      expect(await archivoServible(b.consulta, a, subida(tx))).not.toBeNull();
+      expect(await archivoServible(otro.lider, a, subida(tx))).toBeNull();
+    }));
 });
 
 describe("quitar", () => {

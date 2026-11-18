@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { RUTA_MIS_REPORTES, RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
+import { veLaLista } from "@/lib/mejoramiento/rutas";
 import { puede, type SujetoPermiso } from "@/lib/permisos";
 
 const PESTANAS = [
@@ -12,12 +13,13 @@ const PESTANAS = [
 export type Pestana = (typeof PESTANAS)[number]["clave"];
 
 /**
- * Quién ve cada pestaña (spec 15 §16.1): «Hallazgos», quien ve alguno; «Reportes recibidos», los roles de control
- * (`mejora.ver_todo`); «Mis actividades» y «Mis reportes», toda sesión (todos pueden reportar).
+ * Quién ve cada pestaña (spec 15 §16.1): «Hallazgos», quien se queda en la lista (`veLaLista`: ve alguno, o registra o ve todos);
+ * «Reportes recibidos», los roles de control (`mejora.ver_todo`); «Mis actividades» y «Mis reportes», toda sesión (todos pueden
+ * reportar).
  */
 export function pestanasVisibles(sujeto: SujetoPermiso, x: { veHallazgos: boolean }): Pestana[] {
   return [
-    ...(x.veHallazgos ? (["hallazgos"] as const) : []),
+    ...(veLaLista(sujeto, x.veHallazgos) ? (["hallazgos"] as const) : []),
     ...(puede(sujeto, "mejora.ver_todo") ? (["reportes"] as const) : []),
     "actividades",
     "mis-reportes",

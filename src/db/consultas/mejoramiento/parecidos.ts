@@ -4,6 +4,7 @@
  * título y a la descripción. No filtra por visibilidad: quien llama ya comprobó que la persona actúa en ese proceso.
  */
 import type { Cliente } from "@/db/cliente";
+import { filtroHallazgos, type SujetoVisibilidad } from "@/lib/alcance";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
 import { TERMINALES, type EstadoHallazgo, type ResultadoCierre } from "@/lib/mejoramiento/tipos";
 import { evaluablesDesde } from "./espera";
@@ -90,11 +91,13 @@ export async function parecidosDeOtrosProcesos(
 }
 
 /**
- * Los hallazgos **abiertos** que se parecen a un reporte de funcionario, para sumarlo como ocurrencia (spec §7.3 y §7.5): hasta
- * cinco, del proceso que dice el reporte o, si dice «no sé», de todos. Los ve solo quien clasifica (el Admin SGC, que ve todo).
+ * Los hallazgos **abiertos** que se parecen a un reporte de funcionario, como sugerencias para sumarlo como ocurrencia (spec §7.3
+ * y §7.5): hasta cinco, del proceso que dice el reporte o, si dice «no sé», de todos, y solo entre los que `sesion` ve
+ * (`filtroHallazgos`; hoy los pide el Admin SGC, que ve todos).
  */
 export async function abiertosParecidosAlReporte(
   sql: Cliente,
+  sesion: SujetoVisibilidad,
   x: { procesoId: number | null; texto: string; ahora?: Date },
 ): Promise<Array<HallazgoParecido & { proceso: string }>> {
   const delProceso = x.procesoId !== null ? sql`AND h.proceso_id = ${x.procesoId}` : sql``;
@@ -102,7 +105,7 @@ export async function abiertosParecidosAlReporte(
       p.nombre AS proceso
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
-    WHERE h.estado NOT IN ${sql([...TERMINALES])} ${delProceso}
+    WHERE h.estado NOT IN ${sql([...TERMINALES])} ${delProceso} AND ${filtroHallazgos(sql, sesion)}
       AND similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, x.texto)}) >= ${UMBRAL}
     ORDER BY similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, x.texto)}) DESC, h.id
     LIMIT ${MAXIMO}`;

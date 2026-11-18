@@ -248,6 +248,13 @@ export default async function PaginaHallazgo({
   // La evidencia del reporte del que nació (spec §7.3): la abre quien ve el hallazgo completo; ya no se sube ni se quita.
   const delReporte =
     h.reporteId !== null ? await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: h.reporteId }) : [];
+  // La de cada reporte que se sumó como ocurrencia (§7.5: la ocurrencia lleva su evidencia).
+  const archivosDeOcurrencias: Record<number, Awaited<ReturnType<typeof archivosDe>>> = {};
+  for (const o of h.ocurrencias) {
+    if (o.reporteId === null) continue;
+    const suyos = await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: o.reporteId });
+    if (suyos.length > 0) archivosDeOcurrencias[o.id] = suyos;
+  }
 
   // «2. Corrección», desde que la no conformidad está por corregir (las etapas que faltan no aparecen). Una corrección ya
   // registrada se sigue viendo aunque el hallazgo deje de ser no conformidad: queda como historia (spec §7.6).
@@ -835,7 +842,8 @@ export default async function PaginaHallazgo({
             <Ocurrencias
               key={`ocurrencias-${h.ocurrencias.length}`}
               hallazgoId={h.id}
-              ocurrencias={h.ocurrencias}
+              ocurrencias={h.ocurrencias.map((o) => ({ ...o, reporte: o.reporteId !== null }))}
+              archivos={archivosDeOcurrencias}
               puedeAnadir={!terminado && puede(sesion, "mejora.registrar")}
               hoy={hoy}
               accion={registrarOcurrenciaAccion}

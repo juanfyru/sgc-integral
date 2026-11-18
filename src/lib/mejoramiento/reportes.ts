@@ -37,14 +37,29 @@ export const rutaDeReportar = (reporteId?: number) => (reporteId ? `/mejoramient
 /** Convertir un reporte: el registro de un hallazgo con lo del reporte copiado. */
 export const rutaDeConvertir = (reporteId: number) => `/mejoramiento/nuevo?reporte=${reporteId}`;
 
+/** Un reporte admite como mucho tres archivos de evidencia (spec 15 §7.3). */
+export const MAXIMO_POR_REPORTE = 3;
+
+/** «Reportes recibidos» trae todos los que esperan y los clasificados en estos últimos días (no crece sin límite). */
+export const DIAS_DE_CLASIFICADOS = 90;
+
+/** El código de un hallazgo (`HZ-AAAA-NNN`; el 1.000 del año lleva cuatro cifras). */
+export const PATRON_DE_CODIGO = /^HZ-\d{4}-\d{3,}$/;
+export const CODIGO_NO_VALIDO = "Escriba el código del hallazgo, por ejemplo HZ-2026-004";
+
 export const YA_CLASIFICADO = "Ese reporte ya se clasificó";
 export const REPORTE_NO_EXISTE = "El reporte no existe";
 export const SOLO_ABIERTO = "Solo se añade a un hallazgo abierto: convierta el reporte en uno nuevo";
 
-/** Los avisos a quien reportó (spec §7.3: cuando se clasifica y cuando el hallazgo termina). */
+/**
+ * Los avisos a quien reportó (spec §7.3: cuando se clasifica y cuando el hallazgo termina). Ninguno copia lo que alguien
+ * escribió (los avisos saldrán por correo en la Fase 16): el motivo de un descarte se lee en «Mis reportes». El del final es
+ * neutro: vale para un hallazgo cerrado, rechazado o anulado.
+ */
 export const AVISO_EN_TRAMITE = "Su reporte fue recibido y está en trámite";
 export const AVISO_DESCARTADO = "Su reporte se descartó";
-export const AVISO_ATENDIDO = "Su reporte fue atendido: el hallazgo se cerró";
+export const CUERPO_DEL_DESCARTE = "Lea el motivo en Mis reportes";
+export const AVISO_CERRADO = "Su reporte se cerró. Gracias por reportarlo.";
 
 /** El cuerpo de un aviso a quien reportó: de qué reporte habla, sin lo que escribió (los avisos pueden salir por correo). */
 export const cuerpoDelReporte = (vistoEn: string) => `Su reporte de lo que vio el ${fechaDeDia(vistoEn)}`;

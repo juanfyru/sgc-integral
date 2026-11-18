@@ -84,7 +84,9 @@ import { FormularioReporte } from "@/componentes/mejoramiento/reportes/Formulari
 import { MisReportes } from "@/componentes/mejoramiento/reportes/MisReportes";
 import { ReportesRecibidos } from "@/componentes/mejoramiento/reportes/ReportesRecibidos";
 import type { MiReporte, ReporteDeLaLista } from "@/db/consultas/mejoramiento/reportes";
-import { etiquetaDeReporte } from "@/lib/mejoramiento/reportes";
+import { etiquetaDeReporte, MAXIMO_POR_REPORTE } from "@/lib/mejoramiento/reportes";
+import { Ocurrencias } from "@/componentes/mejoramiento/Ocurrencias";
+import { adondeVaSinLista } from "@/lib/mejoramiento/rutas";
 
 // La zona de carga de la evidencia (en la página de una actividad) pide el enrutador del cliente.
 vi.mock("next/navigation", async (importar) => ({
@@ -274,6 +276,9 @@ describe("PestanasMejoramiento", () => {
     expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: true })).toEqual(["hallazgos", "actividades", "mis-reportes"]);
     expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: false })).toEqual(["actividades", "mis-reportes"]);
     expect(pestanasVisibles({ rol: "lider_proceso" }, { veHallazgos: true })).toEqual(["hallazgos", "actividades", "mis-reportes"]);
+    // Quien registra o ve todo se queda en la lista aunque esté vacía (Tarea 18, ronda 1, ruling 3): su pestaña está.
+    expect(pestanasVisibles({ rol: "lider_proceso" }, { veHallazgos: false })).toEqual(["hallazgos", "actividades", "mis-reportes"]);
+    expect(pestanasVisibles({ rol: "gerencia" }, { veHallazgos: false })).toEqual(["hallazgos", "reportes", "actividades", "mis-reportes"]);
     for (const rol of ["admin_sgc", "gerencia", "control_interno"] as const) {
       expect(pestanasVisibles({ rol }, { veHallazgos: true })).toEqual(["hallazgos", "reportes", "actividades", "mis-reportes"]);
     }
@@ -2256,7 +2261,9 @@ describe("Tarea 18: los reportes de funcionarios", () => {
     expect(html).toMatch(/<option value=""[^>]*>No sé<\/option>/);
     expect(html).toContain("Farmacia");
     expect(html).toContain('name="referenciaCaso"');
-    expect(html).toContain("hasta tres archivos");
+    expect(MAXIMO_POR_REPORTE).toBe(3);
+    expect(html).toContain(`hasta ${MAXIMO_POR_REPORTE} archivos`);
+    expect(html).toContain('href="/mejoramiento/reportes"');
     expect(html).toContain("Enviar el reporte");
   });
 
@@ -2389,5 +2396,73 @@ describe("Tarea 18: los reportes de funcionarios", () => {
     expect(pintar(true, "Marta Ruiz")).toContain("Reportado por Marta Ruiz");
     expect(pintar(true, "Marta Ruiz")).not.toContain("un funcionario");
     expect(pintar(false, null)).not.toContain("Reportado por");
+  });
+});
+
+describe("Tarea 18, ronda 1: sumar por código, los avisos del formulario y la evidencia del reporte sumado", () => {
+  const accion = vi.fn(async () => null);
+  const parecido = { id: 40, codigo: "HZ-2026-040", titulo: "Nevera sin registro", etiqueta: "En ejecución", proceso: "Farmacia" };
+
+  it("añadir a un hallazgo abierto admite cualquier código, con los parecidos como sugerencias (ruling 2)", () => {
+    const con = renderToStaticMarkup(<ClasificarReporte reporteId={7} parecidos={[parecido]} conProceso sumar={accion} descartar={accion} />);
+    expect(con).toContain("HZ-2026-040");
+    expect(con).toContain("Otro hallazgo abierto, por su código");
+    const codigo = con.match(/<input[^>]*name="codigo"[^>]*>/)![0];
+    expect(codigo).toContain('placeholder="HZ-2026-004"');
+    const sin = renderToStaticMarkup(<ClasificarReporte reporteId={7} parecidos={[]} conProceso sumar={accion} descartar={accion} />);
+    expect(sin).toContain("No hay hallazgos abiertos que se le parezcan en su proceso");
+    expect(sin).not.toContain('name="hallazgoId"');
+    const soloCodigo = sin.match(/<input[^>]*name="codigo"[^>]*>/)![0];
+    expect(soloCodigo).toMatch(/required/);
+    expect(sin).toContain("Añadir como ocurrencia");
+  });
+
+  it("al convertir, elegir una ocurrencia avisa que se usan lo que se vio y el día del reporte (ruling 9)", () => {
+    const pintar = (relacion: string) =>
+      renderToStaticMarkup(
+        <FormularioHallazgo
+          accion={accion}
+          procesos={[{ id: 3, nombre: "Farmacia" }]}
+          hoy="2026-11-18"
+          diasParaAceptar={3}
+          valores={{ descripcion: "La nevera marcaba 12 grados", procesoId: "3", relacion }}
+          reporte={{ id: 7, reportadoPor: "Marta Ruiz", vistoEn: "2026-11-16" }}
+        />,
+      );
+    const aviso = "El reporte se añade como ocurrencia con lo que se vio y el día del reporte; lo que escriba aquí no se guarda.";
+    expect(pintar("ocurrencia:40")).toContain(aviso);
+    expect(pintar("distinto")).not.toContain(aviso);
+  });
+
+  it("la ocurrencia que llegó por un reporte lista sus archivos (ruling 8)", () => {
+    const html = renderToStaticMarkup(
+      <Ocurrencias
+        hallazgoId={14}
+        ocurrencias={[
+          { id: 3, fecha: "2026-11-16", descripcion: "La nevera marcaba 12 grados", quien: "Ana", reporte: true },
+          { id: 4, fecha: "2026-11-17", descripcion: "Otra vez sin registro", quien: "Ana", reporte: false },
+        ]}
+        archivos={{ 3: [{ id: 90, nombre: "foto-nevera.pdf", mime: "application/pdf", tamano: 2048 }] }}
+        puedeAnadir={false}
+        hoy="2026-11-18"
+        accion={accion}
+      />,
+    );
+    expect(html).toContain('href="/mejoramiento/archivos/90/foto-nevera.pdf"');
+    expect(html.match(/Llegó por el reporte de un funcionario/g)).toHaveLength(1);
+  });
+
+  it("«Reportes recibidos» dice que muestra los clasificados de los últimos 90 días (ruling 6)", () => {
+    const html = renderToStaticMarkup(<ReportesRecibidos filas={[]} gestiona zona="America/Bogota" ahora={AHORA} sumar={accion} descartar={accion} />);
+    expect(html).toContain("los clasificados en los últimos 90 días");
+  });
+
+  it("quien no ve hallazgos: se queda en la lista si registra o ve todo; si no, a sus actividades o a sus reportes (ruling 3)", () => {
+    for (const rol of ["admin_sgc", "control_interno", "gerencia", "lider_proceso"] as const) {
+      expect(adondeVaSinLista({ rol }, { veHallazgos: false, tieneActividades: false })).toBeNull();
+    }
+    expect(adondeVaSinLista({ rol: "consulta" }, { veHallazgos: false, tieneActividades: false })).toBe("/mejoramiento/reportes");
+    expect(adondeVaSinLista({ rol: "consulta" }, { veHallazgos: false, tieneActividades: true })).toBe("/mejoramiento/actividades");
+    expect(adondeVaSinLista({ rol: "consulta" }, { veHallazgos: true, tieneActividades: false })).toBeNull();
   });
 });

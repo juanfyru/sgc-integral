@@ -6,6 +6,7 @@ import type { EstadoAccion } from "@/app/admin/comun";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
+import { MAXIMO_POR_REPORTE, RUTA_MIS_REPORTES } from "@/lib/mejoramiento/reportes";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 
 const texto = (v: Record<string, string | string[]> | undefined, c: string, defecto = ""): string => {
@@ -64,12 +65,11 @@ export function FormularioReporte({
         <input type="text" maxLength={100} defaultValue={texto(v, "referenciaCaso")} autoComplete="off" className={claseControl} />
       </Campo>
       <p className="text-sm text-muted-foreground">
-        Al enviarlo, el Administrador del SGC lo recibe y lo clasifica. Después de enviarlo puede adjuntar hasta tres archivos de
-        evidencia. Enviado, no se puede editar.
+        {`Al enviarlo, el Administrador del SGC lo recibe y lo clasifica. Después de enviarlo puede adjuntar hasta ${MAXIMO_POR_REPORTE} archivos de evidencia. Enviado, no se puede editar.`}
       </p>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Link
-          href="/mejoramiento/reportes"
+          href={RUTA_MIS_REPORTES}
           className="inline-flex items-center rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
         >
           Cancelar

@@ -142,8 +142,12 @@ async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: str
 /**
  * Registra un hallazgo (spec §7.4). Nace aceptado si el origen es externo, si quien registra lidera ese proceso o si el
  * proceso no tiene ningún líder activo (F15-DC3: también cuando registra Control Interno); si no, «Por aceptar». Con
- * `reporteId`, convierte ese reporte (spec §7.3): lo clasifica el Admin SGC, el reporte se bloquea primero (el hallazgo aún no
- * existe) y debe seguir «Recibido»; el plazo de formular corre desde ahora, la conversión, y no desde el reporte (§13.3).
+ * `reporteId`, convierte ese reporte (spec §7.3): lo clasifica el Admin SGC y el reporte debe seguir «Recibido»; el plazo de
+ * formular corre desde ahora, la conversión, y no desde el reporte (§13.3).
+ *
+ * Orden de candados, el del módulo (primero el hallazgo, después lo demás): el hallazgo de origen (`derivadoDe`) `FOR KEY SHARE`
+ * —el que tomaría la llave foránea al insertar, pero antes del reporte—, el reporte `FOR UPDATE` y el consecutivo del año. Así
+ * no se cruza con `sumarReporte`, que bloquea el hallazgo (`FOR UPDATE`) y después el reporte.
  */
 export async function registrarHallazgo(
   sesion: SesionFlujo,
@@ -159,6 +163,7 @@ export async function registrarHallazgo(
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      if (v.derivadoDe !== null) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${v.derivadoDe} FOR KEY SHARE`;
       const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
         throw new ErrorPermiso();

@@ -33,7 +33,7 @@ type Props = {
   derivado?: { id: number; codigo: string; titulo: string };
   /**
    * El reporte de un funcionario que se convierte (spec §7.3): viaja en `reporteId` y el registro lo deja «En trámite»; si se elige
-   * una ocurrencia entre los parecidos, se suma a ese hallazgo. Lo ve solo quien clasifica (`mejora.ver_todo`).
+   * una ocurrencia entre los parecidos, se suma a ese hallazgo. Lo recibe solo quien clasifica (`mejora.gestionar`).
    */
   reporte?: { id: number; reportadoPor: string; vistoEn: string };
 };
@@ -218,6 +218,11 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
         </Campo>
 
         <div role="status" className="flex flex-col gap-2">
+          {reporte && !edicion && esOcurrencia ? (
+            <p className={NOTA}>
+              El reporte se añade como ocurrencia con lo que se vio y el día del reporte; lo que escriba aquí no se guarda.
+            </p>
+          ) : null}
           {externo ? <p className={NOTA}>Este hallazgo no se puede rechazar y lo aprobará Gerencia.</p> : null}
           {esNc && criticidad === "alta" ? <p className={NOTA}>Llevará acción correctiva y lo aprobará Gerencia.</p> : null}
           {!externo ? (

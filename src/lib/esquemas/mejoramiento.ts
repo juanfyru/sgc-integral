@@ -1139,6 +1139,23 @@ export const EsquemaSumarReporte = z
   .object({ reporteId: idDeReporte, hallazgoId: idRequerido("Elija el hallazgo abierto al que lo añade") })
   .strict();
 
+/**
+ * El formulario de «Añadir a un hallazgo abierto»: uno de los parecidos (`hallazgoId`) o, si no es ninguno, el código de otro
+ * abierto (`codigo`); la acción resuelve el código entre los que la persona ve y deja la forma de `EsquemaSumarReporte`.
+ */
+export const EsquemaFormularioSumarReporte = z
+  .object({
+    reporteId: idDeReporte,
+    hallazgoId: idOpcional("Elija el hallazgo abierto al que lo añade"),
+    codigo: textoOpcional("El código del hallazgo", 20),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    if (d.hallazgoId === null && d.codigo === null) {
+      ctx.addIssue({ code: "custom", path: ["hallazgoId"], message: "Elija el hallazgo abierto al que lo añade" });
+    }
+  });
+
 /** Descartar el reporte, con su motivo (al menos diez caracteres): quien reportó lo lee. */
 export const EsquemaDescarte = z
   .object({

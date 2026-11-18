@@ -12,13 +12,17 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { puedeVerHallazgo } from "@/lib/alcance";
+import { filtroHallazgos, puedeVerHallazgo } from "@/lib/alcance";
 import { EsquemaDescarte, EsquemaReporte, EsquemaSumarReporte } from "@/lib/esquemas/mejoramiento";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import {
+  CODIGO_NO_VALIDO,
+  DIAS_DE_CLASIFICADOS,
   ENTIDAD_REPORTE,
   etiquetaDeReporte,
+  MAXIMO_POR_REPORTE,
+  PATRON_DE_CODIGO,
   RUTA_REPORTES_RECIBIDOS,
   SOLO_ABIERTO,
   type EstadoReporte,
@@ -27,7 +31,6 @@ import {
 import { ErrorMejora, TERMINALES } from "@/lib/mejoramiento/tipos";
 import { puede, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { MAXIMO_POR_REPORTE } from "./archivos";
 import { activosDeRol } from "./avisos";
 import { contextoDeMejora } from "./config";
 import { bloquearHallazgo, legible, NO_EXISTE } from "./flujo";
@@ -35,7 +38,7 @@ import { registrarOcurrencia } from "./registro";
 import { bloquearReporteRecibido, dejarClasificado, dejarEventoDeReporte } from "./reportes-base";
 
 export {
-  AVISO_ATENDIDO,
+  AVISO_CERRADO,
   AVISO_DESCARTADO,
   AVISO_EN_TRAMITE,
   REPORTE_NO_EXISTE,
@@ -185,18 +188,21 @@ const hallazgoDe = (f: Record<string, unknown>): HallazgoDelReporte | null =>
     : { id: Number(f.hallazgo_id), codigo: f.hallazgo_codigo as string, titulo: f.hallazgo_titulo as string };
 
 /**
- * «Reportes recibidos» (spec §7.3 y §16.1), solo para `mejora.ver_todo`; a los demás, vacío. Los que esperan su clasificación
- * primero, del que vence antes al que vence después; luego los ya clasificados, del más reciente al más antiguo.
+ * «Reportes recibidos» (spec §7.3 y §16.1), solo para `mejora.ver_todo`; a los demás, vacío. Todos los que esperan su
+ * clasificación, del que vence antes al que vence después; luego los clasificados en los últimos `DIAS_DE_CLASIFICADOS` días
+ * (contados desde `ahora`), del más reciente al más antiguo: la lista no crece sin límite.
  */
-export async function reportesRecibidos(sesion: SesionFlujo, opciones?: Opciones): Promise<ReporteDeLaLista[]> {
+export async function reportesRecibidos(sesion: SesionFlujo, opciones?: Opciones & { ahora?: Date }): Promise<ReporteDeLaLista[]> {
   if (!puede(sesion, "mejora.ver_todo")) return [];
   const sql = opciones?.sql ?? obtenerSql();
+  const desde = new Date((opciones?.ahora ?? new Date()).getTime() - DIAS_DE_CLASIFICADOS * 86_400_000);
   const filas = await sql`SELECT ${COLUMNAS(sql)}, u.nombre AS reportador, r.proceso_id, p.nombre AS proceso, r.referencia_caso,
       r.vence_en, h.id AS hallazgo_id, h.codigo AS hallazgo_codigo, h.titulo AS hallazgo_titulo
     FROM mejora_reportes r
     JOIN usuarios u ON u.id = r.reportado_por
     LEFT JOIN procesos p ON p.id = r.proceso_id
     LEFT JOIN mejora_hallazgos h ON h.id = r.hallazgo_id
+    WHERE r.estado = 'recibido' OR r.clasificado_en >= ${desde}
     ORDER BY (r.estado = 'recibido') DESC, CASE WHEN r.estado = 'recibido' THEN r.vence_en END ASC,
       coalesce(r.clasificado_en, r.reportado_en) DESC, r.id DESC`;
   return filas.map((f) => ({
@@ -269,8 +275,23 @@ export async function leerReporte(sesion: SesionFlujo, id: number, opciones?: Op
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * El Admin SGC añade el reporte como ocurrencia de un hallazgo abierto que ve (spec §7.3 y §7.5): la ocurrencia lleva lo que
- * se vio, el día en que se vio, `origen = 'reporte'` y el reporte, y el reporte queda `sumado`. El hallazgo se bloquea primero y
+ * El hallazgo de un código escrito (`HZ-AAAA-NNN`, sin importar mayúsculas ni espacios), entre los que la persona ve
+ * (`filtroHallazgos`): para sumar un reporte a uno abierto que los parecidos no sugirieron. Quien no lo ve y un código que no
+ * existe reciben lo mismo, «El hallazgo no existe». Si está abierto lo decide `sumarReporte`.
+ */
+export async function hallazgoPorCodigo(sesion: SesionFlujo, codigo: string, opciones?: Opciones): Promise<number> {
+  const limpio = codigo.trim().toUpperCase();
+  if (!PATRON_DE_CODIGO.test(limpio)) throw new ErrorMejora(CODIGO_NO_VALIDO);
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT h.id FROM mejora_hallazgos h WHERE h.codigo = ${limpio} AND ${filtroHallazgos(sql, sesion)}`;
+  if (!f) throw new ErrorMejora(NO_EXISTE);
+  return Number(f.id);
+}
+
+/**
+ * El Admin SGC añade el reporte como ocurrencia de cualquier hallazgo abierto que ve (spec §7.3 y §7.5; los parecidos son solo
+ * sugerencias): la ocurrencia lleva lo que se vio, el día en que se vio, `origen = 'reporte'` y el reporte, y el reporte queda
+ * `sumado`; su evidencia la abre desde entonces quien ve el hallazgo completo. El hallazgo se bloquea primero y
  * el reporte después; el reporte debe seguir «Recibido» (`YA_CLASIFICADO`).
  */
 export async function sumarReporte(sesion: SesionFlujo, d: { reporteId: number; hallazgoId: number }, opciones?: OpcionesFlujo): Promise<void> {

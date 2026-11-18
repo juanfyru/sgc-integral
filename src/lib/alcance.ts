@@ -883,8 +883,9 @@ const CONTEXTOS_DE_MEJORA = ["mejora_hallazgo", "mejora_ronda", "mejora_activida
 /**
  * Quién abre un archivo de mejoramiento (spec 15 §6.3 y §12.2): los de un hallazgo y de una ronda, quien lo ve completo;
  * los de una actividad, esos y su responsable o quien registró un seguimiento en esa actividad; los de un reporte, quien
- * reportó, quien tiene `mejora.ver_todo` y, convertido el reporte, quien ve completo el hallazgo. Los demás, y un
- * contexto o un dueño que no existen, `false`: la ruta responde 404.
+ * reportó, quien tiene `mejora.ver_todo` y, convertido en un hallazgo o sumado a uno como ocurrencia (§7.5: la ocurrencia lleva
+ * su evidencia), quien ve completo ese hallazgo. Los demás, y un contexto o un dueño que no existen, `false`: la ruta responde
+ * 404.
  */
 export async function puedeAbrirArchivoDeMejora(
   archivo: { contexto: string; contextoId: number },
@@ -899,7 +900,7 @@ export async function puedeAbrirArchivoDeMejora(
     const [r] = await sql`SELECT reportado_por, estado, hallazgo_id FROM mejora_reportes WHERE id = ${archivo.contextoId}`;
     if (!r) return false;
     if (Number(r.reportado_por) === sujeto.usuarioId || puede(sujeto, "mejora.ver_todo")) return true;
-    return r.estado === "convertido" && r.hallazgo_id !== null
+    return (r.estado === "convertido" || r.estado === "sumado") && r.hallazgo_id !== null
       ? (await participacionEnHallazgo(Number(r.hallazgo_id), sujeto, { sql })) === "completo"
       : false;
   }

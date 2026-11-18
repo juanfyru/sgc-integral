@@ -539,7 +539,8 @@ export type DetalleDeHallazgo = {
   rondasAnteriores: RondaDeDetalle[];
   fechas: FechasDeHallazgo;
   enlaces: EnlaceDelHallazgo[];
-  ocurrencias: Array<{ id: number; fecha: string; descripcion: string; origen: string; quien: string }>;
+  /** `reporteId`: el reporte de funcionario del que llegó la ocurrencia (sus archivos los abre quien ve el hallazgo completo). */
+  ocurrencias: Array<{ id: number; fecha: string; descripcion: string; origen: string; quien: string; reporteId: number | null }>;
   eventos: Array<{
     id: number;
     tipo: string;
@@ -1124,7 +1125,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   };
 
   const ocurrencias = completo
-    ? await sql`SELECT o.id, o.descripcion, o.origen, to_char(o.fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS quien
+    ? await sql`SELECT o.id, o.descripcion, o.origen, o.reporte_id, to_char(o.fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS quien
         FROM mejora_ocurrencias o JOIN usuarios u ON u.id = o.registrado_por
         WHERE o.hallazgo_id = ${id} ORDER BY o.fecha, o.id`
     : [];
@@ -1197,6 +1198,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       descripcion: o.descripcion as string,
       origen: o.origen as string,
       quien: o.quien as string,
+      reporteId: idONulo(o.reporte_id),
     })),
     eventos: eventos.map((e) => ({
       id: Number(e.id),

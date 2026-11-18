@@ -15,27 +15,47 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
+import { registrarArchivo } from "@/db/consultas/admin";
 import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { cerrarHallazgo, datosDeEvaluacion, evaluarEficacia, fechaMinimaDe, huellaDeLoVisto } from "@/db/consultas/mejoramiento/verificacion";
 import { abiertosParecidosAlReporte } from "@/db/consultas/mejoramiento/parecidos";
-import { rechazarHallazgo, retirarHallazgo, validarCorreccion } from "@/db/consultas/mejoramiento/recorrido";
+import {
+  arbitrarHallazgo,
+  rechazarHallazgo,
+  retirarHallazgo,
+  sostenerHallazgo,
+  validarCorreccion,
+} from "@/db/consultas/mejoramiento/recorrido";
 import { anularHallazgo, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import {
-  AVISO_ATENDIDO,
+  AVISO_CERRADO,
   AVISO_DESCARTADO,
   AVISO_EN_TRAMITE,
   descartarReporte,
   enviarReporte,
+  hallazgoPorCodigo,
   leerReporte,
   misReportes,
   reportesRecibidos,
   sumarReporte,
   YA_CLASIFICADO,
 } from "@/db/consultas/mejoramiento/reportes";
-import { puedeVerHallazgo } from "@/lib/alcance";
+import { puedeAbrirArchivoDeMejora, puedeVerHallazgo } from "@/lib/alcance";
 import { FECHA_FUERA_DE_RANGO } from "@/lib/esquemas/mejoramiento";
 import { formularAntesDe, venceEn } from "@/lib/mejoramiento/plazos";
+import { CUERPO_DEL_DESCARTE, DIAS_DE_CLASIFICADOS } from "@/lib/mejoramiento/reportes";
 import { ErrorPermiso } from "@/lib/permisos";
-import { baseDeMejora, c, datosDeHallazgo, hallazgoEn, HORA_DE_ESCENA, otroProcesoConLider, type BaseDeMejora } from "./utiles/mejoramiento";
+import { zonaHoraria } from "@/lib/zona-horaria";
+import {
+  baseDeMejora,
+  c,
+  datosDeHallazgo,
+  hallazgoEn,
+  HORA_DE_ESCENA,
+  LECCIONES_DE_ESCENA,
+  otroProcesoConLider,
+  type BaseDeMejora,
+} from "./utiles/mejoramiento";
 import { usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -45,6 +65,9 @@ afterAll(() => sql.end());
 /** Lo que reporta la funcionaria: un texto que no aparece en ningún otro lado. */
 const LO_QUE_VIO = "La nevera del servicio de urgencias marcaba 12 grados en la mañana y nadie la registró";
 const REFERENCIA = "EA-2026-0417";
+
+/** El aviso a quien reportó cuando el hallazgo termina, sea cual sea el final (ruling 5 de la ronda 1). */
+const SE_CERRO = "Su reporte se cerró. Gracias por reportarlo.";
 
 /** Martes 10 de noviembre de 2026, 10:00 en Bogotá: una semana antes de la escena. */
 const ANTES = "2026-11-10T15:00:00Z";
@@ -292,7 +315,7 @@ describe("sumar y descartar", () => {
       await anularHallazgo(b.admin, { hallazgoId: anulado.id, justificacion: "Se registró dos veces por error" }, o);
       const texto = `${datosDeHallazgo(b.procesoId).titulo}. ${datosDeHallazgo(b.procesoId).descripcion}`;
       const ids = async (procesoId: number | null) =>
-        (await abiertosParecidosAlReporte(tx, { procesoId, texto, ahora: new Date(HORA_DE_ESCENA) })).map((p) => p.id);
+        (await abiertosParecidosAlReporte(tx, b.admin, { procesoId, texto, ahora: new Date(HORA_DE_ESCENA) })).map((p) => p.id);
       expect(await ids(b.procesoId)).toContain(abierto.id);
       expect(await ids(b.procesoId)).not.toContain(anulado.id);
       expect(await ids(otro.procesoId)).not.toContain(abierto.id);
@@ -319,8 +342,15 @@ describe("sumar y descartar", () => {
       expect((await misReportes(quien, { sql: tx })).find((x) => x.id === reporteId)).toMatchObject({ etiqueta: "Descartado", motivo });
       expect(await leerReporte(quien, reporteId, { sql: tx })).toMatchObject({ etiqueta: "Descartado", motivo });
       expect((await avisosDe(tx, quien.usuarioId)).map((a) => [a.tipo, a.titulo, a.cuerpo, a.enlace])).toEqual([
-        ["mejora.reporte_clasificado", AVISO_DESCARTADO, motivo, "/mejoramiento/reportes"],
+        ["mejora.reporte_clasificado", AVISO_DESCARTADO, "Lea el motivo en Mis reportes", "/mejoramiento/reportes"],
       ]);
+      expect(CUERPO_DEL_DESCARTE).toBe("Lea el motivo en Mis reportes");
+      // El motivo vive en la fila del reporte; la historia de solo inserción no lo copia (ruling 1 de la ronda 1).
+      expect((await eventosDe(tx, reporteId)).map((e) => [e.tipo, e.detalle])).toEqual([
+        ["enviado", {}],
+        ["descartado", {}],
+      ]);
+      expect(JSON.stringify(await avisosDe(tx, quien.usuarioId))).not.toContain(motivo);
       const bitacora = await bitacoraDe(tx, reporteId);
       expect(bitacora.map((f) => f.accion)).toEqual(["mejora_reporte_enviado", "mejora_reporte_descartado"]);
       expect(bitacora[1].detalle).toMatchObject({ estado: { antes: "recibido", despues: "descartado" } });
@@ -369,7 +399,7 @@ describe("al terminarse el hallazgo", () => {
       expect((await misReportes(quien, { sql: tx })).find((x) => x.id === reporteId)?.etiqueta).toBe("Cerrado");
       expect((await avisosDe(tx, quien.usuarioId)).map((a) => [a.tipo, a.titulo, a.enlace, Number(a.entidad_id)])).toEqual([
         ["mejora.reporte_clasificado", AVISO_EN_TRAMITE, "/mejoramiento/reportes", reporteId],
-        ["mejora.reporte_atendido", AVISO_ATENDIDO, "/mejoramiento/reportes", reporteId],
+        ["mejora.reporte_atendido", SE_CERRO, "/mejoramiento/reportes", reporteId],
       ]);
       await sinNadaDelHallazgo(tx, quien, { codigo: h.codigo, titulo: datosDeHallazgo(b.procesoId).titulo });
     });
@@ -396,7 +426,8 @@ describe("al terminarse el hallazgo", () => {
       expect(mios.find((x) => x.id === rechazadoR)?.etiqueta).toBe("Cerrado");
       const atendidos = (await avisosDe(tx, quien.usuarioId)).filter((a) => a.tipo === "mejora.reporte_atendido");
       expect(atendidos.map((a) => Number(a.entidad_id)).sort((x, y) => x - y)).toEqual([anuladoR, rechazadoR].sort((x, y) => x - y));
-      expect(atendidos.every((a) => a.titulo === AVISO_ATENDIDO)).toBe(true);
+      expect(atendidos.every((a) => a.titulo === SE_CERRO)).toBe(true);
+      expect(AVISO_CERRADO).toBe(SE_CERRO);
       await sinNadaDelHallazgo(tx, quien, { codigo: anulado.codigo, titulo: datosDeHallazgo(b.procesoId).titulo });
       await sinNadaDelHallazgo(tx, quien, { codigo: rechazado.codigo, titulo: datosDeHallazgo(b.procesoId).titulo });
     });
@@ -437,8 +468,189 @@ describe("quién ve los reportes", () => {
       const { id: descartado } = await reportar(tx, b, b.consulta, ANTES);
       await descartarReporte(b.admin, { reporteId: descartado, motivo: "No corresponde a una no conformidad" }, o);
       const { id: nuevo } = await reportar(tx, b, b.consulta);
-      const ids = (await reportesRecibidos(b.admin, { sql: tx })).map((r) => r.id).filter((id) => [viejo, descartado, nuevo].includes(id));
+      const ids = (await reportesRecibidos(b.admin, { sql: tx, ahora: new Date(HORA_DE_ESCENA) }))
+        .map((r) => r.id)
+        .filter((id) => [viejo, descartado, nuevo].includes(id));
       expect(ids).toEqual([viejo, nuevo, descartado]);
+    });
+  });
+});
+
+describe("ronda 1 de la revisión", () => {
+  it("sumar a un hallazgo abierto que no se le parece, elegido por su código (ruling 2)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const o = c(HORA_DE_ESCENA, tx);
+      const distinto = await hallazgoEn(tx, b, "por_aceptar", {
+        titulo: "Planillas de horas extra sin firma",
+        descripcion: "Las planillas de horas extra del mes no tienen la firma del jefe inmediato.",
+      });
+      const { id: reporteId } = await reportar(tx, b, b.consulta);
+      const parecidos = await abiertosParecidosAlReporte(tx, b.admin, { procesoId: b.procesoId, texto: LO_QUE_VIO, ahora: new Date(HORA_DE_ESCENA) });
+      expect(parecidos.map((p) => p.id)).not.toContain(distinto.id);
+
+      expect(await hallazgoPorCodigo(b.admin, distinto.codigo, { sql: tx })).toBe(distinto.id);
+      expect(await hallazgoPorCodigo(b.admin, ` ${distinto.codigo.toLowerCase()} `, { sql: tx })).toBe(distinto.id);
+      // Quien no lo ve y un código que no existe reciben lo mismo.
+      const otro = await usuarioDePrueba(tx, { rol: "consulta" });
+      await expect(hallazgoPorCodigo(otro, distinto.codigo, { sql: tx })).rejects.toThrow("El hallazgo no existe");
+      await expect(hallazgoPorCodigo(b.admin, "HZ-1999-999", { sql: tx })).rejects.toThrow("El hallazgo no existe");
+      await expect(hallazgoPorCodigo(b.admin, "nevera", { sql: tx })).rejects.toThrow("Escriba el código del hallazgo, por ejemplo HZ-2026-004");
+
+      await sumarReporte(b.admin, { reporteId, hallazgoId: distinto.id }, o);
+      expect(await reporteDe(tx, reporteId)).toMatchObject({ estado: "sumado" });
+      expect(Number((await reporteDe(tx, reporteId)).hallazgo_id)).toBe(distinto.id);
+    });
+  });
+
+  it("el aviso neutro del cierre también al cerrar, al evaluar eficaz el Admin SGC y al confirmar el rechazo (ruling 5)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const quien = await funcionaria(tx);
+      const o = c(HORA_DE_ESCENA, tx);
+
+      // cerrar: el Admin SGC firma «Cerró» un hallazgo evaluado eficaz.
+      const porCerrar = await hallazgoEn(tx, b, "por_cerrar");
+      const { id: r1 } = await reportar(tx, b, quien);
+      await sumarReporte(b.admin, { reporteId: r1, hallazgoId: porCerrar.id }, o);
+      const [ev] = await tx`SELECT evaluada_en FROM mejora_rondas WHERE hallazgo_id = ${porCerrar.id} AND numero = 1`;
+      await cerrarHallazgo(b.admin, { hallazgoId: porCerrar.id, lecciones: LECCIONES_DE_ESCENA, credenciales: { clave: "ok" } }, c((ev.evaluada_en as Date).toISOString(), tx));
+
+      // evaluar eficaz como Admin SGC: evalúa y cierra en el mismo acto.
+      const enEspera = await hallazgoEn(tx, b, "en_espera");
+      const { id: r2 } = await reportar(tx, b, quien);
+      await sumarReporte(b.admin, { reporteId: r2, hallazgoId: enEspera.id }, o);
+      const fm = await fechaMinimaDe(tx, enEspera.id, zonaHoraria());
+      if (!fm) throw new Error("el hallazgo en espera no tiene fecha mínima");
+      const evalua = c(`${fm.minima}T15:00:00Z`, tx);
+      await evaluarEficacia(
+        b.admin,
+        {
+          hallazgoId: enEspera.id,
+          resultado: "eficaz",
+          criterios: ["no_recurrencia"],
+          desde: fm.r,
+          hasta: fm.minima,
+          justificacion: "No se repitió el hecho desde que terminó el plan de prueba",
+          confirmaOcurrencias: true,
+          lecciones: LECCIONES_DE_ESCENA,
+          vistoHuella: huellaDeLoVisto(await datosDeEvaluacion(b.admin, enEspera.id, evalua)),
+          credenciales: { clave: "ok" },
+        },
+        evalua,
+      );
+
+      // confirmar el rechazo: lo registró el Admin SGC (convirtiendo), la líder lo rechaza, el Admin SGC lo sostiene y
+      // Gerencia arbitra.
+      const { id: r3 } = await reportar(tx, b, quien);
+      const rechazado = await convertir(tx, b, r3);
+      await rechazarHallazgo(b.lider, { hallazgoId: rechazado.id, justificacion: "El hecho no corresponde a este proceso" }, o);
+      await sostenerHallazgo(b.admin, { hallazgoId: rechazado.id, replica: "La evidencia muestra que sí corresponde al proceso" }, o);
+      await arbitrarHallazgo(b.gerencia, { hallazgoId: rechazado.id, confirma: "rechazo", nota: "El hecho es de otro proceso" }, o);
+
+      const estados = await tx`SELECT id, estado FROM mejora_hallazgos WHERE id = ANY(${[porCerrar.id, enEspera.id, rechazado.id]}::bigint[]) ORDER BY id`;
+      expect(estados.map((f) => f.estado)).toEqual(["cerrado", "cerrado", "rechazado"]);
+      const cerrados = (await avisosDe(tx, quien.usuarioId)).filter((a) => a.tipo === "mejora.reporte_atendido");
+      expect(cerrados.map((a) => [Number(a.entidad_id), a.titulo, a.enlace])).toEqual([
+        [r1, SE_CERRO, "/mejoramiento/reportes"],
+        [r2, SE_CERRO, "/mejoramiento/reportes"],
+        [r3, SE_CERRO, "/mejoramiento/reportes"],
+      ]);
+      for (const h of [porCerrar, enEspera, rechazado]) {
+        await sinNadaDelHallazgo(tx, quien, { codigo: h.codigo, titulo: datosDeHallazgo(b.procesoId).titulo });
+      }
+    });
+  });
+
+  it("el día en que lo vio se mira en la zona de la instalación, no en UTC", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      // 03:00 UTC del 18 son las 22:00 del 17 en Bogotá: el 18 todavía es futuro.
+      const o = c("2026-11-18T03:00:00Z", tx);
+      await expect(enviarReporte(b.consulta, { descripcion: LO_QUE_VIO, vistoEn: "2026-11-18" }, o)).rejects.toThrow(
+        "La fecha en que lo vio no puede ser futura",
+      );
+      const { id } = await enviarReporte(b.consulta, { descripcion: LO_QUE_VIO, vistoEn: "2026-11-17" }, o);
+      expect((await tx`SELECT to_char(visto_en, 'YYYY-MM-DD') AS d FROM mejora_reportes WHERE id = ${id}`)[0].d).toBe("2026-11-17");
+    });
+  });
+
+  it("convertir un reporte que no existe, o con un hallazgo de origen", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const [{ mayor }] = await tx`SELECT coalesce(max(id), 0)::bigint AS mayor FROM mejora_reportes`;
+      await expect(convertir(tx, b, Number(mayor) + 1000)).rejects.toThrow("El reporte no existe");
+
+      const origen = await hallazgoEn(tx, b, "por_aceptar");
+      const { id: reporteId } = await reportar(tx, b, b.consulta);
+      const h = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId, { reporteId, derivadoDe: origen.id }), c(HORA_DE_ESCENA, tx));
+      expect(Number((await tx`SELECT derivado_de FROM mejora_hallazgos WHERE id = ${h.id}`)[0].derivado_de)).toBe(origen.id);
+      expect(await reporteDe(tx, reporteId)).toMatchObject({ estado: "convertido" });
+    });
+  });
+
+  it("«Reportes recibidos» trae todos los recibidos y los clasificados de los últimos 90 días (ruling 6)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      expect(DIAS_DE_CLASIFICADOS).toBe(90);
+      const enviar = (ahora: string, vistoEn: string) => enviarReporte(b.consulta, { descripcion: LO_QUE_VIO, vistoEn }, c(ahora, tx));
+      const motivo = "No corresponde a una no conformidad";
+      const { id: viejoRecibido } = await enviar("2026-03-02T15:00:00Z", "2026-03-01");
+      const { id: hace99 } = await enviar("2026-08-03T15:00:00Z", "2026-08-01");
+      await descartarReporte(b.admin, { reporteId: hace99, motivo }, c("2026-08-10T15:00:00Z", tx));
+      const { id: hace84 } = await enviar("2026-08-20T15:00:00Z", "2026-08-19");
+      await descartarReporte(b.admin, { reporteId: hace84, motivo }, c("2026-08-25T15:00:00Z", tx));
+      const ids = (await reportesRecibidos(b.admin, { sql: tx, ahora: new Date(HORA_DE_ESCENA) })).map((r) => r.id);
+      expect(ids).toContain(viejoRecibido);
+      expect(ids).toContain(hace84);
+      expect(ids).not.toContain(hace99);
+    });
+  });
+
+  it("los parecidos para sumarlo aplican `filtroHallazgos` a quien los pide (ruling 7)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const ajeno = await hallazgoEn(tx, b, "por_aceptar", { procesoId: otro.procesoId });
+      const texto = `${datosDeHallazgo(b.procesoId).titulo}. ${datosDeHallazgo(b.procesoId).descripcion}`;
+      const ids = async (quien: SesionFlujo) =>
+        (await abiertosParecidosAlReporte(tx, quien, { procesoId: null, texto, ahora: new Date(HORA_DE_ESCENA) })).map((p) => p.id);
+      expect(await ids(b.admin)).toContain(ajeno.id);
+      expect(await ids(b.lider)).not.toContain(ajeno.id);
+      expect(await ids(otro.lider)).toContain(ajeno.id);
+    });
+  });
+
+  it("la evidencia de un reporte sumado la abre quien ve el hallazgo completo, y su ocurrencia la cita (ruling 8)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const quien = await funcionaria(tx);
+      const h = await hallazgoEn(tx, b, "por_aceptar");
+      const { id: reporteId } = await reportar(tx, b, quien);
+      await registrarArchivo(
+        {
+          versionId: null,
+          rol: "evidencia",
+          ruta: `mejoramiento/reportes/${reporteId}/${Date.now()}-foto.pdf`,
+          nombreOriginal: "foto-nevera.pdf",
+          extension: "pdf",
+          mime: "application/pdf",
+          tamanoBytes: 10,
+          hashSha256: "f".repeat(64),
+          contexto: "mejora_reporte",
+          contextoId: reporteId,
+        },
+        quien.usuarioId,
+        { sql: tx },
+      );
+      const delReporte = { contexto: "mejora_reporte", contextoId: reporteId };
+      expect(await puedeAbrirArchivoDeMejora(delReporte, b.lider, { sql: tx })).toBe(false);
+      await sumarReporte(b.admin, { reporteId, hallazgoId: h.id }, c(HORA_DE_ESCENA, tx));
+      expect(await puedeAbrirArchivoDeMejora(delReporte, b.lider, { sql: tx })).toBe(true);
+      expect(await puedeAbrirArchivoDeMejora(delReporte, quien, { sql: tx })).toBe(true);
+      expect(await puedeAbrirArchivoDeMejora(delReporte, await usuarioDePrueba(tx, { rol: "consulta" }), { sql: tx })).toBe(false);
+      const leido = await leerHallazgo(b.lider, h.id, { sql: tx });
+      expect(leido?.ocurrencias.map((x) => [x.origen, x.reporteId])).toEqual([["reporte", reporteId]]);
     });
   });
 });

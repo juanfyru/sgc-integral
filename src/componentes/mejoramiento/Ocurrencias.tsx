@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
+import { ArchivosDe, type ArchivoParaLista } from "@/componentes/mejoramiento/ArchivosDe";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
@@ -11,7 +12,10 @@ import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 
 type Props = {
   hallazgoId: number;
-  ocurrencias: ReadonlyArray<{ id: number; fecha: string; descripcion: string; quien: string }>;
+  /** `reporte`: llegó por el reporte de un funcionario (spec §7.3), sin decir quién reportó. */
+  ocurrencias: ReadonlyArray<{ id: number; fecha: string; descripcion: string; quien: string; reporte?: boolean }>;
+  /** Los archivos de cada ocurrencia que llegó por un reporte (los del reporte), por el id de la ocurrencia. */
+  archivos?: Readonly<Record<number, ArchivoParaLista[]>>;
   /** Solo quien puede registrar en el proceso y mientras el hallazgo no haya terminado. */
   puedeAnadir: boolean;
   /** Hoy en la zona de la instalación (`yyyy-mm-dd`): el tope de la fecha. */
@@ -23,7 +27,7 @@ type Props = {
  * Las ocurrencias de un hallazgo (spec 15 §7.5): las veces que volvió a pasar lo mismo, de la más antigua a la más
  * reciente. Son de solo inserción: no se editan ni se borran. «Añadir una ocurrencia» abre su formulario.
  */
-export function Ocurrencias({ hallazgoId, ocurrencias, puedeAnadir, hoy, accion }: Props) {
+export function Ocurrencias({ hallazgoId, ocurrencias, archivos = {}, puedeAnadir, hoy, accion }: Props) {
   const [abierto, setAbierto] = useState(false);
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const v = estado?.valores;
@@ -51,6 +55,12 @@ export function Ocurrencias({ hallazgoId, ocurrencias, puedeAnadir, hoy, accion 
               <span className="block font-medium">{fechaDeDia(o.fecha)}</span>
               <span className="block whitespace-pre-line break-words">{o.descripcion}</span>
               <span className="block text-xs text-muted-foreground">Registró: {o.quien}</span>
+              {o.reporte ? <span className="block text-xs text-muted-foreground">Llegó por el reporte de un funcionario</span> : null}
+              {(archivos[o.id] ?? []).length > 0 ? (
+                <div className="mt-1">
+                  <ArchivosDe archivos={archivos[o.id]} />
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

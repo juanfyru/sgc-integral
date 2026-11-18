@@ -7,7 +7,7 @@ import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import type { ReporteDeLaLista } from "@/db/consultas/mejoramiento/reportes";
 import { fechaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
-import type { EstadoReporte } from "@/lib/mejoramiento/reportes";
+import { DIAS_DE_CLASIFICADOS, type EstadoReporte } from "@/lib/mejoramiento/reportes";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 
@@ -52,16 +52,26 @@ export function ReportesRecibidos({
   sumar: Accion;
   descartar: Accion;
 }) {
+  const alcance = (
+    <p className="text-xs text-muted-foreground">
+      {`Se muestran todos los que esperan su clasificación y los clasificados en los últimos ${DIAS_DE_CLASIFICADOS} días.`}
+    </p>
+  );
   if (filas.length === 0) {
     return (
-      <EstadoVacio
-        icono={Inbox}
-        titulo="No hay reportes recibidos"
-        texto="Cuando un funcionario reporte una posible no conformidad, aparecerá aquí para clasificarla."
-      />
+      <div className="flex flex-col gap-3">
+        <EstadoVacio
+          icono={Inbox}
+          titulo="No hay reportes recibidos"
+          texto="Cuando un funcionario reporte una posible no conformidad, aparecerá aquí para clasificarla."
+        />
+        {alcance}
+      </div>
     );
   }
   return (
+    <div className="flex flex-col gap-3">
+    {alcance}
     <ul className="flex list-none flex-col gap-3" aria-label="Reportes recibidos">
       {filas.map(({ reporte: r, archivos, quitables, parecidos }) => {
         const estado = ESTADO[r.estado];
@@ -121,5 +131,6 @@ export function ReportesRecibidos({
         );
       })}
     </ul>
+    </div>
   );
 }

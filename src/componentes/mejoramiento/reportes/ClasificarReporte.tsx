@@ -25,36 +25,94 @@ function Rechazo({ estado }: { estado: EstadoAccion }) {
   ) : null;
 }
 
+/** La opción «Otro hallazgo abierto, por su código» entre los parecidos: deja el código como lo que se envía. */
+const OTRO = "otro";
+
+/**
+ * «Añadir a un hallazgo abierto»: cualquier hallazgo abierto que quien clasifica vea, por su código (spec §7.3); los parecidos,
+ * si los hay, son sugerencias que se eligen con un clic. El código solo se envía (y se exige) cuando no se eligió un parecido.
+ */
 function Sumar({ reporteId, parecidos, conProceso, sumar }: { reporteId: number; parecidos: readonly ParecidoDelReporte[]; conProceso: boolean; sumar: Accion }) {
   const [estado, enviar, pendiente] = useActionState(sumar, null);
-  if (parecidos.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {conProceso ? "No hay hallazgos abiertos que se le parezcan en su proceso." : "No hay hallazgos abiertos que se le parezcan."}
-      </p>
-    );
-  }
+  const [eleccion, setEleccion] = useState<string>("");
+  const conSugerencias = parecidos.length > 0;
+  const porCodigo = !conSugerencias || eleccion === OTRO;
+  const idCodigo = `sumar-${reporteId}-codigo`;
+  const campoCodigo = (
+    <div className="flex min-w-0 flex-col gap-1">
+      <label htmlFor={idCodigo} className="text-sm">
+        {conSugerencias ? "Código del otro hallazgo" : "Código del hallazgo abierto"}
+      </label>
+      <input
+        id={idCodigo}
+        name="codigo"
+        type="text"
+        maxLength={20}
+        autoComplete="off"
+        placeholder="HZ-2026-004"
+        required={porCodigo}
+        disabled={!porCodigo}
+        className={`${claseControl} w-full max-w-xs disabled:cursor-not-allowed disabled:border-dashed`}
+      />
+    </div>
+  );
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-2">
       <input type="hidden" name="reporteId" value={reporteId} />
-      <fieldset className="flex min-w-0 flex-col gap-2">
-        <legend className="mb-1 text-sm">
-          {conProceso ? "Hallazgos abiertos parecidos, de su proceso:" : "Hallazgos abiertos parecidos:"}
-        </legend>
-        {parecidos.map((p) => {
-          const id = `sumar-${reporteId}-${p.id}`;
-          return (
-            <div key={p.id} className="flex min-w-0 items-start gap-2">
-              <input type="radio" id={id} name="hallazgoId" value={p.id} required className={`mt-1 ${FOCO}`} />
-              <label htmlFor={id} className="min-w-0 break-words text-sm">
-                <span className="font-mono">{p.codigo}</span> {p.titulo}
-                <span className="block text-xs text-muted-foreground">{`${p.etiqueta} · ${p.proceso}`}</span>
-              </label>
-            </div>
-          );
-        })}
-      </fieldset>
+      {conSugerencias ? (
+        <fieldset className="flex min-w-0 flex-col gap-2">
+          <legend className="mb-1 text-sm">
+            {conProceso ? "Sugerencias: hallazgos abiertos parecidos, de su proceso" : "Sugerencias: hallazgos abiertos parecidos"}
+          </legend>
+          {parecidos.map((p) => {
+            const id = `sumar-${reporteId}-${p.id}`;
+            return (
+              <div key={p.id} className="flex min-w-0 items-start gap-2">
+                <input
+                  type="radio"
+                  id={id}
+                  name="hallazgoId"
+                  value={p.id}
+                  required
+                  checked={eleccion === String(p.id)}
+                  onChange={() => setEleccion(String(p.id))}
+                  className={`mt-1 ${FOCO}`}
+                />
+                <label htmlFor={id} className="min-w-0 break-words text-sm">
+                  <span className="font-mono">{p.codigo}</span> {p.titulo}
+                  <span className="block text-xs text-muted-foreground">{`${p.etiqueta} · ${p.proceso}`}</span>
+                </label>
+              </div>
+            );
+          })}
+          <div className="flex min-w-0 items-start gap-2">
+            <input
+              type="radio"
+              id={`sumar-${reporteId}-otro`}
+              name="hallazgoId"
+              value=""
+              required
+              checked={eleccion === OTRO}
+              onChange={() => setEleccion(OTRO)}
+              className={`mt-1 ${FOCO}`}
+            />
+            <label htmlFor={`sumar-${reporteId}-otro`} className="min-w-0 text-sm">
+              Otro hallazgo abierto, por su código
+            </label>
+          </div>
+          {campoCodigo}
+        </fieldset>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">
+            {conProceso ? "No hay hallazgos abiertos que se le parezcan en su proceso." : "No hay hallazgos abiertos que se le parezcan."}{" "}
+            Si es el mismo problema que uno abierto, escriba su código.
+          </p>
+          {campoCodigo}
+        </>
+      )}
       <Rechazo estado={estado} />
+
       <div>
         <Boton type="submit" variante="secundario" pendiente={pendiente}>
           Añadir como ocurrencia

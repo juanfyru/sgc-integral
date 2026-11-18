@@ -9,9 +9,10 @@ import type { TransactionSql } from "postgres";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import {
-  AVISO_ATENDIDO,
+  AVISO_CERRADO,
   AVISO_DESCARTADO,
   AVISO_EN_TRAMITE,
+  CUERPO_DEL_DESCARTE,
   cuerpoDelReporte,
   ENTIDAD_REPORTE,
   REPORTE_NO_EXISTE,
@@ -80,8 +81,9 @@ type Clasificacion =
 
 /**
  * Deja clasificado un reporte que `bloquearReporteRecibido` devolvió: su estado, el hallazgo que nació de él o al que se sumó (o
- * el motivo del descarte), quién y cuándo; su evento, su fila de bitácora (ids y el estado: nunca lo que se escribió) y el aviso
- * a quien reportó, con el motivo solo si se descartó.
+ * el motivo del descarte), quién y cuándo; su evento, su fila de bitácora (ids y el estado) y el aviso a quien reportó. Ni el
+ * evento, que es de solo inserción, ni la bitácora, ni el aviso copian lo escrito (spec §6.4): el motivo vive solo en
+ * `mejora_reportes.motivo_descarte`, de donde lo lee quien reportó en «Mis reportes».
  */
 export async function dejarClasificado(
   tx: TransactionSql,
@@ -98,7 +100,7 @@ export async function dejarClasificado(
   await dejarEventoDeReporte(tx, {
     reporteId: r.id,
     tipo: x.estado,
-    detalle: motivo !== null ? { motivo } : { hallazgoId },
+    detalle: hallazgoId !== null ? { hallazgoId } : {},
     usuarioId: quien.usuarioId,
     creadoEn: ahora,
   });
@@ -127,7 +129,7 @@ export async function dejarClasificado(
     tx,
     r,
     motivo !== null
-      ? { tipo: "mejora.reporte_clasificado", titulo: AVISO_DESCARTADO, cuerpo: motivo }
+      ? { tipo: "mejora.reporte_clasificado", titulo: AVISO_DESCARTADO, cuerpo: CUERPO_DEL_DESCARTE }
       : { tipo: "mejora.reporte_clasificado", titulo: AVISO_EN_TRAMITE, cuerpo: cuerpoDelReporte(r.vistoEn) },
     quien.usuarioId,
   );
@@ -135,8 +137,9 @@ export async function dejarClasificado(
 
 /**
  * Cuando un hallazgo termina (cerrado, rechazado o anulado), avisa a quien reportó cada reporte que se convirtió en él o se le
- * sumó (spec §7.3): «Su reporte fue atendido», sin el código ni el título. Lo llama `transicionarHallazgo`, el único camino que
- * cambia el estado; `notificaciones` no cuelga del hallazgo, así que el trigger del hallazgo terminado no la toca.
+ * sumó (spec §7.3), con el mismo texto neutro para los tres finales y sin el código ni el título. Lo llama
+ * `transicionarHallazgo`, el único camino que cambia el estado; `notificaciones` no cuelga del hallazgo, así que el trigger del
+ * hallazgo terminado no la toca.
  */
 export async function avisarAQuienesReportaron(tx: TransactionSql, hallazgoId: number, actorId: number | null): Promise<void> {
   const reportes = await tx`SELECT id, reportado_por, to_char(visto_en, 'YYYY-MM-DD') AS visto FROM mejora_reportes
@@ -145,7 +148,7 @@ export async function avisarAQuienesReportaron(tx: TransactionSql, hallazgoId: n
     await avisarAQuienReporto(
       tx,
       { id: Number(r.id), reportadoPor: Number(r.reportado_por) },
-      { tipo: "mejora.reporte_atendido", titulo: AVISO_ATENDIDO, cuerpo: cuerpoDelReporte(r.visto as string) },
+      { tipo: "mejora.reporte_atendido", titulo: AVISO_CERRADO, cuerpo: cuerpoDelReporte(r.visto as string) },
       actorId,
     );
   }

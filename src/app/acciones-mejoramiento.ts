@@ -33,7 +33,7 @@ import {
   registrarHallazgo,
   registrarOcurrencia,
 } from "@/db/consultas/mejoramiento/registro";
-import { descartarReporte, enviarReporte, sumarReporte } from "@/db/consultas/mejoramiento/reportes";
+import { descartarReporte, enviarReporte, hallazgoPorCodigo, sumarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { cerrarHallazgo, evaluarEficacia, LO_VISTO_CAMBIO, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
@@ -59,6 +59,7 @@ import {
   EsquemaFormularioPreguntas,
   EsquemaFormularioResponderEscalada,
   EsquemaFormularioRevisarPlan,
+  EsquemaFormularioSumarReporte,
   EsquemaFormularioVerificacion,
   EsquemaHallazgo,
   EsquemaOcurrencia,
@@ -71,7 +72,6 @@ import {
   EsquemaReporte,
   EsquemaSeguimiento,
   EsquemaSostener,
-  EsquemaSumarReporte,
   RELACION_DE_REGISTRO,
   camposDeLaVerificacion,
   decisionesDeLaVerificacion,
@@ -124,10 +124,15 @@ export async function enviarReporteAccion(_previo: EstadoAccion, formData: FormD
   });
 }
 
-/** El Admin SGC añade un reporte como ocurrencia de un hallazgo abierto. */
+/**
+ * El Admin SGC añade un reporte como ocurrencia de un hallazgo abierto: uno de los parecidos o cualquier otro que vea, por su
+ * código (spec §7.3). `sumarReporte` vuelve a exigir que esté abierto y que lo vea.
+ */
 export async function sumarReporteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
-    await sumarReporte(sesion, parsearFormulario(datos, EsquemaSumarReporte));
+    const d = parsearFormulario(datos, EsquemaFormularioSumarReporte);
+    const hallazgoId = d.hallazgoId ?? (await hallazgoPorCodigo(sesion, d.codigo ?? ""));
+    await sumarReporte(sesion, { reporteId: d.reporteId, hallazgoId });
     return RUTA_REPORTES_RECIBIDOS;
   });
 }

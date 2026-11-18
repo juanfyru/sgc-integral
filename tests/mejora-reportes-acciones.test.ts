@@ -28,7 +28,7 @@ vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
 vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion: async () => ({ ip: "10.0.0.1", userAgent: "prueba" }) }));
 
 import type { TransactionSql } from "postgres";
-import { descartarReporteAccion, enviarReporteAccion, registrarHallazgoAccion } from "@/app/acciones-mejoramiento";
+import { descartarReporteAccion, enviarReporteAccion, registrarHallazgoAccion, sumarReporteAccion } from "@/app/acciones-mejoramiento";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
@@ -122,6 +122,40 @@ describe("las acciones de los reportes", () => {
       const rechazo = await como(tx, b.control, () => registrarHallazgoAccion(null, formulario(camposDelRegistro(b.procesoId, ajeno, "distinto"))));
       expect(rechazo).toMatchObject({ ok: false });
       expect((await tx`SELECT estado FROM mejora_reportes WHERE id = ${ajeno}`)[0].estado).toBe("recibido");
+    }));
+
+  it("sumar por el código de un hallazgo abierto que no es parecido, o por uno de los parecidos (ruling 2 de la ronda 1)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const distinto = await hallazgoEn(tx, b, "por_aceptar", {
+        titulo: "Planillas de horas extra sin firma",
+        descripcion: "Las planillas de horas extra del mes no tienen la firma del jefe inmediato.",
+      });
+      const parecido = await hallazgoEn(tx, b, "por_aceptar");
+      const reportar = async () => (await enviarReporte(b.consulta, { descripcion: LO_QUE_VIO, vistoEn: "2026-11-09", procesoId: b.procesoId }, c(HORA_DE_ESCENA, tx))).id;
+      const sumar = (campos: Record<string, string>) => como(tx, b.admin, () => destino(sumarReporteAccion(null, formulario(campos))));
+
+      const porCodigo = await reportar();
+      expect(await sumar({ reporteId: String(porCodigo), codigo: distinto.codigo.toLowerCase() })).toBe("REDIRECT:/mejoramiento/reportes?vista=recibidos");
+      expect((await tx`SELECT estado, hallazgo_id FROM mejora_reportes WHERE id = ${porCodigo}`).map((f) => [f.estado, Number(f.hallazgo_id)])).toEqual([
+        ["sumado", distinto.id],
+      ]);
+
+      const porParecido = await reportar();
+      expect(await sumar({ reporteId: String(porParecido), hallazgoId: String(parecido.id) })).toBe("REDIRECT:/mejoramiento/reportes?vista=recibidos");
+      expect(Number((await tx`SELECT hallazgo_id FROM mejora_reportes WHERE id = ${porParecido}`)[0].hallazgo_id)).toBe(parecido.id);
+
+      // Sin elegir nada, o con un código que no existe, nada cambia.
+      const sinElegir = await reportar();
+      expect(await como(tx, b.admin, () => sumarReporteAccion(null, formulario({ reporteId: String(sinElegir) })))).toMatchObject({
+        ok: false,
+        error: "Elija el hallazgo abierto al que lo añade",
+      });
+      expect(await como(tx, b.admin, () => sumarReporteAccion(null, formulario({ reporteId: String(sinElegir), codigo: "HZ-1999-999" })))).toMatchObject({
+        ok: false,
+        error: "El hallazgo no existe",
+      });
+      expect((await tx`SELECT estado FROM mejora_reportes WHERE id = ${sinElegir}`)[0].estado).toBe("recibido");
     }));
 
   it("descartar vuelve a «Reportes recibidos»", () =>
