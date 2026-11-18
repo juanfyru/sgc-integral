@@ -8,6 +8,9 @@ import type { FormEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
+import { SeccionRespuestaAlEnte } from "@/componentes/mejoramiento/SeccionRespuestaAlEnte";
+import { PasoResponderAlEnte } from "@/componentes/mejoramiento/pasos/PasoResponderAlEnte";
+import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
 import { FormularioSeguimiento, TerminarActividad, focoDeLaConfirmacion } from "@/componentes/mejoramiento/actividad/FormularioSeguimiento";
 import { ListaDeSeguimientos } from "@/componentes/mejoramiento/actividad/ListaDeSeguimientos";
@@ -2464,5 +2467,50 @@ describe("Tarea 18, ronda 1: sumar por código, los avisos del formulario y la e
     expect(adondeVaSinLista({ rol: "consulta" }, { veHallazgos: false, tieneActividades: false })).toBe("/mejoramiento/reportes");
     expect(adondeVaSinLista({ rol: "consulta" }, { veHallazgos: false, tieneActividades: true })).toBe("/mejoramiento/actividades");
     expect(adondeVaSinLista({ rol: "consulta" }, { veHallazgos: true, tieneActividades: false })).toBeNull();
+  });
+});
+
+describe("la respuesta al ente (Tarea 19, spec §13.4)", () => {
+  const oficio = <ArchivosDe archivos={[{ id: 77, nombre: "oficio-respuesta.pdf", mime: "application/pdf", tamano: 4096 }]} />;
+
+  it("registrada: la fecha, quién y el oficio, sin formulario", () => {
+    const html = renderToStaticMarkup(
+      <SeccionRespuestaAlEnte fechaLimite="2026-12-30" respuesta={{ enviadaEn: "2026-11-18", por: "Ana Ruiz" }} oficio={oficio} />,
+    );
+    expect(html).toContain("Respuesta al ente");
+    expect(html).toContain(`Fecha límite de respuesta: ${fechaDeDia("2026-12-30")}.`);
+    expect(html).toContain(`Enviada el ${fechaDeDia("2026-11-18")} · la registró Ana Ruiz.`);
+    expect(html).toContain('href="/mejoramiento/archivos/77/oficio-respuesta.pdf"');
+    expect(html).not.toContain("<form");
+  });
+
+  it("sin registrar, al Admin SGC: el oficio por subir y la fecha de envío, que no puede ser futura", () => {
+    const html = renderToStaticMarkup(
+      <SeccionRespuestaAlEnte fechaLimite={null} respuesta={null} oficio={oficio}>
+        <PasoResponderAlEnte hallazgoId={14} hoy="2026-11-18" accion={async () => null} />
+      </SeccionRespuestaAlEnte>,
+    );
+    expect(html).toContain("Suba el oficio de respuesta y registre la fecha en que se envió.");
+    expect(html).not.toContain("Fecha límite de respuesta");
+    expect(html).toMatch(/<input(?=[^>]*type="date")(?=[^>]*name="enviadaEn")(?=[^>]*required="")(?=[^>]*max="2026-11-18")/);
+    expect(html).toMatch(/<input(?=[^>]*type="hidden")(?=[^>]*name="hallazgoId")(?=[^>]*value="14")/);
+    expect(html).toContain("Registrar la respuesta al ente");
+  });
+
+  it("sin registrar, a los demás: que falta, sin el oficio ni el formulario", () => {
+    const html = renderToStaticMarkup(<SeccionRespuestaAlEnte fechaLimite="2026-12-30" respuesta={null} oficio={oficio} />);
+    expect(html).toContain("El Administrador del SGC todavía no registra la respuesta.");
+    expect(html).not.toContain("oficio-respuesta.pdf");
+    expect(html).not.toContain("<form");
+  });
+
+  it("el historial dice cuándo se envió", () => {
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        eventos={[{ id: 1, tipo: "respuesta_ente", ronda: 1, quien: "Ana Ruiz", cuando: new Date("2026-11-18T15:00:00Z"), detalle: { enviadaEn: "2026-11-18", archivos: [77] } }]}
+        zona="America/Bogota"
+      />,
+    );
+    expect(html).toContain(`Registró la respuesta al ente, enviada el ${fechaDeDia("2026-11-18")}`);
   });
 });

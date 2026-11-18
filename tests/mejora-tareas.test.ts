@@ -22,7 +22,7 @@ import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
-import { listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { decidirAccionCorrectiva, rechazarHallazgo, registrarCorreccion, sostenerHallazgo } from "@/db/consultas/mejoramiento/recorrido";
 import { registrarHallazgo, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
@@ -425,6 +425,11 @@ describe("la respuesta al ente", () => {
       const [bit] = await tx`SELECT detalle FROM auditoria
         WHERE accion = 'mejora_respuesta_ente' AND entidad = 'mejora_hallazgo' AND entidad_id = ${h.id}`;
       expect(bit.detalle).toEqual({ codigo: h.codigo, enviadaEn: ENVIADA, archivos: [oficio] });
+
+      // La página lee la respuesta y el oficio del evento (lo congelado del detalle no se lleva `archivos`).
+      const leido = await leerHallazgo(b.admin, h.id, { sql: tx, ahora: new Date(AHORA) });
+      expect(leido?.respuestaAlEnte).toEqual({ enviadaEn: ENVIADA, por: b.admin.nombre });
+      expect(leido?.eventos.find((x) => x.tipo === "respuesta_ente")?.detalle).toEqual({ enviadaEn: ENVIADA, archivos: [oficio] });
 
       await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(
         "Ya se registró la respuesta al ente",
