@@ -279,6 +279,9 @@ describe("las cuatro condiciones de Gerencia", () => {
       const [ev] = await eventosDe(tx, h.id, "revisar_plan");
       expect(ev.detalle.huella).toBe(firmas[0].hash_sha256);
       expect((ev.detalle.plan as PlanFirmado).identificacion.codigo).toBe(h.codigo);
+      const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'mejora_revisar_plan' AND entidad_id = ${h.id}`;
+      expect(bitacora.detalle).toMatchObject({ codigo: h.codigo, ronda: 1, huella: firmas[0].hash_sha256, aprobadoRol: "admin_sgc" });
+      expect(bitacora.detalle).not.toHaveProperty("plan");
       const sinFin = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id} AND fin_original IS DISTINCT FROM fin`;
       expect(sinFin).toHaveLength(0);
     }));
@@ -437,6 +440,18 @@ describe("aprobarPlan", () => {
       );
       expect((await firmasDe(tx, h.id)).map((f) => f.firma)).not.toContain("aprobo");
       expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_aprobacion");
+    }));
+
+  it("un responsable desactivado antes de la revisión que aprueba: tampoco se firma «Revisó»", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_revision");
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${b.lider.usuarioId}`;
+      await expect(
+        firmarRevision(b.admin, { hallazgoId: h.id, requiereRecursos: false, credenciales: CLAVE }, c(AHORA, tx)),
+      ).rejects.toThrow("El responsable de la actividad A1.1 ya no está activo: devuelva el plan");
+      expect((await firmasDe(tx, h.id)).map((f) => f.firma)).toEqual(["elaboro"]);
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_revision");
     }));
 });
 
