@@ -95,8 +95,8 @@ export function Campos({ nombre, campos }: { nombre: string; campos: ReadonlyArr
   return (
     <Tabla nombre={nombre}>
       <tbody>
-        {hay.map((c) => (
-          <tr key={c.termino}>
+        {hay.map((c, i) => (
+          <tr key={i}>
             <th scope="row" className={`${TH} w-[38%] sm:w-56`}>
               {c.termino}
             </th>
@@ -156,10 +156,11 @@ type FirmasDelPlan = { elaboro: FirmaDelHallazgo | null; reviso: FirmaDelHallazg
 
 /**
  * Las firmas del plan de una ronda, las de su envío vigente: desde su última «Elaboró» (la «Revisó» de un envío devuelto firmó otro
- * plan, como en `firmasDelEnvio`). Ninguna si no se ha enviado.
+ * plan, como en `firmasDelEnvio`). Ninguna si no se ha enviado o si volvió a borrador: lo firmado antes era otro plan.
  */
-export function firmasDelPlan(firmas: readonly FirmaDelHallazgo[], ronda: number): FirmasDelPlan {
-  const deLaRonda = firmas.filter((f) => f.ronda === ronda);
+export function firmasDelPlan(firmas: readonly FirmaDelHallazgo[], r: { numero: number; estadoPlan: string }): FirmasDelPlan {
+  if (r.estadoPlan === "borrador") return { elaboro: null, reviso: null, aprobo: null };
+  const deLaRonda = firmas.filter((f) => f.ronda === r.numero);
   const desde = deLaRonda.findLastIndex((f) => f.firma === "elaboro");
   const envio = desde === -1 ? [] : deLaRonda.slice(desde);
   const de = (firma: "elaboro" | "reviso" | "aprobo") => envio.find((f) => f.firma === firma) ?? null;

@@ -463,6 +463,19 @@ describe("los formatos del análisis", () => {
     expect(texto).toContain(`Impreso el ${fechaYHora(IMPRESO_EN, ZONA).replace(/\s+/g, " ")} por Ana Admin`);
   });
 
+  it("un plan que volvió a borrador no imprime las firmas de su envío devuelto: «Pendiente»", () => {
+    const borrador = { ...ronda1, estadoPlan: "borrador" } as unknown as RondaDeDetalle;
+    const devuelto = [
+      firma({ firma: "elaboro", ronda: 1, nombre: "Pedro Previo", cargo: "Auxiliar", huella: hz(13) }),
+      firma({ firma: "reviso", ronda: 1, nombre: "Rita Revisora", cargo: "Auxiliar", huella: hz(14) }),
+    ];
+    const texto = leer(renderToStaticMarkup(<CincoPorquesImpreso {...comunes} firmas={devuelto} ronda={borrador} analisis={borrador.analisis[0]} formato={null} />));
+    for (const x of ["Pedro Previo", "Rita Revisora", hz(13).slice(0, 12), hz(14).slice(0, 12)]) expect(texto).not.toContain(x);
+    expect(texto).toContain("Pendiente");
+    const registroEnBorrador = leer(registro({ hallazgo: detalle({ estado: "por_formular", etiqueta: "Por formular", ronda: 1, rondas: [borrador], rondasAnteriores: [] }), firmas: devuelto }));
+    for (const x of ["Pedro Previo", "Rita Revisora"]) expect(registroEnBorrador).not.toContain(x);
+  });
+
   it("el de Ishikawa: las seis categorías, la marca de confirmada y la priorización de las confirmadas", () => {
     const texto = leer(renderToStaticMarkup(<IshikawaImpreso {...comunes} ronda={r2} analisis={r2.analisis[0]} formato={{ ...FORMATO, codigo: "SGC-FO-AC-03" }} />));
     expect(texto).toContain("Código SGC-FO-AC-03");

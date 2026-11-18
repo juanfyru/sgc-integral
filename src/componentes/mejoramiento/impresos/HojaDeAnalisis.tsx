@@ -44,7 +44,7 @@ export type DatosDelAnalisisImpreso = {
 export function HojaDeAnalisis({ d, titulo, children }: { d: DatosDelAnalisisImpreso; titulo: string; children: React.ReactNode }) {
   const { hallazgo: h, ronda: r, analisis: a, zona } = d;
   const id = (bloque: string) => `analisis-impreso-${bloque}`;
-  const firmas = firmasDelPlan(d.firmas, r.numero);
+  const firmas = firmasDelPlan(d.firmas, r);
   const sinFirma = r.estadoPlan === "aprobado" ? "No aplica" : "Pendiente";
   return (
     <Hoja titulo={id("titulo")}>

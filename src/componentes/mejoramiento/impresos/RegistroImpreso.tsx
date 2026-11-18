@@ -270,7 +270,7 @@ function FirmasDelPlanImpresas({ r, c }: { r: RondaDeDetalle; c: Contexto }) {
     );
   }
   if (r.estadoPlan === "borrador") return <Nota>Sin firmas: el plan está en borrador.</Nota>;
-  const f = firmasDelPlan(c.d.firmas, r.numero);
+  const f = firmasDelPlan(c.d.firmas, r);
   const sinFirma = r.estadoPlan === "aprobado" ? "No aplica" : "Pendiente";
   return (
     <Firmas nombre={`Firmas del plan de la ronda ${r.numero}`}>

@@ -141,7 +141,8 @@ describe("construirExcelDeHallazgos", () => {
     expect(datos).toHaveLength(3);
     const col = (n: string) => COLUMNAS.indexOf(n);
     expect(datos.map((f) => f[col("N°")])).toEqual(["1", "2", "3"]);
-    expect(datos.map((f) => f[col("Código")])).toEqual(["HZ-2026-004 · A1.1", "HZ-2026-004 · A1.2", "HZ-2026-005"]);
+    expect(datos.map((f) => f[col("Código")])).toEqual(["HZ-2026-004", "HZ-2026-004", "HZ-2026-005"]);
+    expect(datos.map((f) => f[col("Acción formulada")].split(" · Actividad ")[1]?.split(":")[0] ?? "")).toEqual(["A1.1", "A1.2", ""]);
     expect(datos.map((f) => f[col("Código del hallazgo")])).toEqual(["HZ-2026-004", "HZ-2026-004", "HZ-2026-005"]);
     const [a, b, sin] = datos;
     expect(a[col("Fecha límite")]).not.toBe(a[col("Fin original")]);

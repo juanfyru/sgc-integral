@@ -127,7 +127,7 @@ function decision(f: FilaNumerada): Celda {
 }
 
 const COLUMNAS: Array<Columna<FilaNumerada>> = [
-  { cab: "Código", ancho: 22, valor: (f) => (f.actividad ? `${f.codigo} · ${f.actividad.etiqueta}` : f.codigo) },
+  { cab: "Código", ancho: 16, valor: (f) => f.codigo },
   { cab: "Ronda", ancho: 7, valor: (f) => f.ronda },
   { cab: "N°", ancho: 6, valor: (f) => f.n },
   { cab: "Proceso", ancho: 28, valor: (f) => f.proceso },
