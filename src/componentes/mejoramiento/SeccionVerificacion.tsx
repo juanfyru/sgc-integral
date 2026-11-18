@@ -21,10 +21,22 @@ function enPalabras(textos: readonly string[]): string {
   return textos.map((t, i) => (i === 0 ? t : t.charAt(0).toLowerCase() + t.slice(1))).join(", ");
 }
 
-/** Una sección plegable de la página del hallazgo, con su resumen de una línea (maqueta 2). */
-function Plegable({ titulo, resumen, abierta, children }: { titulo: string; resumen: string; abierta: boolean; children: React.ReactNode }) {
+/** Una sección plegable de la página del hallazgo, con su resumen de una línea (maqueta 2); `id`, el ancla de «Lo que sigue». */
+function Plegable({
+  id,
+  titulo,
+  resumen,
+  abierta,
+  children,
+}: {
+  id?: string;
+  titulo: string;
+  resumen: string;
+  abierta: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <details open={abierta} className="group rounded-lg border border-border bg-card">
+    <details id={id} open={abierta} className="group scroll-mt-4 rounded-lg border border-border bg-card">
       <summary className={RESUMEN}>
         <span className="min-w-0">
           <span className="block font-display text-base font-semibold">{titulo}</span>
@@ -41,15 +53,19 @@ function Plegable({ titulo, resumen, abierta, children }: { titulo: string; resu
  * «5. Seguimiento y verificación» (SGC-FO-AC-01 sección 5; spec 15 §10.3 y §11.4, PC-08): el avance de las actividades de la ronda
  * (los seguimientos de cada una están en su página, enlazada desde el plan) y lo que decidió quien verificó la implementación:
  * cada actividad conforme o devuelta (con su nota a quien ve el hallazgo completo y su fecha para corregir), cómo se verificó,
- * quién y cuándo. Los archivos de la verificación llegan como hijos.
+ * quién y cuándo. Los archivos de la verificación y, mientras se verifica, el formulario (maqueta 7, a todo el ancho) llegan como
+ * hijos.
  */
 export function SeccionVerificacion({
+  id,
   ronda,
   titulo = "5. Seguimiento y verificación",
   abierta,
   zona,
   children,
 }: {
+  /** El ancla del formulario de verificar («Ir a verificar»). */
+  id?: string;
   ronda: RondaDeDetalle;
   titulo?: string;
   abierta: boolean;
@@ -76,7 +92,7 @@ export function SeccionVerificacion({
         .join(" · ");
   const verificadas = actividades.filter((x) => x.verificacion !== null);
   return (
-    <Plegable titulo={titulo} resumen={resumen} abierta={abierta}>
+    <Plegable id={id} titulo={titulo} resumen={resumen} abierta={abierta}>
       <p className="text-sm text-muted-foreground">Los seguimientos de cada actividad están en su página, enlazada desde el plan.</p>
       {verificadas.length > 0 ? (
         <ul className="flex list-none flex-col gap-2">
@@ -121,6 +137,7 @@ export function SeccionVerificacion({
  * indicador», sin código ni cifras, a quien no lo ve) y cada periodo dice «antes», «durante» o «después».
  */
 export function SeccionEficacia({
+  id,
   evaluacion: e,
   evaluableDesde,
   titulo = "6. Verificación de eficacia",
@@ -128,6 +145,8 @@ export function SeccionEficacia({
   zona,
   children,
 }: {
+  /** El ancla del formulario de evaluar («Ir a evaluar»). */
+  id?: string;
   evaluacion: EvaluacionDeRonda | null;
   /** En la espera, desde qué día se puede registrar «eficaz». */
   evaluableDesde: string | null;
@@ -139,6 +158,7 @@ export function SeccionEficacia({
   if (!e) {
     return (
       <Plegable
+        id={id}
         titulo={titulo}
         resumen={evaluableDesde ? `«Eficaz» se puede registrar desde el ${fechaLargaDeDia(evaluableDesde)}` : "En espera de eficacia"}
         abierta={abierta}
@@ -155,7 +175,7 @@ export function SeccionEficacia({
   const eficaz = e.resultado === "eficaz";
   const v = e.visto;
   return (
-    <Plegable titulo={titulo} resumen={`${eficaz ? "Eficaz" : "No eficaz"} · ${e.por}, ${fechaYHora(e.en, zona)}`} abierta={abierta}>
+    <Plegable id={id} titulo={titulo} resumen={`${eficaz ? "Eficaz" : "No eficaz"} · ${e.por}, ${fechaYHora(e.en, zona)}`} abierta={abierta}>
       <dl className="grid gap-3 sm:grid-cols-2">
         <Dato etiqueta="Resultado">
           <Insignia variante={eficaz ? "bien" : "critico"}>{eficaz ? "Eficaz" : "No eficaz"}</Insignia>

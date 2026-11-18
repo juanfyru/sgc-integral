@@ -168,6 +168,10 @@ const RONDA_CONGELADA = "Esa ronda ya está congelada: solo la ronda en curso ad
 
 const EVIDENCIA_DE_ACTIVIDAD_CERRADA = "La evidencia de una actividad terminada o cancelada no se quita";
 
+const EVIDENCIA_VERIFICADA = "La evidencia de la verificación ya se usó al verificar: no se quita";
+
+const EVIDENCIA_EVALUADA = "La evaluación de la eficacia ya se registró: su evidencia no se quita";
+
 const SIN_PERMISO = "Sin permiso para adjuntar este archivo";
 
 /** El paso de la persona y del estado, sin saber si el dueño se ve (eso lo decide `autorizarSubida`). */
@@ -272,6 +276,16 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   if (a.contexto === "mejora_actividad" && (f.estadoActividad === "terminada" || f.estadoActividad === "cancelada")) {
     return EVIDENCIA_DE_ACTIVIDAD_CERRADA;
   }
+  // Lo mismo con la de la verificación (PC-08): la que había al verificar quedó en el evento de la verificación y ya no se
+  // quita; la que se sube durante la espera (la de la eficacia), solo hasta que se registra la evaluación. Tampoco el Admin SGC.
+  if (a.contexto === "mejora_ronda" && a.rol === "verificacion" && f.hallazgoId !== null) {
+    const [usada] = await sql`SELECT 1 FROM mejora_eventos
+      WHERE hallazgo_id = ${f.hallazgoId} AND tipo = 'verificar_implementacion'
+        AND detalle->'archivosVerificados' @> jsonb_build_array(${a.id}::bigint) LIMIT 1`;
+    if (usada) return EVIDENCIA_VERIFICADA;
+    const [evaluada] = await sql`SELECT 1 FROM mejora_rondas WHERE id = ${a.contextoId} AND evaluada_en IS NOT NULL`;
+    if (evaluada) return EVIDENCIA_EVALUADA;
+  }
   const [subio] = await sql`SELECT usuario_id FROM auditoria
     WHERE accion = 'subir_archivo' AND entidad = 'archivo' AND entidad_id = ${a.id} ORDER BY id LIMIT 1`;
   const suyo = subio !== undefined && Number(subio.usuario_id) === sesion.usuarioId;
@@ -300,7 +314,8 @@ export async function archivosQuitables(
 /**
  * Quita un archivo: quien lo subió, mientras su paso sigue abierto, o el Admin SGC mientras el hallazgo no termine (un
  * reporte, mientras esté recibido); en un hallazgo terminado, nadie. La evidencia de la corrección, solo mientras está «Por
- * corregir», y la de una actividad, solo mientras está abierta o en proceso: después, tampoco el Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
+ * corregir», la de una actividad, solo mientras está abierta o en proceso, y la de la verificación, solo hasta verificar (la que se
+ * sube en la espera, hasta registrar la evaluación): después, tampoco el Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
  * fila y deja `eliminar_archivo` en la bitácora; el archivo del almacén se borra después de confirmar y uno ya ausente no
  * es un error.
  */

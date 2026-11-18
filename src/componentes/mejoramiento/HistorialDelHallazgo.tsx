@@ -137,6 +137,14 @@ function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string
   if (e.tipo === "corregir" && d.requerida === false) return "Registró que no requiere corrección inmediata";
   if (e.tipo === "decidir_si" && "antes" in d) return "Exigió la acción correctiva después de un «no»";
   // La etiqueta de la acción («A1») cuando la trae: el texto de la acción no va en el evento.
+  // Una verificación que devolvió actividades lo dice, con sus etiquetas (spec §11.4).
+  if (e.tipo === "verificar_implementacion" && Array.isArray(d.devueltas)) {
+    const devueltas = d.devueltas.map(etiquetaValida).filter((x): x is string => x !== null);
+    if (devueltas.length === 1) return `${FRASE.verificar_implementacion} y devolvió la actividad ${devueltas[0]}`;
+    if (devueltas.length > 1) {
+      return `${FRASE.verificar_implementacion} y devolvió las actividades ${devueltas.slice(0, -1).join(", ")} y ${devueltas[devueltas.length - 1]}`;
+    }
+  }
   if ((e.tipo === "accion_guardada" || e.tipo === "accion_quitada") && typeof d.accion === "string" && /^A\d+$/.test(d.accion)) {
     return `${e.tipo === "accion_guardada" ? "Guardó" : "Quitó"} la acción ${d.accion} del plan`;
   }

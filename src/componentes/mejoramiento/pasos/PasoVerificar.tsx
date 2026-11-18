@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { ArchivosDe, type ArchivoParaLista } from "@/componentes/mejoramiento/ArchivosDe";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
@@ -17,8 +18,8 @@ export type ActividadPorVerificar = {
   descripcion: string;
   /** El día en que se terminó (`yyyy-mm-dd`). */
   terminadaEn: string | null;
-  /** Cuántos archivos de evidencia tiene; nulo si quien mira no los ve. */
-  evidencias: number | null;
+  /** Sus archivos de evidencia, que quien verifica abre aquí; nulo si quien mira no los ve. */
+  archivos: ArchivoParaLista[] | null;
 };
 
 type Decision = "conforme" | "devuelta";
@@ -38,6 +39,7 @@ export function PasoVerificar({
   hoy,
   accion,
   inicial = {},
+  respaldoGerencia = false,
   children,
 }: {
   hallazgoId: number;
@@ -47,6 +49,8 @@ export function PasoVerificar({
   accion: AccionDelPaso;
   /** Lo que ya se eligió de cada actividad (p. ej. al volver de un rechazo); por omisión, nada. */
   inicial?: Readonly<Record<number, Decision>>;
+  /** Verifica Gerencia porque ningún Administrador del SGC ni Control Interno activo puede (spec §11.1): la nota lo dice. */
+  respaldoGerencia?: boolean;
   children?: React.ReactNode;
 }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
@@ -64,20 +68,19 @@ export function PasoVerificar({
           {actividades.map((a) => {
             const decision = decisiones[a.id];
             return (
-              <li key={a.id} className="min-w-0 rounded-md border border-linea-suave p-3">
+              <li key={a.id} className="@container min-w-0 rounded-md border border-linea-suave p-3">
                 <input type="hidden" name="actividad" value={a.id} />
                 <fieldset className="flex min-w-0 flex-col gap-2">
                   <legend className="break-words text-sm">
                     <span className="font-semibold">{a.etiqueta}</span> {a.descripcion}
                   </legend>
-                  <p className="text-xs text-muted-foreground">
-                    {[
-                      a.terminadaEn ? `Terminada el ${fechaDeDia(a.terminadaEn)}` : null,
-                      a.evidencias === null ? null : `${a.evidencias} ${a.evidencias === 1 ? "archivo" : "archivos"} de evidencia`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
+                  {a.terminadaEn ? <p className="text-xs text-muted-foreground">{`Terminada el ${fechaDeDia(a.terminadaEn)}`}</p> : null}
+                  {a.archivos !== null ? (
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <p className="text-xs font-medium text-muted-foreground">Evidencia</p>
+                      <ArchivosDe archivos={a.archivos} vacio="Sin evidencia adjunta." />
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap gap-x-4 gap-y-1">
                     {(
                       [
@@ -100,7 +103,7 @@ export function PasoVerificar({
                     ))}
                   </div>
                   {decision === "devuelta" ? (
-                    <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                    <div className="grid min-w-0 gap-3 @md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
                       <Campo
                         etiqueta={`Nota para quien la ejecutó (al menos 10 caracteres)`}
                         nombre={`nota_${a.id}`}
@@ -121,7 +124,7 @@ export function PasoVerificar({
         </ul>
         <fieldset className="flex min-w-0 flex-col gap-2">
           <legend className="mb-1 text-sm font-medium">Cómo se verificó (al menos uno)</legend>
-          <div className="grid gap-1 sm:grid-cols-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
             {METODOS_DE_VERIFICACION.map((m) => (
               <label key={m} className="flex items-start gap-2 text-sm">
                 <input type="checkbox" name="metodos" value={m} className={CASILLA} />
@@ -140,7 +143,9 @@ export function PasoVerificar({
         {pendiente ? "Guardando…" : "Guardar la verificación"}
       </Boton>
       <p className="text-xs text-muted-foreground">
-        Verifica el Administrador del SGC o Control Interno que no ejecutó ninguna actividad de este hallazgo.
+        {respaldoGerencia
+          ? "Ningún Administrador del SGC ni Control Interno activo puede verificarlo, porque todos ejecutaron: verifica Gerencia, que no ejecutó (regla 5.4)."
+          : "Verifica el Administrador del SGC o Control Interno que no ejecutó ninguna actividad de este hallazgo."}
       </p>
     </div>
   );

@@ -1048,6 +1048,38 @@ export const EsquemaFormularioVerificacion = z
 /** Los campos que la verificación lee de cada actividad (`actividad` lleva su id). */
 export const camposDeLaVerificada = (id: string) => [`decision_${id}`, `nota_${id}`, `corregir_${id}`] as const;
 
+/** Los ids de las filas del formulario de verificar (`actividad`), solo los que tienen forma de id. */
+export function idsDeLaVerificacion(datos: FormData): string[] {
+  return datos.getAll("actividad").filter((v): v is string => typeof v === "string" && /^\d{1,15}$/.test(v));
+}
+
+/** Los campos propios de esas filas: los que `parsearFormulario` omite al leer `EsquemaFormularioVerificacion`. */
+export const camposDeLaVerificacion = (ids: readonly string[]): string[] => ids.flatMap((id) => [...camposDeLaVerificada(id)]);
+
+/**
+ * Lo que se decidió de cada fila, en la forma de `verificarImplementacion`: `conforme` (o devuelta) con su nota y su fecha para
+ * corregir tal como llegaron. Una fila sin una decisión válida no trae `conforme`, y el dominio responde `SIN_DECIDIR`.
+ */
+export function decisionesDeLaVerificacion(
+  datos: FormData,
+  ids: readonly string[],
+): Array<{ id: number; conforme: boolean | undefined; nota: string | null; corregirAntesDe: string | null }> {
+  const texto = (campo: string) => {
+    const v = datos.get(campo);
+    return typeof v === "string" && v.trim() !== "" ? v : null;
+  };
+  return ids.map((id) => {
+    const [decision, nota, corregir] = camposDeLaVerificada(id);
+    const elegida = datos.get(decision);
+    return {
+      id: Number(id),
+      conforme: elegida === "conforme" ? true : elegida === "devuelta" ? false : undefined,
+      nota: texto(nota),
+      corregirAntesDe: texto(corregir),
+    };
+  });
+}
+
 /**
  * La evaluación con su firma: los campos de `EsquemaEvaluacion` como texto (los criterios, en casillas con el mismo nombre; la
  * confirmación de las ocurrencias, `si` o nada) más la clave y el código.

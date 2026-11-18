@@ -4,7 +4,6 @@
 // de persona (el alcance de proceso, quien tiene el turno) la vuelve a comprobar la consulta dentro de su transacción.
 // Las de la configuración viven en `src/app/admin/acciones-mejoramiento.ts`.
 
-import { revalidatePath } from "next/cache";
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
@@ -70,8 +69,9 @@ import {
   EsquemaSeguimiento,
   EsquemaSostener,
   RELACION_DE_REGISTRO,
-  SIN_DECIDIR,
-  camposDeLaVerificada,
+  camposDeLaVerificacion,
+  decisionesDeLaVerificacion,
+  idsDeLaVerificacion,
 } from "@/lib/esquemas/mejoramiento";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
@@ -518,20 +518,12 @@ export async function responderEscaladaAccion(_previo: EstadoAccion, formData: F
  */
 export async function verificarImplementacionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.verificar", async (_usuarioId, datos, sesion) => {
-    const ids = datos.getAll("actividad").filter((v): v is string => typeof v === "string" && /^\d{1,15}$/.test(v));
-    const d = parsearFormulario(datos, EsquemaFormularioVerificacion, { omitir: ids.flatMap((id) => [...camposDeLaVerificada(id)]) });
-    const texto = (campo: string) => {
-      const v = datos.get(campo);
-      return typeof v === "string" && v.trim() !== "" ? v : null;
-    };
+    const ids = idsDeLaVerificacion(datos);
+    const d = parsearFormulario(datos, EsquemaFormularioVerificacion, { omitir: camposDeLaVerificacion(ids) });
     await verificarImplementacion(sesion, {
       hallazgoId: d.hallazgoId,
-      actividades: d.actividad.map((id) => {
-        const [decision, nota, corregir] = camposDeLaVerificada(id);
-        const elegida = datos.get(decision);
-        if (elegida !== "conforme" && elegida !== "devuelta") throw new ErrorMejora(SIN_DECIDIR);
-        return { id: Number(id), conforme: elegida === "conforme", nota: texto(nota), corregirAntesDe: texto(corregir) };
-      }),
+      // Una fila sin decidir llega sin `conforme`: `verificarImplementacion` la rechaza con `SIN_DECIDIR`.
+      actividades: decisionesDeLaVerificacion(datos, d.actividad),
       metodos: d.metodos,
       nota: d.nota ?? null,
     });
@@ -568,7 +560,8 @@ export async function evaluarEficaciaAccion(_previo: EstadoAccion, formData: For
       );
       return rutaDeHallazgo(d.hallazgoId);
     } catch (err) {
-      if (err instanceof ErrorMejora && err.message === LO_VISTO_CAMBIO) revalidatePath(rutaDeHallazgo(d.hallazgoId));
+      // Cambió lo que se mostró: nada se escribió. La página vuelve con los datos nuevos, su huella y el aviso de que los revise.
+      if (err instanceof ErrorMejora && err.message === LO_VISTO_CAMBIO) return `${rutaDeHallazgo(d.hallazgoId)}?visto=cambio#evaluar`;
       return destinoDeFirma(err);
     }
   });

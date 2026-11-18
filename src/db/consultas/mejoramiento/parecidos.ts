@@ -6,6 +6,7 @@
 import type { Cliente } from "@/db/cliente";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
 import { TERMINALES, type EstadoHallazgo, type ResultadoCierre } from "@/lib/mejoramiento/tipos";
+import { evaluablesDesde } from "./espera";
 
 export type HallazgoParecido = {
   id: number;
@@ -23,26 +24,33 @@ const MAXIMO = 5;
 const TEXTO = (sql: Cliente, texto: string) => sql`lower(unaccent(${texto}))`;
 const DEL_HALLAZGO = (sql: Cliente) => sql`lower(unaccent(h.titulo || ' ' || h.descripcion))`;
 
-function aParecido(f: Record<string, unknown>): HallazgoParecido {
+function aParecido(f: Record<string, unknown>, evaluables: ReadonlyMap<number, { yaSePuede: boolean }>): HallazgoParecido {
   const estado = f.estado as EstadoHallazgo;
   return {
     id: Number(f.id),
     codigo: f.codigo as string,
     titulo: f.titulo as string,
-    etiqueta: etiquetaDeEstado({
-      estado,
-      resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
-      correccionRequerida: (f.correccion_requerida as boolean | null) ?? null,
-    }),
+    etiqueta: etiquetaDeEstado(
+      {
+        estado,
+        resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
+        correccionRequerida: (f.correccion_requerida as boolean | null) ?? null,
+      },
+      { yaSePuedeEvaluar: evaluables.get(Number(f.id))?.yaSePuede === true },
+    ),
     abierto: !TERMINALES.includes(estado),
     cuando: f.registrado_en as Date,
   };
 }
 
+/** «Por evaluar la eficacia» de los que están en espera (R4), en una pasada para todas las filas. */
+const evaluablesDe = (sql: Cliente, filas: ReadonlyArray<Record<string, unknown>>, ahora?: Date) =>
+  evaluablesDesde(sql, filas.filter((f) => f.estado === "en_espera").map((f) => Number(f.id)), ahora ?? new Date());
+
 /** Hasta cinco hallazgos del proceso, abiertos o cerrados (no anulados ni rechazados), de lo más a lo menos parecido. */
 export async function parecidosDelProceso(
   sql: Cliente,
-  x: { procesoId: number; texto: string; excluirId?: number },
+  x: { procesoId: number; texto: string; excluirId?: number; ahora?: Date },
 ): Promise<HallazgoParecido[]> {
   const filas = await sql`SELECT h.id, h.codigo, h.titulo, h.estado, h.resultado_cierre, h.correccion_requerida, h.registrado_en
     FROM mejora_hallazgos h
@@ -52,7 +60,8 @@ export async function parecidosDelProceso(
       AND similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, x.texto)}) >= ${UMBRAL}
     ORDER BY similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, x.texto)}) DESC, h.id
     LIMIT ${MAXIMO}`;
-  return filas.map(aParecido);
+  const evaluables = await evaluablesDe(sql, filas, x.ahora);
+  return filas.map((f) => aParecido(f, evaluables));
 }
 
 /**
@@ -62,6 +71,7 @@ export async function parecidosDelProceso(
 export async function parecidosDeOtrosProcesos(
   sql: Cliente,
   hallazgoId: number,
+  opciones?: { ahora?: Date },
 ): Promise<Array<HallazgoParecido & { proceso: string }>> {
   const [o] = await sql`SELECT proceso_id, titulo || ' ' || descripcion AS texto FROM mejora_hallazgos WHERE id = ${hallazgoId}`;
   if (!o) return [];
@@ -75,5 +85,6 @@ export async function parecidosDeOtrosProcesos(
       AND similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, o.texto as string)}) >= ${UMBRAL}
     ORDER BY similarity(${DEL_HALLAZGO(sql)}, ${TEXTO(sql, o.texto as string)}) DESC, h.id
     LIMIT ${MAXIMO}`;
-  return filas.map((f) => ({ ...aParecido(f), proceso: f.proceso as string }));
+  const evaluables = await evaluablesDe(sql, filas, opciones?.ahora);
+  return filas.map((f) => ({ ...aParecido(f, evaluables), proceso: f.proceso as string }));
 }

@@ -41,6 +41,7 @@ import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura"
 import { archivosDe, type ArchivoDeMejora } from "./archivos";
 import { ENTIDAD_ACTIVIDAD } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
+import { evaluableDesde } from "./espera";
 import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "./flujo";
 import { etiquetaDeAccion, etiquetaDeActividad } from "./plan";
 
@@ -540,11 +541,15 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
       titulo: f.titulo as string,
       proceso: f.proceso as string,
       estado: estadoHallazgo,
-      etiqueta: etiquetaDeEstado({
-        estado: estadoHallazgo,
-        resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
-        correccionRequerida: (f.correccion_requerida as boolean | null) ?? null,
-      }),
+      etiqueta: etiquetaDeEstado(
+        {
+          estado: estadoHallazgo,
+          resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
+          correccionRequerida: (f.correccion_requerida as boolean | null) ?? null,
+        },
+        // «Por evaluar la eficacia» con la misma regla de la lista y la página (R4).
+        { yaSePuedeEvaluar: estadoHallazgo === "en_espera" && (await evaluableDesde(sql, hallazgoId, ahora))?.yaSePuede === true },
+      ),
       ronda,
       ve,
     },

@@ -23,7 +23,9 @@ import {
 } from "@/db/consultas/mejoramiento/archivos";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { puedeAbrirArchivoDeMejora } from "@/lib/alcance";
-import { actividadPorSql, baseDeMejora, c, datosDeHallazgo, otroProcesoConLider } from "./utiles/mejoramiento";
+import { datosDeEvaluacion, evaluarEficacia, fechaMinimaDe, huellaDeLoVisto, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
+import { zonaHoraria } from "@/lib/zona-horaria";
+import { actividadPorSql, baseDeMejora, c, datosDeHallazgo, hallazgoEn, HORA_DE_ESCENA, otroProcesoConLider } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 
@@ -483,5 +485,64 @@ describe("registrarArchivo", () => {
       await expect(registrarArchivo(datos, b.lider.usuarioId, { sql: tx })).rejects.toThrow("Ya hay un archivo con ese nombre");
       await estado(tx, h.id, "anulado");
       await expect(registrarArchivo({ ...datos, ruta: `${datos.ruta}.2` }, b.lider.usuarioId, { sql: tx })).rejects.toBeInstanceOf(ErrorTramite);
+    }));
+});
+
+describe("la evidencia de la verificación (Tarea 17, ronda 1)", () => {
+  it("lo que había al verificar ya no se quita; lo que se sube en la espera, hasta que se registra la evaluación; después, nada", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_verificar");
+      const [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = 1`;
+      const rondaId = Number(r.id);
+      const dueno = { contexto: "mejora_ronda", contextoId: rondaId };
+      const subir = async (nombre: string) =>
+        Number(
+          (
+            await registrarArchivo(
+              {
+                versionId: null, rol: "verificacion", ruta: `mejoramiento/rondas/${rondaId}/${Date.now()}-${nombre}`, nombreOriginal: nombre,
+                extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "d".repeat(64), contexto: "mejora_ronda", contextoId: rondaId,
+              },
+              b.control.usuarioId,
+              { sql: tx },
+            )
+          ).id,
+        );
+      const quitables = async (quien: typeof b.control) => archivosQuitables(tx, quien, (await archivosDe(tx, quien, dueno)).map((a) => ({ id: a.id })), dueno);
+
+      const antes = await subir("verificacion.pdf");
+      expect(await quitables(b.control)).toContain(antes);
+      expect(await quitables(b.admin)).toContain(antes);
+      const terminadas = await tx`SELECT a.id FROM mejora_actividades a WHERE a.hallazgo_id = ${h.id} AND a.estado = 'terminada' ORDER BY a.id`;
+      await verificarImplementacion(
+        b.control,
+        { hallazgoId: h.id, actividades: terminadas.map((a) => ({ id: Number(a.id), conforme: true })), metodos: ["evidencias"] },
+        c(HORA_DE_ESCENA, tx),
+      );
+      // El evento de la verificación guarda qué archivos había: esos ya no se quitan, tampoco el Admin SGC.
+      const [evento] = await tx`SELECT detalle FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'verificar_implementacion'`;
+      expect(evento.detalle).toMatchObject({ archivosVerificados: [antes] });
+      expect(await quitables(b.control)).not.toContain(antes);
+      expect(await quitables(b.admin)).not.toContain(antes);
+      await expect(quitarArchivoDeMejora(b.admin, antes, { sql: tx })).rejects.toThrow("La evidencia de la verificación ya se usó al verificar: no se quita");
+
+      // Lo que se sube durante la espera (la evidencia de la eficacia) se quita mientras no se registre la evaluación.
+      const espera = await subir("eficacia.pdf");
+      expect(await quitables(b.control)).toEqual([espera]);
+      const fm = await fechaMinimaDe(tx, h.id, zonaHoraria());
+      const evalua = c(`${fm!.minima}T15:00:00Z`, tx);
+      await evaluarEficacia(
+        b.control,
+        {
+          hallazgoId: h.id, resultado: "eficaz", criterios: ["no_recurrencia"], desde: fm!.r, hasta: fm!.minima,
+          justificacion: "No se repitió el hecho desde que terminó el plan de prueba", confirmaOcurrencias: true,
+          vistoHuella: huellaDeLoVisto(await datosDeEvaluacion(b.control, h.id, evalua)), credenciales: { clave: "ok" },
+        },
+        evalua,
+      );
+      expect(await quitables(b.control)).toEqual([]);
+      expect(await quitables(b.admin)).toEqual([]);
+      await expect(quitarArchivoDeMejora(b.admin, espera, { sql: tx })).rejects.toThrow("La evaluación de la eficacia ya se registró: su evidencia no se quita");
     }));
 });

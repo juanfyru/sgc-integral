@@ -200,9 +200,17 @@ const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((
  * cancelar) a un líder del proceso o al Admin SGC; quien decide un ajuste lo hace en «Lo que sigue»; el Admin SGC escala a
  * Gerencia una actividad vencida y Gerencia responde la escalada (§10.7).
  */
-export default async function PaginaHallazgo({ params }: { params: Promise<{ id: string }> }) {
+export default async function PaginaHallazgo({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const sesion = await exigirSesion();
   const { id } = await params;
+  // `evaluarEficaciaAccion` vuelve aquí con `?visto=cambio` cuando cambió lo que se mostró para evaluar: el formulario lo dice.
+  const avisoCambio = (await searchParams).visto === "cambio";
   // Una sola hora para toda la página: la etiqueta, «Lo que sigue» y lo que se muestra para evaluar se calculan con ella.
   const ahora = new Date();
   const h = await exigirHallazgo(sesion, id, { ahora });
@@ -278,7 +286,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   // Sin nadie activo que revise lo enviado, la firma «Revisó» lo dice en lugar de nombrar al Administrador del SGC.
   const nadieRevisa = h.estado === "en_revision" && (await revisoresDe(sqlPlan, { id: h.id, ronda: h.ronda })).length === 0;
   // Los parecidos de otros procesos, solo al Administrador del SGC que revisa (spec §8.6): la consulta no recibe sesión.
-  const parecidosDeOtros = revisa ? await parecidosDeOtrosProcesos(sqlPlan, h.id) : [];
+  const parecidosDeOtros = revisa ? await parecidosDeOtrosProcesos(sqlPlan, h.id, { ahora }) : [];
   const anteriorAlRevisar = revisa && h.reincidenteDe && "id" in h.reincidenteDe ? await laVezPasada(sqlPlan, h.id) : null;
   // Las actividades por su etiqueta («A1.2»), para el historial y para reasignar. La de un responsable inactivo, sin
   // terminar, se reasigna desde aquí (Review Focus 2): quien puede reasignar la ve con «Responsable inactivo» y «Reasignar».
@@ -394,17 +402,20 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       />
     ) : null;
   const verifica = completo && sigue.paso === "verificar" && sigue.puede && rondaEnCurso !== null;
+  // Cada actividad terminada con su evidencia nombrada (sus archivos, que quien verifica abre; maqueta 7).
   const porVerificar = verifica
-    ? rondaEnCurso.acciones.flatMap((a) =>
-        a.actividades
-          .filter((x) => x.finOriginal !== null && x.estado === "terminada")
-          .map((x) => ({
-            id: x.id,
-            etiqueta: `A${a.orden}.${x.orden}`,
-            descripcion: x.descripcion,
-            terminadaEn: x.terminadaEn ? fechaEnZona(x.terminadaEn, zona) : null,
-            evidencias: x.evidencias,
-          })),
+    ? await Promise.all(
+        rondaEnCurso.acciones.flatMap((a) =>
+          a.actividades
+            .filter((x) => x.finOriginal !== null && x.estado === "terminada")
+            .map(async (x) => ({
+              id: x.id,
+              etiqueta: `A${a.orden}.${x.orden}`,
+              descripcion: x.descripcion,
+              terminadaEn: x.terminadaEn ? fechaEnZona(x.terminadaEn, zona) : null,
+              archivos: await archivosDe(sqlArchivos, sesion, { contexto: "mejora_actividad", contextoId: x.id }),
+            })),
+        ),
       )
     : [];
   const evalua = completo && sigue.paso === "evaluar" && sigue.puede;
@@ -417,6 +428,45 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       })
     : null;
   const cierra = completo && sigue.paso === "cerrar" && sigue.puede;
+  const pasoVerificar = verifica ? (
+    <PasoVerificar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      actividades={porVerificar}
+      hoy={hoy}
+      accion={verificarImplementacionAccion}
+      respaldoGerencia={sesion.rol === "gerencia"}
+    >
+      {archivosDeVerificacion}
+    </PasoVerificar>
+  ) : null;
+  const pasoEvaluar = datosEval ? (
+    <PasoEvaluar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      datos={datosEval}
+      criterioOtro={rondaEnCurso?.criterioOtro ?? null}
+      vistoHuella={huellaDeLoVisto(datosEval)}
+      hoy={hoy}
+      cierra={puede(sesion, "mejora.gestionar")}
+      pideCambios={cambiosPedidos(rondaEnCurso?.cambios) !== null}
+      pideCodigo={sesion.totpActivo}
+      accion={evaluarEficaciaAccion}
+      derivar={puede(sesion, "mejora.registrar") ? `/mejoramiento/nuevo?derivado=${h.id}` : null}
+      avisoCambio={avisoCambio}
+    >
+      {archivosDeVerificacion}
+    </PasoEvaluar>
+  ) : null;
+  const pasoCerrar = cierra ? (
+    <PasoCerrar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      cambios={cambiosPedidos(rondaEnCurso?.cambios)}
+      pideCodigo={sesion.totpActivo}
+      accion={cerrarHallazgoAccion}
+    />
+  ) : null;
 
   const formulario = formulaAqui ? (
     <Link href={rutaDeFormular(h.id)} className={claseBoton("primario")}>
@@ -455,32 +505,17 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       devolver={devolverPlanGerenciaAccion}
     />
   ) : verifica ? (
-    <PasoVerificar key={`paso-${clave}`} hallazgoId={h.id} actividades={porVerificar} hoy={hoy} accion={verificarImplementacionAccion}>
-      {archivosDeVerificacion}
-    </PasoVerificar>
+    <a href="#verificar" className={`${claseBoton("primario")} self-start`}>
+      Ir a verificar
+    </a>
   ) : datosEval ? (
-    <PasoEvaluar
-      key={`paso-${clave}`}
-      hallazgoId={h.id}
-      datos={datosEval}
-      vistoHuella={huellaDeLoVisto(datosEval)}
-      hoy={hoy}
-      cierra={puede(sesion, "mejora.gestionar")}
-      pideCambios={cambiosPedidos(rondaEnCurso?.cambios) !== null}
-      pideCodigo={sesion.totpActivo}
-      accion={evaluarEficaciaAccion}
-      derivar={puede(sesion, "mejora.registrar") ? `/mejoramiento/nuevo?derivado=${h.id}` : null}
-    >
-      {archivosDeVerificacion}
-    </PasoEvaluar>
+    <a href="#evaluar" className={`${claseBoton("primario")} self-start`}>
+      Ir a evaluar
+    </a>
   ) : cierra ? (
-    <PasoCerrar
-      key={`paso-${clave}`}
-      hallazgoId={h.id}
-      cambios={cambiosPedidos(rondaEnCurso?.cambios)}
-      pideCodigo={sesion.totpActivo}
-      accion={cerrarHallazgoAccion}
-    />
+    <a href="#cerrar" className={`${claseBoton("primario")} self-start`}>
+      Ir a cerrar
+    </a>
   ) : !conFormulario ? null : sigue.paso === "aceptar" ? (
     <PasoAceptar
       key={`paso-${clave}`}
@@ -575,9 +610,11 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
           ) : null}
           {await Promise.all(
             h.rondasAnteriores.map(async (r) => {
-              const adjuntos = seccionesDeLaRonda(h, r).adjuntos
-                ? (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis")
-                : [];
+              // Los archivos de la ronda (solo a quien ve el hallazgo completo): los del análisis y los de su verificación y su
+              // evaluación, en lectura (spec §8.7).
+              const deLaRonda = completo ? await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id }) : [];
+              const adjuntos = seccionesDeLaRonda(h, r).adjuntos ? deLaRonda.filter((a) => a.rol === "analisis") : [];
+              const verificados = deLaRonda.filter((a) => a.rol === "verificacion");
               return (
                 <RondaAnterior
                   key={`ronda-${r.id}`}
@@ -586,6 +623,14 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
                   hoy={hoy}
                   zona={zona}
                   adjuntos={adjuntos.length > 0 ? <ArchivosDe archivos={adjuntos} nombre={`Adjuntos del análisis de la ronda ${r.numero}`} /> : null}
+                  verificacion={
+                    verificados.length > 0 ? (
+                      <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
+                        <h3 className="text-sm font-semibold">Archivos de la verificación y de la evaluación</h3>
+                        <ArchivosDe archivos={verificados} nombre={`Archivos de la verificación de la ronda ${r.numero}`} />
+                      </div>
+                    ) : null
+                  }
                 >
                   {r.ajustes.length > 0 ? (
                     <AjustesDelPlan
@@ -665,7 +710,8 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
                       </AjustesDelPlan>
                     ) : null}
                     {conSeguimiento ? (
-                      <SeccionVerificacion ronda={r} abierta={h.estado === "por_verificar"} zona={zona}>
+                      <SeccionVerificacion id="verificar" ronda={r} abierta={h.estado === "por_verificar"} zona={zona}>
+                        {pasoVerificar ? <div className="border-t border-linea-suave pt-3">{pasoVerificar}</div> : null}
                         {!subeVerificacion && deVerificacion.length > 0 ? (
                           <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
                             <h3 className="text-sm font-semibold">Archivos de la verificación</h3>
@@ -675,7 +721,15 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
                       </SeccionVerificacion>
                     ) : null}
                     {conEficacia ? (
-                      <SeccionEficacia evaluacion={r.evaluacion} evaluableDesde={h.fechas.evaluableDesde} abierta={h.estado === "en_espera"} zona={zona} />
+                      <SeccionEficacia
+                        id="evaluar"
+                        evaluacion={r.evaluacion}
+                        evaluableDesde={h.fechas.evaluableDesde}
+                        abierta={h.estado === "en_espera"}
+                        zona={zona}
+                      >
+                        {pasoEvaluar ? <div className="border-t border-linea-suave pt-3">{pasoEvaluar}</div> : null}
+                      </SeccionEficacia>
                     ) : null}
                   </>
                 );
@@ -683,13 +737,16 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
             : null}
           {CON_CIERRE.has(h.estado) ? (
             <SeccionCierre
+              id="cerrar"
               estado={h.estado}
               etiqueta={h.etiqueta}
               cierre={h.cierre}
               validacion={h.correccion.validadaPor && h.correccion.validadaEn ? { por: h.correccion.validadaPor, en: h.correccion.validadaEn } : null}
               abierta
               zona={zona}
-            />
+            >
+              {pasoCerrar ? <div className="border-t border-linea-suave pt-3">{pasoCerrar}</div> : null}
+            </SeccionCierre>
           ) : null}
           {puedeEditar || gestiona ? (
             <div className="flex flex-wrap gap-2">

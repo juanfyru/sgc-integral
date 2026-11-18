@@ -19,13 +19,17 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactN
  * (`validacion`); un hallazgo anulado dice por qué. «Por cerrar», lo que falta. Gerencia no firma: recibe el aviso.
  */
 export function SeccionCierre({
+  id,
   estado,
   etiqueta,
   cierre: c,
   validacion,
   abierta,
   zona,
+  children,
 }: {
+  /** El ancla del formulario de cerrar («Ir a cerrar»). */
+  id?: string;
   estado: EstadoHallazgo;
   /** La etiqueta del estado («Cerrado · eficaz», «Cerrado con corrección»…). */
   etiqueta: string;
@@ -34,11 +38,13 @@ export function SeccionCierre({
   validacion: { por: string; en: Date } | null;
   abierta: boolean;
   zona: string;
+  /** Por cerrar, el formulario del Admin SGC (a todo el ancho). */
+  children?: React.ReactNode;
 }) {
   const quien = c.cerradoPor && c.cerradoEn ? `${c.cerradoPor}, ${fechaYHora(c.cerradoEn, zona)}` : validacion ? `${validacion.por}, ${fechaYHora(validacion.en, zona)}` : null;
   const resumen = estado === "por_cerrar" ? "Falta cerrarlo: las lecciones aprendidas y la firma «Cerró»" : [etiqueta, quien].filter(Boolean).join(" · ");
   return (
-    <details open={abierta} className="group rounded-lg border border-border bg-card">
+    <details id={id} open={abierta} className="group scroll-mt-4 rounded-lg border border-border bg-card">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 rounded-lg px-4 py-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca">
         <span className="min-w-0">
           <span className="block font-display text-base font-semibold">7. Cierre</span>
@@ -72,6 +78,7 @@ export function SeccionCierre({
             ) : null}
           </dl>
         )}
+        {children}
       </div>
     </details>
   );

@@ -64,6 +64,8 @@ import { SeccionEficacia, SeccionVerificacion } from "@/componentes/mejoramiento
 import { PasoCerrar } from "@/componentes/mejoramiento/pasos/PasoCerrar";
 import { PasoEvaluar } from "@/componentes/mejoramiento/pasos/PasoEvaluar";
 import { PasoVerificar } from "@/componentes/mejoramiento/pasos/PasoVerificar";
+import { TablaDelIndicador } from "@/componentes/mejoramiento/pasos/Partes";
+import { camposDeLaVerificacion, decisionesDeLaVerificacion, idsDeLaVerificacion } from "@/lib/esquemas/mejoramiento";
 import type { DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import type { DatosDeEvaluacion } from "@/db/consultas/mejoramiento/verificacion";
 import { etiquetasDeUsuarios } from "@/lib/mejoramiento/textos";
@@ -1574,8 +1576,8 @@ describe("verificar la implementación, evaluar la eficacia y cerrar (maqueta 7)
   const accion = vi.fn(async () => null);
   const aviso = (html: string) => html.split(AVISO_SIN_PACIENTES).length - 1;
   const actividades = [
-    { id: 31, etiqueta: "A1.1", descripcion: "Pedir el cambio documental", terminadaEn: "2026-11-19", evidencias: 1 },
-    { id: 32, etiqueta: "A1.2", descripcion: "Socializar la versión nueva", terminadaEn: "2026-12-04", evidencias: 2 },
+    { id: 31, etiqueta: "A1.1", descripcion: "Pedir el cambio documental", terminadaEn: "2026-11-19", archivos: null },
+    { id: 32, etiqueta: "A1.2", descripcion: "Socializar la versión nueva", terminadaEn: "2026-12-04", archivos: null },
   ];
 
   it("PasoVerificar: una fila por actividad con «Conforme» y «Devolver»; al devolver, la nota y la fecha; los cuatro métodos", () => {
@@ -1645,6 +1647,7 @@ describe("verificar la implementación, evaluar la eficacia y cerrar (maqueta 7)
       <PasoEvaluar
         hallazgoId={14}
         datos={x?.datos ?? datos()}
+        criterioOtro={null}
         vistoHuella={"a".repeat(64)}
         hoy="2026-12-28"
         cierra={x?.cierra ?? false}
@@ -1994,5 +1997,140 @@ describe("los retoques de la página del hallazgo (puntos de control)", () => {
     );
     expect(html).toContain("Laura Rojas · Auxiliar de farmacia (lrojas)");
     expect(html).toContain("Laura Rojas · Auxiliar de farmacia (lrojas2)");
+  });
+});
+
+describe("Tarea 17, ronda 1: verificar y evaluar en ancho y lo que quedó por decir", () => {
+  const accion = vi.fn(async () => null);
+  const archivo = (id: number, nombre: string) => ({ id, nombre, mime: "application/pdf", tamano: 2048 });
+  const actividades = [
+    { id: 31, etiqueta: "A1.1", descripcion: "Pedir el cambio documental", terminadaEn: "2026-11-19", archivos: [archivo(71, "acta-de-publicacion.pdf")] },
+    { id: 32, etiqueta: "A1.2", descripcion: "Socializar la versión nueva", terminadaEn: "2026-12-04", archivos: [] },
+  ];
+  const datos = (extra?: Partial<DatosDeEvaluacion>): DatosDeEvaluacion => ({
+    minima: "2027-03-01",
+    r: "2026-12-05",
+    yaSePuede: false,
+    criterios: ["mejora_indicador", "otro"],
+    indicador: null,
+    indicadorRetirado: false,
+    ocurrencias: [],
+    ...extra,
+  });
+  const evaluar = (x?: { datos?: DatosDeEvaluacion; criterioOtro?: string | null; avisoCambio?: boolean; cierra?: boolean }) =>
+    renderToStaticMarkup(
+      <PasoEvaluar
+        hallazgoId={14}
+        datos={x?.datos ?? datos()}
+        criterioOtro={x?.criterioOtro ?? null}
+        vistoHuella={"a".repeat(64)}
+        hoy="2026-12-28"
+        cierra={x?.cierra ?? false}
+        pideCambios
+        pideCodigo={false}
+        accion={accion}
+        derivar={null}
+        avisoCambio={x?.avisoCambio}
+      />,
+    );
+
+  it("2. PasoVerificar nombra la evidencia de cada actividad (sus archivos) y la rejilla nota/fecha se apila por su contenedor", () => {
+    const html = renderToStaticMarkup(
+      <PasoVerificar hallazgoId={14} actividades={actividades} hoy="2026-12-07" accion={accion} inicial={{ 31: "devuelta" }} />,
+    );
+    expect(html).toContain("acta-de-publicacion.pdf");
+    expect(html).toContain('href="/mejoramiento/archivos/71/acta-de-publicacion.pdf"');
+    expect(html).toContain("Sin evidencia adjunta");
+    // Sin variantes de ventana (`sm:`) dentro de la columna: la rejilla responde al ancho de su contenedor.
+    expect(html).not.toMatch(/\bsm:grid-cols/);
+    expect(html).toContain("@container");
+  });
+
+  it("12. la nota al pie de verificar dice el respaldo de Gerencia cuando aplica", () => {
+    const comun = renderToStaticMarkup(<PasoVerificar hallazgoId={14} actividades={actividades} hoy="2026-12-07" accion={accion} />);
+    expect(comun).not.toContain("Gerencia");
+    const gerencia = renderToStaticMarkup(<PasoVerificar hallazgoId={14} actividades={actividades} hoy="2026-12-07" accion={accion} respaldoGerencia />);
+    expect(gerencia).toContain("verifica Gerencia");
+  });
+
+  it("3. una ronda anterior deja a la vista los archivos de su verificación, en lectura", () => {
+    const ronda = {
+      id: 5, numero: 1, estadoPlan: "aprobado", fechaEvaluacion: null, criterios: [], criterioOtro: null, indicadorEficaciaId: null,
+      similares: null, similaresDetalle: null, cambios: null, analisis: [], causas: [], acciones: [], ajustes: [], resultado: "no_eficaz",
+      verificacion: null, evaluacion: null,
+    } as unknown as RondaDeDetalle;
+    const html = renderToStaticMarkup(
+      <RondaAnterior ronda={ronda} indicador={null} hoy="2026-12-28" zona="America/Bogota" verificacion={<p>archivo-de-la-verificacion.pdf</p>} />,
+    );
+    expect(html).toContain("archivo-de-la-verificacion.pdf");
+  });
+
+  it("5. tras «Cambió lo que se muestra», el formulario de evaluar lo explica antes de pedir otra vez la firma", () => {
+    expect(evaluar()).not.toContain("Cambió lo que se muestra para evaluar");
+    const aviso = evaluar({ avisoCambio: true });
+    expect(aviso).toContain("Cambió lo que se muestra para evaluar: revíselo antes de registrar la evaluación.");
+    expect(aviso).toMatch(/role="alert"/);
+  });
+
+  it("8. los controles fuera de un formulario no prometen validaciones que no se cumplen", () => {
+    const html = evaluar({ cierra: true });
+    for (const control of html.match(/<(textarea|input)[^>]*>/g) ?? []) {
+      expect(control).not.toMatch(/\srequired=""|\sminLength=/);
+    }
+    for (const control of renderToStaticMarkup(<PasoCerrar hallazgoId={14} cambios="documentos" pideCodigo={false} accion={accion} />).match(/<(textarea|input)[^>]*>/g) ?? []) {
+      expect(control).not.toMatch(/\srequired=""|\sminLength=/);
+    }
+  });
+
+  it("9. la tabla del indicador se recorre con el teclado", () => {
+    const html = renderToStaticMarkup(
+      <SeccionEficacia
+        evaluacion={null}
+        evaluableDesde="2027-03-01"
+        abierta
+        zona="America/Bogota"
+      >
+        <TablaDelIndicador codigo="FAR-ID-002" nombre="Registros" filas={[{ periodo: "2026-10", etiqueta: "Octubre 2026", resultado: "93 %", semaforo: "atencion", noAplica: false, momento: "antes" }]} />
+      </SeccionEficacia>,
+    );
+    expect(html).toMatch(/<div(?=[^>]*tabindex="0")(?=[^>]*role="region")(?=[^>]*aria-label="[^"]+")/);
+  });
+
+  it("11. el formulario de evaluar dice el criterio completo del plan: la descripción de «Otro» y por qué no se marca el indicador", () => {
+    const html = evaluar({ criterioOtro: "Auditoría de seguimiento al turno de noche" });
+    expect(html).toContain("Auditoría de seguimiento al turno de noche");
+    expect(html).toContain("El plan no enlazó un indicador");
+    const retirado = evaluar({ datos: datos({ indicadorRetirado: true, indicador: { codigo: "FAR-ID-002", nombre: "Registros", filas: [] } }) });
+    expect(retirado).toContain("El indicador se retiró");
+  });
+
+  it("13. el historial de una verificación que devolvió actividades lo dice, con sus etiquetas", () => {
+    const evento = (id: number, devueltas: string[]) => ({
+      id, tipo: "verificar_implementacion", ronda: 1, quien: "Control Interno", cuando: new Date("2026-12-07T15:00:00Z"),
+      detalle: { metodos: ["evidencias"], conformes: [], devueltas },
+    });
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo zona="America/Bogota" eventos={[evento(1, ["A1.2"]), evento(2, ["A1.2", "A2.1"]), evento(3, [])]} />,
+    );
+    expect(html).toContain("Verificó la implementación y devolvió la actividad A1.2");
+    expect(html).toContain("Verificó la implementación y devolvió las actividades A1.2 y A2.1");
+    expect(html.split("Verificó la implementación").length - 1).toBe(3);
+  });
+
+  it("4. la traducción de `decision_<id>` al dominio: cada fila con su decisión, su nota y su fecha; lo demás no se decide", () => {
+    const datos = new FormData();
+    for (const [k, v] of [
+      ["hallazgoId", "14"], ["actividad", "31"], ["actividad", "32"], ["actividad", "33"], ["actividad", "../x"],
+      ["decision_31", "conforme"], ["decision_32", "devuelta"], ["nota_32", "  Faltan dos auxiliares  "], ["corregir_32", "2026-12-12"],
+      ["decision_33", "otra"], ["metodos", "evidencias"],
+    ]) datos.append(k, v);
+    expect(idsDeLaVerificacion(datos)).toEqual(["31", "32", "33"]);
+    expect(camposDeLaVerificacion(["31", "32"])).toEqual(["decision_31", "nota_31", "corregir_31", "decision_32", "nota_32", "corregir_32"]);
+    expect(decisionesDeLaVerificacion(datos, ["31", "32", "33"])).toEqual([
+      { id: 31, conforme: true, nota: null, corregirAntesDe: null },
+      { id: 32, conforme: false, nota: "  Faltan dos auxiliares  ", corregirAntesDe: "2026-12-12" },
+      // Sin una decisión válida, `conforme` no llega: el dominio responde «Marque cada actividad como conforme o devuélvala».
+      { id: 33, conforme: undefined, nota: null, corregirAntesDe: null },
+    ]);
   });
 });

@@ -102,7 +102,8 @@ export function TablaDelIndicador({ codigo, nombre, filas }: { codigo: string; n
       {filas.length === 0 ? (
         <p className="text-sm text-muted-foreground">Aún no hay periodos terminados que mostrar.</p>
       ) : (
-        <div className="overflow-x-auto">
+        // Con desplazamiento propio, se recorre con el teclado (WCAG 2.1.1): enfocable y con nombre.
+        <div tabIndex={0} role="region" aria-label={`Resultados de ${codigo}`} className="overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca">
           <table className="w-full min-w-0 text-left text-sm">
             <caption className="sr-only">{`Resultados de ${codigo} antes, durante y después de terminar el plan`}</caption>
             <thead className="text-xs text-muted-foreground">

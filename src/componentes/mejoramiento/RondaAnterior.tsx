@@ -16,6 +16,7 @@ export function RondaAnterior({
   hoy,
   zona,
   adjuntos,
+  verificacion,
   children,
 }: {
   ronda: RondaDeDetalle;
@@ -24,6 +25,8 @@ export function RondaAnterior({
   zona: string;
   /** Los adjuntos del análisis de esa ronda, a quien los ve. */
   adjuntos?: React.ReactNode;
+  /** Los archivos de su verificación y de su evaluación (rol `verificacion`), en lectura, a quien los ve. */
+  verificacion?: React.ReactNode;
   /** Lo que la página añade al final (los ajustes de su plan). */
   children?: React.ReactNode;
 }) {
@@ -45,7 +48,9 @@ export function RondaAnterior({
         </AnalisisEnLectura>
         <PlanEnLectura ronda={ronda} abierta={false} indicador={indicador} hoy={hoy} />
         {children}
-        <SeccionVerificacion ronda={ronda} abierta={false} zona={zona} />
+        <SeccionVerificacion ronda={ronda} abierta={false} zona={zona}>
+          {verificacion}
+        </SeccionVerificacion>
         <SeccionEficacia evaluacion={e} evaluableDesde={null} abierta={false} zona={zona} />
       </div>
     </details>

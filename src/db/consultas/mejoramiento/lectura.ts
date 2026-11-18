@@ -151,9 +151,10 @@ async function resolverTurno(
   const clave =
     turno === "lideres" ? `lideres:${h.procesoId}`
     : turno === "registrador" ? `registrador:${h.registradoPor}`
-    // El árbitro depende también de quién lo sostuvo; los validadores, de quién registró la corrección y decidió; quienes
-    // revisan el plan, de quién lo elaboró (`revisoresDe`).
-    : turno === "responsables" || turno === "arbitro" || turno === "validadores" ? `${turno}:${h.id}`
+    // El árbitro depende también de quién lo sostuvo; los validadores, de quién registró la corrección y decidió; los
+    // verificadores, de quién ejecutó en ese hallazgo (`quienesVerifican`); quienes revisan el plan, de quién lo elaboró
+    // (`revisoresDe`).
+    : turno === "responsables" || turno === "arbitro" || turno === "validadores" || turno === "verificadores" ? `${turno}:${h.id}`
     : turno === "admin" && h.estado === "en_revision" ? `revisores:${h.id}`
     : turno;
   const ids = await recordar(m, clave, () => quienTieneElTurno(tx, h));
@@ -519,6 +520,7 @@ export type DetalleDeHallazgo = {
     cerradoEn: Date | null;
     /** Quién firmó «Cerró» (el cierre eficaz); en el camino corto cierra la validación (`correccion.validadaPor`). */
     cerradoPor: string | null;
+    /** Las lecciones y cómo se atendieron los cambios: solo a quien ve el hallazgo completo (spec §6.3). */
     lecciones: string | null;
     cambiosAtendidos: string | null;
     anuladoMotivo: string | null;
@@ -1163,8 +1165,9 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       resultado: h.resultadoCierre,
       cerradoEn: (f.cerrado_en as Date | null) ?? null,
       cerradoPor: (f.cerrador as string | null) ?? null,
-      lecciones: (f.lecciones as string | null) ?? null,
-      cambiosAtendidos: (f.cambios_atendidos as string | null) ?? null,
+      // El cierre en texto es de quien ve el hallazgo completo (spec §6.3); quien lo ve por una actividad, el estado y la fecha.
+      lecciones: completo ? ((f.lecciones as string | null) ?? null) : null,
+      cambiosAtendidos: completo ? ((f.cambios_atendidos as string | null) ?? null) : null,
       anuladoMotivo: (f.anulado_motivo as string | null) ?? null,
     },
     rondas: rondasDeDetalle,

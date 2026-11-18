@@ -7,13 +7,14 @@ import type { TransactionSql } from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
 import { ErrorFirma, ErrorTramite, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
+import { leerActividad, reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
 import { quitarAnalisis } from "@/db/consultas/mejoramiento/analisis";
 import { enviarPlan } from "@/db/consultas/mejoramiento/aprobacion";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, dejarEvento } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { parecidosDelProceso } from "@/db/consultas/mejoramiento/parecidos";
 import { ACCION_AJENA, guardarAccion, quitarAccion } from "@/db/consultas/mejoramiento/plan";
 import { registrarOcurrencia } from "@/db/consultas/mejoramiento/registro";
 import {
@@ -36,7 +37,16 @@ import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, versionTrimestral } from "./utiles/indicadores";
-import { baseDeMejora, c, evidenciaDeActividad, hallazgoEn, planDePrueba, terminarTodas, type BaseDeMejora } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  evidenciaDeActividad,
+  hallazgoEn,
+  LECCIONES_DE_ESCENA,
+  planDePrueba,
+  terminarTodas,
+  type BaseDeMejora,
+} from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
@@ -998,7 +1008,6 @@ describe("«Por evaluar la eficacia» en la lista, la página y las cifras (R4)"
       expect((await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(LA_VISPERA) }))!.etiqueta).toBe("En espera de eficacia");
 
       const lote = await evaluablesDesde(tx, [h.id, 0x7fffffff], new Date(LA_MINIMA));
-      expect(lote.get(h.id)).toEqual(await evaluableDesde(tx, h.id, new Date(LA_MINIMA)));
       expect(lote.get(h.id)).toEqual({ desde: "2027-02-05", yaSePuede: true });
       expect(lote.has(0x7fffffff)).toBe(false);
     }));
@@ -1045,5 +1054,97 @@ describe("la evaluación en lectura (spec §6.3)", () => {
       // Control Interno lo sigue viendo.
       const control = (await leerHallazgo(b.control, h.id, o))!;
       expect(control.rondas[0].evaluacion!.visto!.indicador).toMatchObject({ visible: true, codigo: ind.codigo });
+    }));
+});
+
+describe("Tarea 17, ronda 1: cada hallazgo con sus verificadores y lo que se lee después", () => {
+  it("el lote da a cada hallazgo su propia fecha mínima (uno con indicador mensual y otro sin indicador)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, periodicidad: "mensual" });
+      const sin = await enEspera(tx, b);
+      const con = await enEspera(tx, b, { indicadorId: ind.id });
+      const lote = await evaluablesDesde(tx, [sin.id, con.id], new Date(LA_MINIMA));
+      expect(lote.get(sin.id)).toEqual({ desde: "2027-02-05", yaSePuede: true });
+      expect(lote.get(con.id)).toEqual({ desde: "2027-03-01", yaSePuede: false });
+      expect((await fechaMinimaDe(tx, con.id, zona))?.minima).toBe("2027-03-01");
+    }));
+
+  it("1. en la lista, cada hallazgo «Por verificar» resuelve sus verificadores: el turno y «Esperan su decisión» por fila", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      // Control Interno es responsable de la actividad de uno (ejecutó) y no del otro.
+      const ejecuto = await hallazgoEn(tx, b, "por_verificar", undefined, { responsableId: b.control.usuarioId });
+      const otro = await hallazgoEn(tx, b, "por_verificar");
+      // Solo queda Control Interno con el rol de verificar.
+      await desactivar(tx, ["admin_sgc", "control_interno", "gerencia"], [b.control.usuarioId]);
+      const ahora = new Date(VERIFICA);
+      const { filas } = await listarHallazgos(b.control, { procesoId: b.procesoId }, { sql: tx, ahora });
+      const turno = (id: number) => filas.find((f) => f.id === id)?.turno;
+      expect(turno(ejecuto.id)).toBe("Nadie puede verificarlo");
+      expect(turno(otro.id)).toBe("Quien puede verificar");
+      const suyos = await listarHallazgos(b.control, { procesoId: b.procesoId, esperanSuDecision: true }, { sql: tx, ahora });
+      expect(suyos.filas.map((f) => f.id)).toEqual([otro.id]);
+      // Del lado del verificador que ejecutó: nadie puede, y la página lo dice.
+      const pagina = await leerHallazgo(b.control, ejecuto.id, { sql: tx, ahora });
+      expect(pagina!.turno).toBe("Nadie puede verificarlo");
+      expect(pagina!.loQueSigue).toMatchObject({ paso: "verificar", puede: false });
+      expect(pagina!.loQueSigue.turno).toContain("Nadie puede verificar este hallazgo");
+      expect((await leerHallazgo(b.control, otro.id, { sql: tx, ahora }))!.loQueSigue).toMatchObject({
+        paso: "verificar",
+        puede: true,
+        turno: "A usted le toca verificar la implementación.",
+      });
+    }));
+
+  it("4. después de un «no eficaz» real, la ronda anterior trae su evaluación con lo que se mostró", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const OCURRENCIA = "El turno de noche del 9 de diciembre quedó sin el formato";
+      await registrarOcurrencia(b.control, { hallazgoId: h.id, fecha: "2026-12-09", descripcion: OCURRENCIA }, c("2026-12-09T15:00:00Z", tx));
+      const AHORA = "2026-12-10T15:00:00Z";
+      await evaluar(tx, b.control, h.id, AHORA, {
+        resultado: "no_eficaz",
+        hasta: "2026-12-10",
+        justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre",
+      });
+      const leido = (await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(AHORA) }))!;
+      expect(leido.ronda).toBe(2);
+      expect(leido.rondasAnteriores.map((r) => r.numero)).toEqual([1]);
+      const ev = leido.rondasAnteriores[0].evaluacion!;
+      expect(ev).toMatchObject({ resultado: "no_eficaz", hasta: "2026-12-10" });
+      expect(ev.visto).toMatchObject({ r: "2026-12-05", minima: "2027-02-05", indicador: null });
+      expect(ev.visto!.ocurrencias.map((o) => o.descripcion)).toEqual([OCURRENCIA]);
+    }));
+
+  it("6. el cierre en texto (las lecciones y los cambios atendidos) es de quien ve el hallazgo completo", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "cerrado", undefined, { responsableId: b.consulta.usuarioId });
+      const completo = (await leerHallazgo(b.lider, h.id, { sql: tx }))!;
+      expect(completo.cierre.lecciones).toBe(LECCIONES_DE_ESCENA);
+      const porActividad = (await leerHallazgo(b.consulta, h.id, { sql: tx }))!;
+      expect(porActividad.ve).toBe("actividad");
+      expect(porActividad.etiqueta).toBe("Cerrado · eficaz");
+      expect(porActividad.cierre.cerradoEn).not.toBeNull();
+      expect(porActividad.cierre.lecciones).toBeNull();
+      expect(porActividad.cierre.cambiosAtendidos).toBeNull();
+      expect(JSON.stringify(porActividad)).not.toContain(LECCIONES_DE_ESCENA);
+    }));
+
+  it("10. «Por evaluar la eficacia» también en la página de una actividad y en los parecidos", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const [a] = await actividadesDe(tx, h.id);
+      const de = (ahora: string) => leerActividad(b.lider, Number(a.id), { sql: tx, ahora: new Date(ahora) });
+      expect((await de(LA_VISPERA))!.hallazgo.etiqueta).toBe("En espera de eficacia");
+      expect((await de(LA_MINIMA))!.hallazgo.etiqueta).toBe("Por evaluar la eficacia");
+      const [{ titulo, descripcion }] = await tx`SELECT titulo, descripcion FROM mejora_hallazgos WHERE id = ${h.id}`;
+      const parecidos = (ahora: string) =>
+        parecidosDelProceso(tx, { procesoId: b.procesoId, texto: `${titulo} ${descripcion}`, ahora: new Date(ahora) });
+      expect((await parecidos(LA_VISPERA)).find((p) => p.id === h.id)?.etiqueta).toBe("En espera de eficacia");
+      expect((await parecidos(LA_MINIMA)).find((p) => p.id === h.id)?.etiqueta).toBe("Por evaluar la eficacia");
     }));
 });
