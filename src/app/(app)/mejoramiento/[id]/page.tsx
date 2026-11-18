@@ -46,6 +46,7 @@ import { PlanEnLectura, type IndicadorEnLectura } from "@/componentes/mejoramien
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
+import { BorradorDeLaEvaluacion } from "@/componentes/mejoramiento/BorradorDeLaEvaluacion";
 import { EnlacesDelHallazgo } from "@/componentes/mejoramiento/EnlacesDelHallazgo";
 import { FechasDelHallazgo } from "@/componentes/mejoramiento/FechasDelHallazgo";
 import { Ocurrencias } from "@/componentes/mejoramiento/Ocurrencias";
@@ -444,6 +445,7 @@ export default async function PaginaHallazgo({
     <PasoEvaluar
       key={`paso-${clave}`}
       hallazgoId={h.id}
+      ronda={h.ronda}
       datos={datosEval}
       criterioOtro={rondaEnCurso?.criterioOtro ?? null}
       vistoHuella={huellaDeLoVisto(datosEval)}
@@ -575,6 +577,7 @@ export default async function PaginaHallazgo({
         descripcion={`${h.proceso} · registró: ${h.registradoPor}`}
       />
       <Recorrido pasos={pasosConFechas(h, zona)} />
+      {completo ? <BorradorDeLaEvaluacion key={`borrador-${clave}-${avisoCambio}`} hallazgoId={h.id} conAviso={avisoCambio} /> : null}
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
           <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} notas={notas}>

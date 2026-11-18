@@ -27,6 +27,8 @@ type Props = {
   etiquetaAccesible?: string;
   /** El texto del botón que firma, si `textoDeFirmar(etiquetaBoton)` no se lee bien («Firmar la revisión»). */
   textoAlFirmar?: string;
+  /** Lo que se hace justo antes de enviar la firma (p. ej. guardar el borrador de lo escrito en la pestaña). */
+  alEnviar?: () => void;
 };
 
 /** «Firmar y publicar»; con una etiqueta que ya lleva «y», «Firmar, aprobar y publicar». */
@@ -46,6 +48,7 @@ export function FormularioFirma({
   alCancelar,
   children,
   textoAlFirmar,
+  alEnviar: antesDeEnviar,
 }: Props & { alCancelar: () => void }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const clave = useRef<HTMLInputElement>(null);
@@ -56,6 +59,7 @@ export function FormularioFirma({
   const alEnviar = (evento: FormEvent<HTMLFormElement>) => {
     evento.preventDefault();
     const datos = new FormData(evento.currentTarget);
+    antesDeEnviar?.();
     startTransition(() => enviar(datos));
   };
   useEffect(() => {

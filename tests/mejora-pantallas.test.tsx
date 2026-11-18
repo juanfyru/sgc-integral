@@ -2,6 +2,8 @@
  * Las pantallas de «Mejoramiento» de la 15A que no tocan la base (spec 15 §16.1 y §16.2, maquetas 1 a 3): la lista, el
  * recorrido, el formulario de registro y «Lo que sigue». Con datos de mentira.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { FormEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -69,6 +71,13 @@ import { camposDeLaVerificacion, decisionesDeLaVerificacion, idsDeLaVerificacion
 import type { DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import type { DatosDeEvaluacion } from "@/db/consultas/mejoramiento/verificacion";
 import { etiquetasDeUsuarios } from "@/lib/mejoramiento/textos";
+import {
+  claveDelBorrador,
+  guardarBorrador,
+  quitarBorradoresDelHallazgo,
+  sinAvisoDeCambio,
+  tomarBorrador,
+} from "@/lib/mejoramiento/borrador-evaluacion";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 
 // La zona de carga de la evidencia (en la página de una actividad) pide el enrutador del cliente.
@@ -1646,6 +1655,7 @@ describe("verificar la implementación, evaluar la eficacia y cerrar (maqueta 7)
     renderToStaticMarkup(
       <PasoEvaluar
         hallazgoId={14}
+        ronda={1}
         datos={x?.datos ?? datos()}
         criterioOtro={null}
         vistoHuella={"a".repeat(64)}
@@ -2021,6 +2031,7 @@ describe("Tarea 17, ronda 1: verificar y evaluar en ancho y lo que quedó por de
     renderToStaticMarkup(
       <PasoEvaluar
         hallazgoId={14}
+        ronda={1}
         datos={x?.datos ?? datos()}
         criterioOtro={x?.criterioOtro ?? null}
         vistoHuella={"a".repeat(64)}
@@ -2132,5 +2143,73 @@ describe("Tarea 17, ronda 1: verificar y evaluar en ancho y lo que quedó por de
       // Sin una decisión válida, `conforme` no llega: el dominio responde «Marque cada actividad como conforme o devuélvala».
       { id: 33, conforme: undefined, nota: null, corregirAntesDe: null },
     ]);
+  });
+});
+
+describe("Tarea 17, ronda 2: el borrador de la evaluación vive en la pestaña y se borra", () => {
+  /** Un almacén de pestaña de mentira (la forma de `sessionStorage`). */
+  const almacen = (inicial: Record<string, string> = {}) => {
+    const m = new Map(Object.entries(inicial));
+    return {
+      m,
+      get length() {
+        return m.size;
+      },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, v),
+      removeItem: (k: string) => void m.delete(k),
+    };
+  };
+  const roto = {
+    length: 0,
+    key: () => null,
+    getItem: () => {
+      throw new Error("bloqueado");
+    },
+    setItem: () => {
+      throw new Error("bloqueado");
+    },
+    removeItem: () => {
+      throw new Error("bloqueado");
+    },
+  };
+
+  it("la clave lleva el hallazgo y la ronda", () => {
+    expect(claveDelBorrador(14, 1)).not.toBe(claveDelBorrador(14, 2));
+    expect(claveDelBorrador(14, 1)).not.toBe(claveDelBorrador(15, 1));
+    expect(claveDelBorrador(14, 2)).toContain("14");
+  });
+
+  it("se escribe al enviar y se toma una vez, solo con el aviso de cambio: después ya no está", () => {
+    const a = almacen();
+    expect(guardarBorrador(a, claveDelBorrador(14, 1), { justificacion: "El indicador no bajó en enero" })).toBe(true);
+    expect(tomarBorrador(a, claveDelBorrador(14, 1))).toEqual({ disponible: true, borrador: { justificacion: "El indicador no bajó en enero" } });
+    expect(a.m.size).toBe(0);
+    expect(tomarBorrador(a, claveDelBorrador(14, 1))).toEqual({ disponible: true, borrador: null });
+    // Sin almacén (privado, bloqueado): nada se rompe y lo dice.
+    expect(guardarBorrador(roto, claveDelBorrador(14, 1), { justificacion: "x" })).toBe(false);
+    expect(tomarBorrador(roto, claveDelBorrador(14, 1))).toEqual({ disponible: false, borrador: null });
+    expect(tomarBorrador(null, claveDelBorrador(14, 1))).toEqual({ disponible: false, borrador: null });
+  });
+
+  it("una carga sin el aviso de cambio borra los borradores de ese hallazgo (todas sus rondas) y deja los de otros", () => {
+    const a = almacen({ [claveDelBorrador(14, 1)]: "{}", [claveDelBorrador(14, 2)]: "{}", [claveDelBorrador(140, 1)]: "{}", otra: "x" });
+    quitarBorradoresDelHallazgo(a, 14);
+    expect([...a.m.keys()].sort()).toEqual([claveDelBorrador(140, 1), "otra"].sort());
+    expect(() => quitarBorradoresDelHallazgo(roto, 14)).not.toThrow();
+  });
+
+  it("después de mostrar el aviso, la dirección pierde `visto=cambio` (recargar no lo repite)", () => {
+    expect(sinAvisoDeCambio("/mejoramiento/14?visto=cambio#evaluar")).toBe("/mejoramiento/14#evaluar");
+    expect(sinAvisoDeCambio("/mejoramiento/14?a=1&visto=cambio")).toBe("/mejoramiento/14?a=1");
+    expect(sinAvisoDeCambio("/mejoramiento/14")).toBe("/mejoramiento/14");
+  });
+
+  it("el formulario de evaluar no usa `localStorage` ni escribe el borrador al teclear", () => {
+    const fuente = readFileSync(path.resolve(import.meta.dirname, "../src/componentes/mejoramiento/pasos/PasoEvaluar.tsx"), "utf8");
+    expect(fuente).not.toContain("localStorage");
+    expect(fuente).not.toMatch(/onChange=\{[^}]*guardar/);
+    expect(fuente).toContain("alEnviar=");
   });
 });

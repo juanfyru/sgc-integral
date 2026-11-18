@@ -6,42 +6,14 @@ import { DialogoFirma } from "@/componentes/tramites/DialogoFirma";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosDeEvaluacion } from "@/db/consultas/mejoramiento/verificacion";
+import { claveDelBorrador, guardarBorrador, almacenDeLaPestana, tomaDelBorrador } from "@/lib/mejoramiento/borrador-evaluacion";
 import { fechaDeDia, fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { AVISO_SIN_PACIENTES, ETIQUETA_CRITERIO } from "@/lib/mejoramiento/textos";
 import { CRITERIOS_EFICACIA, type CriterioEficacia } from "@/lib/mejoramiento/tipos";
 import { TablaDelIndicador, type AccionDelPaso } from "./Partes";
 
-/** Lo que devuelve el almacén local cuando el navegador no lo deja usar (privado, bloqueado). */
-const SIN_ALMACEN = "(sin almacén local)";
-
-/** El almacén local no avisa de lo que cambia en la misma pestaña: solo de otras (`storage`). */
-function suscribirAlAlmacen(avisar: () => void): () => void {
-  window.addEventListener("storage", avisar);
-  return () => window.removeEventListener("storage", avisar);
-}
-
-function leerDelAlmacen(clave: string): string | null {
-  try {
-    return localStorage.getItem(clave);
-  } catch {
-    return SIN_ALMACEN;
-  }
-}
-
-type Borrador = { justificacion?: string; lecciones?: string; cambiosAtendidos?: string };
-
-/** El borrador guardado, sin confiar en su forma: lo que no se puede leer es «ninguno». */
-function leerBorrador(crudo: string | null | undefined): Borrador | null {
-  if (typeof crudo !== "string" || crudo === SIN_ALMACEN) return null;
-  try {
-    const x = JSON.parse(crudo) as Record<string, unknown> | null;
-    if (typeof x !== "object" || x === null) return null;
-    const texto = (v: unknown) => (typeof v === "string" ? v : undefined);
-    return { justificacion: texto(x.justificacion), lecciones: texto(x.lecciones), cambiosAtendidos: texto(x.cambiosAtendidos) };
-  } catch {
-    return null;
-  }
-}
+/** `useSyncExternalStore` sin suscripción: el borrador se toma una vez al cargar, no cambia solo. */
+const sinSuscripcion = () => () => {};
 
 const CASILLA = "mt-0.5 size-4 shrink-0 accent-marca focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
@@ -58,6 +30,7 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
  */
 export function PasoEvaluar({
   hallazgoId,
+  ronda,
   datos,
   criterioOtro,
   vistoHuella,
@@ -71,6 +44,8 @@ export function PasoEvaluar({
   children,
 }: {
   hallazgoId: number;
+  /** La ronda que se evalúa: el borrador es de ese hallazgo en esa ronda. */
+  ronda: number;
   datos: DatosDeEvaluacion;
   /** La descripción del criterio «Otro» del plan, si la tiene. */
   criterioOtro: string | null;
@@ -88,7 +63,7 @@ export function PasoEvaluar({
   derivar: string | null;
   /**
    * La página volvió porque cambió lo que se muestra para evaluar (`LO_VISTO_CAMBIO`): el formulario lo dice arriba y recupera lo
-   * escrito del borrador local, si lo hay.
+   * escrito del borrador de la pestaña, si lo hay (se guarda al enviar la firma y se toma, y se borra, una sola vez).
    */
   avisoCambio?: boolean;
   /** Los archivos de la evaluación, si quiere adjuntarlos. */
@@ -102,15 +77,10 @@ export function PasoEvaluar({
   const [desde, setDesde] = useState(datos.r);
   const [hasta, setHasta] = useState(hoy);
   const id = (c: string) => `${c}-${hallazgoId}`;
-  const clave = `mejora-evaluar-${hallazgoId}`;
-  // El borrador local de lo escrito (por hallazgo): si la página vuelve por `LO_VISTO_CAMBIO` y lo escrito se perdió, se
-  // recupera de él. Se lee como un almacén externo (en el servidor no existe: `undefined`); sin almacenamiento, `SIN_ALMACEN`.
-  const borradorCrudo = useSyncExternalStore(
-    suscribirAlAlmacen,
-    () => leerDelAlmacen(clave),
-    () => undefined,
-  );
-  const borrador = avisoCambio ? leerBorrador(borradorCrudo) : null;
+  const clave = claveDelBorrador(hallazgoId, ronda);
+  // El borrador de la pestaña (`sessionStorage`): solo al volver con el aviso de cambio, y una sola vez (en el servidor, nada).
+  const toma = useSyncExternalStore(sinSuscripcion, () => tomaDelBorrador(clave, avisoCambio), () => null);
+  const borrador = avisoCambio ? (toma?.borrador ?? null) : null;
   // Lo escrito en esta pantalla (`null`: nada aún) manda sobre el borrador.
   const [justificacionEscrita, setJustificacion] = useState<string | null>(null);
   const [leccionesEscritas, setLecciones] = useState<string | null>(null);
@@ -120,14 +90,10 @@ export function PasoEvaluar({
   const cambiosAtendidos = cambiosEscritos ?? borrador?.cambiosAtendidos ?? "";
   const [confirma, setConfirma] = useState(false);
   /** Tras `LO_VISTO_CAMBIO`: si lo escrito sigue a la vista (nulo mientras no se sabe, en el servidor). */
-  const conservado = !avisoCambio || borradorCrudo === undefined ? null : justificacion !== "";
-  const guardar = (x: { justificacion?: string; lecciones?: string; cambiosAtendidos?: string }) => {
-    try {
-      const antes = leerBorrador(localStorage.getItem(clave)) ?? {};
-      localStorage.setItem(clave, JSON.stringify({ ...antes, ...x }));
-    } catch {
-      // Sin almacenamiento local: lo escrito solo vive en la pantalla.
-    }
+  const conservado = !avisoCambio || toma === null ? null : justificacion !== "";
+  // Lo escrito se guarda en la pestaña solo al enviar la firma: si cambió lo que se mostró, la página vuelve y lo recupera.
+  const alEnviar = () => {
+    guardarBorrador(almacenDeLaPestana(), clave, { justificacion, lecciones, ...(pideCambios ? { cambiosAtendidos } : {}) });
   };
   const ocurrencias = datos.ocurrencias.length;
   const cierraAhora = cierra && resultado === "eficaz";
@@ -278,10 +244,7 @@ export function PasoEvaluar({
       >
         <textarea
           value={justificacion}
-          onChange={(e) => {
-            setJustificacion(e.target.value);
-            guardar({ justificacion: e.target.value });
-          }}
+          onChange={(e) => setJustificacion(e.target.value)}
           maxLength={4000}
           rows={3}
           className={claseControl}
@@ -294,10 +257,7 @@ export function PasoEvaluar({
           <Campo etiqueta="Lecciones aprendidas (al menos 10 caracteres)" nombre="lecciones" id={id("lecciones")} ayuda={AVISO_SIN_PACIENTES}>
             <textarea
               value={lecciones}
-              onChange={(e) => {
-                setLecciones(e.target.value);
-                guardar({ lecciones: e.target.value });
-              }}
+              onChange={(e) => setLecciones(e.target.value)}
               maxLength={4000}
               rows={3}
               className={claseControl}
@@ -312,10 +272,7 @@ export function PasoEvaluar({
             >
               <textarea
                 value={cambiosAtendidos}
-                onChange={(e) => {
-                  setCambiosAtendidos(e.target.value);
-                  guardar({ cambiosAtendidos: e.target.value });
-                }}
+                onChange={(e) => setCambiosAtendidos(e.target.value)}
                 maxLength={4000}
                 rows={2}
                 className={claseControl}
@@ -335,6 +292,7 @@ export function PasoEvaluar({
           accion={accion}
           ocultos={ocultos}
           pideCodigo={pideCodigo}
+          alEnviar={alEnviar}
         >
           {criterios.map((c) => (
             <input key={c} type="hidden" name="criterios" value={c} />
