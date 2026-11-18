@@ -8,7 +8,8 @@
  * `sembrarTramites`), la distribución de la 13B, la vigencia, los externos, el
  * normograma y la revisión anual de la 13C (`sembrarVigencia`) y los indicadores
  * de la 14A, la 14B y la 14C, con el dato compartido, la desagregación por sede
- * y los compuestos (`sembrarIndicadores`).
+ * y los compuestos (`sembrarIndicadores`), y los planes de mejoramiento de la
+ * 15A (`sembrarMejoramiento`).
  *
  * Ejecutar: npm run db:seed   (borra y recarga TODO — solo desarrollo/demo)
  */
@@ -52,6 +53,7 @@ import { CLAVE_DEMO } from "./clave-demo";
 import { momentoHace, sembrarDistribucion, sembrarDistribucionPrevia } from "./distribucion-demo";
 import { CODIGO_FORMATO_ACTA, CODIGO_FORMATO_INFORME, generarFormatoActaDemo, generarFormatoInformeDemo } from "./formato-acta-demo";
 import { sembrarIndicadores } from "./indicadores-demo";
+import { sembrarMejoramiento } from "./mejoramiento-demo";
 import { limpiarTodo, sembrarBase, type Db } from "./minima";
 import { sembrarVigencia } from "./vigencia-demo";
 
@@ -715,6 +717,8 @@ export async function sembrarDemo(db: Db, sql: Sql): Promise<void> {
   await sembrarVigencia(sql, distribucion);
   // Después de la vigencia: el regulatorio cita una norma del normograma.
   await sembrarIndicadores(sql, distribucion);
+  // Después de los indicadores: los hallazgos enlazan indicadores y una norma de la demo.
+  await sembrarMejoramiento(sql, distribucion);
 }
 
 /**

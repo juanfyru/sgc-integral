@@ -25,6 +25,7 @@ import { revisarVencimientos } from "@/db/consultas/vencimientos";
 import { fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, versionAutomatica, versionTrimestral, type OpcionesIndicadorDePrueba } from "./utiles/indicadores";
+import { silenciarMejoramiento } from "./utiles/mejoramiento";
 import { sesionAdmin, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -435,6 +436,8 @@ describe("revisarVencimientosDeIndicadores", () => {
 
   it("revisarVencimientos la corre después de las demás y suma lo suyo", () =>
     revertida(sql, async (tx) => {
+      // La pasada completa recorre también mejoramiento, que la demo siembra con pasos vencidos: solo cuenta lo de este caso.
+      await silenciarMejoramiento(tx);
       const { proceso } = await entorno(tx);
       const mide = await usuarioDePrueba(tx, { rol: "consulta" });
       await indicador(tx, proceso.id, { mide: [mide.usuarioId] });

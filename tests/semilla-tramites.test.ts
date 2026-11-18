@@ -34,6 +34,7 @@ import { LARGO_MIN_NOTA_CRITERIO } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirDemo, exigirDemoIntacta, sembradaEn } from "./utiles/demo";
 import { huella } from "./utiles/formato";
+import { silenciarMejoramiento } from "./utiles/mejoramiento";
 import { contenidoPorPagina, contieneTexto } from "./utiles/pdf";
 import { aprobacionConCriterio, opc, sesionDe } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
@@ -458,6 +459,7 @@ describe("cada trámite se sigue con las funciones reales", () => {
     const sembrada = await sembradaEn(sql);
     await revertida(sql, async (tx) => {
       await tx`UPDATE tramites SET aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${id}`;   // como quedó sembrado
+      await silenciarMejoramiento(tx);   // la pasada completa recorre también los hallazgos de la demo
       const { avisados } = await revisarVencimientos({ sql: tx, ahora: sembrada });
       expect(avisados).toBeGreaterThanOrEqual(1);
       const [fila] = await tx`SELECT aviso_vencido_en FROM tramites WHERE id = ${id}`;

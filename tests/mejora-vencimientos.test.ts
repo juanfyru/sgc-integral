@@ -338,7 +338,10 @@ describe("revisarVencimientosDeMejoramiento", () => {
           entidad_id: b.admin.usuarioId,
         },
       ]);
-      expect(`${alJefe[0].titulo} ${alJefe[0].cuerpo}`).not.toContain(String(reporteId));
+      // Ni el número del reporte ni que lo hay. No se busca la cifra suelta: un id de una cifra está en «hace 10 días» o en
+      // el nombre de una persona de prueba («Prueba 48»), y la base recién sembrada da ids bajos.
+      expect(`${alJefe[0].titulo} ${alJefe[0].cuerpo}`).not.toContain(`n.º ${reporteId}`);
+      expect(`${alJefe[0].titulo} ${alJefe[0].cuerpo}`).not.toMatch(/reporte/i);
       expect(await avisos(tx, "mejora.vencido", "mejora_hallazgo", h.id)).not.toHaveLength(0);
     }));
 

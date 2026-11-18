@@ -1,8 +1,11 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-17**, al aprobar el usuario el **diseño de la
-> Fase 15 — Planes de mejoramiento** (`docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`; tres
-> entregas, 15A, 15B y 15C; **todavía sin código**: sigue el plan de la 15A). Ese mismo día, antes, se fusionó el
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-18**, al terminar de construir la **Fase 15A —
+> Planes de mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree
+> `F:\sgc-integral-f15a` y contra la base aparte `sgc_f15a`; **sin fusionar**: faltan la verificación de cierre y el recorrido
+> del usuario; ver su sección, arriba de la del complemento de la 14C). El 2026-11-17 el usuario aprobó el **diseño de la
+> Fase 15** (`docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`; tres entregas, 15A, 15B y 15C) y
+> el plan de la 15A. Ese mismo día, antes, se fusionó el
 > **complemento de la
 > 14C** (el punto de miles en los indicadores, el soporte obligatorio con su fecha y el periodo de un dato sin categorías;
 > rama `f14c-complemento`, sobre `main` en `07cb1e6`, en el worktree `F:\sgc-integral-f14c` y contra la base aparte
@@ -34,8 +37,20 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 15 — Planes de mejoramiento** tiene su **diseño aprobado por el usuario el 2026-11-17**
-   («aprobado el spec, continuemos con el plan de la 15A») y **todavía no tiene código**. El spec es uno solo para las
+1. **Dónde quedamos:** la **Fase 15A está construida** (2026-11-18): las 22 tareas de su plan (las 21 primeras, cada una
+   con su revisión), en la rama `fase-15a-mejoramiento` del worktree `F:\sgc-integral-f15a`, contra la base `sgc_f15a`, **sin fusionar ni
+   publicar**. Con ella, el hallazgo de mejoramiento va de punta a punta: reporte de cualquier funcionario, registro con
+   parecidos y reincidencia, aceptación, corrección y camino corto, causa raíz, plan con sus firmas, ejecución con
+   seguimientos y ajustes, verificación, eficacia con su espera, cierre y rondas, plazos en días hábiles, tareas, avisos,
+   vencimientos, la carga de lo que está en curso en papel, impresos, Excel y búsqueda. **Sin dependencias npm nuevas.** Una
+   migración, la `0018`; diecinueve en total. Detalle en «Hecho (Fase 15A)»; el recorrido, en «Qué probar y cómo (Fase
+   15A)»; las decisiones, en «Decisiones adicionales (Fase 15A)»; el manual, en el capítulo 9. **Falta:** la verificación
+   de cierre (la suite con la demo recién sembrada, lint, build, la `0018` sobre una copia de `sgc` y el recorrido en el
+   navegador; la hace quien coordina la ejecución), la revisión de toda la rama, el visto bueno del usuario a las 36
+   decisiones de la ejecución y su recorrido, y después su decisión de fusionar; al fusionar, aplicar la `0018` a la base
+   `sgc` («Avisos para el usuario (Fase 15A)»). La 15B y la 15C esperan su anexo (la 15B, además, la plantilla del ente).
+   **Antes:** la **Fase 15 — Planes de mejoramiento** tuvo su **diseño aprobado por el usuario el 2026-11-17**
+   («aprobado el spec, continuemos con el plan de la 15A»). El spec es uno solo para las
    tres entregas: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`. **15A**, el hallazgo de
    punta a punta (§6 a §16, con detalle completo); **15B**, planes y enganches (§17); **15C**, el informe SGC-FO-28, el
    Pareto y cuatro cálculos automáticos (§18). La 15B y la 15C tendrán su anexo al empezar. Se diseñó sobre siete formatos
@@ -401,6 +416,329 @@
 9. **Memoria de Claude Code:** es por carpeta; la de `F:\sgc-integral` solo guarda
    preferencias de trabajo del usuario (decide por listas numeradas; recomendaciones con
    base ISO, Regulación o Práctica). Este archivo es el contexto durable de la variante.
+
+## Fase 15A — Planes de mejoramiento: el hallazgo de punta a punta
+
+Spec: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md` (aprobado por el usuario el 2026-11-17,
+con su enmienda de ese día: el festivo del 9 de julio, F15-DC39 y cuatro contextos de archivo), §6 a §16 para esta entrega.
+Plan: `docs/superpowers/plans/2026-11-17-fase15a-mejoramiento.md` (22 tareas, con subagentes; aprobado el 2026-11-17).
+Rama `fase-15a-mejoramiento` (sale de `main` en `780d3d9`), en el worktree `F:\sgc-integral-f15a` y contra la base aparte
+`sgc_f15a` (todo comando que la toca va por el guard `.superpowers/sdd/2026-11-17-fase15a-mejoramiento/con-f15a.sh`). **Sin
+fusionar ni publicar:** lo decide el usuario después de su recorrido. **Sin dependencias npm nuevas.** Una migración, la
+`0018` (`drizzle/0018_fase15a-mejoramiento.sql`); diecinueve en total (`drizzle/0000` a `drizzle/0018`). Solo añade (regla 11
+de `AGENTS.md`), así que debe aplicarse sobre una base de `sgc-suaza` y sobre la de la 14C (lo comprueba la verificación de
+cierre sobre una copia de `sgc`). Mientras se construyó, `F:\sgc-integral`, su
+base `sgc` y su `next dev` del 3002 no se tocaron.
+
+**Verificación de cierre: pendiente** (la hace quien coordina la ejecución, el paso 8 de la Tarea 22): la suite completa con
+la demo recién sembrada, `npm run lint`, `npm run build` sin `DATABASE_URL`, la `0018` sobre una copia de la base `sgc` y el
+recorrido de «Qué probar y cómo (Fase 15A)» en el navegador, en claro, oscuro y 390 px, con cada rol. Las 21 tareas
+anteriores pasaron cada una su revisión, con sus rondas de corrección; los puntos de control 1 a 5 se recorrieron en el
+navegador durante la construcción (el registro de la ejecución, `progress.md` del espacio de trabajo, ignorado por git).
+
+### Hecho (Fase 15A)
+
+- **Días hábiles (Tarea 1):** `src/lib/dias-habiles.ts`, puro: los festivos de Colombia por la regla de la Ley 51 de 1983
+  y la Ley 2578 de 2026 (el 9 de julio desde 2026), probados contra el calendario publicado de 2025 a 2027; sumar, restar y
+  contar días hábiles, con el calendario de la entidad (un día no hábil más, o un festivo que vuelve a ser hábil).
+- **La base (Tarea 2):** la `0018`, con las catorce tablas `mejora_*` y `dias_no_habiles`, las firmas `verifico` y
+  `cerro`, los cuatro contextos de archivo, las llaves compuestas que atan cada hija a su hallazgo, un índice en cada llave
+  foránea, los triggers de solo inserción (eventos, seguimientos, ocurrencias y eventos de un reporte) y
+  `sgc_impedir_si_hallazgo_terminado`, y los privilegios de `sgc_app`. Las guardas de lo que un hallazgo cita (una medición,
+  un indicador, una norma).
+- **Reglas y permisos (Tareas 3 y 4):** los ocho permisos `mejora.*` en la matriz; estados, etiquetas, turnos, recorrido y
+  marcas (`src/lib/mejoramiento/estados.ts`); la tabla de transiciones; la acción correctiva obligada y las cuatro
+  condiciones de Gerencia. **Configuración de mejoramiento** en Administración: los diez plazos y los dos recordatorios,
+  el calendario de la entidad con los festivos calculados a la vista, y los formatos de los tres impresos.
+- **El motor y el registro (Tareas 5 a 8):** `transicionarHallazgo` y `nacerHallazgo`, el código `HZ-AAAA-NNN` sin huecos,
+  los catorce orígenes, dónde nace cada hallazgo, los avisos de turno y del externo; el alcance (`filtroHallazgos` y sus
+  hermanas, la quinta excepción a `alcanceProcesos()`); el módulo **Mejoramiento** en la barra lateral, la lista con sus
+  seis cifras y sus filtros, el registro con sus consecuencias a la vista y la página del hallazgo con su recorrido, sus
+  secciones, «Lo que sigue», las fechas, los enlaces y el historial; los parecidos del proceso con sus tres salidas, la
+  reincidencia, las ocurrencias, editar, reclasificar, cambiar el proceso y anular.
+- **Archivos (Tarea 9):** las cuatro subidas fuera del `matcher`, la ruta que sirve los archivos siempre como descarga y
+  con 404 a quien no los abre, quién sube, abre y quita cada uno, el tope de tres por reporte y la ronda anterior congelada.
+- **Hasta el plan (Tareas 10 a 13):** aceptar, rechazar, retirar, sostener y arbitrar; la corrección con su evidencia, la
+  decisión, el camino corto con «Cerrado con corrección» y «Cerrado sin acción», devolver y exigir la acción; la causa raíz
+  con 5 porqués, Ishikawa (con su diagrama) y otro método, las causas y las dos preguntas, y lo de la vez pasada en un
+  reincidente; el plan en borrador con sus acciones y actividades, el criterio de eficacia con la fecha que resulta y lo
+  que le falta para enviarse; enviar, revisar, devolver y aprobar con sus firmas, el plan congelado al enviarlo, la fecha
+  de fin original y el cierre previsto al aprobar, y la entrega de cada actividad a su responsable.
+- **La ejecución (Tareas 14 y 15):** «Mis actividades» y la página de la actividad (para el teléfono): seguimientos de solo
+  inserción con el avance que no baja, evidencia, terminar, reasignar; los ajustes (reprogramar, añadir, cancelar) con
+  quién pide y quién decide, el pendiente único y la fecha original intacta; escalar a Gerencia y su respuesta.
+- **Verificar, evaluar y cerrar (Tareas 16 y 17):** `puedeVerificar` con la lista cerrada de quién ejecutó; verificar la
+  implementación (conforme o devuelta, con fecha para corregir y cómo se verificó); la espera con su fecha mínima y «Por
+  evaluar la eficacia»; evaluar con lo que la pantalla muestra congelado y la firma «Verificó»; cerrar con «Cerró» (o las
+  dos en un acto, si evalúa el Admin SGC); «no eficaz» abre la ronda siguiente, con la anterior plegada; el hallazgo
+  derivado.
+- **Reportes (Tarea 18):** «Reportar», «Mis reportes» con su etiqueta y «Reportes recibidos» con sus tres salidas
+  (convertir, añadir como ocurrencia, descartar); quien reportó nunca ve el contenido del hallazgo ni su código.
+- **Tareas, avisos y vencimientos (Tarea 19):** las tareas `mej-*` en «Mis tareas»; la pasada de mejoramiento (pasos,
+  reportes y ajustes vencidos, actividades vencidas, escalamiento al jefe sin contenido, recordatorios de seguimiento y
+  eficacias por evaluar), sumada a `revisarVencimientos`; la respuesta al ente con su oficio; una sola regla de actividad
+  vencida (`venceLaActividad`); la prueba estática del ciclo de imports (`tests/mejora-ciclos.test.ts`).
+- **La carga (Tarea 20):** «Registrar un hallazgo ya en curso» en dos pasos (los datos y, después, el formato firmado),
+  con los eventos «hecho fuera de la plataforma», sin firmas del sistema y sin nada para los responsables hasta el escaneo.
+- **Impresos, Excel y búsqueda (Tarea 21):** el SGC-FO-AC-01 con sus siete secciones, todas sus rondas y sus firmas; el
+  SGC-FO-AC-02 y el SGC-FO-AC-03 por análisis; el encabezado del formato elegido; el Excel de la lista (una fila por
+  actividad, las columnas de la matriz del SGC-FO-28, `mejora_exporto_hallazgos` en la bitácora); los hallazgos en la
+  búsqueda y en la paleta `Ctrl K`, solo los que la persona ve.
+- **La demo, el manual y los documentos (Tarea 22):** `src/db/semillas/mejoramiento-demo.ts` (`sembrarMejoramiento`, en
+  `sembrarDemo` después de los indicadores): catorce hallazgos, dos reportes de `consulta` y un día no hábil de ejemplo,
+  por las funciones del dominio y con la hora de cada paso, con la pasada de vencimientos a la hora de la siembra al final;
+  `tests/semilla-mejoramiento.test.ts` lo comprueba (diez casos). `silenciarMejoramiento` en las pruebas de la pasada
+  completa que cuentan totales (`tests/indicadores-vencimientos.test.ts`, `tests/vigencia-vencimientos.test.ts`,
+  `tests/semilla-tramites.test.ts`; `tests/vencimientos.test.ts` ya lo tenía), y una aserción de
+  `tests/mejora-vencimientos.test.ts` que con los ids bajos de una base recién sembrada fallaba por azar (buscaba la cifra
+  suelta del id del reporte en «hace 10 días» y en «Prueba 48»). El capítulo 9 del manual
+  (`docs/manual/usuario/09-mejoramiento.md`), `AGENTS.md` y este archivo.
+
+### Qué probar y cómo (Fase 15A)
+
+Para una persona del hospital, con la clave común de la demo (`Demo-SGC-2026-clave`). Los códigos `HZ-…` dependen del día de
+la siembra (se dan en el orden de su registro); aquí se nombran por su título, con el código de una siembra del **18 de
+noviembre de 2026**. En el navegador no hay reloj que adelantar: lo que pide esperar la fecha mínima se recorre sobre los
+hallazgos ya sembrados.
+
+0. **La base.** En el worktree, `bash .superpowers/sdd/2026-11-17-fase15a-mejoramiento/con-f15a.sh npm run db:seed`, después
+   `… npm run admin:asegurar` y el servidor en otro puerto (`… npx next dev -p 3015`). Lo que trae la demo, en
+   **Mejoramiento**: por aceptar, «Capacitaciones del plan institucional sin la evaluación de su eficacia» (HZ-2026-014,
+   Talento Humano); en arbitraje, «Hojas de vida del personal asistencial sin la verificación de los títulos» (013);
+   rechazado, «Historias de odontología con el consentimiento informado impreso sin la firma del profesional» (012); cerrado
+   con corrección, «Consentimiento informado en versión obsoleta en el consultorio de odontología» (006); cerrado sin
+   acción, «Registro de asistencia a la inducción sin la firma de un participante» (007); en ejecución, **el caso de las
+   maquetas**, «Dos turnos de noche sin registro de temperatura de la nevera de vacunas» (005, Apoyo Terapéutico,
+   criticidad alta y reincidente del 001), con la actividad de `jefe.urgencias` vencida y su ajuste de fecha por decidir,
+   la de `consulta` abierta y la de `coordinadora.sgc` terminada; por formular y a punto de vencer, «Adherencia a la guía
+   de hipertensión arterial en Crítico en una de las sedes» (008, Consulta Externa: le quedan dos días hábiles); en
+   revisión, «Muestras de laboratorio de consulta externa rotuladas sin la hora de toma» (010, nació del reporte de
+   `consulta`, con 5 porqués e Ishikawa); en aprobación, «Hojas de vida de equipos biomédicos sin el mantenimiento
+   preventivo registrado» (011, «Ente de control», con su fecha del ente); en espera de eficacia, «Cupos de la agenda de
+   medicina general perdidos por citas incumplidas» (003, con `CEX-ID-001` enlazado); por evaluar la eficacia, «Tiempo de
+   espera en triage II por encima de la meta en el turno de la noche» (004, una observación con `AIN-IND-01`); cerrado
+   eficaz, «Planilla de temperatura de la nevera de vacunas sin diligenciar el fin de semana» (001); reabierto en la ronda
+   2, «Unificar el formato de entrega de turno entre hospitalización y urgencias» (002, una oportunidad de mejora); y
+   cargado, «Carro de paro de urgencias sin la lista de chequeo diaria diligenciada» (009). Los dos reportes de `consulta`:
+   uno por clasificar y otro convertido en el 010. En **Configuración de mejoramiento**, un día no hábil de ejemplo (el
+   primer día hábil desde tres semanas después de la siembra).
+1. **Registrar con parecidos y reincidencia.** Como `control.interno`, **Registrar hallazgo**: una no conformidad de
+   auditoría interna en Consulta Externa, de criticidad **Alta** (así la aprobará Gerencia en el paso 5), con un título
+   parecido al 006 («Consentimiento informado en versión obsoleta otra vez en odontología»). A la derecha, **Parecidos en el
+   proceso** muestra el 006 cerrado: elija «Es reincidencia de HZ-2026-006, que está cerrado». Nace «Por aceptar», con la
+   marca «Reincidente».
+2. **Aceptar y corregir.** Como `lider.cex`: **Aceptar el hallazgo**; en **2. Corrección o contención**, suba un archivo y
+   **Registrar la corrección**. Pasa directo a **Por formular** (la acción correctiva es obligada) y «Vence» dice «quedan N
+   días hábiles».
+3. **La causa raíz.** **Formular el análisis y el plan:** un 5 porqués y un Ishikawa (con una causa confirmada y su
+   impacto), dos causas raíz y las dos preguntas. Se ve «Este hallazgo reincide: así se analizó y se resolvió el anterior.».
+4. **El plan.** Dos acciones, una con dos actividades, con responsables que no lideran Consulta Externa (`consulta`,
+   `jefe.urgencias` y `coordinadora.sgc`, esta para el paso 8); el criterio **Mejora del indicador asociado** con
+   `CEX-ID-001`: el SGC dice desde cuándo se podrá evaluar. **Enviar a revisión** con la clave.
+5. **Revisar y aprobar.** Como `coordinadora.sgc`: los parecidos de otros procesos a la vista; **Devolver con
+   observaciones**; como `lider.cex`, reenviar; como `coordinadora.sgc`, **Firmar la revisión**; como `gerente`, **Aprobar el
+   plan**. Queda «En ejecución», con tres firmas, y cada responsable recibe «Tiene una actividad a su cargo».
+6. **La actividad.** Como `consulta` (rol Consulta): la actividad en **Mis tareas** y en **Mis actividades**; dos
+   seguimientos; **Terminar** sin evidencia (lo rechaza: falta al menos un archivo); con un archivo, **Sí, terminarla**. En
+   la página del hallazgo no abre los archivos del registro ni los de otras actividades. Lo mismo se puede hacer en el 005
+   (la actividad de `consulta` está abierta).
+7. **El ajuste.** En el 005, la actividad de `jefe.urgencias` está vencida y su ajuste de fecha está por decidir: como
+   `gerente`, en **Lo que sigue**, **Aprobar el ajuste**. La fecha de fin original queda intacta y la actividad, con la
+   marca «Reprogramada»; mientras estuvo por decidir, siguió vencida. (En el hallazgo del paso 4, pídalo con **Pedir ajuste
+   de fecha** y vea que sigue vencida hasta aprobarlo.)
+8. **Quien ejecuta no verifica.** Con todas las actividades del hallazgo del paso 4 terminadas, como `coordinadora.sgc`
+   (responsable de una), **Ir a verificar**: no la deja, y dice por qué. Como `control.interno`, devuelva una actividad con su
+   nota y su fecha; corregida (un seguimiento y un archivo nuevos), dé todas por conformes: queda «En espera de eficacia»,
+   con **Eficaz** deshabilitado y la fecha desde la que se podrá.
+9. **Eficaz y cierre** (sobre el 004, ya en su fecha mínima). Como `control.interno`, **Ir a evaluar**: se ven los
+   resultados de `AIN-IND-01` (antes, durante y después) y las ocurrencias; **Eficaz**, los criterios, el periodo y la
+   justificación; **Firmar «Verificó»**. Como `coordinadora.sgc`, las lecciones aprendidas y **Firmar «Cerró»**: queda
+   «Cerrado · eficaz», y `gerente` ve en la campana «Se cerró HZ-…: el plan fue eficaz». Antes, intente **Eficaz** en el 003
+   o en el del paso 8: no se puede antes de la fecha.
+10. **No eficaz** (sobre el 003, que espera su fecha: «no eficaz» se registra en cualquier momento). Como
+    `control.interno`, **No eficaz: se reabre con una ronda nueva**, con su justificación y la firma: el hallazgo vuelve a
+    «Por formular» en la ronda 2, con la ronda 1 plegada como **Ronda anterior** y la marca «Reabierto · ronda 2». El 002
+    ya está así.
+11. **El camino corto.** Dos no conformidades nuevas de criticidad baja en Talento Humano, registradas por
+    `control.interno`. En la primera, `lider.gth` acepta y registra la corrección; `coordinadora.sgc` decide que no requiere
+    acción correctiva; `control.interno` la valida: «Cerrado con corrección». En la segunda, `lider.gth` registra «No» a
+    **¿Requirió corrección?**; `coordinadora.sgc` decide «no» y no puede validarla; `control.interno` valida el cierre sin
+    acción: «Cerrado sin acción». El 006 y el 007 ya están así.
+12. **Rechazo y arbitraje.** El 013: `lider.gth` lo rechazó y `control.interno` lo sostuvo; como `coordinadora.sgc`,
+    **Registrar el arbitraje**. El 012 muestra un rechazo retirado, con las dos razones en el historial.
+13. **Ente de control.** El 011 nació aceptado (no ofrece rechazo) y pidió la fecha del ente; como `gerente`, **Aprobar el
+    plan**; `coordinadora.sgc` recibe la tarea **Registrar la respuesta al ente** (suba el oficio, elíjalo y registre la
+    fecha).
+14. **Reportar.** Como `consulta`, **Mejoramiento** → **Mis reportes** → **Reportar**; como `coordinadora.sgc`, en
+    **Reportes recibidos**, **Convertir en hallazgo**; como `consulta`, ve «En trámite» y nada del hallazgo. Su reporte
+    convertido en el 010 ya dice «En trámite».
+15. **La carga.** Como `coordinadora.sgc`, **Registrar hallazgo** → **Ya está en curso**: cárguelo y suba el formato
+    firmado; queda con la marca «Cargado». El 009 ya está así, con su escaneo.
+16. **Días hábiles, impresos y Excel.** En **Configuración de mejoramiento**, **Añadir un día** no hábil dentro de un plazo
+    que se vaya a calcular, y vea que un plazo nuevo lo salta. Elija en la misma página el formato de los impresos (la demo
+    no los trae elegidos: sin formato, el encabezado sale sin código ni versión); **Imprimir** el SGC-FO-AC-01 de un
+    hallazgo y uno de sus análisis; **Excel** de la lista (una fila por actividad).
+17. **Lo ajeno no existe.** Como `lider.gth`, abra la dirección de un hallazgo de Consulta Externa
+    (`/mejoramiento/<id>`): «Página no encontrada», igual que un identificador que no existe.
+
+### Avisos para el usuario (Fase 15A)
+
+- **La rama no está fusionada.** Cuando decida fusionarla, **aplique la `0018` a la base `sgc`** (`npm run db:preparar` en
+  `F:\sgc-integral` y reinicie `next dev`): hasta entonces el módulo **Mejoramiento** falla allí. Solo añade: no cambia
+  ningún documento, trámite, indicador, medición ni firma (lo comprueba, sobre una copia de `sgc`, la verificación de
+  cierre). La base `sgc` no trae hallazgos de la demo: los tiene la demo (`npm run db:seed`, que vacía la base).
+- **Registre los siete formatos como documentos** en la plataforma (SGC-PR-03, SGC-FO-AC-01 a 04, SGC-FO-14 y SGC-FO-28;
+  conviene unificar antes sus códigos, ver el Apéndice B, punto 13) y **elija los tres de esta entrega** en **Configuración
+  de mejoramiento** (el registro SGC-FO-AC-01, el de 5 porqués SGC-FO-AC-02 y el de Ishikawa SGC-FO-AC-03): así los
+  impresos llevan su código, su versión y su fecha de emisión vigentes. Los otros cuatro los usarán la 15B y la 15C.
+- **Pendientes suyos del spec (§28), que no bloquean la 15A:** la plantilla del ente de control y de qué ente es (la
+  necesita la 15B); los tres hallazgos que hoy están abiertos en papel, con sus formatos diligenciados (para cargarlos con
+  «Registrar un hallazgo ya en curso» y para que la demo se parezca a la realidad); la matriz SGC-MZ-AC-01, si existe (la
+  lista de la plataforma la reemplaza); y los ajustes a los textos del hospital del Apéndice B (el capítulo 9 del manual,
+  sección 13, los repite en lenguaje de usuario).
+- **Lo que cambia para las personas:** todo funcionario puede reportar desde **Mejoramiento**; el reporte llega al
+  Administrador del SGC, que lo clasifica en 3 días hábiles. Los plazos de este módulo son días hábiles (con los festivos de
+  Colombia y los días que declare la entidad); los de los demás módulos no cambian. Quien ejecutó una actividad, registró un
+  seguimiento o la corrección no puede verificar ni evaluar ese hallazgo: si es el único Administrador del SGC, verifica
+  Control Interno.
+- **Las decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (Fase 15A)», abajo). Las que más pesan:
+  quien ve un hallazgo por su actividad no lee las lecciones ni los ajustes ajenos (2), la evidencia que no se quita (9),
+  el plan firmado es el congelado al enviarlo (12), quien elaboró sin revisor puede devolver su plan (15), el respaldo de
+  Gerencia a Admin SGC en los ajustes (20) y la carga en dos pasos (33).
+
+### Decisiones adicionales (Fase 15A)
+
+Las tomó quien coordinó la ejecución cuando el spec o el plan callaban o un revisor halló un defecto; las 35 y 36, quien
+implementó la demo. Cada una dice qué se decidió y por qué, con su base. El detalle está en el registro de la ejecución
+(`progress.md` del espacio de trabajo, líneas «Ruling»). Lo que ya dice el spec no se repite.
+
+1. **Dos entradas con nombres distintos:** el módulo es **Mejoramiento** (grupo Mejoramiento) y su configuración,
+   **Configuración de mejoramiento** (grupo Administración, `mejora.gestionar`). Dos entradas con la misma etiqueta
+   confundirían la barra y la paleta. Práctica.
+2. **Quien ve un hallazgo por su actividad** lee su texto (identificación, corrección, análisis, plan y estado, §6.3), pero
+   no las lecciones aprendidas, cómo se atendieron los cambios ni el contenido de los ajustes de otras actividades (los de
+   la suya, en la página de su actividad). Es lo que §6.3 le da y nada más. Práctica; Regulación (Ley 1581 de 2012).
+3. **«Esperan su decisión»** cuenta los hallazgos distintos entre sus tareas de mejoramiento, para que la cifra cuadre con
+   «Mis tareas». Práctica.
+4. **La lista tiene seis cifras:** a las cinco de §16.2 se suma **Por evaluar la eficacia**, que cuenta y filtra lo que ya
+   llegó a su fecha mínima (se calcula al leer). Sin ella, lo que espera una acción se confundía con lo que espera el tiempo.
+   Práctica.
+5. **«Con algo vencido» es solo de las actividades;** el paso en curso tiene su «Vencido hace N días» en la columna
+   «Vence», y la cifra y el filtro cuentan los dos. Práctica.
+6. **«La última actividad», «todas las actividades» y R se cuentan sobre la ronda en curso** (acción → ronda), no sobre el
+   hallazgo entero. Una ronda nueva no debe esperar actividades de la anterior. ISO derivada de 10.2.
+7. **Toda validación de «hoy», «futura» o «pasada» del dominio usa la hora que recibe** (`opciones.ahora`; el reloj, solo
+   por omisión), para que la semilla siembre el pasado. Práctica.
+8. **Una sola migración, con todo:** los índices de cada llave foránea y las llaves compuestas que atan cada hija a su
+   hallazgo van en la misma `0018`. La garantía del hallazgo terminado confía en el `hallazgo_id` de cada hija, y solo la
+   base puede asegurarlo; una `0019` rompería «una sola migración». ISO 7.5.3 (integridad de lo registrado).
+9. **La evidencia ya usada no se quita:** la de la corrección solo en «Por corregir» (y tras una devolución, la corrección
+   nueva pide un archivo subido después); la de una actividad, mientras no esté terminada ni cancelada (devuelta, vuelve a
+   poder); la de la verificación, desde que se verificó; la de la evaluación, desde que se registró; el oficio de la
+   respuesta al ente, desde que se registró; el formato firmado de una carga, nunca; y nadie, tampoco el Admin SGC, quita un
+   archivo de una ronda anterior. PC-02, PC-05 y PC-08 del SGC-PR-03; riesgo R-03.
+10. **El Admin SGC puede quitar archivos de un reporte recibido**, con su bitácora: es la salida para un dato de paciente
+    subido por error (§6.4). Regulación (Ley 1581 de 2012).
+11. **El cambio de estado del motor va aparte** (`detalle.estado = { antes, despues }`), y `estado`, `codigo`, `ronda` y
+    `acta` son claves del motor: así el antes y el después de una reclasificación (§7.6) no se pierden. Práctica.
+12. **La revisión y la aprobación firman el plan congelado al enviarlo** (su copia en el evento y la huella de «Elaboró»), no
+    una huella recalculada: mientras está enviado el plan no cambia, y recalcular con nombres vivos haría imposible aprobar
+    después de renombrar a un usuario, un indicador o un proceso. La copia no va a la bitácora (es texto largo): queda en el
+    evento, inmutable. ISO 7.5.3.
+13. **Un responsable solo lo es con el plan aprobado:** figurar en un borrador no da alcance, avisos, avance ni cuenta como
+    ejecutar. El borrador es trabajo del líder. Práctica.
+14. **Las fechas de día que escribe una persona van del año 2000 al 2100**, y la cuenta de días hábiles rechaza un día
+    inválido o fuera de 1900–2200: una fecha absurda no debe tumbar una página ni colgar la instancia única. Práctica.
+15. **Sin otro Admin SGC que revise, quien elaboró puede devolver (no revisar) su plan** desde «En revisión», y el reenvío
+    pasa a Gerencia: la falta de un segundo Admin SGC nunca traba el camino (F15-DC15). Práctica.
+16. **Al aprobar, el aviso de cada actividad reemplaza el aviso de turno:** un responsable no recibe dos avisos por el mismo
+    hecho. Práctica.
+17. **Editar y cambiar el proceso tienen su pantalla:** editar, la página `/mejoramiento/[id]/editar` para quien lo registró
+    mientras está «Por aceptar»; cambiar el proceso, un diálogo del Admin SGC en ese mismo estado. El spec los describe
+    (§7.6) y ninguna tarea los tomaba. Práctica.
+18. **Reclasificar desde una decisión a «Por formular»** deja la acción como requerida y borra la decisión anterior, con su
+    antes y su después en el evento: el recorrido no debe mostrar el camino corto en «Por formular». Práctica.
+19. **El aviso de una posible recurrencia** (una ocurrencia en la espera) va a quienes pueden verificar, también a los Admin
+    SGC que ya recibieron el de la ocurrencia; no a Gerencia por omisión (§11.1). Práctica.
+20. **Un ajuste:** la reprogramación que se aprueba con la fecha nueva ya pasada se rechaza («niegue el ajuste para que se
+    pida otro»): una actividad no debe quedar vencida con sus marcas borradas el día en que se aprueba. Un pendiente no queda
+    colgado: anular el hallazgo lo cierra «negado» y verificar se rechaza mientras haya uno. Si el único usuario de Gerencia
+    pidió el ajuste, decide el Admin SGC (F15-DC15). Un ajuste vencido avisa a quien decide pero no se escala al jefe (quien
+    decide es Gerencia o el Admin SGC). Práctica.
+21. **Reasignar** no escala otra vez: borra el aviso de vencida y reinicia el recordatorio desde la reasignación, pero
+    conserva la marca del escalamiento. Un líder o un Admin SGC que es el responsable puede reasignar la suya: la regla es de
+    quién reasigna, no de a quién. Práctica (§14.3).
+22. **Una actividad devuelta en la verificación se termina otra vez** solo con un seguimiento y un archivo posteriores a la
+    devolución: terminarla al instante con la misma evidencia vaciaría la devolución. PC-05; §11.4.
+23. **Se firma lo que se vio:** la evaluación compara la huella de lo que la pantalla mostró con lo que se relee, y si cambió
+    (otra ocurrencia, otro resultado del indicador) pide revisarlo. Las ocurrencias del mismo día que R cuentan como
+    posteriores. ISO 7.5.3; §11.4.
+24. **Verificar, evaluar y cerrar se pintan anchos** en las secciones 5, 6 y 7, como la maqueta 7; «Lo que sigue» lleva con
+    un ancla. La columna de 20 rem recortaba la fecha para corregir. Maquetas.
+25. **El borrador de la evaluación** vive en la pestaña (`sessionStorage`, por hallazgo y ronda), se escribe solo al enviar,
+    se restaura solo si lo que se mostró cambió y se borra al restaurarlo o en cualquier otra visita: la justificación puede
+    llevar texto sensible y nada interno debe quedarse en el navegador. Práctica; Regulación (Ley 1581 de 2012).
+26. **La entrada «Mejoramiento» redirige** solo a quien no ve ningún hallazgo **y** no puede registrar ni ver todos: a «Mis
+    actividades» si tiene alguna y, si no, a «Mis reportes». Quien registra ve la lista, aunque esté vacía. §16.1.
+27. **El motivo de un descarte no va al evento inmutable** (vive en el reporte) y el aviso no copia lo escrito: un dato de
+    paciente escrito por error no se podría purgar de una tabla de solo inserción. Regulación (Ley 1581 de 2012).
+28. **Un reporte se suma a cualquier hallazgo abierto que se vea**, con los parecidos como sugerencia (§7.3 manda sobre el
+    plan), y el aviso del final a quien reportó es neutro («Su reporte se cerró. Gracias por reportarlo.»): «fue atendido» no
+    es cierto en un rechazo ni en una anulación. Práctica.
+29. **La respuesta al ente:** el oficio es un archivo que se elige entre los subidos después de aprobar el plan de la ronda
+    en vigor, y solo ese se congela; la fecha de envío va del día de esa aprobación a hoy (no se responde con un plan antes
+    de aprobarlo). §13.4.
+30. **Lo que decide quién tiene el turno por fila** (arbitrar, validar, verificar, evaluar, ajustes) se resuelve con las
+    funciones de cada acto, no con SQL aparte: una regla separada del acto es peor que unas consultas más, con pocos
+    hallazgos abiertos. Queda para la revisión final. Práctica.
+31. **El ciclo de imports se cortó** con módulos livianos (`proceso.ts`, `avisar.ts`, `vence-actividad.ts`,
+    `carga-confirmada.ts`) y una prueba estática (`tests/mejora-ciclos.test.ts`): el ciclo hacía fallar una prueba de la
+    pasada desde la Tarea 9. Práctica.
+32. **La bitácora:** los guardados del análisis, las causas, las preguntas, las acciones y el criterio dejan su fila (regla
+    5), sin texto libre; la de una carga (`mejora_cargar`) conserva el título, como la de un registro, y no lleva
+    descripciones, causas ni quién aprobó en papel. Práctica.
+33. **La carga va en dos pasos y sin nada antes del escaneo:** hasta el formato firmado el responsable no ve la carga, y
+    seguir, terminar, pedir o decidir un ajuste, escalar y verificar se rechazan; reasignar y anular sí, sin avisos (corregir
+    un responsable mal cargado o deshacer una carga equivocada). Una carga «Por verificar» no tiene plazo hasta el escaneo
+    (no se muestra vencido lo que nadie puede hacer), y el escaneo usa la hora que recibe (la semilla lo fecha). El
+    formulario de la carga escribe los recursos, el indicador de cumplimiento y la meta de cada acción (columnas del
+    SGC-FO-28), y no el contenido del análisis, que lleva el escaneo. §15.
+34. **Los impresos y el Excel:** la primera columna del Excel es el código de la actividad (A1.1) y el del hallazgo va en
+    «Código del hallazgo» (§16.3: una fila por actividad); el encabezado del formato muestra el código, la versión y la fecha
+    de su versión vigente sin mirar su nivel de acceso (es la plantilla que el Admin SGC eligió); la hoja de un análisis de un
+    hallazgo cargado lleva la marca «Cargado…» (la hoja viaja sola); la cifra y el «%» van con espacio duro. Práctica.
+35. **El «Por formular» de la demo que vence pronto** se registra ocho días hábiles atrás contando hoy si es hábil (nueve si
+    la siembra cae en un día no hábil), con el calendario de la entidad: así le quedan dos de sus diez, sea el día que sea.
+    Contado siempre ocho, en un fin de semana le quedaban tres. Práctica.
+36. **El «Por evaluar la eficacia» de la demo es una observación** con `AIN-IND-01` enlazado: su fecha mínima es la fecha de
+    evaluación del plan (dos días antes de la siembra), así que la evaluación nunca amanece vencida, el día que se siembre.
+    Una no conformidad con indicador mensual habría tenido que terminar tres meses antes y, según el día, vencía. El día no
+    hábil de ejemplo es el primer día hábil desde tres semanas después de la siembra. Práctica.
+
+### Deuda técnica (Fase 15A)
+
+Los menores que los revisores dejaron para después y siguen siendo verdad (del registro de la ejecución; un archivo sin
+carpeta es de `src/db/consultas/mejoramiento/`):
+
+- Un Admin SGC que registró un hallazgo en un proceso que perdió a su líder, siendo el único Admin SGC, no puede aceptarlo
+  (el turno lo nombra a él): se resuelve reclasificando el proceso o dando el rol a otra persona.
+- En un hallazgo externo con líder, el texto del turno y el aviso todavía dicen «aceptar o rechazar» a quien no tiene el
+  paso; el panel de firmas dice «Revisó · Pendiente · Administrador del SGC» cuando no hay revisores activos.
+- La lectura de la configuración al guardar no toma candado (dos guardados a la vez: gana el último); las causas raíz
+  también se guardan «el último que guarda gana».
+- `editarHallazgoAccion` lee lo del mismo proceso y los enlaces fuera de la transacción de `editarHallazgo` (una carrera
+  estrecha); `opcionesDeLaCarga` trae hasta 24 mediciones por indicador y 100 cerrados por proceso.
+- `indicadorDeEficacia` toma la última ficha aprobada, no la que regía ese día; `huellaDeLoVisto` no incluye la fecha mínima
+  ni los criterios de la ronda (los cubre la huella de la evaluación).
+- La evidencia de una actividad de una carga sin escaneo la frena solo la visibilidad de la ruta (un Admin SGC que ve el
+  hallazgo completo puede adjuntarla); no hay tarea de «subir el escaneo».
+- `ListaDeHallazgos.tsx` y `SeccionIdentificacion.tsx` arman su propio mapa de orígenes; `formatos.ts` repite la unión de
+  `lideresDeProceso`; `filasParaExcel` vive en `lectura.ts`; en pantalla, el «%» de `PlanEnLectura` va con espacio normal.
+- Varias pruebas faltan o se hacen en serie: dos decisiones de un ajuste a la vez, la página de edición, el rechazo de dominio
+  al sumar un reporte a un hallazgo cerrado o no visible, y la prueba de ciclos no ve un `import` sin cláusula ni un
+  `import()`; la del tope simultáneo de archivos depende de una espera de 300 ms.
+- La demo no deja leídos los avisos de lo que la historia sembrada ya resolvió (la de indicadores sí): la campana de los
+  usuarios de la demo trae los avisos de turno de cada paso sembrado.
 
 ## Complemento de la 14C — El punto de miles, el soporte obligatorio con su fecha y el periodo de un dato sin categorías
 
