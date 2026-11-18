@@ -40,6 +40,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { leer } from "./analisis";
 import { verificarFirma } from "./aprobacion";
 import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD } from "./avisos";
+import { cargaConfirmada, FALTA_EL_ESCANEO } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, hallazgoBase, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 import { evaluableDesde, evaluablesDesde, fechaMinimaDe, fechasMinimasDe, type FechaMinima, type IndicadorDeLaEspera } from "./espera";
@@ -158,7 +159,8 @@ async function avisarDelCierre(tx: TransactionSql, sesion: Persona, h: HallazgoB
  * un ajuste por decidir en la ronda. Si devuelve alguna, esas vuelven a «En proceso» (su fin original y su fin no cambian) y
  * el hallazgo a «En ejecución», con un aviso a cada responsable de una devuelta (y no el de turno a todos); el evento guarda
  * de cada devuelta los archivos y el último seguimiento que tenía, para que terminarla otra vez pida algo nuevo. Con todas
- * conformes, la ronda guarda quién, cuándo, los métodos y la nota, y el hallazgo pasa a «En espera de eficacia».
+ * conformes, la ronda guarda quién, cuándo, los métodos y la nota, y el hallazgo pasa a «En espera de eficacia». Un hallazgo
+ * cargado sin su formato firmado no se verifica (`FALTA_EL_ESCANEO`, spec §15).
  */
 export async function verificarImplementacion(
   sesion: SesionFlujo,
@@ -179,6 +181,9 @@ export async function verificarImplementacion(
       const h = await bloquearHallazgo(tx, v.hallazgoId);
       await exigirVerificador(tx, sesion, h.id);
       if (h.estado !== "por_verificar") throw new ErrorMejora(YA_CAMBIO);
+      // Un hallazgo cargado no se verifica sin la evidencia de lo hecho en papel (spec §15).
+      const [{ cargado }] = await tx`SELECT cargado FROM mejora_hallazgos WHERE id = ${h.id}`;
+      if (cargado === true && !(await cargaConfirmada(tx, h.id))) throw new ErrorMejora(FALTA_EL_ESCANEO);
       const ronda = await rondaEnCurso(tx, h, true);
       const [pendiente] = await tx`SELECT 1 FROM mejora_ajustes WHERE ronda_id = ${ronda.id} AND estado = 'pendiente' LIMIT 1`;
       if (pendiente) throw new ErrorMejora(AJUSTE_POR_DECIDIR);
@@ -422,8 +427,8 @@ export async function datosDeEvaluacion(sesion: SesionFlujo, hallazgoId: number,
 
 /**
  * La huella del plan aprobado de la ronda: la del evento que lo dejó aprobado y guardó su copia (`detalle.plan`, spec §12.2), no
- * la de un `revisar_plan` que solo lo pasó a Gerencia. Un hallazgo cargado aprobó su plan fuera de la plataforma (Tarea 20):
- * sin ese evento, la huella es vacía.
+ * la de un `revisar_plan` que solo lo pasó a Gerencia. En un hallazgo cargado es el `aprobar_plan` hecho en papel, que deja la
+ * carga con el plan y su huella (`cargarHallazgo`, spec §15). Sin ninguno, la huella es vacía.
  */
 async function huellaDelPlanAprobado(sql: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<string> {
   const [e] = await sql`SELECT detalle->>'huella' AS huella FROM mejora_eventos

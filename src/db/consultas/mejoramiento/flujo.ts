@@ -198,7 +198,7 @@ export async function dejarEvento(
 /**
  * La única función que inserta en `mejora_hallazgos`: el estado sale de la tabla (`registrar` o `cargar`), la fila nace
  * con él y en la ronda 1, y la ronda 1 con su plazo de formular (la fecha del ente, si la hay, spec §13.4). De ahí en
- * adelante, lo mismo que una transición.
+ * adelante, lo mismo que una transición, también `sinAvisoDelTurno`.
  */
 export async function nacerHallazgo(
   tx: TransactionSql,
@@ -265,7 +265,8 @@ export async function nacerHallazgo(
     resultadoCierre: null,
     registradoPor: sesion.usuarioId,
   };
-  await avisarDelTurno(tx, h, fila.titulo, sesion.usuarioId);
+  // Un hallazgo cargado no avisa al nacer: su plan se entrega cuando llega su formato firmado (`confirmarCarga`).
+  if (!x.sinAvisoDelTurno) await avisarDelTurno(tx, h, fila.titulo, sesion.usuarioId);
   return h;
 }
 

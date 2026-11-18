@@ -7,7 +7,7 @@
  */
 import type { TransactionSql } from "postgres";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { avisarA } from "@/db/consultas/avisos-vencimiento";
+import { avisarA } from "@/db/consultas/avisar";
 import {
   AVISO_CERRADO,
   AVISO_DESCARTADO,

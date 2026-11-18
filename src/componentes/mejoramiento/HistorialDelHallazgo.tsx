@@ -1,4 +1,5 @@
 import { fechaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
+import { fechaEnZona } from "@/lib/tramites/plazos";
 
 type Evento = {
   id: number;
@@ -7,6 +8,8 @@ type Evento = {
   quien: string | null;
   cuando: Date;
   detalle?: unknown;
+  /** Hecho fuera de la plataforma (un paso en papel de un hallazgo cargado, spec §15): de él solo se sabe el día. */
+  fuera?: boolean;
   /** En una reasignación, de quién a quién (lo resuelve la lectura con `antes` y `despues`). */
   personas?: { de: string; a: string } | null;
 };
@@ -20,6 +23,8 @@ const TEXTOS_DEL_DETALLE: ReadonlyArray<readonly [clave: string, rotulo: string]
   // Las firmas del plan: lo que dijo quien lo devolvió y la nota de la revisión que pidió recursos (spec §8.6).
   ["observaciones", "Observaciones"],
   ["notaRecursos", "Recursos o impacto institucional"],
+  // Quién aprobó en papel el plan de un hallazgo cargado (spec §15): «nombre, cargo».
+  ["aprobadoPor", "Lo aprobó"],
 ];
 
 const comoObjeto = (detalle: unknown): Record<string, unknown> =>
@@ -83,6 +88,7 @@ const FRASE: Record<string, string> = {
   actividad_terminada: "Terminó una actividad",
   reasignada: "Reasignó una actividad",
   respuesta_ente: "Registró la respuesta al ente",
+  carga_confirmada: "Adjuntó el formato firmado de la carga",
 };
 
 /** La etiqueta de una actividad («A1.2») tal como la trae un evento, o nada si no tiene esa forma. */
@@ -157,7 +163,8 @@ function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string
 }
 
 /**
- * El historial del hallazgo, del más antiguo al más reciente (spec 15 §16.2). Solo lo ve quien ve el hallazgo completo.
+ * El historial del hallazgo, del más antiguo al más reciente (spec 15 §16.2). Solo lo ve quien ve el hallazgo completo. Un paso
+ * hecho en papel (`fuera`) dice «Hecho fuera de la plataforma» y su día, sin autor.
  * `etiquetasDeActividad` nombra las actividades por su id («A1.2»).
  */
 export function HistorialDelHallazgo({
@@ -189,9 +196,16 @@ export function HistorialDelHallazgo({
                   {t.rotulo}: {t.texto}
                 </span>
               ))}
-              <span className="block text-xs text-muted-foreground">
-                {e.quien ?? "El sistema"} · <time dateTime={e.cuando.toISOString()}>{fechaYHora(e.cuando, zona)}</time>
-              </span>
+              {e.fuera ? (
+                // Lo hizo otro, en papel: quien lo cargó no es su autor, y de ese paso solo se sabe el día.
+                <span className="block text-xs text-muted-foreground">
+                  Hecho fuera de la plataforma · <time dateTime={fechaEnZona(e.cuando, zona)}>{fechaDeDia(fechaEnZona(e.cuando, zona))}</time>
+                </span>
+              ) : (
+                <span className="block text-xs text-muted-foreground">
+                  {e.quien ?? "El sistema"} · <time dateTime={e.cuando.toISOString()}>{fechaYHora(e.cuando, zona)}</time>
+                </span>
+              )}
             </li>
           ))}
         </ol>

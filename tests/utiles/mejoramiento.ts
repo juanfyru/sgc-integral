@@ -8,6 +8,7 @@ import type { OpcionesFlujo, SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { guardarAnalisis, guardarCausas, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
+import type { DatosDeCarga } from "@/db/consultas/mejoramiento/carga";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import {
   cerrarHallazgo,
@@ -423,6 +424,57 @@ export async function silenciarMejoramiento(tx: TransactionSql): Promise<void> {
     WHERE hallazgo_id IN (${abiertos}) AND estado = 'pendiente' AND aviso_vencido_en IS NULL`;
   await tx`UPDATE mejora_reportes SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())
     WHERE estado = 'recibido' AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+}
+
+/**
+ * Lo que trae un hallazgo ya en curso (spec §15), con las fechas de su papel en 2025: una no conformidad de criticidad media que
+ * requirió corrección, con un análisis de 5 porqués y una causa, y una acción correctiva con dos actividades de `responsableId`: la
+ * A1.1 ya terminada (el 28 de enero de 2026) y la A1.2 al 40 %, que termina el 15 de diciembre de 2026. El plan lo aprobó en papel,
+ * el 4 de noviembre de 2025, el Coordinador del SGC. `cambios` reemplaza lo que diga.
+ */
+export function datosDeCarga(procesoId: number, responsableId: number, cambios?: Partial<DatosDeCarga>): DatosDeCarga {
+  return {
+    ...datosDeHallazgo(procesoId, { detectadoEn: "2025-10-06" }),
+    registradoEnPapel: "2025-10-08",
+    correccion: { requerida: true, descripcion: "Se diligenciaron los formatos pendientes con el turno", implementadaEn: "2025-10-15" },
+    analisis: { metodo: "cinco_porques", causas: ["El procedimiento no asigna el registro al turno de noche"] },
+    acciones: [
+      {
+        tipo: "correctiva",
+        descripcion: "Actualizar el procedimiento de entrega de turno",
+        causas: [1],
+        actividades: [
+          { descripcion: "Redactar la versión nueva del procedimiento", responsableId, inicio: "2025-11-05", fin: "2026-01-30", avance: 100, terminadaEn: "2026-01-28" },
+          { descripcion: "Capacitar a los turnos de noche", responsableId, inicio: "2026-02-01", fin: "2026-12-15", avance: 40 },
+        ],
+      },
+    ],
+    criterios: ["no_recurrencia"],
+    aprobacion: { nombre: "Marta Ríos", cargo: "Coordinadora del SGC", fecha: "2025-11-04", rol: "admin_sgc" },
+    ...cambios,
+  };
+}
+
+/** El formato firmado de un hallazgo cargado (rol `carga`), subido como `usuarioId` por el camino del dominio (`registrarArchivo`). */
+export async function escaneoDeLaCarga(tx: TransactionSql, hallazgoId: number, usuarioId: number): Promise<number> {
+  archivos += 1;
+  const { id } = await registrarArchivo(
+    {
+      versionId: null,
+      rol: "carga",
+      ruta: `mejoramiento/hallazgos/${hallazgoId}/${Date.now()}-${archivos}-carga.pdf`,
+      nombreOriginal: `formato-firmado-${archivos}.pdf`,
+      extension: "pdf",
+      mime: "application/pdf",
+      tamanoBytes: 10,
+      hashSha256: "a".repeat(64),
+      contexto: "mejora_hallazgo",
+      contextoId: hallazgoId,
+    },
+    usuarioId,
+    { sql: tx },
+  );
+  return Number(id);
 }
 
 /** Un archivo de evidencia de una actividad, subido como `usuarioId` por el camino del dominio (`registrarArchivo`). */

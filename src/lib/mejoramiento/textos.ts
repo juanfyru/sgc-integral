@@ -1,5 +1,16 @@
-import { fechaDeDia } from "./formato";
+import { fechaDeDia, fechaLargaDeDia } from "./formato";
 import type { Clase, CriterioEficacia, Criticidad, EstadoActividad, EstadoAjuste, MetodoDeVerificacion, TipoAccion } from "./tipos";
+
+/**
+ * El aviso a cada responsable cuando su actividad le llega (spec §8.6, §14.2 y §15): es la «delegación». Al aprobarse el plan y,
+ * en un hallazgo cargado, al subirse su formato firmado.
+ */
+export const ACTIVIDAD_ASIGNADA = "Tiene una actividad a su cargo";
+
+/** El cuerpo de ese aviso: la descripción sin su punto final y la fecha de fin, nunca el contenido del hallazgo. */
+export function cuerpoDeActividadAsignada(descripcion: string, fin: string): string {
+  return `${descripcion.trim().replace(/[.\s]+$/, "")}. Fecha de fin: ${fechaLargaDeDia(fin)}.`;
+}
 
 /** Va en todo formulario del módulo con texto libre (spec §6.4). */
 export const AVISO_SIN_PACIENTES = "No escriba nombres ni documentos de pacientes o de quien se quejó. Use el número del caso.";

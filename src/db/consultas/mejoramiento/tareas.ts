@@ -25,6 +25,7 @@ import { finDeFecha } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { quienDecideAjustes } from "./ajustes";
 import { arbitrosDe, queLeToca } from "./avisos";
+import { cargaResuelta } from "./carga-confirmada";
 import { contextoDeMejora } from "./config";
 import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
 import { aBase } from "./flujo";
@@ -75,7 +76,8 @@ const deHallazgo = (h: HallazgoBase, titulo: string, detalle: string, vence: Dat
 
 /**
  * Los pasos de los hallazgos abiertos que le tocan a la persona. El `WHERE` es la condición de cada estado; en el arbitraje, la
- * validación, la verificación y la espera solo acota por rol, y la fila la decide la función de su turno.
+ * validación, la verificación y la espera solo acota por rol, y la fila la decide la función de su turno. Un hallazgo cargado sin
+ * su formato firmado no da pasos: no se verifica hasta que llega (`cargaResuelta`, spec §15).
  */
 async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<TareaDeMejora[]> {
   const formula = puede(s, "mejora.formular");
@@ -92,7 +94,7 @@ async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<Ta
       h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.vence_en, r.elaborado_por
     FROM mejora_hallazgos h
     LEFT JOIN mejora_rondas r ON r.hallazgo_id = h.id AND r.numero = h.ronda
-    WHERE h.estado NOT IN ${sql([...TERMINALES])} AND (
+    WHERE h.estado NOT IN ${sql([...TERMINALES])} AND ${cargaResuelta(sql)} AND (
       (h.estado IN ('por_corregir', 'por_formular') AND ${verdad(sql, formula)} AND ${actua})
       -- Quien lo registró no lo acepta (spec §6.1).
       OR (h.estado = 'por_aceptar' AND ${verdad(sql, formula)} AND ${actua} AND h.registrado_por <> ${yo})
@@ -154,7 +156,8 @@ async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<Ta
 
 /**
  * Las actividades sin terminar de un plan aprobado (`fin_original`), de la ronda en curso de un hallazgo en ejecución: las
- * suyas y, de un responsable inactivo, las de los procesos por los que actúa («Reasignar: …»).
+ * suyas y, de un responsable inactivo, las de los procesos por los que actúa («Reasignar: …»). Las de un hallazgo cargado sin su
+ * formato firmado todavía no llegan a nadie (`cargaResuelta`, spec §15).
  */
 async function deLasActividades(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> {
   const reasigna = puede(s, "mejora.formular") ? actuaPorElProceso(sql, s) : sql`false`;
@@ -166,7 +169,7 @@ async function deLasActividades(sql: Cliente, s: SesionFlujo): Promise<TareaDeMe
     JOIN mejora_rondas r ON r.id = ac.ronda_id
     JOIN mejora_hallazgos h ON h.id = a.hallazgo_id AND h.ronda = r.numero
     JOIN usuarios u ON u.id = a.responsable_id
-    WHERE a.fin_original IS NOT NULL AND a.estado IN ('abierta', 'en_proceso') AND h.estado = 'en_ejecucion'
+    WHERE a.fin_original IS NOT NULL AND a.estado IN ('abierta', 'en_proceso') AND h.estado = 'en_ejecucion' AND ${cargaResuelta(sql)}
       AND ((a.responsable_id = ${s.usuarioId} AND u.activo) OR (NOT u.activo AND ${reasigna}))
     ORDER BY a.id`;
   const zona = zonaHoraria();

@@ -40,6 +40,7 @@ import { leer } from "./analisis";
 import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura";
 import { archivosDe, type ArchivoDeMejora } from "./archivos";
 import { ENTIDAD_ACTIVIDAD } from "./avisos";
+import { cargaResuelta } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { evaluableDesde } from "./espera";
 import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "./flujo";
@@ -611,7 +612,8 @@ export type ActividadPropia = {
 
 /**
  * «Mis actividades» (spec §16.1): las actividades de planes aprobados de las que la persona es responsable hoy, las abiertas
- * primero y por su fin. Una reasignada deja de estar aquí para quien la tenía.
+ * primero y por su fin. Una reasignada deja de estar aquí para quien la tenía. Las de un hallazgo cargado, desde que llega su
+ * formato firmado (`cargaResuelta`, spec §15).
  */
 export async function misActividades(sesion: Pick<SesionFlujo, "usuarioId">, opciones?: Opciones): Promise<ActividadPropia[]> {
   const sql = opciones?.sql ?? obtenerSql();
@@ -622,7 +624,7 @@ export async function misActividades(sesion: Pick<SesionFlujo, "usuarioId">, opc
     FROM mejora_actividades a
     JOIN mejora_acciones ac ON ac.id = a.accion_id
     JOIN mejora_hallazgos h ON h.id = a.hallazgo_id
-    WHERE a.responsable_id = ${sesion.usuarioId} AND a.fin_original IS NOT NULL
+    WHERE a.responsable_id = ${sesion.usuarioId} AND a.fin_original IS NOT NULL AND ${cargaResuelta(sql)}
     ORDER BY (a.estado IN ('abierta', 'en_proceso')) DESC, a.fin, a.id`;
   return filas.map((f) => {
     const estado = f.estado as EstadoActividad;

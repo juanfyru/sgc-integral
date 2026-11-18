@@ -4,7 +4,8 @@
  * es el de su dueño: quién lo sube (`autorizarSubida`), quién lo abre (`puedeAbrirArchivoDeMejora`, `src/lib/alcance.ts`) y
  * quién lo quita (`quitarArchivoDeMejora`). Quien no puede abrir un archivo recibe «no existe», nunca «sin permiso».
  *
- * Módulo liviano: lo importa `registrarArchivo` (`admin.ts`); no importa `lectura` ni `flujo`.
+ * Módulo liviano: lo importa `registrarArchivo` (`admin.ts`); no importa `lectura`. El primer formato firmado de un hallazgo
+ * cargado confirma su carga (`confirmarCarga`, de `carga-confirmada.ts`, liviano también).
  */
 import { unlink } from "node:fs/promises";
 import type { TransactionSql } from "postgres";
@@ -16,6 +17,7 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { MAXIMO_POR_REPORTE } from "@/lib/mejoramiento/reportes";
 import { ErrorMejora, TERMINALES } from "@/lib/mejoramiento/tipos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
+import { confirmarCarga } from "./carga-confirmada";
 import { actuaPorElProceso } from "./proceso";
 
 export type DestinoDeMejora =
@@ -175,6 +177,8 @@ const EVIDENCIA_EVALUADA = "La evaluación de la eficacia ya se registró: su ev
 
 const OFICIO_REGISTRADO = "El oficio de la respuesta al ente ya se registró: no se quita";
 
+const FORMATO_DE_LA_CARGA = "El formato firmado de la carga es la evidencia de lo hecho en papel: no se quita";
+
 const SIN_PERMISO = "Sin permiso para adjuntar este archivo";
 
 /** El paso de la persona y del estado, sin saber si el dueño se ve (eso lo decide `autorizarSubida`). */
@@ -204,7 +208,9 @@ export async function autorizarSubida(
 
 /**
  * Lo que `registrarArchivo` repite dentro de su transacción, con el dueño bloqueado: el destino sigue abierto y la persona
- * sigue siendo quien sube (el estado puede cambiar entre la autorización y el registro). Lanza `ErrorMejora`.
+ * sigue siendo quien sube (el estado puede cambiar entre la autorización y el registro). Lanza `ErrorMejora`. El formato firmado
+ * de una carga (rol `carga`) toma antes el hallazgo `FOR UPDATE` (pasar del `FOR SHARE` de `cargarDueno` a ese candado podría
+ * interbloquear dos escaneos a la vez) y confirma la carga si es el primero (`confirmarCarga`).
  */
 export async function exigirDestinoAbierto(
   tx: TransactionSql,
@@ -216,6 +222,8 @@ export async function exigirDestinoAbierto(
   if (contexto in ROLES_POR_DESTINO && rol === undefined) {
     throw new Error(`exigirDestinoAbierto: el destino ${contexto} exige el rol del archivo`);
   }
+  const escaneo = contexto === "mejora_hallazgo" && rol === "carga";
+  if (escaneo && esId(contextoId)) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${contextoId} FOR UPDATE`;
   const f = await cargarDueno(tx, contexto, contextoId, true);
   if (!f) throw new ErrorMejora(SIN_DUENO);
   const [u] = await tx`SELECT rol FROM usuarios WHERE id = ${usuarioId} AND activo`;
@@ -225,6 +233,7 @@ export async function exigirDestinoAbierto(
   const destino = { contexto, id: contextoId, ...(roles.length > 0 ? { rol } : {}) } as DestinoDeMejora;
   const r = await evaluar(tx, { usuarioId, rol: u.rol }, destino, f);
   if (r && !r.ok) throw new ErrorMejora(r.error);
+  if (escaneo) await confirmarCarga(tx, contextoId, usuarioId, new Date());
 }
 
 /** El archivo, si es de mejoramiento y la persona lo abre; `null` en cualquier otro caso (404, siempre como descarga). */
@@ -271,6 +280,9 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   }
   // La evidencia de la corrección es lo que se decide y se valida (SGC-PR-03, PC-02: no se cierra sin evidencia): pasada la
   // corrección nadie la quita, tampoco el Admin SGC. Si hay que cambiarla, se devuelve la corrección.
+  // El formato firmado de una carga es la evidencia de lo hecho en papel (spec §15): confirmó la carga y nadie lo quita, tampoco el
+  // Admin SGC. Si se subió uno equivocado, se sube el bueno además.
+  if (a.contexto === "mejora_hallazgo" && a.rol === "carga") return FORMATO_DE_LA_CARGA;
   if (a.contexto === "mejora_hallazgo" && a.rol === "correccion" && f.estado !== "por_corregir") {
     return "La evidencia de la corrección solo se quita mientras está por corregir";
   }
@@ -325,8 +337,8 @@ export async function archivosQuitables(
  * Quita un archivo: quien lo subió, mientras su paso sigue abierto, o el Admin SGC mientras el hallazgo no termine (un
  * reporte, mientras esté recibido); en un hallazgo terminado, nadie. La evidencia de la corrección, solo mientras está «Por
  * corregir», la de una actividad, solo mientras está abierta o en proceso, y la de la verificación, solo hasta verificar (la que se
- * sube en la espera, hasta registrar la evaluación), y el oficio de una respuesta al ente ya registrada, nunca: después, tampoco el
- * Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
+ * sube en la espera, hasta registrar la evaluación), y el oficio de una respuesta al ente ya registrada y el formato firmado de una
+ * carga, nunca: después, tampoco el Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
  * fila y deja `eliminar_archivo` en la bitácora; el archivo del almacén se borra después de confirmar y uno ya ausente no
  * es un error.
  */

@@ -686,6 +686,225 @@ export const EsquemaCriterio = z
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Un hallazgo ya en curso (spec 15 §15)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** La marca que el dominio cambia por la etiqueta de la acción («A1») en los mensajes de una acción de la carga. */
+export const LA_ACCION = "‹acción›";
+
+/**
+ * Una actividad de un plan aprobado en papel: la de `actividadDelPlan` más su avance de hoy y, si ya terminó, el día en que
+ * terminó. Una al 100 % es una terminada y pide ese día; una con ese día queda terminada, al 100 %.
+ */
+const actividadDeLaCarga = z
+  .object({
+    descripcion: textoAcotado(`La descripción de la actividad ${LA_ACTIVIDAD}`, 3, 1000),
+    responsableId: idRequerido(`Elija el responsable de la actividad ${LA_ACTIVIDAD}`),
+    inicio: fechaDelDia(
+      `Escriba una fecha válida de inicio de la actividad ${LA_ACTIVIDAD}`,
+      `La fecha de inicio de la actividad ${LA_ACTIVIDAD} debe estar entre el año 2000 y el 2100`,
+    ),
+    fin: fechaDelDia(
+      `Escriba una fecha válida de fin de la actividad ${LA_ACTIVIDAD}`,
+      `La fecha de fin de la actividad ${LA_ACTIVIDAD} debe estar entre el año 2000 y el 2100`,
+    ),
+    avance: entero(`El avance de la actividad ${LA_ACTIVIDAD}`, 0, 100),
+    terminadaEn: fechaOpcional(`Escriba una fecha válida en que terminó la actividad ${LA_ACTIVIDAD}`),
+  })
+  .strict()
+  .superRefine((a, ctx) => {
+    if (a.inicio > a.fin) ctx.addIssue({ code: "custom", path: ["inicio"], message: inicioDespuesDelFin(LA_ACTIVIDAD) });
+    if (a.avance === 100 && a.terminadaEn === null) {
+      ctx.addIssue({ code: "custom", path: ["terminadaEn"], message: `Escriba la fecha en que terminó la actividad ${LA_ACTIVIDAD}` });
+    }
+  })
+  .transform((a) => ({ ...a, avance: a.terminadaEn === null ? a.avance : 100 }));
+
+/** Las causas que ataca una acción de la carga, por su número en la lista del análisis (de 1 en adelante). */
+const causasDeLaCarga = z
+  .array(entero(`El número de una causa de la acción ${LA_ACCION}`, 1, 20), { error: "Las causas elegidas no son válidas" })
+  .max(20, "Una acción ataca veinte causas como máximo")
+  .transform((n) => [...new Set(n)].sort((x, y) => x - y));
+
+const accionDeLaCarga = z
+  .object({
+    tipo: z.enum(TIPOS_ACCION, { error: `Elija el tipo de la acción ${LA_ACCION}` }),
+    descripcion: textoAcotado(`La descripción de la acción ${LA_ACCION}`, 3, 2000),
+    causas: causasDeLaCarga.optional().transform((v) => v ?? []),
+    recursos: textoOpcional("Los recursos necesarios", 1000),
+    indicadorCumplimiento: textoOpcional("El indicador de cumplimiento", 500),
+    meta: textoOpcional("La meta", 500),
+    actividades: z
+      .array(actividadDeLaCarga, { error: "Las actividades no son válidas" })
+      .min(1, `La acción ${LA_ACCION} no tiene actividades`)
+      .max(MAXIMO_DE_ACTIVIDADES, DEMASIADAS_ACTIVIDADES),
+  })
+  .strict();
+
+/**
+ * Lo que trae un hallazgo ya en curso además de su identificación (que lee `EsquemaHallazgo`), con la clase y el día de detección
+ * ya validados: las reglas de §8.4, §9 y §10 que el papel tuvo que cumplir, y las fechas entre sí (que una no sea futura lo mira el
+ * dominio, con su `ahora`). La corrección es solo de la no conformidad (§8.4): en las demás clases no se guarda. Los mensajes de
+ * una acción o una actividad llevan `LA_ACCION` y `LA_ACTIVIDAD`, que el dominio cambia por su etiqueta.
+ */
+export const EsquemaCarga = z
+  .object({
+    clase: z.enum(CLASES, { error: "Elija la clase del hallazgo" }),
+    detectadoEn: z.string(),
+    registradoEnPapel: fechaDelDia("Escriba una fecha válida en que se registró en papel"),
+    correccion: z
+      .object({
+        requerida: z.boolean({ error: "Diga si requirió corrección" }),
+        descripcion: z
+          .string({ error: "La descripción no es un texto válido" })
+          .trim()
+          .max(4000, "La descripción no puede pasar de 4000 caracteres")
+          .optional()
+          .transform((v) => v ?? ""),
+        implementadaEn: fechaOpcional("Escriba una fecha válida en que se implementó la corrección"),
+      })
+      .strict(),
+    analisis: z
+      .object({
+        metodo: z.enum(METODOS_ANALISIS, { error: "Elija el método del análisis" }),
+        causas: z.array(textoAcotado("La causa", 3, 500), { error: "Las causas no son válidas" }).max(20, "Son veinte causas como máximo"),
+        contenido: z.unknown().optional(),
+      })
+      .strict(),
+    acciones: z
+      .array(accionDeLaCarga, { error: "Las acciones no son válidas" })
+      .min(1, "El plan lleva al menos una acción")
+      .max(MAXIMO_DE_ACCIONES, `Un plan lleva hasta ${MAXIMO_DE_ACCIONES} acciones`),
+    criterios: z.array(z.enum(CRITERIOS_EFICACIA, { error: "Elija un criterio de eficacia válido" }), { error: "Elija un criterio de eficacia válido" }),
+    criterioOtro: textoOpcional("La descripción del otro criterio", 500),
+    indicadorEficaciaId: idOpcional("El indicador elegido no es válido"),
+    fechaEvaluacion: fechaOpcional("Escriba una fecha de evaluación válida"),
+    aprobacion: z
+      .object({
+        nombre: textoAcotado("El nombre de quien aprobó el plan", 3, 150),
+        cargo: textoAcotado("El cargo de quien aprobó el plan", 3, 150),
+        fecha: fechaDelDia("Escriba una fecha válida en que se aprobó el plan"),
+        rol: z.enum(["gerencia", "admin_sgc"], { error: "Diga si lo aprobó Gerencia o el Coordinador del SGC" }),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const falta = (path: Array<string | number>, message: string) => ctx.addIssue({ code: "custom", path, message });
+    const esNc = d.clase === "no_conformidad";
+    if (d.registradoEnPapel < d.detectadoEn) falta(["registradoEnPapel"], "La fecha de registro en papel no puede ser anterior a la de detección");
+    if (d.aprobacion.fecha < d.registradoEnPapel) {
+      falta(["aprobacion", "fecha"], "La fecha de aprobación del plan no puede ser anterior a su registro en papel");
+    }
+    if (esNc) {
+      const k = d.correccion;
+      if (!k.requerida && k.descripcion.length < 10) {
+        falta(["correccion", "descripcion"], "La justificación de no requerir corrección debe tener al menos 10 caracteres");
+      }
+      if (k.requerida && k.descripcion.length < 10) falta(["correccion", "descripcion"], "Describa la corrección que se hizo: al menos 10 caracteres");
+      if (k.requerida && k.implementadaEn === null) falta(["correccion", "implementadaEn"], "Escriba la fecha en que se implementó la corrección");
+      if (k.requerida && k.implementadaEn !== null && k.implementadaEn < d.detectadoEn) {
+        falta(["correccion", "implementadaEn"], "La fecha de la corrección no puede ser anterior a la de detección");
+      }
+      if (d.analisis.causas.length === 0) falta(["analisis", "causas"], "Escriba al menos una causa raíz");
+      if (!d.acciones.some((a) => a.tipo === "correctiva")) falta(["acciones"], "El plan de una no conformidad lleva al menos una acción correctiva");
+    }
+    if (d.analisis.metodo === "pareto") falta(["analisis", "metodo"], "El análisis de Pareto todavía no está disponible");
+    d.acciones.forEach((a, i) => {
+      if (a.tipo === "correctiva" && a.causas.length === 0) falta(["acciones", i, "causas"], `La acción ${LA_ACCION} no dice qué causa ataca`);
+      if (a.causas.some((n) => n > d.analisis.causas.length)) {
+        falta(["acciones", i, "causas"], `La acción ${LA_ACCION} ataca una causa que no está en el análisis`);
+      }
+    });
+    d.analisis.causas.forEach((_, i) => {
+      if (!d.acciones.some((a) => a.causas.includes(i + 1))) falta(["analisis", "causas", i], `La causa ${i + 1} no tiene acción`);
+    });
+    if (d.criterios.length === 0) falta(["criterios"], "Defina el criterio de eficacia");
+    if (d.criterios.includes("otro") && d.criterioOtro === null) falta(["criterioOtro"], "Describa el otro criterio de eficacia");
+    if (d.criterios.includes("mejora_indicador") && d.indicadorEficaciaId === null) falta(["indicadorEficaciaId"], "Elija el indicador");
+    const ultimoFin = d.acciones.flatMap((a) => a.actividades.map((x) => x.fin)).reduce((m, f) => (f > m ? f : m), "");
+    if (!esNc && d.fechaEvaluacion === null) falta(["fechaEvaluacion"], "Escriba la fecha de evaluación");
+    if (!esNc && d.fechaEvaluacion !== null && d.fechaEvaluacion < ultimoFin) {
+      falta(["fechaEvaluacion"], "La evaluación no puede ser anterior al fin de la última actividad");
+    }
+  })
+  .transform((d) => ({
+    registradoEnPapel: d.registradoEnPapel,
+    // La corrección es solo de la no conformidad; sin requerirla, no tiene fecha de implementación.
+    correccion:
+      d.clase === "no_conformidad"
+        ? { ...d.correccion, implementadaEn: d.correccion.requerida ? d.correccion.implementadaEn : null }
+        : null,
+    analisis: { metodo: d.analisis.metodo, causas: d.analisis.causas, contenido: d.analisis.contenido ?? null },
+    acciones: d.acciones,
+    criterios: CRITERIOS_EFICACIA.filter((x) => d.criterios.includes(x)),
+    criterioOtro: d.criterios.includes("otro") ? d.criterioOtro : null,
+    indicadorEficaciaId: d.criterios.includes("mejora_indicador") ? d.indicadorEficaciaId : null,
+    fechaEvaluacion: d.clase === "no_conformidad" ? null : d.fechaEvaluacion,
+    aprobacion: d.aprobacion,
+  }));
+export type CargaValidada = z.output<typeof EsquemaCarga>;
+
+/**
+ * Los campos del formulario de la carga que no son de la identificación (esos los lee `EsquemaHallazgo`): la acción los separa con
+ * `omitir`. Las causas y las acciones llegan como JSON en un solo texto; los criterios, en casillas.
+ */
+export const CAMPOS_DE_LA_CARGA = [
+  "registradoEnPapel",
+  "correccionRequerida",
+  "correccionDescripcion",
+  "correccionImplementadaEn",
+  "analisisMetodo",
+  "causas",
+  "acciones",
+  "criterios",
+  "criterioOtro",
+  "indicadorEficaciaId",
+  "fechaEvaluacion",
+  "aprobacionNombre",
+  "aprobacionCargo",
+  "aprobacionFecha",
+  "aprobacionRol",
+];
+
+const textoDelFormulario = z.string().optional();
+
+/**
+ * El formulario de la carga (sin la identificación), en la forma que recibe `cargarHallazgo`, que lo valida con `EsquemaCarga`:
+ * aquí solo se lee cada campo. Un campo vacío no llega (`parsearFormulario`).
+ */
+export const EsquemaFormularioCarga = z
+  .object({
+    registradoEnPapel: textoDelFormulario,
+    correccionRequerida: z.enum(["si", "no"], { error: "Diga si requirió corrección" }).optional(),
+    correccionDescripcion: textoDelFormulario,
+    correccionImplementadaEn: textoDelFormulario,
+    analisisMetodo: textoDelFormulario,
+    causas: jsonEnTexto("Las causas no son válidas").optional(),
+    acciones: jsonEnTexto("Las acciones no son válidas").optional(),
+    criterios: variosValores("Elija un criterio de eficacia válido"),
+    criterioOtro: textoDelFormulario,
+    indicadorEficaciaId: idOpcional("El indicador elegido no es válido"),
+    fechaEvaluacion: textoDelFormulario,
+    aprobacionNombre: textoDelFormulario,
+    aprobacionCargo: textoDelFormulario,
+    aprobacionFecha: textoDelFormulario,
+    aprobacionRol: textoDelFormulario,
+  })
+  .strict()
+  .transform((d) => ({
+    registradoEnPapel: d.registradoEnPapel ?? "",
+    correccion: { requerida: d.correccionRequerida === "si", descripcion: d.correccionDescripcion ?? "", implementadaEn: d.correccionImplementadaEn ?? null },
+    analisis: { metodo: d.analisisMetodo as never, causas: (d.causas ?? []) as never },
+    acciones: (d.acciones ?? []) as never,
+    criterios: d.criterios.map(String) as never,
+    criterioOtro: d.criterioOtro ?? null,
+    indicadorEficaciaId: d.indicadorEficaciaId,
+    fechaEvaluacion: d.fechaEvaluacion ?? null,
+    aprobacion: { nombre: d.aprobacionNombre ?? "", cargo: d.aprobacionCargo ?? "", fecha: d.aprobacionFecha ?? "", rol: d.aprobacionRol as never },
+  }));
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Las firmas del plan: enviar, devolver, revisar y aprobar (spec 15 §8.6 y §12.1)
 // ─────────────────────────────────────────────────────────────────────────────
 

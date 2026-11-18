@@ -46,6 +46,17 @@ export function apruebaGerencia(
 }
 
 /**
+ * El rol que aprobó el plan de un hallazgo ya en curso (spec §15): el que se declaró, salvo en una no conformidad de criticidad
+ * alta o en un hallazgo de origen externo, que aprueba Gerencia en todo caso. Es el que decide sus ajustes (`quienDecideAjustes`).
+ */
+export function rolQueAproboEnPapel(
+  h: Pick<HallazgoBase, "clase" | "criticidad" | "origen">,
+  declarado: "admin_sgc" | "gerencia",
+): "admin_sgc" | "gerencia" {
+  return (h.clase === "no_conformidad" && h.criticidad === "alta") || esExterno(h.origen) ? "gerencia" : declarado;
+}
+
+/**
  * Por qué aprueba Gerencia, en palabras: la primera que se cumple de las cuatro condiciones de `apruebaGerencia`, en el orden
  * del spec §8.6 (criticidad alta, origen externo, recursos adicionales o impacto institucional, elaboró un Admin SGC), o
  * `null` si no se cumple ninguna (la revisión vale como aprobación). La usan las pantallas de las firmas.

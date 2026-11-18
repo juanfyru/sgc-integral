@@ -23,10 +23,10 @@ import { puedeVerHallazgo } from "@/lib/alcance";
 import { EsquemaDevolverPlan, EsquemaPasoDelHallazgo, EsquemaRevisarPlan } from "@/lib/esquemas/mejoramiento";
 import { verificarParaFirmar, type ContextoFirma, type CredencialesFirma } from "@/lib/firma";
 import { cierrePrevisto } from "@/lib/mejoramiento/eficacia";
-import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import type { PlanFirmado } from "@/lib/mejoramiento/huellas";
 import { apruebaGerencia } from "@/lib/mejoramiento/reglas";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
+import { ACTIVIDAD_ASIGNADA, cuerpoDeActividadAsignada } from "@/lib/mejoramiento/textos";
 import { ErrorMejora, type HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
@@ -40,8 +40,8 @@ import { etiquetaDeActividad, examinarPlan, type ExamenDelPlan } from "./plan";
 
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 
-/** El aviso a cada responsable cuando el plan queda aprobado (spec §8.6 y §14.2): es la «delegación». */
-export const ACTIVIDAD_ASIGNADA = "Tiene una actividad a su cargo";
+// El aviso a cada responsable cuando el plan queda aprobado vive en `textos.ts` (lo da también el escaneo de una carga).
+export { ACTIVIDAD_ASIGNADA };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Quién da cada paso: la misma regla para el acto y para la página
@@ -289,6 +289,34 @@ export async function devolverPlan(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * El cierre previsto de la ronda (spec §11.3), al quedar aprobado su plan: la misma cuenta de la fecha mínima que `examinarPlan`,
+ * desde el mayor de los fines planeados de sus actividades no canceladas, con el indicador del plan si sigue enlazable. Nulo sin
+ * actividades. Lo usan la aprobación y la carga de un hallazgo en curso (spec §15).
+ */
+export async function cierrePrevistoDelPlan(
+  tx: Cliente,
+  h: Pick<HallazgoBase, "clase">,
+  fines: readonly string[],
+  plan: PlanFirmado,
+  c: ContextoMejora,
+): Promise<Date | null> {
+  const finPlaneado = fines.reduce<string | null>((m, f) => (m === null || f > m ? f : m), null);
+  if (finPlaneado === null) return null;
+  const enlazado = plan.criterio.indicador ? await indicadorDeEficacia(tx, plan.criterio.indicador.id) : null;
+  const indicador = enlazado?.activo ? enlazado : null;
+  return cierrePrevisto(
+    {
+      clase: h.clase,
+      finPlaneado,
+      fechaEvaluacion: plan.criterio.fechaEvaluacion,
+      periodicidad: indicador?.periodicidad ?? null,
+      plazoReporteDias: indicador?.plazoReporteDias ?? null,
+    },
+    c,
+  );
+}
+
+/**
  * Deja el plan de la ronda aprobado, por la «Aprobó» o por la «Revisó» que vale como aprobación, en la transacción del acto:
  * el estado del plan, quién lo aprobó y con qué rol; la fecha de fin original de cada actividad (no cambia nunca después);
  * el cierre previsto (§11.3); el paso por `transicionarHallazgo` con el plan congelado y su huella; y el aviso a cada
@@ -311,23 +339,13 @@ async function dejarAprobado(
     FROM mejora_actividades a JOIN mejora_acciones ac ON ac.id = a.accion_id
     WHERE ac.ronda_id = ${r.id} AND a.estado <> 'cancelada'
     ORDER BY a.id`;
-  // El cierre previsto, con la misma cuenta de la fecha mínima que `examinarPlan` (el indicador, si sigue enlazable).
-  const finPlaneado = actividades.reduce<string | null>((m, a) => (m === null || (a.fin as string) > m ? (a.fin as string) : m), null);
-  const enlazado = envio.plan.criterio.indicador ? await indicadorDeEficacia(tx, envio.plan.criterio.indicador.id) : null;
-  const indicador = enlazado?.activo ? enlazado : null;
-  const previsto =
-    finPlaneado === null
-      ? null
-      : cierrePrevisto(
-          {
-            clase: h.clase,
-            finPlaneado,
-            fechaEvaluacion: envio.plan.criterio.fechaEvaluacion,
-            periodicidad: indicador?.periodicidad ?? null,
-            plazoReporteDias: indicador?.plazoReporteDias ?? null,
-          },
-          c,
-        );
+  const previsto = await cierrePrevistoDelPlan(
+    tx,
+    h,
+    actividades.map((a) => a.fin as string),
+    envio.plan,
+    c,
+  );
   await tx`UPDATE mejora_rondas
     SET estado_plan = 'aprobado', aprobado_por = ${sesion.usuarioId}, aprobado_en = ${c.ahora}, aprobado_rol = ${x.rol},
       cierre_previsto = ${previsto}
@@ -347,11 +365,10 @@ async function dejarAprobado(
     c,
   );
   for (const a of actividades) {
-    const descripcion = (a.descripcion as string).trim().replace(/[.\s]+$/, "");
     await avisarA(
       tx,
       { tipo: "mejora.actividad_asignada", titulo: ACTIVIDAD_ASIGNADA, enlace: rutaDeActividad(Number(a.id)), entidad: ENTIDAD_ACTIVIDAD, entidadId: Number(a.id) },
-      [{ usuarioId: Number(a.responsable_id), cuerpo: `${descripcion}. Fecha de fin: ${fechaLargaDeDia(a.fin as string)}.` }],
+      [{ usuarioId: Number(a.responsable_id), cuerpo: cuerpoDeActividadAsignada(a.descripcion as string, a.fin as string) }],
     );
   }
 }

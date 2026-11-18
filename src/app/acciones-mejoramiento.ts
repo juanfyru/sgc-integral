@@ -11,6 +11,7 @@ import { decidirAjuste, escalarAGerencia, pedirAjuste, responderEscalada } from 
 import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { aprobarPlan, devolverPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
+import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { guardarAccion, guardarCriterio, quitarAccion } from "@/db/consultas/mejoramiento/plan";
 import {
   aceptarHallazgo,
@@ -38,6 +39,7 @@ import { descartarReporte, enviarReporte, hallazgoPorCodigo, sumarReporte } from
 import { cerrarHallazgo, evaluarEficacia, LO_VISTO_CAMBIO, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
+  CAMPOS_DE_LA_CARGA,
   EsquemaActividad,
   EsquemaAnulacion,
   EsquemaCambioDeProceso,
@@ -51,6 +53,7 @@ import {
   EsquemaFormularioAjuste,
   EsquemaFormularioAnalisis,
   EsquemaFormularioArbitraje,
+  EsquemaFormularioCarga,
   EsquemaFormularioCausas,
   EsquemaFormularioCierre,
   EsquemaFormularioDecidirAjuste,
@@ -109,6 +112,21 @@ export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: F
       reincidenteDe: relacion[1] === "reincidencia" ? Number(relacion[2]) : null,
     });
     return rutaDeHallazgo(hallazgo.id);
+  });
+}
+
+/**
+ * Carga un hallazgo ya en curso (spec §15): solo el Admin SGC. La identificación la lee `EsquemaHallazgo` y lo hecho en papel
+ * `EsquemaFormularioCarga`, cada uno sin los campos del otro (los dos son estrictos); `cargarHallazgo` lo vuelve a validar todo.
+ * Lleva a la página del hallazgo, que pide el formato firmado.
+ */
+export async function cargarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const deLaCarga = new Set<string>(CAMPOS_DE_LA_CARGA);
+    const identificacion = parsearFormulario(datos, EsquemaHallazgo, { omitir: CAMPOS_DE_LA_CARGA });
+    const enPapel = parsearFormulario(datos, EsquemaFormularioCarga, { omitir: [...datos.keys()].filter((k) => !deLaCarga.has(k)) });
+    const { id } = await cargarHallazgo(sesion, { ...identificacion, ...enPapel });
+    return rutaDeHallazgo(id);
   });
 }
 

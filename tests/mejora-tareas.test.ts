@@ -20,6 +20,7 @@ import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
 import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
+import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
@@ -39,7 +40,9 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import {
   baseDeMejora,
   c,
+  datosDeCarga,
   datosDeHallazgo,
+  escaneoDeLaCarga,
   evidenciaDeActividad,
   evidenciaDelHallazgo,
   HORA_DE_ESCENA,
@@ -353,7 +356,16 @@ describe("las tareas de mejoramiento, una por fila de la tabla", () => {
       expect(await laDe(b.admin, tx, esperada.id)).toBeUndefined();
     }));
 
-  it.todo("un hallazgo cargado sin su escaneo no da tareas de actividad");
+  it("un hallazgo cargado sin su escaneo no da tareas de actividad", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const { id } = await cargarHallazgo(b.admin, datosDeCarga(b.procesoId, b.lider.usuarioId), c(AHORA, tx));
+      const [abierta] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${id} AND estado <> 'terminada' ORDER BY id`;
+      const tareaId = `mej-actividad:${Number(abierta.id)}`;
+      expect(await laDe(b.lider, tx, tareaId)).toBeUndefined();
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId);
+      expect(await laDe(b.lider, tx, tareaId)).toMatchObject({ titulo: "Capacitar a los turnos de noche", enlace: rutaDeActividad(Number(abierta.id)) });
+    }));
 });
 
 describe("«Mis tareas» y «Esperan su decisión»", () => {

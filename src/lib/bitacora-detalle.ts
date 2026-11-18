@@ -1077,6 +1077,11 @@ export function describirEvento(e: EventoAuditoria): string {
       const enviada = dia(d.enviadaEn);
       return `Registró la respuesta al ente ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${enviada ? `, enviada el ${enviada}` : ""}`;
     }
+    // ── Mejoramiento (15A): el formato firmado de un hallazgo cargado, que confirma su carga (spec §15). El archivo es su propia fila
+    case "mejora_carga_confirmada": {
+      const codigo = texto(d.codigo);
+      return `Adjuntó el formato firmado de la carga ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}: su plan llega a sus responsables`;
+    }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1553,6 +1558,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_reporte_sumado: "Añadió un reporte como ocurrencia de un hallazgo",
   mejora_reporte_descartado: "Descartó un reporte",
   mejora_respuesta_ente: "Registró la respuesta al ente de un hallazgo",
+  mejora_carga_confirmada: "Adjuntó el formato firmado de la carga de un hallazgo",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

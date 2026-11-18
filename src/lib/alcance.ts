@@ -964,8 +964,10 @@ export async function puedeValidarCorreccion(
  * de F15-DC22, en cualquier ronda: ser responsable de una actividad de un plan aprobado o haberlo sido (los eventos
  * `reasignada`, `detalle.antes`), haber registrado un seguimiento, haber terminado una actividad (la fila o el evento
  * `actividad_terminada`: una devolución borra la marca de la fila, el evento queda) y haber registrado la corrección (la fila o
- * un evento `corregir`, también el de una corrección devuelta) o ser su responsable. Una sola regla: la usan el turno de «Por
- * verificar», la página, los archivos de la verificación y los actos, dentro de su transacción.
+ * un evento `corregir`, también el de una corrección devuelta) o ser su responsable. Lo hecho en papel de un hallazgo cargado
+ * (spec §15: sus eventos `fuera`) no cuenta a quien lo cargó: lo hizo otro; los responsables declarados de sus actividades, sí.
+ * Una sola regla: la usan el turno de «Por verificar», la página, los archivos de la verificación y los actos, dentro de su
+ * transacción.
  */
 export async function quienesVerifican(sql: Cliente, hallazgoId: number): Promise<number[]> {
   if (!Number.isSafeInteger(hallazgoId) || hallazgoId <= 0) return [];
@@ -977,7 +979,8 @@ export async function quienesVerifican(sql: Cliente, hallazgoId: number): Promis
       UNION SELECT s.registrado_por FROM mejora_seguimientos s JOIN h ON h.id = s.hallazgo_id
       UNION SELECT (e.detalle->>'antes')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
         WHERE e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'antes') = 'number'
-      UNION SELECT e.usuario_id FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id WHERE e.tipo IN ('actividad_terminada', 'corregir')
+      UNION SELECT e.usuario_id FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
+        WHERE e.tipo IN ('actividad_terminada', 'corregir') AND NOT e.fuera
       UNION SELECT (e.detalle->>'responsableId')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
         WHERE e.tipo = 'corregir' AND jsonb_typeof(e.detalle->'responsableId') = 'number'
       UNION SELECT correccion_registrada_por FROM h

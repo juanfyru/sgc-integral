@@ -79,6 +79,7 @@ import { pideAjustesDelPlan, puedeReasignar } from "@/db/consultas/mejoramiento/
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { firmasDeHallazgo, puedeAprobar, puedeDevolverSinRevisor, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
+import { FALTA_EL_FORMATO } from "@/db/consultas/mejoramiento/carga-confirmada";
 import { revisoresDe } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
@@ -128,7 +129,8 @@ function pasosConFechas(h: DetalleDeHallazgo, zona: string): PasoDeRecorrido[] {
   const cuando = (tipo: string) => h.eventos.find((e) => e.tipo === tipo)?.cuando;
   const enCurso = h.rondas.find((r) => r.numero === h.ronda);
   const fechas: Record<string, Date | undefined> = {
-    registro: h.registradoEn,
+    // En un hallazgo cargado, el día en que se registró en papel (su evento `registrar`, hecho fuera; spec §15).
+    registro: cuando("registrar") ?? h.registradoEn,
     aceptado: cuando("aceptar") ?? cuando("confirmar_hallazgo"),
     correccion: h.correccion.registradaEn ?? undefined,
     decision: h.decision.decididaEn ?? undefined,
@@ -262,6 +264,42 @@ export default async function PaginaHallazgo({
     const suyos = await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: o.reporteId });
     if (suyos.length > 0) archivosDeOcurrencias[o.id] = suyos;
   }
+
+  // Un hallazgo cargado (spec §15): su formato firmado, que el Admin SGC sube y nadie quita, y quién aprobó el plan en papel.
+  const formatos = archivos.filter((a) => a.rol === "carga");
+  const puedeSubirFormato =
+    completo && h.cargado && (await autorizarSubida(sesion, { contexto: "mejora_hallazgo", id: h.id, rol: "carga" })).ok;
+  const enPapel = h.rondas.find((r) => r.numero === 1);
+  const seccionCarga = h.cargado ? (
+    <section aria-labelledby="carga-formato" className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="carga-formato" className="font-display text-base font-semibold">
+          Cargado: hecho en papel
+        </h2>
+        {h.cargaConfirmada ? null : <Insignia variante="atencion">{FALTA_EL_FORMATO}</Insignia>}
+      </div>
+      <p className="text-sm">
+        Lo que se hizo en papel quedó marcado como hecho fuera de la plataforma, sin firma del sistema.
+        {enPapel?.aprobadoFuera && enPapel.aprobadoEn
+          ? ` Aprobó el plan ${enPapel.aprobadoFuera} (${enPapel.aprobadoRol === "gerencia" ? "Gerencia" : "Coordinador del SGC"}), el ${fechaDeDia(fechaEnZona(enPapel.aprobadoEn, zona))}.`
+          : ""}
+      </p>
+      {h.cargaConfirmada ? null : (
+        <p className="text-sm">
+          Adjunte el formato firmado escaneado: es la evidencia de lo hecho en papel. Hasta entonces, las actividades no llegan a sus
+          responsables y el plan no se verifica.
+        </p>
+      )}
+      {completo ? (
+        <ArchivosDe
+          archivos={formatos}
+          direccionDeSubida={puedeSubirFormato ? `/api/mejoramiento/hallazgos/${h.id}/archivos?rol=carga` : null}
+          nombre="Zona de carga del formato firmado"
+          vacio="Aún no se ha subido el formato firmado."
+        />
+      ) : null}
+    </section>
+  ) : null;
 
   // «2. Corrección», desde que la no conformidad está por corregir (las etapas que faltan no aparecen). Una corrección ya
   // registrada se sigue viendo aunque el hallazgo deje de ser no conformidad: queda como historia (spec §7.6).
@@ -638,6 +676,7 @@ export default async function PaginaHallazgo({
         descripcion={`${h.proceso} · registró: ${h.registradoPor}`}
       />
       <Recorrido pasos={pasosConFechas(h, zona)} />
+      {seccionCarga}
       {completo ? <BorradorDeLaEvaluacion key={`borrador-${clave}-${avisoCambio}`} hallazgoId={h.id} conAviso={avisoCambio} /> : null}
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">

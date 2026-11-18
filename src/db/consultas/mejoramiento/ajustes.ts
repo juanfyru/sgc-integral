@@ -246,7 +246,8 @@ function conUnPendiente(err: unknown): never {
 /**
  * Quién decide los ajustes del plan de la ronda en curso (spec §10.6, F15-DC21): el rol que lo aprobó
  * (`mejora_rondas.aprobado_rol`): si lo aprobó Gerencia, cualquier usuario activo de Gerencia; si valió la revisión, los Admin
- * SGC activos. **Quien pidió no decide:** si lo pidió el único Admin SGC activo, decide Gerencia. Del mismo modo, si el rol que
+ * SGC activos. En un hallazgo cargado, el rol que se declaró, o Gerencia si es de criticidad alta u origen externo
+ * (`rolQueAproboEnPapel`, que la carga deja en esa columna, spec §15). **Quien pidió no decide:** si lo pidió el único Admin SGC activo, decide Gerencia. Del mismo modo, si el rol que
  * aprobó no tiene a nadie más activo, decide el otro (F15-DC15: la falta de una persona nunca traba el camino). Una sola regla:
  * la usan el acto, «Lo que sigue» y las tareas.
  */

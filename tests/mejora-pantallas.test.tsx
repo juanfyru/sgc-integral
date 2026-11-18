@@ -34,6 +34,7 @@ import { CausasRaiz } from "@/componentes/mejoramiento/analisis/CausasRaiz";
 import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
 import { PestanasDeMetodo } from "@/componentes/mejoramiento/analisis/PestanasDeMetodo";
 import { PreguntasDeCierre } from "@/componentes/mejoramiento/analisis/PreguntasDeCierre";
+import { FormularioCarga } from "@/componentes/mejoramiento/FormularioCarga";
 import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazgo";
 import { ListaDeHallazgos, textoDeVence } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
@@ -2542,5 +2543,35 @@ describe("la respuesta al ente (Tarea 19, spec §13.4)", () => {
       />,
     );
     expect(html).toContain(`Registró la respuesta al ente, enviada el ${fechaDeDia("2026-11-18")}`);
+  });
+});
+
+describe("un hallazgo ya en curso (spec §15)", () => {
+  it("el formulario de la carga va por bloques y dice que lo de papel queda marcado, sin firma del sistema", () => {
+    const html = renderToStaticMarkup(
+      <FormularioCarga accion={vi.fn(async () => null)} procesos={[{ id: 3, nombre: "Farmacia" }]} normas={[]} documentos={[]} usuarios={[]} indicadores={[]} hoy="2026-11-18" />,
+    );
+    expect(html).toContain("Lo que se hizo en papel quedará marcado como hecho fuera de la plataforma, sin firma del sistema.");
+    expect(html).toContain(AVISO_SIN_PACIENTES);
+    for (const bloque of ["1. Identificación", "3. Análisis de causa raíz", "4. Plan de acción", "5. Aprobación en papel"]) expect(html).toContain(bloque);
+    expect(html).toContain('name="registradoEnPapel"');
+    expect(html).toContain('name="aprobacionRol"');
+  });
+
+  it("el historial marca lo hecho en papel con su día y sin el nombre de quien lo cargó", () => {
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        eventos={[
+          { id: 1, tipo: "aprobar_plan", ronda: 1, quien: "Ana Carga", cuando: new Date("2025-11-04T05:00:00Z"), fuera: true, detalle: { aprobadoPor: "Marta Ríos, Gerente" } },
+          { id: 2, tipo: "cargar", ronda: 1, quien: "Ana Carga", cuando: new Date("2026-11-18T15:00:00Z"), detalle: {} },
+          { id: 3, tipo: "carga_confirmada", ronda: 1, quien: "Ana Carga", cuando: new Date("2026-11-19T15:00:00Z"), detalle: {} },
+        ]}
+      />,
+    );
+    expect(html).toContain(`Hecho fuera de la plataforma · <time dateTime="2025-11-04">${fechaDeDia("2025-11-04")}</time>`);
+    expect(html).toContain("Lo aprobó: Marta Ríos, Gerente");
+    expect(html.match(/Ana Carga/g)).toHaveLength(2);
+    expect(html).toContain("Adjuntó el formato firmado de la carga");
   });
 });

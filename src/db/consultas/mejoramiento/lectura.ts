@@ -47,6 +47,7 @@ import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura"
 
 export type { AjusteDeDetalle } from "./ajustes-lectura";
 import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
+import { cargaConfirmada } from "./carga-confirmada";
 import { indicadoresDeEficacia } from "./indicador-de-eficacia";
 import { tareasConSuHallazgo } from "./tareas";
 import { venceLaActividad } from "./vence-actividad";
@@ -412,6 +413,8 @@ export type RondaDeDetalle = {
   enviadoEn: Date | null;
   aprobadoEn: Date | null;
   aprobadoRol: string | null;
+  /** Quién aprobó el plan en papel, «nombre, cargo», en un hallazgo cargado (spec §15); nulo en los demás. */
+  aprobadoFuera: string | null;
   /** Lo marcó la revisión (spec §8.6): «requiere recursos adicionales o tiene impacto institucional», con su nota. */
   requiereRecursos: boolean;
   notaRecursos: string | null;
@@ -526,6 +529,8 @@ export type DetalleDeHallazgo = {
   /** El reporte del que nació, para listar sus archivos: solo a quien ve el hallazgo completo. */
   reporteId: number | null;
   cargado: boolean;
+  /** Si tiene su formato firmado (`cargaConfirmada`); un hallazgo que no es cargado, siempre. Sin él, el plan no avanza. */
+  cargaConfirmada: boolean;
   /** El hallazgo anterior solo si quien mira puede verlo; si no, sin id ni nombre. */
   reincidenteDe: { id: number; codigo: string; titulo: string } | { visible: false } | null;
   marcas: string[];
@@ -717,6 +722,15 @@ async function loQueSigue(
     (esExterno(h.origen) ||
       (daElPaso ? !(await ofreceRechazo(tx, sesion, h)) : (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0));
   return { paso, puede: daElPaso, turno: fraseDeLoQueSigue(h, turno, daElPaso, { sinRechazo }) };
+}
+
+/**
+ * «Lo que sigue» de un hallazgo cargado sin su formato firmado (spec §15): nadie da el paso hasta que el Administrador del SGC lo
+ * adjunta; desde entonces, las actividades llegan a sus responsables o, si ya estaban terminadas, se puede verificar.
+ */
+function sinElFormato(h: HallazgoBase): LoQueSigueDelHallazgo {
+  const despues = h.estado === "por_verificar" ? "se puede verificar" : "las actividades llegan a sus responsables";
+  return { paso: null, puede: false, turno: `Falta el formato firmado de la carga: lo adjunta el Administrador del SGC y, desde entonces, ${despues}.` };
 }
 
 /** Lo congelado de un evento (spec §12.2): el plan del envío y de la aprobación, y lo que mostró la evaluación de la eficacia. */
@@ -923,7 +937,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   })();
 
   const [rondas, analisis, causas, acciones, vinculos, actividades, ajustes] = await Promise.all([
-    sql`SELECT r.id, r.numero, r.estado_plan, r.formular_antes_de, r.enviado_en, r.aprobado_en, r.aprobado_rol, r.resultado,
+    sql`SELECT r.id, r.numero, r.estado_plan, r.formular_antes_de, r.enviado_en, r.aprobado_en, r.aprobado_rol, r.aprobado_fuera, r.resultado,
         r.cierre_previsto, r.requiere_recursos, r.nota_recursos, r.similares, r.similares_detalle, r.cambios, r.criterios,
         r.criterio_otro, r.indicador_eficacia_id, to_char(r.fecha_evaluacion, 'YYYY-MM-DD') AS fecha_evaluacion,
         coalesce((SELECT (e.detalle->>'elaboroAdmin')::boolean FROM mejora_eventos e
@@ -1065,6 +1079,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     enviadoEn: (r.enviado_en as Date | null) ?? null,
     aprobadoEn: (r.aprobado_en as Date | null) ?? null,
     aprobadoRol: (r.aprobado_rol as string | null) ?? null,
+    aprobadoFuera: (r.aprobado_fuera as string | null) ?? null,
     requiereRecursos: r.requiere_recursos === true,
     notaRecursos: (r.nota_recursos as string | null) ?? null,
     elaboroAdmin: r.elaboro_admin === true,
@@ -1146,6 +1161,8 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     },
   };
 
+  // Un hallazgo cargado sin su formato firmado no avanza (spec §15): «Lo que sigue» lo dice y no ofrece el paso.
+  const confirmada = f.cargado !== true || (await cargaConfirmada(sql, h.id));
   const ocurrencias = completo
     ? await sql`SELECT o.id, o.descripcion, o.origen, o.reporte_id, to_char(o.fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS quien
         FROM mejora_ocurrencias o JOIN usuarios u ON u.id = o.registrado_por
@@ -1180,6 +1197,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     reportadoPor: f.reporte_id !== null && puede(sesion, "mejora.ver_todo") ? (f.reportero as string) : null,
     reporteId: f.reporte_id !== null && ve === "completo" ? Number(f.reporte_id) : null,
     cargado: f.cargado === true,
+    cargaConfirmada: confirmada,
     reincidenteDe: reincidente,
     marcas: marcasDeHallazgo(h, {
       cargado: f.cargado === true,
@@ -1235,7 +1253,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       personas: e.tipo === "reasignada" && e.de && e.a ? { de: e.de as string, a: e.a as string } : null,
     })),
     turno,
-    loQueSigue: await loQueSigue(sql, h, sesion, turno, evaluable),
+    loQueSigue: confirmada || esTerminal(h.estado) ? await loQueSigue(sql, h, sesion, turno, evaluable) : sinElFormato(h),
     avance: avanceDeHallazgo(rondasDeDetalle.find((r) => r.numero === h.ronda)?.acciones.map((a) => a.avance) ?? []),
   };
 }

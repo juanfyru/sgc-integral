@@ -81,8 +81,8 @@ export async function tomarCodigo(tx: TransactionSql, anio: number): Promise<{ c
   return { consecutivo, codigo: "HZ-" + anio + "-" + String(consecutivo).padStart(3, "0") };
 }
 
-/** Lo que el esquema no puede saber: la fecha de hoy, el proceso y lo enlazado. Solo lecturas. */
-async function revisarIdentificacion(tx: TransactionSql, v: HallazgoValidado, c: ContextoMejora): Promise<void> {
+/** Lo que el esquema no puede saber: la fecha de hoy, el proceso y lo enlazado. Solo lecturas. También la carga (`carga.ts`). */
+export async function revisarIdentificacion(tx: TransactionSql, v: HallazgoValidado, c: ContextoMejora): Promise<void> {
   if (v.detectadoEn > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora("La fecha en que se detectó no puede ser futura");
   const [proceso] = await tx`SELECT activo FROM procesos WHERE id = ${v.procesoId}`;
   if (!proceso?.activo) throw new ErrorMejora("Elija un proceso activo");
@@ -103,7 +103,8 @@ async function revisarIdentificacion(tx: TransactionSql, v: HallazgoValidado, c:
   }
 }
 
-function filaDe(v: HallazgoValidado): Omit<FilaNueva, "codigo" | "anio" | "consecutivo"> {
+/** Las columnas de la identificación validada, sin el código: las del registro y las de la carga. */
+export function filaDe(v: HallazgoValidado): Omit<FilaNueva, "codigo" | "anio" | "consecutivo"> {
   return {
     clase: v.clase,
     origen: v.origen,
@@ -207,7 +208,7 @@ const SOLO_CERRADO = "Solo se marca reincidencia de un hallazgo cerrado";
  * La reincidencia solo enlaza un hallazgo `cerrado` del **mismo proceso** (spec §7.5). Quien no ve el hallazgo de otro
  * proceso recibe la misma frase que si no existiera. Solo lecturas: un cerrado ya no cambia.
  */
-async function exigirReincidencia(tx: TransactionSql, anteriorId: number | null, procesoId: number, propioId?: number): Promise<void> {
+export async function exigirReincidencia(tx: TransactionSql, anteriorId: number | null, procesoId: number, propioId?: number): Promise<void> {
   if (anteriorId === null) return;
   const [o] = await tx`SELECT proceso_id, estado FROM mejora_hallazgos WHERE id = ${anteriorId}`;
   if (!o || anteriorId === propioId || Number(o.proceso_id) !== procesoId) throw new ErrorMejora(`${SOLO_CERRADO} del mismo proceso`);
@@ -689,8 +690,9 @@ export const envioAntesDeAprobar = (dia: string) =>
   `La fecha de envío no puede ser anterior a la aprobación del plan, el ${fechaLargaDeDia(dia)}`;
 
 /**
- * La aprobación del plan de la ronda en vigor (la del hallazgo): el día, en la zona de la instalación, en que se aprobó; nula si
- * el plan de esa ronda no está aprobado. La respuesta al ente responde a ese plan (spec §13.4).
+ * La aprobación del plan de la ronda en vigor (la del hallazgo): el día, en la zona de la instalación, en que se aprobó (en uno
+ * cargado, el que se declaró, spec §15); nula si el plan de esa ronda no está aprobado. La respuesta al ente responde a ese plan
+ * (spec §13.4).
  */
 export async function aprobacionEnVigor(sql: Cliente, hallazgoId: number, zona: string): Promise<{ dia: string } | null> {
   const [r] = await sql`SELECT r.aprobado_en FROM mejora_rondas r JOIN mejora_hallazgos h ON h.id = r.hallazgo_id AND h.ronda = r.numero
@@ -702,17 +704,18 @@ export async function aprobacionEnVigor(sql: Cliente, hallazgoId: number, zona: 
  * Los archivos del hallazgo (rol `evidencia`) subidos después de aprobado el plan de la ronda en vigor: los que pueden ser el
  * oficio de la respuesta al ente. «Después» lo dice el orden de la bitácora, la subida (`subir_archivo`) contra la transición que
  * aprobó el plan de esa ronda (la que la llevó a «En ejecución», con su `ronda` en el detalle), y no la hora:
- * `archivos.creado_en` es la de la base al subir y la aprobación guarda la de `ahora`. Sin ese plan aprobado, ninguno. Una sola
- * regla para el acto y para el formulario.
+ * `archivos.creado_en` es la de la base al subir y la aprobación guarda la de `ahora`. En un hallazgo cargado (spec §15) el plan de
+ * la ronda 1 se aprobó en papel: cuenta su carga (`mejora_cargar`, nazca «En ejecución» o «Por verificar»). Sin ese plan aprobado,
+ * ninguno. Una sola regla para el acto y para el formulario.
  */
 export async function oficiosPosibles(sql: Cliente, hallazgoId: number): Promise<number[]> {
   const filas = await sql`
     WITH h AS (SELECT id, ronda FROM mejora_hallazgos WHERE id = ${hallazgoId}),
     aprobado AS (
       SELECT max(au.id) AS id FROM auditoria au CROSS JOIN h
-      WHERE au.entidad = 'mejora_hallazgo' AND au.entidad_id = h.id
-        AND au.accion IN ('mejora_aprobar_plan', 'mejora_revisar_plan') AND au.detalle->'estado'->>'despues' = 'en_ejecucion'
-        AND au.detalle->>'ronda' = h.ronda::text)
+      WHERE au.entidad = 'mejora_hallazgo' AND au.entidad_id = h.id AND au.detalle->>'ronda' = h.ronda::text
+        AND ((au.accion IN ('mejora_aprobar_plan', 'mejora_revisar_plan') AND au.detalle->'estado'->>'despues' = 'en_ejecucion')
+          OR au.accion = 'mejora_cargar'))
     SELECT a.id FROM archivos a CROSS JOIN aprobado
     WHERE a.contexto = 'mejora_hallazgo' AND a.contexto_id = ${hallazgoId} AND a.rol = 'evidencia' AND a.version_id IS NULL
       AND aprobado.id IS NOT NULL

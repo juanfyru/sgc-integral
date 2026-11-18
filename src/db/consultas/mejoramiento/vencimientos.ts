@@ -17,6 +17,9 @@
  * 5. La eficacia por evaluar: el hallazgo en espera que llegó a su fecha mínima, a quienes pueden verificar; marca
  *    `aviso_evaluar_en`. Vencida su evaluación, es un paso vencido (1).
  *
+ * Un hallazgo cargado sin su formato firmado (spec §15) no entra a ningún paso: ni el suyo, ni sus actividades, que todavía no
+ * llegaron a sus responsables (`cargaResuelta`). Con el formato, la pasada siguiente lo ve como a cualquier otro.
+ *
  * La mecánica de `correrPaso` (la de las pasadas de los indicadores): candidatas por marca nula, lo que puede fallar (a quién,
  * sus jefes) buscado antes del candado, una entidad a la vez (la que falla se registra y se salta), y en una transacción corta
  * por paso el candado, lo releído, los avisos y las marcas. Al marcar una hija (una actividad, un ajuste), su trigger pide el
@@ -48,6 +51,7 @@ import { textoResponsables } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { quienDecideAjustes } from "./ajustes";
 import { ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO, lideresOAdmins, queLeToca, quienTieneElTurno, revisoresDe } from "./avisos";
+import { cargaResuelta } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
 import { aBase, hallazgoBase } from "./flujo";
@@ -149,7 +153,7 @@ async function leerHallazgos(
   ids?: number[],
 ): Promise<DeHallazgo[]> {
   const filas = await sql`SELECT ${COLUMNAS(sql)} FROM mejora_hallazgos h
-    WHERE h.estado NOT IN ${sql([...TERMINALES])} AND ${x.sinMarca} AND ${x.donde}
+    WHERE h.estado NOT IN ${sql([...TERMINALES])} AND ${cargaResuelta(sql)} AND ${x.sinMarca} AND ${x.donde}
       ${ids ? sql`AND h.id = ANY(${ids})` : sql``}
     ORDER BY h.id
     ${ids ? sql`FOR UPDATE OF h SKIP LOCKED` : sql``}`;
@@ -388,7 +392,8 @@ async function leerActividades(sql: Cliente, condicion: PendingQuery<Row[]>, ids
     JOIN mejora_rondas r ON r.id = ac.ronda_id
     JOIN mejora_hallazgos h ON h.id = a.hallazgo_id AND h.ronda = r.numero
     JOIN usuarios u ON u.id = a.responsable_id
-    WHERE a.fin_original IS NOT NULL AND a.estado IN ('abierta', 'en_proceso') AND h.estado = 'en_ejecucion' AND ${condicion}
+    WHERE a.fin_original IS NOT NULL AND a.estado IN ('abierta', 'en_proceso') AND h.estado = 'en_ejecucion' AND ${cargaResuelta(sql)}
+      AND ${condicion}
       ${ids ? sql`AND a.id = ANY(${ids})` : sql``}
     ORDER BY a.id
     ${ids ? sql`FOR SHARE OF h SKIP LOCKED FOR UPDATE OF a SKIP LOCKED` : sql``}`;

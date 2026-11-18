@@ -4,7 +4,7 @@
  */
 import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
-import { avisarA, type Destinatario } from "@/db/consultas/avisos-vencimiento";
+import { avisarA, type Destinatario } from "@/db/consultas/avisar";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
 import { turnoDe, type Turno } from "@/lib/mejoramiento/estados";
