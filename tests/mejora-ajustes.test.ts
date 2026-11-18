@@ -8,6 +8,7 @@ import type { TransactionSql } from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { leerActividad, misActividades, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import {
   AJUSTE_NO_EXISTE,
@@ -21,6 +22,8 @@ import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, NO_EXISTE } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { anularHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { revisarVencimientosDeMejoramiento } from "@/db/consultas/mejoramiento/vencimientos";
+import { verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { participacionEnHallazgo } from "@/lib/alcance";
 import {
   EsquemaDecidirAjuste,
@@ -32,7 +35,16 @@ import { parsearFormulario } from "@/lib/validacion";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import type { Criticidad } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
-import { actividadPorSql, baseDeMejora, c, evidenciaDeActividad, hallazgoEn } from "./utiles/mejoramiento";
+import {
+  actividadPorSql,
+  baseDeMejora,
+  c,
+  evidenciaDeActividad,
+  hallazgoEn,
+  HORA_DE_ESCENA,
+  silenciarMejoramiento,
+  terminarTodas,
+} from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 
@@ -794,5 +806,75 @@ describe("escalar a Gerencia", () => {
       );
       expect((await filaDe(tx, a)).gerencia_en).toBeNull();
       expect(await eventosDe(tx, h.id, "escalada")).toHaveLength(0);
+    }));
+});
+
+describe("la reprogramación de una actividad devuelta (revisión final, I1)", () => {
+  // Devuelta el miércoles 18 de noviembre para corregir antes del viernes 20; el lunes 23 ya está vencida.
+  const DEVUELVE = "2026-11-18T15:00:00Z";
+  const LUNES = "2026-11-23T15:00:00Z";
+  const MARTES = "2026-11-24T15:00:00Z";
+
+  async function devuelta(tx: TransactionSql) {
+    await silenciarMejoramiento(tx);
+    const b = await baseDeMejora(tx);
+    const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+    const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId, fin: "2026-12-15" });
+    const [{ id }] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id} ORDER BY id LIMIT 1`;
+    const actividadId = Number(id);
+    await terminarTodas(tx, b, h.id, HORA_DE_ESCENA);
+    await verificarImplementacion(
+      b.control,
+      {
+        hallazgoId: h.id,
+        actividades: [{ id: actividadId, conforme: false, nota: "Falta la firma del jefe de enfermería", corregirAntesDe: "2026-11-20" }],
+        metodos: ["evidencias"],
+      },
+      c(DEVUELVE, tx),
+    );
+    return { b, responsable, h, actividadId };
+  }
+
+  it("«la misma fecha» se compara con la que rige: la de corregir, no el fin", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, h, actividadId } = await devuelta(tx);
+      // El jueves 19, con la fecha para corregir todavía por venir.
+      const o = c("2026-11-19T15:00:00Z", tx);
+      await expect(pedirAjuste(responsable, reprogramar(h.id, actividadId, "2026-11-20"), o)).rejects.toThrow(
+        "La fecha nueva es la que ya tiene la actividad",
+      );
+      // El fin de la actividad no es la fecha que rige: pedir esa fecha es moverla.
+      const { id } = await pedirAjuste(responsable, reprogramar(h.id, actividadId, "2026-12-15"), o);
+      expect((await ajusteDe(tx, id)).datos).toEqual({ finAntes: "2026-11-20", finNuevo: "2026-12-15" });
+    }));
+
+  it("aprobada, mueve también la fecha para corregir: deja de estar vencida, la pasada no avisa ni escala y no se escala a Gerencia", () =>
+    revertida(sql, async (tx) => {
+      const { b, responsable, h, actividadId } = await devuelta(tx);
+      const o = c(LUNES, tx);
+      expect((await misActividades(responsable, o)).find((a) => a.id === actividadId)?.vencida).toBe(true);
+      const { id } = await pedirAjuste(responsable, reprogramar(h.id, actividadId, "2026-12-04"), o);
+      await decidirAjuste(b.admin, { ajusteId: id, aprueba: true }, o);
+
+      const [fila] = await tx`SELECT verificacion, to_char(fin, 'YYYY-MM-DD') AS fin, to_char(fin_original, 'YYYY-MM-DD') AS fin_original,
+          to_char(corregir_antes_de, 'YYYY-MM-DD') AS corregir_antes_de
+        FROM mejora_actividades WHERE id = ${actividadId}`;
+      expect({ ...fila }).toEqual({ verificacion: "devuelta", fin: "2026-12-04", fin_original: "2026-12-15", corregir_antes_de: "2026-12-04" });
+      expect((await misActividades(responsable, o)).find((a) => a.id === actividadId)?.vencida).toBe(false);
+      const pagina = await leerActividad(responsable, actividadId, o);
+      expect({ vencida: pagina?.vencida, vence: pagina?.vence }).toEqual({ vencida: false, vence: "2026-12-04" });
+      await expect(escalarAGerencia(b.admin, { actividadId, nota: NOTA_ESCALADA }, o)).rejects.toThrow("Solo se escala una actividad vencida");
+
+      const config = await obtenerConfigDocumental({ sql: tx });
+      await revisarVencimientosDeMejoramiento({ sql: tx, ahora: new Date(MARTES), config });
+      const marcas = await filaDe(tx, actividadId);
+      expect({ aviso: marcas.aviso_vencido_en, escalado: marcas.escalado_en, gerencia: marcas.gerencia_en }).toEqual({
+        aviso: null,
+        escalado: null,
+        gerencia: null,
+      });
+      const avisos = await tx`SELECT 1 FROM notificaciones WHERE entidad = 'mejora_actividad' AND entidad_id = ${actividadId}
+        AND tipo = 'mejora.actividad_vencida'`;
+      expect(avisos).toEqual([]);
     }));
 });

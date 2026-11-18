@@ -1070,7 +1070,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   «pasada» del módulo usa `opciones.ahora` (`new Date()` solo por omisión), para que la semilla siembre el pasado.
 - **La fecha de fin original de una actividad no cambia nunca** (spec 15 §10.6): `mejora_actividades.fin_original`
   es nula en un borrador, la fija la aprobación del plan (`dejarAprobado`) o la del ajuste que añade la actividad,
-  y desde entonces nadie la escribe; reprogramar cambia solo `fin` y suma una reprogramación. Contra ella se juzga
+  y desde entonces nadie la escribe; reprogramar cambia `fin` (y, en una actividad devuelta, también `corregir_antes_de`, la
+  fecha que rige: «la misma fecha» se compara con ella) y suma una reprogramación. Contra la original se juzga
   «a tiempo». Una actividad con `fin_original` nula no da alcance, avisos ni avance, y su responsable no cuenta como
   quien ejecutó. **Una sola regla de vencida** (`venceLaActividad`, `src/db/consultas/mejoramiento/vence-actividad.ts`:
   `corregir_antes_de` si la verificación la devolvió y, si no, `fin`, contra el día de hoy en la zona): la usan

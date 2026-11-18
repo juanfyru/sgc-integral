@@ -275,7 +275,8 @@ export async function quienDecideAjustes(
 /**
  * Pide un ajuste al plan aprobado, con la causa. El responsable solo pide reprogramar la suya; un líder del proceso o el Admin
  * SGC, cualquiera de los tres. Con el hallazgo «En ejecución» o «Por verificar». Reprogramar: una actividad sin terminar y su
- * fecha de fin nueva, de hoy en adelante (en la zona de la instalación), distinta de la que tiene y no anterior a su inicio.
+ * fecha de fin nueva, de hoy en adelante (en la zona de la instalación), distinta de la que rige (`venceLaActividad`: en una
+ * devuelta, la de corregir) y no anterior a su inicio.
  * Cancelar: una actividad sin terminar que no sea la última no cancelada de la ronda. Añadir: la actividad nueva, revisada como
  * en `guardarAccion`, con su fin de hoy en adelante. Un solo pendiente por actividad (lo garantiza el índice). Deja la fila con
  * su plazo (`venceEn("decision")`), el evento `ajuste_pedido`, su bitácora y el aviso a quienes lo deciden.
@@ -321,10 +322,11 @@ export async function pedirAjuste(
         if (v.tipo === "reprogramar") {
           const finNuevo = v.finNuevo!;
           if (finNuevo < hoy) throw new ErrorMejora(FIN_NUEVO_PASADO);
-          if (finNuevo === a!.fin) throw new ErrorMejora(FIN_NUEVO_IGUAL);
+          // Contra la fecha que rige (`venceLaActividad`): en una devuelta, la de corregir, no el fin.
+          if (finNuevo === a!.vence) throw new ErrorMejora(FIN_NUEVO_IGUAL);
           if (finNuevo < a!.inicio) throw new ErrorMejora(FIN_NUEVO_ANTES_DEL_INICIO);
-          datos = { finAntes: a!.fin, finNuevo };
-          cambio = { finAntes: a!.fin, finNuevo };
+          datos = { finAntes: a!.vence, finNuevo };
+          cambio = { finAntes: a!.vence, finNuevo };
         } else {
           await exigirOtraSinCancelar(tx, h, a!.id);
           datos = { estadoAntes: a!.estado };
@@ -451,11 +453,14 @@ async function aplicar(
   if (!a || !sigueAbierta(h, a)) throw new ErrorMejora(ACTIVIDAD_CERRADA);
   const deLaActividad = { ...base, actividadId: a.id, actividad: a.etiqueta };
   if (cambio.tipo === "reprogramar") {
-    // El fin vigente y sus marcas; la fecha de fin original no cambia nunca (spec §10.6).
+    // El fin vigente y sus marcas; la fecha de fin original no cambia nunca (spec §10.6). En una actividad devuelta la fecha que
+    // rige es la de corregir (`venceLaActividad`): la reprogramación la mueve también, o no tendría efecto.
     await tx`UPDATE mejora_actividades
-      SET fin = ${cambio.finNuevo}, reprogramaciones = reprogramaciones + 1, aviso_vencido_en = NULL, escalado_en = NULL, gerencia_en = NULL
+      SET fin = ${cambio.finNuevo},
+        corregir_antes_de = CASE WHEN verificacion = 'devuelta' THEN ${cambio.finNuevo}::date ELSE corregir_antes_de END,
+        reprogramaciones = reprogramaciones + 1, aviso_vencido_en = NULL, escalado_en = NULL, gerencia_en = NULL
       WHERE id = ${a.id}`;
-    return { detalle: { ...deLaActividad, finAntes: a.fin, finNuevo: cambio.finNuevo }, nueva: null };
+    return { detalle: { ...deLaActividad, finAntes: a.vence, finNuevo: cambio.finNuevo }, nueva: null };
   }
   await exigirOtraSinCancelar(tx, h, a.id);
   await tx`UPDATE mejora_actividades SET estado = 'cancelada', cancelada_en = ${c.ahora} WHERE id = ${a.id}`;
