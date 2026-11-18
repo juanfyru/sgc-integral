@@ -15,6 +15,9 @@ import type { Rol } from "@/lib/roles";
 /** La entidad de los avisos y de la bitácora de un hallazgo. */
 export const ENTIDAD_HALLAZGO = "mejora_hallazgo";
 
+/** La entidad de los avisos y de la bitácora de una actividad del plan. */
+export const ENTIDAD_ACTIVIDAD = "mejora_actividad";
+
 const rutaDelHallazgo = (id: number) => `/mejoramiento/${id}`;
 
 /** Los usuarios activos de esos roles, por id. */

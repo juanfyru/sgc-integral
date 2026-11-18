@@ -690,3 +690,35 @@ export const EsquemaFormularioRevisarPlan = z
   .object({ hallazgoId: idDeHallazgo, requiereRecursos: marca, notaRecursos: textoOpcional("La nota de los recursos", 1000), ...firma })
   .strict()
   .transform((d) => ({ ...d, requiereRecursos: d.requiereRecursos === "si" }));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Las actividades del plan aprobado: seguimientos, terminar y reasignar (spec 15 §10.2 a §10.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const idDeActividad = idRequerido("La actividad no es válida");
+
+/**
+ * Un seguimiento de la actividad (spec §10.3): la fecha, lo que se hizo, el avance (un entero de 0 a 100) y las barreras.
+ * Que la fecha no sea futura y que el avance no baje los mira el dominio (dependen de la hora y de lo ya registrado).
+ */
+export const EsquemaSeguimiento = z
+  .object({
+    actividadId: idDeActividad,
+    fecha: fechaDelDia("Escriba una fecha válida del seguimiento"),
+    realizado: textoAcotado("Lo que se hizo", 10, 4000),
+    avance: entero("El avance", 0, 100),
+    barreras: textoOpcional("Las barreras", 2000),
+  })
+  .strict();
+
+/** Un acto sobre la actividad que no lleva más datos: terminarla. */
+export const EsquemaActividad = z.object({ actividadId: idDeActividad }).strict();
+
+/** Reasignar la actividad (spec §10.2): el responsable nuevo y el motivo, de al menos diez caracteres. */
+export const EsquemaReasignar = z
+  .object({
+    actividadId: idDeActividad,
+    responsableId: idRequerido("Elija el responsable nuevo"),
+    motivo: textoAcotado("El motivo", 10, 1000),
+  })
+  .strict();

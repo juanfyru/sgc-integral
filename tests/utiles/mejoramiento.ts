@@ -7,6 +7,7 @@ import { registrarArchivo } from "@/db/consultas/admin";
 import type { OpcionesFlujo, SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { guardarAnalisis, guardarCausas, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
+import { registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { guardarAccion, guardarCriterio } from "@/db/consultas/mejoramiento/plan";
 import {
@@ -20,8 +21,10 @@ import { registrarHallazgo, type DatosDeHallazgo } from "@/db/consultas/mejorami
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
+import { fechaEnZona } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { procesoNuevo } from "./mixto";
-import { usuarioDePrueba } from "./tramites";
+import { sesionDe, usuarioDePrueba } from "./tramites";
 import { firmaDePrueba } from "./vigencia";
 
 export type BaseDeMejora = {
@@ -108,10 +111,11 @@ export type EstadoDeEscena =
   | "por_formular"
   | "en_revision"
   | "en_aprobacion"
-  | "en_ejecucion";
+  | "en_ejecucion"
+  | "por_verificar";
 
 /** Los estados que pasan por el plan: para llegar a ellos, la decisión es «sí». */
-const CON_PLAN: readonly EstadoDeEscena[] = ["por_formular", "en_revision", "en_aprobacion", "en_ejecucion"];
+const CON_PLAN: readonly EstadoDeEscena[] = ["por_formular", "en_revision", "en_aprobacion", "en_ejecucion", "por_verificar"];
 
 /** La hora de todos los pasos de `hallazgoEn` (martes 17 de noviembre de 2026, 10:00 en Bogotá). */
 export const HORA_DE_ESCENA = "2026-11-17T15:00:00Z";
@@ -181,8 +185,9 @@ export async function planDePrueba(
  * por SQL: el líder lo acepta (o lo rechaza, y Control Interno lo sostiene), quien actúa por el proceso (el líder, o el
  * Admin SGC si el proceso no tiene) registra la corrección con su evidencia y el Admin SGC decide la acción correctiva
  * («no», salvo para llegar a «Por formular» o más allá). Del plan en adelante: quien formula arma `planDePrueba` (si la
- * ronda no tiene acciones) y lo envía; el Admin SGC lo revisa (otro Admin SGC, si elaboró el de la base), con «requiere
- * recursos» solo para llegar a «En aprobación»; y Gerencia lo aprueba. Lanza si el camino no lleva a `estado` (p. ej. una
+ * ronda no tiene acciones, con `plan` como sus opciones) y lo envía; el Admin SGC lo revisa (otro Admin SGC, si elaboró el
+ * de la base), con «requiere recursos» solo para llegar a «En aprobación»; Gerencia lo aprueba; y, para llegar a «Por
+ * verificar», cada responsable termina su actividad (`terminarTodas`). Lanza si el camino no lleva a `estado` (p. ej. una
  * oportunidad no pasa por «Por corregir»). Todo a `HORA_DE_ESCENA`.
  */
 export async function hallazgoEn(
@@ -190,6 +195,7 @@ export async function hallazgoEn(
   b: BaseDeMejora,
   estado: EstadoDeEscena,
   cambios?: Partial<DatosDeHallazgo>,
+  plan?: Parameters<typeof planDePrueba>[3],
 ): Promise<HallazgoBase> {
   const o = c(HORA_DE_ESCENA, tx);
   const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, cambios), o);
@@ -240,7 +246,7 @@ export async function hallazgoEn(
         if (!CON_PLAN.includes(estado)) throw new Error(`hallazgoEn: el hallazgo quedó en ${h.estado} y no lleva a ${estado}`);
         const [{ acciones }] = await tx`SELECT count(*)::int AS acciones FROM mejora_acciones a
           JOIN mejora_rondas r ON r.id = a.ronda_id WHERE a.hallazgo_id = ${id} AND r.numero = ${h.ronda}`;
-        const formulador = Number(acciones) === 0 ? (await planDePrueba(tx, b, id)).formulador : await formuladorDe(tx, b, h.procesoId);
+        const formulador = Number(acciones) === 0 ? (await planDePrueba(tx, b, id, plan)).formulador : await formuladorDe(tx, b, h.procesoId);
         await enviarPlan(formulador, { hallazgoId: id, credenciales: { clave: "ok" } }, o);
         break;
       }
@@ -262,6 +268,9 @@ export async function hallazgoEn(
       }
       case "en_aprobacion":
         await aprobarPlan(b.gerencia, { hallazgoId: id, credenciales: { clave: "ok" } }, o);
+        break;
+      case "en_ejecucion":
+        await terminarTodas(tx, b, id, HORA_DE_ESCENA);
         break;
       default:
         throw new Error(`hallazgoEn: el hallazgo quedó en ${h.estado} y no lleva a ${estado}`);
@@ -297,4 +306,56 @@ export async function actividadPorSql(
     VALUES (${hallazgoId}, ${accionId}, 1, 'Actividad de prueba', ${responsableId}, '2026-11-01',
       ${cambios?.aprobada === false ? null : fin}, ${fin}, ${cambios?.estado ?? "abierta"}, ${cambios?.avance ?? 0}) RETURNING id`;
   return Number(a.id);
+}
+
+/** Un archivo de evidencia de una actividad, subido como `usuarioId` por el camino del dominio (`registrarArchivo`). */
+export async function evidenciaDeActividad(tx: TransactionSql, actividadId: number, usuarioId: number, nombre?: string): Promise<number> {
+  archivos += 1;
+  const { id } = await registrarArchivo(
+    {
+      versionId: null,
+      rol: "evidencia",
+      ruta: `mejoramiento/actividades/${actividadId}/${Date.now()}-${archivos}-evidencia.pdf`,
+      nombreOriginal: nombre ?? `evidencia-${archivos}.pdf`,
+      extension: "pdf",
+      mime: "application/pdf",
+      tamanoBytes: 10,
+      hashSha256: "e".repeat(64),
+      contexto: "mejora_actividad",
+      contextoId: actividadId,
+    },
+    usuarioId,
+    { sql: tx },
+  );
+  return Number(id);
+}
+
+/** La sesión de un usuario por su id: la de la base si es uno de ellos; si no, la que se lee de la BD. */
+async function sesionPorId(tx: TransactionSql, b: BaseDeMejora, usuarioId: number): Promise<SesionFlujo> {
+  const deLaBase = [b.admin, b.control, b.gerencia, b.lider, b.consulta].find((s) => s.usuarioId === usuarioId);
+  if (deLaBase) return deLaBase;
+  const [u] = await tx`SELECT usuario FROM usuarios WHERE id = ${usuarioId}`;
+  return sesionDe(tx, u.usuario as string);
+}
+
+/**
+ * Cada actividad sin terminar de la ronda en curso, por el dominio y a `ahora`: su responsable registra un seguimiento con el
+ * avance en 100, sube un archivo de evidencia y la termina. La última que termina lleva el hallazgo a «Por verificar».
+ */
+export async function terminarTodas(tx: TransactionSql, b: BaseDeMejora, hallazgoId: number, ahora: string): Promise<void> {
+  const o = c(ahora, tx);
+  const dia = fechaEnZona(new Date(ahora), zonaHoraria());
+  const pendientes = await tx`SELECT a.id, a.responsable_id FROM mejora_actividades a
+    JOIN mejora_acciones ac ON ac.id = a.accion_id
+    JOIN mejora_rondas r ON r.id = ac.ronda_id
+    JOIN mejora_hallazgos h ON h.id = a.hallazgo_id AND h.ronda = r.numero
+    WHERE a.hallazgo_id = ${hallazgoId} AND a.estado IN ('abierta', 'en_proceso')
+    ORDER BY a.id`;
+  for (const p of pendientes) {
+    const actividadId = Number(p.id);
+    const responsable = await sesionPorId(tx, b, Number(p.responsable_id));
+    await registrarSeguimiento(responsable, { actividadId, fecha: dia, realizado: "Se terminó la actividad del plan de prueba", avance: 100 }, o);
+    await evidenciaDeActividad(tx, actividadId, responsable.usuarioId);
+    await terminarActividad(responsable, { actividadId }, o);
+  }
 }

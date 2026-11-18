@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ClipboardCheck, Plus } from "lucide-react";
 import { FiltrosDeHallazgos } from "@/componentes/mejoramiento/FiltrosDeHallazgos";
 import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
@@ -10,7 +11,8 @@ import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
-import { listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { misActividades } from "@/db/consultas/mejoramiento/actividades";
+import { listarHallazgos, veAlgunHallazgoCompleto } from "@/db/consultas/mejoramiento/lectura";
 import { procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
@@ -33,10 +35,12 @@ function CifraEnlazada({ href, ...cifra }: { href: string; etiqueta: string; val
 /**
  * «Mejoramiento» (spec 15 §16.1, maqueta 1), para toda persona con sesión: las cifras de lo que ve (cada una lleva a su
  * filtro), los filtros (un formulario `GET`; un valor que no se entiende se ignora) y la lista. Qué hallazgos ve cada
- * persona lo decide `filtroHallazgos`; quien no ve ninguno recibe un estado vacío, sin saber si existen otros.
+ * persona lo decide `filtroHallazgos`; quien no ve ninguno recibe un estado vacío, sin saber si existen otros. Quien no ve
+ * ninguno completo y tiene alguna actividad va a «Mis actividades» (spec §16.1): lo que ve, lo ve desde sus actividades.
  */
 export default async function PaginaMejoramiento({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sesion = await exigirSesion();
+  if (!(await veAlgunHallazgoCompleto(sesion)) && (await misActividades(sesion)).length > 0) redirect("/mejoramiento/actividades");
   const filtro = filtroDeConsulta(await searchParams);
   const ahora = new Date();
   const [{ filas, cifras }, procesos, contexto] = await Promise.all([

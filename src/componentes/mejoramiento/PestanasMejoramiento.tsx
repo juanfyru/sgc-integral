@@ -11,11 +11,12 @@ const PESTANAS = [
 export type Pestana = (typeof PESTANAS)[number]["clave"];
 
 /**
- * Quién ve cada pestaña (spec 15 §16.1). Las de «Reportes recibidos», «Mis actividades» y «Mis reportes» se abren cuando
- * existan sus páginas (tareas 14 y 18): una pestaña que lleva a «no encontrado» no se ofrece.
+ * Quién ve cada pestaña (spec 15 §16.1): «Hallazgos», quien ve alguno; «Mis actividades», toda sesión. Las de «Reportes
+ * recibidos» y «Mis reportes» se abren cuando existan sus páginas (Tarea 18): una pestaña que lleva a «no encontrado» no se
+ * ofrece.
  */
 export function pestanasVisibles(_sujeto: SujetoPermiso, x: { veHallazgos: boolean }): Pestana[] {
-  return x.veHallazgos ? ["hallazgos"] : [];
+  return x.veHallazgos ? ["hallazgos", "actividades"] : ["actividades"];
 }
 
 export function PestanasMejoramiento({

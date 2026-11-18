@@ -13,6 +13,7 @@ import {
   devolverPlanAccion,
   devolverPlanGerenciaAccion,
   firmarRevisionAccion,
+  reasignarActividadAccion,
   rechazarHallazgoAccion,
   reclasificarHallazgoAccion,
   registrarCorreccionAccion,
@@ -22,6 +23,7 @@ import {
   validarCorreccionAccion,
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
+import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
 import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
 import { PanelDeFirmas, firmasDelEnvio } from "@/componentes/mejoramiento/plan/PanelDeFirmas";
@@ -49,6 +51,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
+import { puedeReasignar } from "@/db/consultas/mejoramiento/actividades";
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { firmasDeHallazgo, puedeAprobar, puedeDevolverSinRevisor, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
@@ -147,7 +150,7 @@ const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((
  * La página de un hallazgo (spec 15 §16.2, maqueta 2): el recorrido, la identificación, la corrección, lo que sigue (con el
  * formulario del paso a quien puede darlo) y el historial. Las demás secciones (causa raíz, plan, ejecución, verificación,
  * eficacia y cierre) las añaden las tareas 11 a 17. Quien no lo ve recibe «no encontrado». Quien lo ve solo por una
- * actividad (`ve: "actividad"`) no recibe el historial ni los archivos.
+ * actividad (`ve: "actividad"`) no recibe el historial ni los archivos. Cada actividad enlaza a su página para quien la abre.
  */
 export default async function PaginaHallazgo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
@@ -225,6 +228,31 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   // Los parecidos de otros procesos, solo al Administrador del SGC que revisa (spec §8.6): la consulta no recibe sesión.
   const parecidosDeOtros = revisa ? await parecidosDeOtrosProcesos(sqlPlan, h.id) : [];
   const anteriorAlRevisar = revisa && h.reincidenteDe && "id" in h.reincidenteDe ? await laVezPasada(sqlPlan, h.id) : null;
+  // Las actividades por su etiqueta («A1.2»), para el historial y para reasignar. La de un responsable inactivo, sin
+  // terminar, se reasigna desde aquí (Review Focus 2): quien puede reasignar la ve con «Responsable inactivo» y «Reasignar».
+  const etiquetas: Record<number, string> = Object.fromEntries(
+    h.rondas.flatMap((r) => r.acciones.flatMap((a) => a.actividades.map((x) => [x.id, `A${a.orden}.${x.orden}`] as const))),
+  );
+  const sinResponsable = (rondaEnCurso?.acciones ?? []).flatMap((a) =>
+    a.actividades.filter((x) => !x.responsableActivo && x.finOriginal !== null && (x.estado === "abierta" || x.estado === "en_proceso")),
+  );
+  const reasignaAqui =
+    completo && h.estado === "en_ejecucion" && sinResponsable.length > 0 && (await puedeReasignar(sqlPlan, sesion, { procesoId: h.procesoId }));
+  const usuariosParaReasignar = reasignaAqui ? await usuariosActivos() : [];
+  const reasignarInactivo = (x: { id: number; responsableId: number; responsable: string }) =>
+    reasignaAqui && sinResponsable.some((s) => s.id === x.id) ? (
+      <div className="flex justify-end">
+        <DialogoReasignar
+          key={`reasignar-${x.id}-${x.responsableId}`}
+          actividadId={x.id}
+          etiqueta={etiquetas[x.id] ?? ""}
+          responsableId={x.responsableId}
+          responsable={x.responsable}
+          usuarios={usuariosParaReasignar}
+          accion={reasignarActividadAccion}
+        />
+      </div>
+    ) : null;
   const causasSinAccion = rondaEnCurso
     ? rondaEnCurso.causas
         .filter((c) => !rondaEnCurso.acciones.some((a) => a.causaIds.includes(c.id)))
@@ -398,6 +426,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
                       indicador={await indicadorParaQuienLee(r, sesion)}
                       evaluableDesde={evaluableDesde}
                       hoy={hoy}
+                      deActividad={enCurso ? reasignarInactivo : undefined}
                     />
                   ) : null}
                 </div>
@@ -473,7 +502,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
               contexto={contextoDelPlan}
             />
           ) : null}
-          {completo ? <HistorialDelHallazgo eventos={h.eventos} zona={zona} /> : null}
+          {completo ? <HistorialDelHallazgo eventos={h.eventos} zona={zona} etiquetasDeActividad={etiquetas} /> : null}
         </div>
       </div>
     </div>

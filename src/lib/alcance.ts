@@ -844,6 +844,38 @@ export async function puedeVerHallazgo(
   return (await participacionEnHallazgo(hallazgoId, sujeto, opciones)) !== null;
 }
 
+/**
+ * Los hallazgos que la persona ve completos (la participación `"completo"`), para un `WHERE` sobre `mejora_hallazgos h`: con
+ * `mejora.ver_todo`, todos; si no, los de sus procesos activos y los que registró. Sin los que ve solo por una actividad.
+ */
+export function filtroHallazgosCompletos(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (puede(sujeto, "mejora.ver_todo")) return sql`true`;
+  return sql`(${liderDelProcesoDelHallazgo(sql, sujeto)} OR ${registroElHallazgo(sql, sujeto)})`;
+}
+
+/**
+ * Quién abre la página de una actividad de un plan aprobado (spec 15 §16.1; `fin_original`: la de un borrador todavía no es
+ * una actividad): quien ve su hallazgo completo, su responsable y quien registró un seguimiento en ella (el responsable
+ * anterior de una reasignada, como en `puedeAbrirArchivoDeMejora`). El responsable de otra actividad del mismo hallazgo lee el
+ * plan, pero no esta página. `false` si no existe.
+ */
+export async function puedeVerActividad(
+  actividadId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  if (!Number.isSafeInteger(actividadId) || actividadId <= 0) return false;
+  const sql = opciones?.sql ?? obtenerSql();
+  const [a] = await sql`
+    SELECT a.hallazgo_id, a.responsable_id = ${sujeto.usuarioId} AS suya,
+      EXISTS (SELECT 1 FROM mejora_seguimientos s WHERE s.actividad_id = a.id AND s.registrado_por = ${sujeto.usuarioId}) AS siguio
+    FROM mejora_actividades a WHERE a.id = ${actividadId} AND a.fin_original IS NOT NULL`;
+  if (!a) return false;
+  const participacion = await participacionEnHallazgo(Number(a.hallazgo_id), sujeto, { sql });
+  if (participacion === "completo") return true;
+  return participacion === "actividad" && (a.suya === true || a.siguio === true);
+}
+
 /** Los cuatro contextos de `archivos` que cuelgan de lo de mejoramiento (spec 15 §12.2). */
 const CONTEXTOS_DE_MEJORA = ["mejora_hallazgo", "mejora_ronda", "mejora_actividad", "mejora_reporte"];
 

@@ -977,6 +977,18 @@ export function describirEvento(e: EventoAuditoria): string {
       const a = texto(d.despues);
       return `Cambió el proceso ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${a ? ` a ${a}` : ""}${conMotivo(d.justificacion)}`;
     }
+    // ── Mejoramiento (15A): las actividades del plan aprobado (la etiqueta y el avance, nunca lo que se hizo ni el motivo)
+    case "mejora_seguimiento":
+    case "mejora_actividad_terminada":
+    case "mejora_actividad_reasignada": {
+      const codigo = texto(d.codigo);
+      const actividad = texto(d.actividad);
+      const cual = `${actividad ? `la actividad ${actividad}` : "una actividad"} ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+      if (e.accion === "mejora_actividad_reasignada") return `Reasignó ${cual}`;
+      if (e.accion === "mejora_actividad_terminada") return `Terminó ${cual}${d.ultima === true ? ", la última de su plan" : ""}`;
+      const avance = numero(typeof d.avance === "object" && d.avance !== null ? (d.avance as Record<string, unknown>).despues : null);
+      return `Registró un seguimiento de ${cual}${avance !== null ? ` (avance ${avance} %)` : ""}`;
+    }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1441,6 +1453,9 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_criterio_guardado: "Guardó el criterio de eficacia de un hallazgo",
   mejora_editar: "Editó la identificación de un hallazgo",
   mejora_cambiar_proceso: "Cambió el proceso de un hallazgo",
+  mejora_seguimiento: "Registró un seguimiento de una actividad",
+  mejora_actividad_terminada: "Terminó una actividad de un plan de acción",
+  mejora_actividad_reasignada: "Reasignó una actividad de un plan de acción",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

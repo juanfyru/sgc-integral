@@ -6,13 +6,14 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
-import { filtroHallazgos, participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
+import { filtroHallazgos, filtroHallazgosCompletos, participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
 import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import {
   TERMINALES,
   type Clase,
   type Criticidad,
+  type EstadoActividad,
   type EstadoHallazgo,
   type HallazgoBase,
   type Origen,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { avanceDeAccion, avanceDeHallazgo } from "./actividades";
 import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 
@@ -153,12 +155,13 @@ const ACTIVIDAD_VENCIDA = (sql: Cliente, hoy: string) => sql`EXISTS (
 
 /**
  * El avance (spec §10.3): el promedio de los avances de las acciones de la ronda en curso, y el de cada acción, el de sus
- * actividades no canceladas; entero, y nulo si no hay. Las de un plan que nunca se aprobó (sin `fin_original`) no cuentan:
- * sin plan aprobado la lista dice «—».
+ * actividades no canceladas; enteros (el de cada acción se redondea antes, como `avanceDeAccion` y `avanceDeHallazgo` en la
+ * página), y nulo si no hay. Las de un plan que nunca se aprobó (sin `fin_original`) no cuentan: sin plan aprobado la lista
+ * dice «—».
  */
 const AVANCE = (sql: Cliente) => sql`(
   SELECT round(avg(por_accion.promedio))::int FROM (
-    SELECT avg(aa.avance) AS promedio
+    SELECT round(avg(aa.avance)) AS promedio
     FROM mejora_actividades aa
     JOIN mejora_acciones ac ON ac.id = aa.accion_id
     JOIN mejora_rondas ar ON ar.id = ac.ronda_id
@@ -270,6 +273,16 @@ export async function listarHallazgos(
   return { filas: resultado.map((fila) => ({ ...fila, vencido: undefined }) as FilaDeHallazgo), cifras };
 }
 
+/**
+ * Si la persona ve completo algún hallazgo (`filtroHallazgosCompletos`): quien solo los ve por sus actividades va de la lista a
+ * «Mis actividades» (spec §16.1).
+ */
+export async function veAlgunHallazgoCompleto(sesion: SesionFlujo, opciones?: Opciones): Promise<boolean> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT EXISTS (SELECT 1 FROM mejora_hallazgos h WHERE ${filtroHallazgosCompletos(sql, sesion)}) AS ve`;
+  return f?.ve === true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // El detalle
 
@@ -287,6 +300,11 @@ export type ActividadDeDetalle = {
   avance: number;
   estado: string;
   reprogramaciones: number;
+  terminadaEn: Date | null;
+  /** La verificación de la implementación (Tarea 16): «conforme» o «devuelta». */
+  verificacion: string | null;
+  /** Quien mira abre la página de la actividad (`puedeVerActividad`): la del hallazgo la enlaza solo entonces. */
+  seAbre: boolean;
 };
 
 export type AccionDeDetalle = {
@@ -298,6 +316,8 @@ export type AccionDeDetalle = {
   indicadorCumplimiento: string | null;
   meta: string | null;
   causaIds: number[];
+  /** El promedio de sus actividades de un plan aprobado, sin las canceladas (`avanceDeAccion`); nulo si no hay. */
+  avance: number | null;
   actividades: ActividadDeDetalle[];
 };
 
@@ -389,6 +409,8 @@ export type DetalleDeHallazgo = {
   eventos: Array<{ id: number; tipo: string; ronda: number; detalle: unknown; quien: string | null; cuando: Date; fuera: boolean }>;
   turno: string;
   loQueSigue: LoQueSigueDelHallazgo;
+  /** El de las acciones de la ronda en curso (`avanceDeHallazgo`); nulo sin plan aprobado. */
+  avance: number | null;
 };
 
 /**
@@ -518,15 +540,40 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       FROM mejora_acciones WHERE hallazgo_id = ${id} ORDER BY orden, id`,
     sql`SELECT accion_id, causa_id FROM mejora_accion_causas WHERE hallazgo_id = ${id}`,
     sql`SELECT a.id, a.accion_id, a.orden, a.descripcion, a.responsable_id, u.nombre AS responsable, u.activo AS responsable_activo,
-        a.avance, a.estado,
+        a.avance, a.estado, a.terminada_en, a.verificacion,
         a.reprogramaciones, to_char(a.inicio, 'YYYY-MM-DD') AS inicio, to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original,
-        to_char(a.fin, 'YYYY-MM-DD') AS fin
+        to_char(a.fin, 'YYYY-MM-DD') AS fin,
+        EXISTS (SELECT 1 FROM mejora_seguimientos s WHERE s.actividad_id = a.id AND s.registrado_por = ${sesion.usuarioId}) AS siguio
       FROM mejora_actividades a JOIN usuarios u ON u.id = a.responsable_id
       WHERE a.hallazgo_id = ${id} ORDER BY a.orden, a.id`,
     sql`SELECT id, ronda_id, tipo, estado, actividad_id, causa, datos, pedido_en, decidido_en, nota
       FROM mejora_ajustes WHERE hallazgo_id = ${id} ORDER BY pedido_en, id`,
   ]);
 
+  // La regla de `puedeVerActividad`, con lo ya leído: la de un plan aprobado, para quien ve el hallazgo completo, su
+  // responsable o quien registró un seguimiento en ella.
+  const seAbre = (a: (typeof actividades)[number]) =>
+    a.fin_original !== null && (ve === "completo" || Number(a.responsable_id) === sesion.usuarioId || a.siguio === true);
+  const actividadesDe = (accionId: number): ActividadDeDetalle[] =>
+    actividades
+      .filter((a) => Number(a.accion_id) === accionId)
+      .map((a) => ({
+        id: Number(a.id),
+        orden: Number(a.orden),
+        descripcion: a.descripcion as string,
+        responsableId: Number(a.responsable_id),
+        responsable: a.responsable as string,
+        responsableActivo: a.responsable_activo === true,
+        inicio: a.inicio as string,
+        finOriginal: (a.fin_original as string | null) ?? null,
+        fin: a.fin as string,
+        avance: Number(a.avance),
+        estado: a.estado as string,
+        reprogramaciones: Number(a.reprogramaciones),
+        terminadaEn: (a.terminada_en as Date | null) ?? null,
+        verificacion: (a.verificacion as string | null) ?? null,
+        seAbre: seAbre(a),
+      }));
   const rondasDeDetalle: RondaDeDetalle[] = rondas.map((r) => ({
     id: Number(r.id),
     numero: Number(r.numero),
@@ -567,32 +614,23 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       })),
     acciones: acciones
       .filter((x) => Number(x.ronda_id) === Number(r.id))
-      .map((x) => ({
-        id: Number(x.id),
-        orden: Number(x.orden),
-        tipo: x.tipo as string,
-        descripcion: x.descripcion as string,
-        recursos: (x.recursos as string | null) ?? null,
-        indicadorCumplimiento: (x.indicador_cumplimiento as string | null) ?? null,
-        meta: (x.meta as string | null) ?? null,
-        causaIds: vinculos.filter((v) => Number(v.accion_id) === Number(x.id)).map((v) => Number(v.causa_id)),
-        actividades: actividades
-          .filter((a) => Number(a.accion_id) === Number(x.id))
-          .map((a) => ({
-            id: Number(a.id),
-            orden: Number(a.orden),
-            descripcion: a.descripcion as string,
-            responsableId: Number(a.responsable_id),
-            responsable: a.responsable as string,
-            responsableActivo: a.responsable_activo === true,
-            inicio: a.inicio as string,
-            finOriginal: (a.fin_original as string | null) ?? null,
-            fin: a.fin as string,
-            avance: Number(a.avance),
-            estado: a.estado as string,
-            reprogramaciones: Number(a.reprogramaciones),
-          })),
-      })),
+      .map((x) => {
+        const suyas = actividadesDe(Number(x.id));
+        return {
+          id: Number(x.id),
+          orden: Number(x.orden),
+          tipo: x.tipo as string,
+          descripcion: x.descripcion as string,
+          recursos: (x.recursos as string | null) ?? null,
+          indicadorCumplimiento: (x.indicador_cumplimiento as string | null) ?? null,
+          meta: (x.meta as string | null) ?? null,
+          causaIds: vinculos.filter((v) => Number(v.accion_id) === Number(x.id)).map((v) => Number(v.causa_id)),
+          avance: avanceDeAccion(
+            suyas.filter((a) => a.finOriginal !== null).map((a) => ({ avance: a.avance, estado: a.estado as EstadoActividad })),
+          ),
+          actividades: suyas,
+        };
+      }),
     ajustes: ajustes
       .filter((x) => Number(x.ronda_id) === Number(r.id))
       .map((x) => ({
@@ -691,5 +729,6 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     })),
     turno,
     loQueSigue: await loQueSigue(sql, h, sesion, turno),
+    avance: avanceDeHallazgo(rondasDeDetalle.find((r) => r.numero === h.ronda)?.acciones.map((a) => a.avance) ?? []),
   };
 }

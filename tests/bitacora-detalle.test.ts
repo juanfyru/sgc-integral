@@ -364,6 +364,19 @@ describe("frases con el detalle real", () => {
       "Guardó el criterio de eficacia del hallazgo HZ-2026-001",
     );
   });
+  it("las de las actividades: la etiqueta, el avance y los ids, nunca lo que se hizo ni el motivo", () => {
+    const base = { codigo: "HZ-2026-001", ronda: 1, hallazgoId: 9, actividad: "A1.2" };
+    expect(e("mejora_seguimiento", { ...base, seguimientoId: 3, fecha: "2026-11-18", avance: { antes: 30, despues: 40 } })).toBe(
+      "Registró un seguimiento de la actividad A1.2 del hallazgo HZ-2026-001 (avance 40 %)",
+    );
+    expect(e("mejora_seguimiento", {})).toBe("Registró un seguimiento de una actividad de un hallazgo");
+    expect(e("mejora_actividad_terminada", { ...base, archivos: 2 })).toBe("Terminó la actividad A1.2 del hallazgo HZ-2026-001");
+    expect(e("mejora_actividad_terminada", { ...base, archivos: 1, ultima: true })).toBe(
+      "Terminó la actividad A1.2 del hallazgo HZ-2026-001, la última de su plan",
+    );
+    expect(e("mejora_actividad_reasignada", { ...base, antes: 4, despues: 5 })).toBe("Reasignó la actividad A1.2 del hallazgo HZ-2026-001");
+    expect(e("mejora_actividad_reasignada", {})).toBe("Reasignó una actividad de un hallazgo");
+  });
 });
 
 /**
@@ -456,6 +469,10 @@ const ACCIONES_ARMADAS = [
   "mejora_accion_guardada",
   "mejora_accion_quitada",
   "mejora_criterio_guardado",
+  // mejoramiento/actividades.ts: `auditarActividad(tx, sesion, h, a, accion, …)`.
+  "mejora_seguimiento",
+  "mejora_actividad_terminada",
+  "mejora_actividad_reasignada",
   "activar_cargo",
   "desactivar_cargo",
 ];

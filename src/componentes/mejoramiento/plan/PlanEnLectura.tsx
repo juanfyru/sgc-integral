@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import type { AccionDeDetalle, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipos";
 import { leerCriterios } from "@/lib/mejoramiento/eficacia";
 import { fechaDeDia, fechaLargaDeDia } from "@/lib/mejoramiento/formato";
+import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import { ETIQUETA_CRITERIO, ETIQUETA_ESTADO_ACTIVIDAD, ETIQUETA_TIPO_ACCION } from "@/lib/mejoramiento/textos";
 import type { EstadoActividad, TipoAccion } from "@/lib/mejoramiento/tipos";
 
@@ -20,6 +22,11 @@ const VARIANTE_ACTIVIDAD: Record<EstadoActividad, VarianteInsignia> = {
 };
 
 type Actividad = AccionDeDetalle["actividades"][number];
+
+const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
+
+/** Sin terminar ni cancelar, de un plan aprobado: la que todavía necesita a su responsable. */
+const pendiente = (a: Actividad) => a.finOriginal !== null && a.estado !== "terminada" && a.estado !== "cancelada";
 
 /** Días calendario entre dos días `AAAA-MM-DD`. */
 const diasEntre = (desde: string, hasta: string) => Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000);
@@ -81,7 +88,9 @@ function textoDelCriterio(ronda: RondaDeDetalle, indicador: IndicadorEnLectura):
  * «4. Plan de acción» de la página del hallazgo (spec 15 §10 y §16.2, maqueta 2), solo lectura: cada acción con su tipo, las
  * causas que ataca y sus datos, y debajo sus actividades con el responsable, el fin, el avance y el estado (siempre con
  * texto). Al final, el criterio de eficacia; el indicador enlazado se nombra solo a quien lo ve. Plegable: abierta mientras
- * es la etapa en curso. Se lee en texto también por quien solo es responsable de una actividad.
+ * es la etapa en curso. Se lee en texto también por quien solo es responsable de una actividad. Cada actividad enlaza a su
+ * página solo si quien mira la abre (`seAbre`); la de un responsable inactivo lo dice con texto, y `deActividad` añade lo que
+ * la página ofrece en esa actividad (reasignarla).
  */
 export function PlanEnLectura({
   ronda,
@@ -90,6 +99,7 @@ export function PlanEnLectura({
   indicador,
   evaluableDesde,
   hoy,
+  deActividad,
 }: {
   ronda: RondaDeDetalle;
   titulo?: string;
@@ -98,6 +108,8 @@ export function PlanEnLectura({
   /** Con el plan sin aprobar: desde cuándo se podría evaluar con las fechas planeadas. */
   evaluableDesde?: string | null;
   hoy: string;
+  /** Lo que la página pone bajo una actividad (p. ej. «Reasignar»), o nada. */
+  deActividad?: (actividad: Actividad) => React.ReactNode;
 }) {
   const ordenDeCausa = new Map(ronda.causas.map((c) => [c.id, c.orden]));
   const actividades = ronda.acciones.reduce((n, a) => n + a.actividades.length, 0);
@@ -130,14 +142,29 @@ export function PlanEnLectura({
                 <span className="font-semibold">{`A${a.orden} · ${ETIQUETA_TIPO_ACCION[a.tipo as TipoAccion] ?? a.tipo}.`}</span> {a.descripcion}
               </h3>
               {detalles ? <p className="break-words text-xs text-muted-foreground">{detalles}</p> : null}
+              {typeof a.avance === "number" ? <p className="text-xs text-muted-foreground">{`Avance de la acción: ${a.avance} %`}</p> : null}
               <ul className="flex list-none flex-col gap-2">
                 {a.actividades.map((x) => (
                   <li key={x.id} className="flex min-w-0 flex-col gap-2 rounded-md border border-linea-suave p-3">
                     <p className="break-words text-sm">
-                      <span className="font-medium">{`A${a.orden}.${x.orden}`}</span> {x.descripcion}
+                      <span className="font-medium">{`A${a.orden}.${x.orden}`}</span>{" "}
+                      {x.seAbre ? (
+                        <Link href={rutaDeActividad(x.id)} className={`rounded-sm text-marca underline-offset-2 hover:underline ${FOCO}`}>
+                          {x.descripcion}
+                        </Link>
+                      ) : (
+                        x.descripcion
+                      )}
                     </p>
                     <dl className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
-                      <Dato etiqueta="Responsable">{x.responsable}</Dato>
+                      <Dato etiqueta="Responsable">
+                        {x.responsable}
+                        {!x.responsableActivo && pendiente(x) ? (
+                          <span className="mt-1 block">
+                            <Insignia variante="atencion">Responsable inactivo</Insignia>
+                          </span>
+                        ) : null}
+                      </Dato>
                       <Dato etiqueta="Fin">
                         {fechaDeDia(x.fin)}
                         {x.finOriginal && x.finOriginal !== x.fin ? (
@@ -156,6 +183,7 @@ export function PlanEnLectura({
                         <EstadoDeActividad a={x} hoy={hoy} />
                       </Dato>
                     </dl>
+                    {deActividad?.(x) ?? null}
                   </li>
                 ))}
               </ul>

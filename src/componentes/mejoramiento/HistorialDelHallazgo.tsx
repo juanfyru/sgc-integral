@@ -66,11 +66,29 @@ const FRASE: Record<string, string> = {
   accion_guardada: "Guardó una acción del plan",
   accion_quitada: "Quitó una acción del plan",
   criterio_guardado: "Guardó el criterio de eficacia",
+  seguimiento: "Registró un seguimiento de una actividad",
+  actividad_terminada: "Terminó una actividad",
+  reasignada: "Reasignó una actividad",
 };
 
-/** La frase del evento; algunas dependen de su detalle (el cierre sin acción, el «no» que se cambió por «sí»). */
-function fraseDe(e: Evento): string {
+/** La etiqueta de una actividad («A1.2») tal como la trae un evento, o nada si no tiene esa forma. */
+const etiquetaValida = (v: unknown): string | null => (typeof v === "string" && /^A\d+\.\d+$/.test(v) ? v : null);
+
+/**
+ * La frase del evento; algunas dependen de su detalle (el cierre sin acción, el «no» que se cambió por «sí»). Los de una
+ * actividad la nombran por su etiqueta: el seguimiento y la terminada la traen; la reasignación solo trae su id, que la página
+ * traduce con `etiquetas`.
+ */
+function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string {
   const d = comoObjeto(e.detalle);
+  if (e.tipo === "seguimiento" || e.tipo === "actividad_terminada" || e.tipo === "reasignada") {
+    const etiqueta = etiquetaValida(d.actividad) ?? (typeof d.actividadId === "number" ? etiquetaValida(etiquetas[d.actividadId]) : null);
+    if (!etiqueta) return FRASE[e.tipo];
+    if (e.tipo === "actividad_terminada") return `Terminó la actividad ${etiqueta}`;
+    if (e.tipo === "reasignada") return `Reasignó la actividad ${etiqueta}`;
+    const avance = comoObjeto(d.avance).despues;
+    return `Registró un seguimiento de la actividad ${etiqueta}${typeof avance === "number" ? ` (${avance} %)` : ""}`;
+  }
   if (e.tipo === "validar_correccion" && d.resultado === "sin_accion") return "Validó el cierre sin acción";
   if (e.tipo === "corregir" && d.requerida === false) return "Registró que no requiere corrección inmediata";
   if (e.tipo === "decidir_si" && "antes" in d) return "Exigió la acción correctiva después de un «no»";
@@ -81,8 +99,19 @@ function fraseDe(e: Evento): string {
   return FRASE[e.tipo] ?? e.tipo;
 }
 
-/** El historial del hallazgo, del más antiguo al más reciente (spec 15 §16.2). Solo lo ve quien ve el hallazgo completo. */
-export function HistorialDelHallazgo({ eventos, zona }: { eventos: readonly Evento[]; zona: string }) {
+/**
+ * El historial del hallazgo, del más antiguo al más reciente (spec 15 §16.2). Solo lo ve quien ve el hallazgo completo.
+ * `etiquetasDeActividad` nombra las actividades por su id («A1.2»).
+ */
+export function HistorialDelHallazgo({
+  eventos,
+  zona,
+  etiquetasDeActividad = {},
+}: {
+  eventos: readonly Evento[];
+  zona: string;
+  etiquetasDeActividad?: Readonly<Record<number, string>>;
+}) {
   return (
     <section aria-labelledby="historial-hallazgo" className="rounded-lg border border-border bg-card p-4">
       <h2 id="historial-hallazgo" className="font-display text-base font-semibold">
@@ -95,7 +124,7 @@ export function HistorialDelHallazgo({ eventos, zona }: { eventos: readonly Even
           {eventos.map((e) => (
             <li key={e.id} className="border-l-2 border-mod-planes pl-3 text-sm">
               <span className="block font-medium">
-                {fraseDe(e)}
+                {fraseDe(e, etiquetasDeActividad)}
                 {e.ronda > 1 ? ` (ronda ${e.ronda})` : ""}
               </span>
               {textosDe(e.detalle).map((t) => (

@@ -30,3 +30,14 @@ export function fechaLargaDeDia(dia: string): string {
   if (Number.isNaN(ms)) return dia;
   return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(ms);
 }
+
+/** Días calendario de un `yyyy-mm-dd` a otro. */
+export function diasEntreDias(desde: string, hasta: string): number {
+  return Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000);
+}
+
+/** «Vencida hace 4 días» de una actividad con el fin `fin` ya pasado el día `hoy` (spec §10.2). */
+export function vencidaHace(fin: string, hoy: string): string {
+  const n = Math.max(1, diasEntreDias(fin, hoy));
+  return `Vencida hace ${n} ${n === 1 ? "día" : "días"}`;
+}

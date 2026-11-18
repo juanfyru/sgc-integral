@@ -5,6 +5,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
+import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
+import { FormularioSeguimiento, TerminarActividad } from "@/componentes/mejoramiento/actividad/FormularioSeguimiento";
+import { ListaDeSeguimientos } from "@/componentes/mejoramiento/actividad/ListaDeSeguimientos";
+import { MisActividades } from "@/componentes/mejoramiento/actividad/MisActividades";
+import { PaginaDeActividad } from "@/componentes/mejoramiento/actividad/PaginaDeActividad";
+import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { resolverPanelDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
@@ -32,7 +38,7 @@ import { PasoAprobar } from "@/componentes/mejoramiento/plan/PasoAprobar";
 import { PasoEnviar } from "@/componentes/mejoramiento/plan/PasoEnviar";
 import { PasoRevisar } from "@/componentes/mejoramiento/plan/PasoRevisar";
 import { razonDeGerencia } from "@/lib/mejoramiento/reglas";
-import { fechaYHora } from "@/lib/mejoramiento/formato";
+import { fechaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
 import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
 import { Recorrido } from "@/componentes/mejoramiento/Recorrido";
 import type { FilaDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
@@ -43,6 +49,12 @@ import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
+
+// La zona de carga de la evidencia (en la página de una actividad) pide el enrutador del cliente.
+vi.mock("next/navigation", async (importar) => ({
+  ...(await importar<typeof import("next/navigation")>()),
+  useRouter: () => ({ refresh: () => {}, push: () => {} }),
+}));
 
 // 18 de noviembre de 2026 (miércoles), 10:00 en Bogotá. El lunes 16 es festivo: del 11 al 18 hay cuatro días hábiles.
 const AHORA = new Date("2026-11-18T15:00:00Z");
@@ -222,9 +234,9 @@ describe("fraseDeLoQueSigue (el armador real)", () => {
 });
 
 describe("PestanasMejoramiento", () => {
-  it("hoy solo ofrece «Hallazgos», a quien los ve; las demás llegan en las tareas 14 y 18", () => {
-    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: true })).toEqual(["hallazgos"]);
-    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: false })).toEqual([]);
+  it("ofrece «Hallazgos» a quien los ve y «Mis actividades» a toda sesión; «Mis reportes» llega en la tarea 18", () => {
+    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: true })).toEqual(["hallazgos", "actividades"]);
+    expect(pestanasVisibles({ rol: "consulta" }, { veHallazgos: false })).toEqual(["actividades"]);
     const html = renderToStaticMarkup(<PestanasMejoramiento activa="hallazgos" visibles={["hallazgos"]} />);
     expect(html).toContain("Hallazgos");
     expect(html).toContain('aria-current="page"');
@@ -966,5 +978,213 @@ describe("las firmas del plan (maqueta 5)", () => {
     expect(html).toContain("En ejecución");
     expect(html).toContain("Urgencias");
     expect(renderToStaticMarkup(<ParecidosDeOtrosProcesos parecidos={[]} />)).toContain("No hay hallazgos parecidos en otros procesos.");
+  });
+});
+
+describe("las actividades (maqueta 6)", () => {
+  const accion = vi.fn(async () => null);
+  const aviso = (html: string) => html.split(AVISO_SIN_PACIENTES).length - 1;
+
+  const actividad = (extra?: Partial<DetalleDeActividad>): DetalleDeActividad => ({
+    id: 22,
+    etiqueta: "A2.1",
+    descripcion: "Comprar e instalar el equipo",
+    responsableId: 8,
+    responsable: "J. Perdomo",
+    responsableActivo: true,
+    inicio: "2026-11-01",
+    finOriginal: "2026-11-14",
+    fin: "2026-11-14",
+    avance: 30,
+    estado: "en_proceso",
+    reprogramaciones: 0,
+    terminadaEn: null,
+    terminadaPor: null,
+    verificacion: null,
+    verificacionNota: null,
+    corregirAntesDe: null,
+    vencida: true,
+    accion: { id: 5, etiqueta: "A2", tipo: "correctiva", descripcion: "Instalar un termómetro con registro automático" },
+    hallazgo: { id: 14, codigo: "HZ-2026-014", titulo: "Dos turnos sin registro", proceso: "Farmacia", estado: "en_ejecucion", etiqueta: "En ejecución", ronda: 1, ve: "actividad" },
+    seguimientos: [
+      { id: 2, fecha: "2026-11-10", realizado: "Se pidieron tres cotizaciones.", avance: 30, barreras: "Sin existencias del equipo", quien: "J. Perdomo", creadoEn: new Date("2026-11-10T15:00:00Z") },
+      { id: 1, fecha: "2026-11-06", realizado: "Se definieron las especificaciones con la regente.", avance: 10, barreras: null, quien: "J. Perdomo", creadoEn: new Date("2026-11-06T15:00:00Z") },
+    ],
+    archivos: [],
+    esResponsable: true,
+    puedeSeguir: true,
+    puedeReasignar: false,
+    avanceMinimo: 30,
+    ajustePendiente: null,
+    ...extra,
+  });
+
+  const pagina = (a: DetalleDeActividad, x?: { subida?: string | null }) =>
+    renderToStaticMarkup(
+      <PaginaDeActividad
+        actividad={a}
+        hoy="2026-11-18"
+        usuarios={[{ id: 8, nombre: "J. Perdomo" }, { id: 9, nombre: "M. Cuéllar" }]}
+        subida={x?.subida ?? null}
+        quitables={[]}
+        acciones={{ seguimiento: accion, terminar: accion, reasignar: accion }}
+      />,
+    );
+
+  it("el formulario de seguimiento lleva el aviso de pacientes, la fecha hasta hoy y el avance desde el del anterior", () => {
+    const html = renderToStaticMarkup(<FormularioSeguimiento actividadId={22} hoy="2026-11-18" avanceActual={30} avanceMinimo={30} accion={accion} />);
+    expect(aviso(html)).toBe(1);
+    expect(html).toContain('name="actividadId" value="22"');
+    expect(html).toContain('name="realizado"');
+    expect(html).toMatch(/name="avance"[^>]*min="30"[^>]*max="100"|min="30"[^>]*max="100"[^>]*name="avance"/);
+    expect(html).toMatch(/type="date"[^>]*max="2026-11-18"/);
+    expect(html).toContain('name="barreras"');
+    expect(html).toContain("No puede ser menor que 30 %, el del seguimiento anterior.");
+    expect(html).toContain("Guardar seguimiento");
+  });
+
+  it("terminar dice lo que falta y pide confirmarlo", () => {
+    const html = renderToStaticMarkup(
+      <TerminarActividad actividadId={22} faltan={["el avance en 100 %", "al menos un archivo de evidencia"]} accion={accion} />,
+    );
+    expect(html).toContain("Para terminar hace falta el avance en 100 % y al menos un archivo de evidencia.");
+    expect(html).toContain("Terminar");
+    const lista = renderToStaticMarkup(<TerminarActividad actividadId={22} faltan={[]} accion={accion} />);
+    expect(lista).not.toContain("Para terminar hace falta");
+  });
+
+  it("los seguimientos, del más reciente al más antiguo, con quién, cuánto y las barreras", () => {
+    const html = renderToStaticMarkup(<ListaDeSeguimientos seguimientos={actividad().seguimientos} />);
+    expect(html.indexOf("tres cotizaciones")).toBeLessThan(html.indexOf("especificaciones"));
+    expect(html).toContain("J. Perdomo");
+    expect(html).toContain("30 %");
+    expect(html).toContain("Barreras: Sin existencias del equipo");
+    expect(renderToStaticMarkup(<ListaDeSeguimientos seguimientos={[]} />)).toContain("Aún no hay seguimientos.");
+  });
+
+  it("la página: qué hacer, de qué acción y hallazgo, el avance, el formulario, la evidencia y terminar", () => {
+    const html = pagina(actividad(), { subida: "/api/mejoramiento/actividades/22/archivos" });
+    expect(html).toContain("Vencida hace 4 días");
+    expect(html).toContain(`Fin: ${fechaDeDia("2026-11-14")}`);
+    expect(html).toContain("Acción A2 · Correctiva");
+    expect(html).toContain("Instalar un termómetro con registro automático");
+    expect(html).toContain("HZ-2026-014");
+    expect(html).toContain('href="/mejoramiento/14"');
+    expect(html).toContain("Ver el hallazgo");
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuenow="30"');
+    expect(html).toContain(`último seguimiento: ${fechaDeDia("2026-11-10")}`);
+    expect(html).toContain("Registrar seguimiento");
+    expect(aviso(html)).toBe(1);
+    expect(html).toContain("Zona de carga de la evidencia de la actividad");
+    expect(html).toContain("Para terminar hace falta el avance en 100 % y al menos un archivo de evidencia.");
+    expect(html).toContain("Seguimientos");
+    expect(html).not.toContain("Reasignar");
+  });
+
+  it("quien solo la lee no ve el formulario ni terminar; una terminada dice cuándo y quién", () => {
+    const html = pagina(
+      actividad({ estado: "terminada", vencida: false, avance: 100, puedeSeguir: false, esResponsable: false, terminadaEn: new Date("2026-11-16T15:00:00Z"), terminadaPor: "J. Perdomo" }),
+    );
+    expect(html).not.toContain("Registrar seguimiento");
+    expect(html).not.toContain("Para terminar");
+    expect(html).toContain("Terminada");
+    expect(html).toContain(`Terminada el ${fechaDeDia("2026-11-16")} por J. Perdomo`);
+  });
+
+  it("una actividad devuelta muestra la nota de quien verificó y la fecha para corregir", () => {
+    const html = pagina(actividad({ verificacion: "devuelta", verificacionNota: "Falta la foto del registrador instalado", corregirAntesDe: "2026-11-25", avanceMinimo: 0 }));
+    expect(html).toContain("Devuelta en la verificación");
+    expect(html).toContain("Falta la foto del registrador instalado");
+    expect(html).toContain(`Corríjala antes del ${fechaDeDia("2026-11-25")}`);
+  });
+
+  it("un responsable inactivo se dice con texto, y quien puede la reasigna (con el aviso de pacientes)", () => {
+    const html = pagina(actividad({ responsableActivo: false, esResponsable: false, puedeSeguir: false, puedeReasignar: true, hallazgo: { ...actividad().hallazgo, ve: "completo" } }));
+    expect(html).toContain("Responsable inactivo");
+    expect(html).toContain("Reasignar");
+    expect(aviso(html)).toBe(1);
+    const dialogo = renderToStaticMarkup(
+      <DialogoReasignar actividadId={22} etiqueta="A2.1" responsableId={8} responsable="J. Perdomo" usuarios={[{ id: 8, nombre: "J. Perdomo" }, { id: 9, nombre: "M. Cuéllar" }]} accion={accion} />,
+    );
+    expect(dialogo).toContain('name="responsableId"');
+    expect(dialogo).toContain("M. Cuéllar");
+    expect(dialogo).not.toContain('value="8"');
+    expect(dialogo).toContain('name="motivo"');
+    expect(dialogo).toContain('minLength="10"');
+    expect(aviso(dialogo)).toBe(1);
+  });
+
+  it("«Mis actividades»: cada una enlaza a la suya, con el hallazgo, el fin, el avance y el estado en texto", () => {
+    const html = renderToStaticMarkup(
+      <MisActividades
+        hoy="2026-11-18"
+        actividades={[
+          { id: 22, descripcion: "Comprar e instalar el equipo", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A2.1", fin: "2026-11-14", avance: 30, estado: "en_proceso", vencida: true, devuelta: false },
+          { id: 23, descripcion: "Capacitar al turno de noche", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A2.2", fin: "2026-12-01", avance: 0, estado: "abierta", vencida: false, devuelta: true },
+          { id: 24, descripcion: "Pedir el cambio documental", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A1.1", fin: "2026-11-10", avance: 100, estado: "terminada", vencida: false, devuelta: false },
+        ]}
+      />,
+    );
+    expect(html).toContain('href="/mejoramiento/actividades/22"');
+    expect(html).toContain("HZ-2026-014 · A2.1");
+    expect(html).toContain("Vencida hace 4 días");
+    expect(html).toContain("Devuelta");
+    expect(html).toContain("Abierta");
+    expect(html).toContain("Terminada");
+    expect(html).toContain("30 %");
+    expect(html.indexOf("Comprar e instalar")).toBeLessThan(html.indexOf("Pedir el cambio documental"));
+    expect(renderToStaticMarkup(<MisActividades hoy="2026-11-18" actividades={[]} />)).toContain("No tiene actividades a su cargo");
+  });
+
+  it("el historial dice el seguimiento, la actividad terminada y la reasignación con su motivo, sin el texto del seguimiento", () => {
+    const evento = (id: number, tipo: string, detalle: Record<string, unknown>) => ({
+      id, tipo, ronda: 1, quien: "Ana", cuando: new Date("2026-11-18T15:00:00Z"), detalle,
+    });
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        etiquetasDeActividad={{ 22: "A2.1" }}
+        eventos={[
+          evento(1, "seguimiento", { actividadId: 22, actividad: "A2.1", seguimientoId: 3, avance: { antes: 10, despues: 30 } }),
+          evento(2, "actividad_terminada", { actividadId: 22, actividad: "A2.1", archivos: 1 }),
+          evento(3, "reasignada", { actividadId: 22, antes: 8, despues: 9, motivo: "Cambió de servicio y ya no atiende" }),
+          evento(4, "reasignada", { actividadId: 99, antes: 8, despues: 9, motivo: "Salió de vacaciones largas" }),
+        ]}
+      />,
+    );
+    expect(html).toContain("Registró un seguimiento de la actividad A2.1 (30 %)");
+    expect(html).toContain("Terminó la actividad A2.1");
+    expect(html).toContain("Reasignó la actividad A2.1");
+    expect(html).toContain("Motivo: Cambió de servicio y ya no atiende");
+    expect(html).toContain("Reasignó una actividad");
+  });
+
+  it("«4. Plan de acción» enlaza las actividades que quien mira abre, con el avance de la acción y el responsable inactivo", () => {
+    const ronda = {
+      id: 1, numero: 1, estadoPlan: "aprobado", fechaEvaluacion: null, criterios: ["no_recurrencia"], criterioOtro: null, indicadorEficaciaId: null,
+      causas: [],
+      acciones: [
+        {
+          id: 3, orden: 1, tipo: "correctiva", descripcion: "Actualizar el procedimiento", recursos: null, indicadorCumplimiento: null, meta: null,
+          causaIds: [], avance: 45,
+          actividades: [
+            { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: false,
+              inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", avance: 60, estado: "en_proceso", reprogramaciones: 0, seAbre: true },
+            { id: 22, orden: 2, descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
+              inicio: "2026-11-01", finOriginal: "2026-11-30", fin: "2026-11-30", avance: 30, estado: "en_proceso", reprogramaciones: 0, seAbre: false },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof PlanEnLectura>[0]["ronda"];
+    const html = renderToStaticMarkup(
+      <PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={null} deActividad={(x) => (x.id === 21 ? <span>Reasignar A1.1</span> : null)} />,
+    );
+    expect(html).toContain('href="/mejoramiento/actividades/21"');
+    expect(html).not.toContain('href="/mejoramiento/actividades/22"');
+    expect(html).toContain("Avance de la acción: 45 %");
+    expect(html).toContain("Responsable inactivo");
+    expect(html.split("Responsable inactivo").length - 1).toBe(1);
+    expect(html).toContain("Reasignar A1.1");
   });
 });

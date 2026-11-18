@@ -6,6 +6,7 @@
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
+import { reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { aprobarPlan, devolverPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
@@ -33,6 +34,7 @@ import {
 } from "@/db/consultas/mejoramiento/registro";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
+  EsquemaActividad,
   EsquemaAnulacion,
   EsquemaCambioDeProceso,
   EsquemaCorreccion,
@@ -52,8 +54,10 @@ import {
   EsquemaPasoDelHallazgo,
   EsquemaQuitarAccion,
   EsquemaQuitarAnalisis,
+  EsquemaReasignar,
   EsquemaRechazo,
   EsquemaReclasificacion,
+  EsquemaSeguimiento,
   EsquemaSostener,
   RELACION_DE_REGISTRO,
 } from "@/lib/esquemas/mejoramiento";
@@ -414,5 +418,35 @@ export async function aprobarPlanAccion(_previo: EstadoAccion, formData: FormDat
     } catch (err) {
       return destinoDeFirma(err);
     }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Las actividades del plan aprobado (spec 15 §10.2 a §10.4). La condición de persona (el responsable, o un líder del proceso o
+// el Admin SGC para reasignar) la comprueba cada función del dominio dentro de su transacción. No redirigen: la página se
+// vuelve a leer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** El responsable registra un seguimiento de su actividad. */
+export async function registrarSeguimientoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaSeguimiento);
+    await registrarSeguimiento(sesion, d);
+  });
+}
+
+/** El responsable termina su actividad, con el avance en 100 y al menos un archivo de evidencia. */
+export async function terminarActividadAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaActividad);
+    await terminarActividad(sesion, d);
+  });
+}
+
+/** Un líder del proceso o el Admin SGC reasignan una actividad sin terminar, con motivo. */
+export async function reasignarActividadAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaReasignar);
+    await reasignarActividad(sesion, d);
   });
 }
