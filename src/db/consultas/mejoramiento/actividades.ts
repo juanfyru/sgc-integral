@@ -25,6 +25,7 @@ import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import {
   ACTIVIDAD_ABIERTA,
   ErrorMejora,
+  SE_AJUSTA_EN,
   type EstadoActividad,
   type EstadoHallazgo,
   type HallazgoBase,
@@ -187,6 +188,16 @@ const cuerpoDeActividad = (a: Pick<ActividadBloqueada, "descripcion" | "fin">) =
 /** Reasigna un Admin SGC o un líder activo del proceso del hallazgo (no `actuaPorElProceso`: el Admin SGC, siempre). */
 export async function puedeReasignar(tx: Cliente, p: Persona, h: Pick<HallazgoBase, "procesoId">): Promise<boolean> {
   if (!puede(p, "mejora.formular")) return false;
+  if (p.rol === "admin_sgc") return true;
+  return p.rol === "lider_proceso" && (await lideresDeProceso(h.procesoId, { sql: tx })).includes(p.usuarioId);
+}
+
+/**
+ * Pide cualquiera de los tres ajustes del plan (spec §6.1 y §10.6): el Admin SGC o un líder activo del proceso del hallazgo. El
+ * responsable de una actividad, que no es ninguno de los dos, solo pide reprogramar la suya (`ajustes.ts`).
+ */
+export async function pideAjustesDelPlan(tx: Cliente, p: Persona, h: Pick<HallazgoBase, "procesoId">): Promise<boolean> {
+  if (!puede(p, "mejora.ejecutar")) return false;
   if (p.rol === "admin_sgc") return true;
   return p.rol === "lider_proceso" && (await lideresDeProceso(h.procesoId, { sql: tx })).includes(p.usuarioId);
 }
@@ -401,8 +412,15 @@ export type DetalleDeActividad = {
   puedeReasignar: boolean;
   /** El avance más bajo que admite el próximo seguimiento: el del último registrado; 0 si no hay o si está devuelta. */
   avanceMinimo: number;
-  /** El ajuste por decidir de la actividad, si hay uno (la Tarea 15 lo completa). */
-  ajustePendiente: { id: number; tipo: string; pedidoEn: Date } | null;
+  /** El ajuste por decidir de la actividad, si hay uno (spec §10.6): su tipo y, en una reprogramación, la fecha que pide. */
+  ajustePendiente: { id: number; tipo: string; pedidoEn: Date; finNuevo: string | null } | null;
+  /**
+   * Puede pedir que se reprograme (spec §10.6, «Pedir ajuste de fecha»): su responsable, un líder del proceso o el Admin SGC,
+   * con la actividad abierta en un hallazgo que admite ajustes y sin otro ajuste por decidir.
+   */
+  puedePedirAjuste: boolean;
+  /** Cuándo se escaló a Gerencia (spec §10.7), o nulo. */
+  gerenciaEn: Date | null;
 };
 
 const fechaHoy = (ahora: Date) => fechaEnZona(ahora, zonaHoraria());
@@ -419,7 +437,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
   if (ve === null) return null;
   const [f] = await sql`
     SELECT a.id, a.orden, a.descripcion, a.responsable_id, u.nombre AS responsable, u.activo AS responsable_activo, a.avance,
-      a.estado, a.reprogramaciones, a.terminada_en, ut.nombre AS terminada_por, a.verificacion, a.verificacion_nota,
+      a.estado, a.reprogramaciones, a.terminada_en, ut.nombre AS terminada_por, a.verificacion, a.verificacion_nota, a.gerencia_en,
       to_char(a.inicio, 'YYYY-MM-DD') AS inicio, to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original,
       to_char(a.fin, 'YYYY-MM-DD') AS fin, to_char(a.corregir_antes_de, 'YYYY-MM-DD') AS corregir_antes_de,
       ac.id AS accion_id, ac.orden AS accion_orden, ac.tipo AS accion_tipo, ac.descripcion AS accion_descripcion,
@@ -440,18 +458,24 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
       FROM mejora_seguimientos s JOIN usuarios u ON u.id = s.registrado_por
       WHERE s.actividad_id = ${id} ORDER BY s.fecha DESC, s.id DESC`,
     archivosDe(sql, sesion, { contexto: "mejora_actividad", contextoId: id }),
-    sql`SELECT id, tipo, pedido_en FROM mejora_ajustes WHERE actividad_id = ${id} AND estado = 'pendiente' ORDER BY id DESC LIMIT 1`,
+    sql`SELECT id, tipo, pedido_en, datos->>'finNuevo' AS fin_nuevo
+      FROM mejora_ajustes WHERE actividad_id = ${id} AND estado = 'pendiente' ORDER BY id DESC LIMIT 1`,
   ]);
   const estado = f.estado as EstadoActividad;
   const estadoHallazgo = f.hallazgo_estado as EstadoHallazgo;
   const ronda = Number(f.ronda);
-  const abierta = estadoHallazgo === "en_ejecucion" && sigueAbierta({ ronda }, { rondaNumero: Number(f.ronda_numero), estado });
+  const deLaRonda = sigueAbierta({ ronda }, { rondaNumero: Number(f.ronda_numero), estado });
+  const abierta = estadoHallazgo === "en_ejecucion" && deLaRonda;
   const esResponsable = Number(f.responsable_id) === sesion.usuarioId;
   const devuelta = f.verificacion === "devuelta";
   // El último registrado (por id), como lo compara `registrarSeguimiento`; la lista va por fecha.
   const ultimo = seguimientos.reduce<(typeof seguimientos)[number] | null>((m, s) => (m === null || Number(s.id) > Number(m.id) ? s : m), null);
   const fin = f.fin as string;
   const [ajuste] = ajustes;
+  // La regla de `pedirAjuste` para reprogramar, con lo ya leído (el dominio la vuelve a comprobar dentro de su transacción).
+  const ajustable = SE_AJUSTA_EN.includes(estadoHallazgo) && deLaRonda && f.fin_original !== null && !ajuste && puede(sesion, "mejora.ejecutar");
+  const puedePedirAjuste =
+    ajustable && (esResponsable || (await pideAjustesDelPlan(sql, sesion, { procesoId: Number(f.proceso_id) })));
   return {
     id: Number(f.id),
     etiqueta: etiquetaDeActividad(Number(f.accion_orden), Number(f.orden)),
@@ -505,7 +529,11 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     puedeSeguir: esResponsable && abierta,
     puedeReasignar: abierta && (await puedeReasignar(sql, sesion, { procesoId: Number(f.proceso_id) })),
     avanceMinimo: ultimo && !devuelta ? Number(ultimo.avance) : 0,
-    ajustePendiente: ajuste ? { id: Number(ajuste.id), tipo: ajuste.tipo as string, pedidoEn: ajuste.pedido_en as Date } : null,
+    ajustePendiente: ajuste
+      ? { id: Number(ajuste.id), tipo: ajuste.tipo as string, pedidoEn: ajuste.pedido_en as Date, finNuevo: (ajuste.fin_nuevo as string | null) ?? null }
+      : null,
+    puedePedirAjuste,
+    gerenciaEn: (f.gerencia_en as Date | null) ?? null,
   };
 }
 

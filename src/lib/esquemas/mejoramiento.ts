@@ -1,7 +1,17 @@
 import { z } from "zod";
 import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
 import { inicioDespuesDelFin } from "@/lib/mejoramiento/textos";
-import { CLASES, CRITERIOS_EFICACIA, CRITICIDADES, METODOS_ANALISIS, ORIGENES_HALLAZGO, TIPOS_ACCION } from "@/lib/mejoramiento/tipos";
+import {
+  CLASES,
+  CRITERIOS_EFICACIA,
+  CRITICIDADES,
+  ESTADOS_ACTIVIDAD,
+  METODOS_ANALISIS,
+  ORIGENES_HALLAZGO,
+  TIPOS_ACCION,
+  TIPOS_AJUSTE,
+  type EstadoActividad,
+} from "@/lib/mejoramiento/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
 /** Toda fecha de día que una persona escribe en el módulo va del año 2000 al 2100. */
@@ -722,3 +732,189 @@ export const EsquemaReasignar = z
     motivo: textoAcotado("El motivo", 10, 1000),
   })
   .strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los ajustes al plan aprobado y la escalada a Gerencia (spec 15 §10.6 y §10.7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La actividad que añade un ajuste (spec §10.6): en una acción del plan (`accionId`) o en una acción nueva (`accion`), una de
+ * las dos, con su responsable y un inicio no posterior a su fin. Es también la forma en que se guarda en `mejora_ajustes.datos`
+ * y con la que se vuelve a leer. Lo que depende de la base (la ronda, las causas, el responsable activo, el fin de hoy en
+ * adelante) lo mira el dominio.
+ */
+export const EsquemaActividadQueSeAnade = z
+  .object({
+    accionId: idOpcional("La acción no es válida"),
+    accion: z
+      .object({
+        tipo: z.enum(TIPOS_ACCION, { error: "Elija el tipo de la acción nueva" }),
+        descripcion: textoAcotado("La descripción de la acción nueva", 3, 2000),
+        causaIds: causasQueAtaca.optional().transform((v) => v ?? []),
+      })
+      .strict()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    descripcion: textoAcotado("La descripción de la actividad nueva", 3, 1000),
+    responsableId: idRequerido("Elija el responsable de la actividad nueva"),
+    inicio: fechaDelDia("Escriba una fecha válida de inicio de la actividad nueva"),
+    fin: fechaDelDia("Escriba una fecha válida de fin de la actividad nueva"),
+  })
+  .strict()
+  .superRefine((a, ctx) => {
+    if ((a.accionId === null) === (a.accion === null)) {
+      ctx.addIssue({ code: "custom", path: ["accionId"], message: "Elija la acción de la actividad nueva o describa una acción nueva" });
+    }
+    if (a.inicio > a.fin) ctx.addIssue({ code: "custom", path: ["inicio"], message: inicioDespuesDelFin("nueva") });
+  });
+export type ActividadQueSeAnade = z.output<typeof EsquemaActividadQueSeAnade>;
+
+/**
+ * Lo que se pide (spec §10.6): la actividad y su fecha nueva (reprogramar), la actividad (cancelar) o la actividad nueva
+ * (agregar), siempre con la causa. Lo que no aplica al tipo se descarta. Quién pide, que la fecha sea de hoy en adelante y que
+ * la actividad siga abierta los mira el dominio.
+ */
+export const EsquemaPedirAjuste = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    tipo: z.enum(TIPOS_AJUSTE, { error: "Elija el ajuste que pide" }),
+    actividadId: idOpcional("La actividad no es válida"),
+    finNuevo: fechaOpcional("Escriba una fecha nueva válida"),
+    nueva: EsquemaActividadQueSeAnade.nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    causa: textoAcotado("La causa", 10, 2000),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const falta = (campo: string, message: string) => ctx.addIssue({ code: "custom", path: [campo], message });
+    if (d.tipo !== "agregar" && d.actividadId === null) falta("actividadId", "Elija la actividad");
+    if (d.tipo === "reprogramar" && d.finNuevo === null) falta("finNuevo", "Escriba la fecha nueva");
+    if (d.tipo === "agregar" && d.nueva === null) falta("nueva", "Describa la actividad que se añade");
+  })
+  .transform((d) => ({
+    hallazgoId: d.hallazgoId,
+    tipo: d.tipo,
+    actividadId: d.tipo === "agregar" ? null : d.actividadId,
+    finNuevo: d.tipo === "reprogramar" ? d.finNuevo : null,
+    nueva: d.tipo === "agregar" ? d.nueva : null,
+    causa: d.causa,
+  }));
+
+/**
+ * El formulario de un ajuste, en campos planos: la actividad y la fecha nueva, o la actividad nueva con su acción (`accionId`
+ * es el id de una acción del plan o `nueva`, con `accionTipo`, `accionDescripcion` y las casillas `causaIds`). Lo deja en la
+ * forma de `pedirAjuste`, que lo vuelve a validar todo con `EsquemaPedirAjuste`.
+ */
+export const EsquemaFormularioAjuste = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    tipo: z.enum(TIPOS_AJUSTE, { error: "Elija el ajuste que pide" }),
+    actividadId: z.string().optional(),
+    finNuevo: z.string().optional(),
+    accionId: z.string().optional(),
+    accionTipo: z.string().optional(),
+    accionDescripcion: z.string().optional(),
+    causaIds: variosValores("Las causas elegidas no son válidas"),
+    descripcion: z.string().optional(),
+    responsableId: z.string().optional(),
+    inicio: z.string().optional(),
+    fin: z.string().optional(),
+    causa: z.string().optional(),
+  })
+  .strict()
+  .transform((d) => {
+    const accionNueva = d.accionId === "nueva";
+    return {
+      hallazgoId: d.hallazgoId,
+      tipo: d.tipo,
+      actividadId: d.actividadId,
+      finNuevo: d.finNuevo,
+      nueva:
+        d.tipo === "agregar"
+          ? {
+              accionId: accionNueva ? undefined : d.accionId,
+              accion: accionNueva ? { tipo: d.accionTipo, descripcion: d.accionDescripcion, causaIds: d.causaIds } : undefined,
+              descripcion: d.descripcion,
+              responsableId: d.responsableId,
+              inicio: d.inicio,
+              fin: d.fin,
+            }
+          : undefined,
+      causa: d.causa,
+    };
+  });
+
+/** La nota de una decisión de ajuste: obligatoria al negar; si se escribe al aprobar, también de al menos diez caracteres. */
+export const NOTA_CORTA = "La nota debe tener al menos 10 caracteres";
+
+const notaDeLaDecision = (d: { aprueba: boolean; nota: string | null }, ctx: z.RefinementCtx) => {
+  if ((!d.aprueba && d.nota === null) || (d.nota !== null && d.nota.length < 10)) {
+    ctx.addIssue({ code: "custom", path: ["nota"], message: NOTA_CORTA });
+  }
+};
+
+const camposDeDecidirAjuste = {
+  ajusteId: idRequerido("El ajuste no es válido"),
+  aprueba: siONo("Diga si aprueba o niega el ajuste"),
+  nota: textoOpcional("La nota", 1000),
+};
+
+/** Aprobar o negar un ajuste (spec §10.6), con la nota (obligatoria al negar) y, si se quiere, el acta del Comité. */
+export const EsquemaDecidirAjuste = z.object({ ...camposDeDecidirAjuste, acta }).strict().superRefine(notaDeLaDecision);
+
+/** El formulario de la decisión: los de `EsquemaDecidirAjuste`, con el acta en dos campos planos. */
+export const EsquemaFormularioDecidirAjuste = z
+  .object({ ...camposDeDecidirAjuste, ...camposDelActa })
+  .strict()
+  .superRefine(actaCompleta)
+  .transform(conActa);
+
+const notaDeLaEscalada = textoAcotado("La nota", 10, 1000);
+
+/** Escalar a Gerencia una actividad vencida (spec §10.7), con una nota. */
+export const EsquemaEscalar = z.object({ actividadId: idDeActividad, nota: notaDeLaEscalada }).strict();
+
+/** La respuesta de Gerencia a una escalada, con su nota y, si se quiere, el acta del Comité. */
+export const EsquemaResponderEscalada = z.object({ actividadId: idDeActividad, nota: notaDeLaEscalada, acta }).strict();
+
+export const EsquemaFormularioResponderEscalada = z
+  .object({ actividadId: idDeActividad, nota: notaDeLaEscalada, ...camposDelActa })
+  .strict()
+  .superRefine(actaCompleta)
+  .transform(conActa);
+
+const diaGuardado = z.string().refine(esDiaReal);
+
+/** Lo que guarda cada tipo de ajuste en `mejora_ajustes.datos`: su antes y su después (spec §10.6). */
+const DATOS_DE_AJUSTE = {
+  reprogramar: z.object({ finAntes: diaGuardado, finNuevo: diaGuardado }).strict(),
+  agregar: EsquemaActividadQueSeAnade,
+  cancelar: z.object({ estadoAntes: z.enum(ESTADOS_ACTIVIDAD) }).strict(),
+} as const;
+
+export type CambioDeAjuste =
+  | { tipo: "reprogramar"; finAntes: string; finNuevo: string }
+  | ({ tipo: "agregar" } & ActividadQueSeAnade)
+  | { tipo: "cancelar"; estadoAntes: EstadoActividad };
+
+/**
+ * Los `datos` de un ajuste tal como se guardaron, leídos con el esquema estricto de su tipo: lo que no pasa (un tipo
+ * desconocido, una forma vieja) es `null` y quien lo pinta lo dice sin confiar en él.
+ */
+export function cambioDeAjuste(tipo: string, datos: unknown): CambioDeAjuste | null {
+  if (tipo === "reprogramar") {
+    const r = DATOS_DE_AJUSTE.reprogramar.safeParse(datos);
+    return r.success ? { tipo, ...r.data } : null;
+  }
+  if (tipo === "agregar") {
+    const r = DATOS_DE_AJUSTE.agregar.safeParse(datos);
+    return r.success ? { tipo, ...r.data } : null;
+  }
+  if (tipo === "cancelar") {
+    const r = DATOS_DE_AJUSTE.cancelar.safeParse(datos);
+    return r.success ? { tipo, ...r.data } : null;
+  }
+  return null;
+}

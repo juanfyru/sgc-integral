@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
-import { reasignarActividadAccion, registrarSeguimientoAccion, terminarActividadAccion } from "@/app/acciones-mejoramiento";
+import {
+  pedirAjusteAccion,
+  reasignarActividadAccion,
+  registrarSeguimientoAccion,
+  terminarActividadAccion,
+} from "@/app/acciones-mejoramiento";
 import { PaginaDeActividad } from "@/componentes/mejoramiento/actividad/PaginaDeActividad";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
@@ -17,7 +22,8 @@ export const metadata: Metadata = { title: "Actividad" };
 /**
  * La página de una actividad (spec 15 §16.1 y §16.2, maqueta 6), pensada para el teléfono: la abren su responsable, quien
  * registró un seguimiento en ella y quien ve su hallazgo completo; los demás reciben «no encontrado» (`exigirActividad`). Su
- * responsable registra seguimientos, adjunta evidencia y la termina; un líder del proceso o el Admin SGC la reasignan.
+ * responsable registra seguimientos, adjunta evidencia y la termina; un líder del proceso o el Admin SGC la reasignan; los tres
+ * piden reprogramarla (spec §10.6).
  */
 export default async function PaginaActividad({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
@@ -46,7 +52,12 @@ export default async function PaginaActividad({ params }: { params: Promise<{ id
         usuarios={usuarios}
         subida={subida?.ok ? `/api/mejoramiento/actividades/${a.id}/archivos` : null}
         quitables={quitables}
-        acciones={{ seguimiento: registrarSeguimientoAccion, terminar: terminarActividadAccion, reasignar: reasignarActividadAccion }}
+        acciones={{
+          seguimiento: registrarSeguimientoAccion,
+          terminar: terminarActividadAccion,
+          reasignar: reasignarActividadAccion,
+          pedirAjuste: pedirAjusteAccion,
+        }}
       />
     </div>
   );

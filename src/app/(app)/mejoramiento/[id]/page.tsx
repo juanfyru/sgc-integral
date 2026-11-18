@@ -9,21 +9,30 @@ import {
   cambiarProcesoAccion,
   decidirAccionCorrectivaAccion,
   decidirAccionCorrectivaGerenciaAccion,
+  decidirAjusteAccion,
+  decidirAjusteGerenciaAccion,
   devolverCorreccionAccion,
   devolverPlanAccion,
   devolverPlanGerenciaAccion,
+  escalarAGerenciaAccion,
   firmarRevisionAccion,
+  pedirAjusteAccion,
   reasignarActividadAccion,
   rechazarHallazgoAccion,
   reclasificarHallazgoAccion,
   registrarCorreccionAccion,
   registrarOcurrenciaAccion,
+  responderEscaladaAccion,
   retirarHallazgoAccion,
   sostenerHallazgoAccion,
   validarCorreccionAccion,
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
+import { AjustesDelPlan, fraseDeAjusteDeDetalle } from "@/componentes/mejoramiento/ajustes/AjustesDelPlan";
+import { DialogoAjusteDelPlan } from "@/componentes/mejoramiento/ajustes/DialogoPedirAjuste";
+import { DialogoEscalar, DialogoResponderEscalada } from "@/componentes/mejoramiento/ajustes/DialogoEscalar";
+import { PasoDecidirAjuste } from "@/componentes/mejoramiento/ajustes/PasoDecidirAjuste";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
 import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
 import { PanelDeFirmas, firmasDelEnvio } from "@/componentes/mejoramiento/plan/PanelDeFirmas";
@@ -51,13 +60,13 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
-import { puedeReasignar } from "@/db/consultas/mejoramiento/actividades";
+import { pideAjustesDelPlan, puedeReasignar } from "@/db/consultas/mejoramiento/actividades";
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { firmasDeHallazgo, puedeAprobar, puedeDevolverSinRevisor, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
-import type { DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
+import type { ActividadDeDetalle, DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import {
   cerradosDelProceso,
   documentosVigentesVisibles,
@@ -70,11 +79,11 @@ import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { puedeVerIndicador } from "@/lib/alcance";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
-import { diaCorto } from "@/lib/mejoramiento/formato";
-import { razonDeGerencia } from "@/lib/mejoramiento/reglas";
+import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
+import { razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
-import { estaAbierta, TERMINALES } from "@/lib/mejoramiento/tipos";
+import { estaAbierta, SE_AJUSTA_EN, TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
 import type { SesionValida } from "@/lib/sesion";
@@ -151,6 +160,9 @@ const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((
  * formulario del paso a quien puede darlo) y el historial. Las demás secciones (causa raíz, plan, ejecución, verificación,
  * eficacia y cierre) las añaden las tareas 11 a 17. Quien no lo ve recibe «no encontrado». Quien lo ve solo por una
  * actividad (`ve: "actividad"`) no recibe el historial ni los archivos. Cada actividad enlaza a su página para quien la abre.
+ * Con el plan aprobado, «Ajustes del plan» lista los ajustes de cada ronda (spec §10.6) y ofrece «Pedir un ajuste» (añadir o
+ * cancelar) a un líder del proceso o al Admin SGC; quien decide un ajuste lo hace en «Lo que sigue»; el Admin SGC escala a
+ * Gerencia una actividad vencida y Gerencia responde la escalada (§10.7).
  */
 export default async function PaginaHallazgo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
@@ -239,25 +251,77 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   const reasignaAqui =
     completo && h.estado === "en_ejecucion" && sinResponsable.length > 0 && (await puedeReasignar(sqlPlan, sesion, { procesoId: h.procesoId }));
   const usuariosParaReasignar = reasignaAqui ? await usuariosActivos() : [];
-  const reasignarInactivo = (x: { id: number; responsableId: number; responsable: string }) =>
-    reasignaAqui && sinResponsable.some((s) => s.id === x.id) ? (
-      <div className="flex justify-end">
-        <DialogoReasignar
-          key={`reasignar-${x.id}-${x.responsableId}`}
-          actividadId={x.id}
-          etiqueta={etiquetas[x.id] ?? ""}
-          responsableId={x.responsableId}
-          responsable={x.responsable}
-          usuarios={usuariosParaReasignar}
-          accion={reasignarActividadAccion}
-        />
-      </div>
-    ) : null;
   const causasSinAccion = rondaEnCurso
     ? rondaEnCurso.causas
         .filter((c) => !rondaEnCurso.acciones.some((a) => a.causaIds.includes(c.id)))
         .map((c) => ({ orden: c.orden, texto: c.texto, porque: c.sinAccionPorque }))
     : [];
+
+  // Los ajustes al plan aprobado (spec §10.6): desde aquí, añadir o cancelar, un líder del proceso o el Admin SGC (el
+  // responsable pide reprogramar la suya desde su actividad); quien decide lo hace en «Lo que sigue». El servidor lo repite.
+  const etiquetasDeAccion: Record<number, string> = Object.fromEntries(h.rondas.flatMap((r) => r.acciones.map((a) => [a.id, `A${a.orden}`] as const)));
+  const ajustable = completo && SE_AJUSTA_EN.includes(h.estado) && rondaEnCurso?.estadoPlan === "aprobado";
+  const pideAjustes = ajustable && (await pideAjustesDelPlan(sqlPlan, sesion, { procesoId: h.procesoId }));
+  const ajustesEnCurso = rondaEnCurso?.ajustes ?? [];
+  const conAjustePendiente = new Set(ajustesEnCurso.flatMap((x) => (x.estado === "pendiente" && x.actividadId !== null ? [x.actividadId] : [])));
+  const cancelables = (rondaEnCurso?.acciones ?? []).flatMap((a) =>
+    a.actividades
+      .filter((x) => x.finOriginal !== null && estaAbierta(x.estado) && !conAjustePendiente.has(x.id))
+      .map((x) => ({ id: x.id, etiqueta: etiquetas[x.id] ?? "", descripcion: x.descripcion })),
+  );
+  const usuariosParaAjustes = pideAjustes ? await usuariosActivos() : [];
+  const decidirAjustes = ajustesEnCurso
+    .filter((x) => x.puedeDecidir)
+    .map((x) => (
+      <PasoDecidirAjuste
+        key={`decidir-${x.id}`}
+        ajusteId={x.id}
+        frase={fraseDeAjusteDeDetalle(x, etiquetas, etiquetasDeAccion)}
+        causa={x.causa}
+        pedidoPor={x.pedidoPor}
+        pedidoEn={fechaDeDia(fechaEnZona(x.pedidoEn, zona))}
+        vence={x.venceEn ? fechaDeDia(fechaEnZona(x.venceEn, zona)) : null}
+        hoy={hoy}
+        accion={comoGerencia ? decidirAjusteGerenciaAccion : decidirAjusteAccion}
+      />
+    ));
+
+  // Lo que la página pone bajo cada actividad de la ronda en curso: reasignar la de un responsable inactivo (Review Focus 2),
+  // escalar a Gerencia una vencida (el Admin SGC, spec §10.7) y responder la escalada (Gerencia, una vez por escalada).
+  const ultimoDeLaEscalada = (actividadId: number) =>
+    h.eventos.findLast(
+      (e) =>
+        (e.tipo === "escalada" || e.tipo === "escalada_respondida") &&
+        typeof e.detalle === "object" &&
+        e.detalle !== null &&
+        (e.detalle as Record<string, unknown>).actividadId === actividadId,
+    )?.tipo ?? null;
+  const escala = gestiona && h.estado === "en_ejecucion";
+  const responde = completo && !terminado && puede(sesion, "mejora.aprobar");
+  const deActividad = (x: ActividadDeDetalle) => {
+    const vencida = x.finOriginal !== null && estaAbierta(x.estado) && x.fin < hoy;
+    const etiqueta = etiquetas[x.id] ?? "";
+    const controles = [
+      reasignaAqui && sinResponsable.some((s) => s.id === x.id) ? (
+        <DialogoReasignar
+          key={`reasignar-${x.id}-${x.responsableId}`}
+          actividadId={x.id}
+          etiqueta={etiqueta}
+          responsableId={x.responsableId}
+          responsable={x.responsable}
+          usuarios={usuariosParaReasignar}
+          accion={reasignarActividadAccion}
+        />
+      ) : null,
+      escala && vencida && x.gerenciaEn === null ? (
+        <DialogoEscalar key={`escalar-${x.id}`} actividadId={x.id} etiqueta={etiqueta} accion={escalarAGerenciaAccion} />
+      ) : null,
+      responde && x.gerenciaEn !== null && ultimoDeLaEscalada(x.id) === "escalada" ? (
+        <DialogoResponderEscalada key={`responder-${x.id}`} actividadId={x.id} etiqueta={etiqueta} hoy={hoy} accion={responderEscaladaAccion} />
+      ) : null,
+    ].filter((c) => c !== null);
+    return controles.length > 0 ? <div className="flex flex-wrap justify-end gap-2">{controles}</div> : null;
+  };
 
   const formulario = formulaAqui ? (
     <Link href={rutaDeFormular(h.id)} className={claseBoton("primario")}>
@@ -426,8 +490,31 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
                       indicador={await indicadorParaQuienLee(r, sesion)}
                       evaluableDesde={evaluableDesde}
                       hoy={hoy}
-                      deActividad={enCurso ? reasignarInactivo : undefined}
+                      deActividad={enCurso ? deActividad : undefined}
                     />
+                  ) : null}
+                  {conPlan && r.estadoPlan === "aprobado" && (r.ajustes.length > 0 || (enCurso && pideAjustes)) ? (
+                    <AjustesDelPlan
+                      ajustes={r.ajustes}
+                      etiquetas={etiquetas}
+                      acciones={etiquetasDeAccion}
+                      zona={zona}
+                      titulo={enCurso ? "Ajustes del plan" : `Ajustes del plan (ronda ${r.numero})`}
+                    >
+                      {enCurso && pideAjustes ? (
+                        <DialogoAjusteDelPlan
+                          key={`ajuste-plan-${r.ajustes.length}`}
+                          hallazgoId={h.id}
+                          actividades={cancelables}
+                          acciones={r.acciones.map((a) => ({ id: a.id, etiqueta: `A${a.orden}`, descripcion: a.descripcion }))}
+                          causas={r.causas.map((c) => ({ id: c.id, orden: c.orden, texto: c.texto }))}
+                          tipoPropuesto={tipoPropuesto(h.clase)}
+                          usuarios={usuariosParaAjustes}
+                          hoy={hoy}
+                          accion={pedirAjusteAccion}
+                        />
+                      ) : null}
+                    </AjustesDelPlan>
                   ) : null}
                 </div>
               );
@@ -489,7 +576,14 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
           ) : null}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          <LoQueSigue texto={sigue.turno}>{formulario}</LoQueSigue>
+          <LoQueSigue texto={sigue.turno}>
+            {formulario || decidirAjustes.length > 0 ? (
+              <>
+                {formulario}
+                {decidirAjustes}
+              </>
+            ) : null}
+          </LoQueSigue>
           {envio?.elaboro && rondaEnCurso && contextoDelPlan ? (
             <PanelDeFirmas
               firmas={envio}

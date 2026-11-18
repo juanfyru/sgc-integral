@@ -377,6 +377,39 @@ describe("frases con el detalle real", () => {
     expect(e("mejora_actividad_reasignada", { ...base, antes: 4, despues: 5 })).toBe("Reasignó la actividad A1.2 del hallazgo HZ-2026-001");
     expect(e("mejora_actividad_reasignada", {})).toBe("Reasignó una actividad de un hallazgo");
   });
+  it("los ajustes al plan y la escalada a Gerencia: el tipo, la etiqueta y la fecha, nunca la causa ni la nota", () => {
+    const base = { codigo: "HZ-2026-001", ronda: 1, hallazgoId: 9, ajusteId: 3 };
+    expect(
+      e("mejora_ajuste_pedido", { ...base, tipo: "reprogramar", actividadId: 7, actividad: "A1.2", finAntes: "2026-12-15", finNuevo: "2026-12-30" }),
+    ).toBe("Pidió un ajuste del plan del hallazgo HZ-2026-001: reprogramar la actividad A1.2 al 30 dic 2026");
+    expect(e("mejora_ajuste_pedido", { ...base, tipo: "agregar", accion: "A1", finNuevo: "2026-12-30" })).toBe(
+      "Pidió un ajuste del plan del hallazgo HZ-2026-001: añadir una actividad a la acción A1, con fin el 30 dic 2026",
+    );
+    expect(e("mejora_ajuste_negado", { ...base, tipo: "cancelar", actividadId: 7, actividad: "A1.2" })).toBe(
+      "Negó un ajuste del plan del hallazgo HZ-2026-001: cancelar la actividad A1.2",
+    );
+    expect(
+      e("mejora_ajustar", {
+        ...base,
+        tipo: "agregar",
+        actividadId: 8,
+        actividad: "A2.1",
+        accion: "A2",
+        accionNueva: true,
+        finNuevo: "2027-01-15",
+        estado: { antes: "por_verificar", despues: "en_ejecucion" },
+      }),
+    ).toBe("Aprobó un ajuste del plan del hallazgo HZ-2026-001: añadir la actividad A2.1 en una acción nueva, con fin el 15 ene 2027");
+    expect(e("mejora_ajuste_pedido", {})).toBe("Pidió un ajuste del plan de un hallazgo");
+    expect(e("mejora_escalada", { ...base, actividad: "A1.2", fin: "2026-12-15" })).toBe(
+      "Escaló a Gerencia la actividad vencida A1.2 del hallazgo HZ-2026-001",
+    );
+    expect(e("mejora_escalada_respondida", { ...base, actividad: "A1.2", acta: { numero: "12-2026", fecha: "2026-12-16" } })).toBe(
+      "Respondió la escalada a Gerencia de la actividad A1.2 del hallazgo HZ-2026-001 (acta 12-2026)",
+    );
+    expect(nombreDeAccion("mejora_ajustar")).toBe("Aprobó un ajuste del plan de un hallazgo");
+    expect(nombreDeAccion("mejora_escalada")).toBe("Escaló a Gerencia una actividad vencida");
+  });
 });
 
 /**

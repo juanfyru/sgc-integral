@@ -58,6 +58,15 @@ export const ACTIVIDAD_ABIERTA: readonly EstadoActividad[] = ["abierta", "en_pro
 /** Si la actividad sigue abierta (`ACTIVIDAD_ABIERTA`); acepta el texto tal como lo trae una lectura. */
 export const estaAbierta = (estado: string) => (ACTIVIDAD_ABIERTA as readonly string[]).includes(estado);
 
+/** Los ajustes al plan aprobado (spec §10.6) y su estado. */
+export const TIPOS_AJUSTE = ["reprogramar", "agregar", "cancelar"] as const;
+export type TipoAjuste = (typeof TIPOS_AJUSTE)[number];
+export const ESTADOS_AJUSTE = ["pendiente", "aprobado", "negado"] as const;
+export type EstadoAjuste = (typeof ESTADOS_AJUSTE)[number];
+
+/** Los estados del hallazgo en que su plan admite ajustes (spec §10.6; `DESDE.ajustar`). */
+export const SE_AJUSTA_EN: readonly string[] = ["en_ejecucion", "por_verificar"];
+
 export const ACCIONES_HALLAZGO = [
   "registrar", "aceptar", "rechazar", "retirar", "sostener", "confirmar_hallazgo", "confirmar_rechazo", "corregir",
   "decidir_si", "decidir_no", "validar_correccion", "devolver_correccion", "enviar_plan", "devolver_plan",

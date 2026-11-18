@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
+import { DialogoPedirAjuste } from "@/componentes/mejoramiento/ajustes/DialogoPedirAjuste";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
@@ -25,11 +26,25 @@ function loQueFalta(a: DetalleDeActividad): string[] {
   ].filter((x): x is string => x !== null);
 }
 
+/** El ajuste por decidir (spec §10.6): qué pide y desde cuándo; mientras se decide, la actividad sigue como está. */
+function textoDelPendiente(a: DetalleDeActividad, zona: string): string {
+  const p = a.ajustePendiente!;
+  const pedido = fechaDeDia(fechaEnZona(p.pedidoEn, zona));
+  const que =
+    p.tipo === "reprogramar" && p.finNuevo
+      ? `Hay un ajuste de fecha por decidir: al ${fechaDeDia(p.finNuevo)}, pedido el ${pedido}.`
+      : p.tipo === "cancelar"
+        ? `Hay un ajuste por decidir: cancelarla, pedido el ${pedido}.`
+        : `Hay un ajuste por decidir, pedido el ${pedido}.`;
+  return `${que} ${a.vencida ? "Mientras se decide, la actividad sigue contando como vencida." : "Mientras se decide, la actividad sigue como está."}`;
+}
+
 /**
  * La actividad (spec 15 §16.2, maqueta 6), pensada para el teléfono: el estado y el fin, el responsable, el avance, de qué
  * acción y de qué hallazgo es («Ver el hallazgo»), la nota de una devolución, el formulario de seguimiento con su evidencia y
- * «Terminar» para su responsable, «Reasignar» para quien puede y los seguimientos. Lo que cada uno puede hacer lo dice la
- * lectura (`puedeSeguir`, `puedeReasignar`); el servidor lo vuelve a comprobar en cada acto.
+ * «Terminar» para su responsable, «Pedir ajuste de fecha» (spec §10.6) y «Reasignar» para quien puede, la marca de la escalada a
+ * Gerencia y los seguimientos. Lo que cada uno puede hacer lo dice la lectura (`puedeSeguir`, `puedeReasignar`,
+ * `puedePedirAjuste`); el servidor lo vuelve a comprobar en cada acto.
  */
 export function PaginaDeActividad({
   actividad: a,
@@ -46,7 +61,7 @@ export function PaginaDeActividad({
   /** La dirección de la zona de carga de la evidencia, o nula si quien mira no sube. */
   subida: string | null;
   quitables: number[];
-  acciones: { seguimiento: AccionDelPaso; terminar: AccionDelPaso; reasignar: AccionDelPaso };
+  acciones: { seguimiento: AccionDelPaso; terminar: AccionDelPaso; reasignar: AccionDelPaso; pedirAjuste: AccionDelPaso };
 }) {
   const zona = zonaHoraria();
   const ultimo = a.seguimientos[0] ?? null;
@@ -88,6 +103,11 @@ export function PaginaDeActividad({
               {ultimo ? `último seguimiento: ${fechaDeDia(ultimo.fecha)}` : "sin seguimientos todavía"}
             </p>
           </div>
+          {a.gerenciaEn ? (
+            <p className="text-sm">
+              <Insignia variante="atencion">{`Escalada a Gerencia el ${fechaDeDia(fechaEnZona(a.gerenciaEn, zona))}`}</Insignia>
+            </p>
+          ) : null}
           {a.terminadaEn ? (
             <p className="text-sm">{`Terminada el ${fechaDeDia(fechaEnZona(a.terminadaEn, zona))}${a.terminadaPor ? ` por ${a.terminadaPor}` : ""}`}</p>
           ) : null}
@@ -123,9 +143,7 @@ export function PaginaDeActividad({
         </section>
 
         {a.ajustePendiente ? (
-          <p className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
-            {`Hay un ajuste por decidir desde el ${fechaDeDia(fechaEnZona(a.ajustePendiente.pedidoEn, zona))}. Mientras se decide, la actividad sigue como está.`}
-          </p>
+          <p className="rounded-md border border-border bg-muted px-3 py-2 text-sm">{textoDelPendiente(a, zona)}</p>
         ) : null}
 
         {a.puedeSeguir ? (
@@ -157,6 +175,21 @@ export function PaginaDeActividad({
               vacio="Sin archivos de evidencia."
             />
           </section>
+        ) : null}
+
+        {a.puedePedirAjuste ? (
+          <div className="flex">
+            <DialogoPedirAjuste
+              key={`ajuste-${a.id}-${a.fin}`}
+              hallazgoId={a.hallazgo.id}
+              actividadId={a.id}
+              etiqueta={a.etiqueta}
+              fin={a.fin}
+              finOriginal={a.finOriginal}
+              hoy={hoy}
+              accion={acciones.pedirAjuste}
+            />
+          </div>
         ) : null}
 
         {a.puedeSeguir ? (

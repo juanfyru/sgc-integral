@@ -576,8 +576,26 @@ const FRASES_DE_MEJORA: Record<AccionHallazgo, (h: HallazgoEnFrase) => string> =
   anular: (h) => `Anuló ${h.el}`,
   cargar: (h) => `Cargó ${h.el} ya en curso`,
   reclasificar: (h) => `Reclasificó ${h.el}`,
-  ajustar: (h) => `Aplicó un ajuste aprobado al plan ${h.del}`,
+  ajustar: (h) => `Aprobó un ajuste del plan ${h.del}`,
 };
+
+/**
+ * Lo que pide un ajuste del plan (spec 15 §10.6, Tarea 15), tras dos puntos: el tipo, la etiqueta de la actividad o de la
+ * acción y la fecha nueva. Vacío si el detalle no lo trae. Nunca la causa ni la nota (quedan en `mejora_ajustes`).
+ */
+function queAjuste(d: Record<string, unknown>): string {
+  const actividad = texto(d.actividad);
+  const laActividad = actividad ? `la actividad ${actividad}` : "una actividad";
+  const fin = dia(d.finNuevo);
+  if (d.tipo === "reprogramar") return `: reprogramar ${laActividad}${fin ? ` al ${fin}` : ""}`;
+  if (d.tipo === "cancelar") return `: cancelar ${laActividad}`;
+  if (d.tipo === "agregar") {
+    const accion = texto(d.accion);
+    const donde = d.accionNueva === true ? " en una acción nueva" : accion ? ` a la acción ${accion}` : "";
+    return `: añadir ${laActividad}${donde}${fin ? `, con fin el ${fin}` : ""}`;
+  }
+  return "";
+}
 
 /**
  * Lo que las firmas del plan añaden a su frase (spec 15 §8.6, Tarea 13): el envío que pasa directo a aprobación, la revisión
@@ -592,6 +610,7 @@ function fraseDelPlan(accion: AccionHallazgo, d: Record<string, unknown>, h: Hal
     return `${FRASES_DE_MEJORA.revisar_plan(h)}: requiere recursos adicionales o tiene impacto institucional`;
   }
   if (accion === "devolver_plan") return `${FRASES_DE_MEJORA.devolver_plan(h)}${conMotivo(d.observaciones)}`;
+  if (accion === "ajustar") return `${FRASES_DE_MEJORA.ajustar(h)}${queAjuste(d)}`;
   return null;
 }
 
@@ -988,6 +1007,25 @@ export function describirEvento(e: EventoAuditoria): string {
       if (e.accion === "mejora_actividad_terminada") return `Terminó ${cual}${d.ultima === true ? ", la última de su plan" : ""}`;
       const avance = numero(typeof d.avance === "object" && d.avance !== null ? (d.avance as Record<string, unknown>).despues : null);
       return `Registró un seguimiento de ${cual}${avance !== null ? ` (avance ${avance} %)` : ""}`;
+    }
+    // ── Mejoramiento (15A): los ajustes al plan aprobado y la escalada a Gerencia (ids, tipo, etiquetas y fechas; nunca la causa
+    // ni la nota). El ajuste aprobado lo registra la transición `ajustar` (`FRASES_DE_MEJORA`).
+    case "mejora_ajuste_pedido":
+    case "mejora_ajuste_negado": {
+      const codigo = texto(d.codigo);
+      const verbo = e.accion === "mejora_ajuste_pedido" ? "Pidió" : "Negó";
+      return `${verbo} un ajuste del plan ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${queAjuste(d)}`;
+    }
+    case "mejora_escalada":
+    case "mejora_escalada_respondida": {
+      const codigo = texto(d.codigo);
+      const actividad = texto(d.actividad);
+      const del = codigo ? `del hallazgo ${codigo}` : "de un hallazgo";
+      if (e.accion === "mejora_escalada") return `Escaló a Gerencia ${actividad ? `la actividad vencida ${actividad}` : "una actividad vencida"} ${del}`;
+      const cual = `${actividad ? `la actividad ${actividad}` : "una actividad"} ${del}`;
+      const acta = typeof d.acta === "object" && d.acta !== null ? (d.acta as Record<string, unknown>) : {};
+      const numeroDeActa = texto(acta.numero);
+      return `Respondió la escalada a Gerencia de ${cual}${numeroDeActa ? ` (acta ${numeroDeActa})` : ""}`;
     }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
@@ -1456,6 +1494,10 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_seguimiento: "Registró un seguimiento de una actividad",
   mejora_actividad_terminada: "Terminó una actividad de un plan de acción",
   mejora_actividad_reasignada: "Reasignó una actividad de un plan de acción",
+  mejora_ajuste_pedido: "Pidió un ajuste del plan de un hallazgo",
+  mejora_ajuste_negado: "Negó un ajuste del plan de un hallazgo",
+  mejora_escalada: "Escaló a Gerencia una actividad vencida",
+  mejora_escalada_respondida: "Respondió una escalada a Gerencia",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

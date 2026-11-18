@@ -64,7 +64,11 @@ const FRASE: Record<string, string> = {
   anular: "Anuló el hallazgo",
   cargar: "Cargó el hallazgo",
   reclasificar: "Reclasificó el hallazgo",
-  ajustar: "Decidió un ajuste del plan",
+  ajustar: "Aprobó un ajuste del plan",
+  ajuste_pedido: "Pidió un ajuste del plan",
+  ajuste_negado: "Negó un ajuste del plan",
+  escalada: "Escaló a Gerencia una actividad vencida",
+  escalada_respondida: "Respondió una escalada a Gerencia",
   ocurrencia: "Añadió una ocurrencia",
   editado: "Editó la identificación",
   proceso_cambiado: "Cambió el proceso",
@@ -84,9 +88,28 @@ const FRASE: Record<string, string> = {
 const etiquetaValida = (v: unknown): string | null => (typeof v === "string" && /^A\d+\.\d+$/.test(v) ? v : null);
 
 /**
+ * Lo que pidió un ajuste (spec §10.6), en infinitivo, con la etiqueta de la actividad o de la acción y la fecha nueva; nulo si el
+ * detalle no dice el tipo. Nunca la causa: no va en el evento.
+ */
+function queSeAjusta(d: Record<string, unknown>, etiqueta: string | null): string | null {
+  const actividad = etiqueta ? `la actividad ${etiqueta}` : "una actividad";
+  const fin = typeof d.finNuevo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d.finNuevo) ? fechaDeDia(d.finNuevo) : null;
+  if (d.tipo === "reprogramar") return `reprogramar ${actividad}${fin ? ` al ${fin}` : ""}`;
+  if (d.tipo === "cancelar") return `cancelar ${actividad}`;
+  if (d.tipo === "agregar") {
+    const accion = typeof d.accion === "string" && /^A\d+$/.test(d.accion) ? d.accion : null;
+    return `añadir ${actividad}${d.accionNueva === true ? " en una acción nueva" : accion ? ` a la acción ${accion}` : ""}`;
+  }
+  return null;
+}
+
+const VERBO_DEL_AJUSTE: Record<string, string> = { ajuste_pedido: "Pidió", ajustar: "Aprobó", ajuste_negado: "Negó" };
+
+/**
  * La frase del evento; algunas dependen de su detalle (el cierre sin acción, el «no» que se cambió por «sí»). Los de una
  * actividad la nombran por su etiqueta: el seguimiento y la terminada la traen; la reasignación solo trae su id, que la página
- * traduce con `etiquetas`, y dice de quién a quién (`personas`).
+ * traduce con `etiquetas`, y dice de quién a quién (`personas`). Los ajustes dicen qué se pidió, se aprobó o se negó; la escalada
+ * y su respuesta, de qué actividad (la nota y el acta van debajo, como en los demás).
  */
 function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string {
   const d = comoObjeto(e.detalle);
@@ -100,6 +123,15 @@ function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string
     if (e.tipo === "actividad_terminada") return `Terminó la actividad ${etiqueta}`;
     const avance = comoObjeto(d.avance).despues;
     return `Registró un seguimiento de la actividad ${etiqueta}${typeof avance === "number" ? ` (${avance} %)` : ""}`;
+  }
+  // Los ajustes y la escalada nombran la actividad por su etiqueta (la traen, o la página la traduce por su id).
+  if (Object.hasOwn(VERBO_DEL_AJUSTE, e.tipo) || e.tipo === "escalada" || e.tipo === "escalada_respondida") {
+    const etiqueta = etiquetaValida(d.actividad) ?? (typeof d.actividadId === "number" ? etiquetaValida(etiquetas[d.actividadId]) : null);
+    if (e.tipo === "escalada") return etiqueta ? `Escaló a Gerencia la actividad ${etiqueta}` : FRASE.escalada;
+    if (e.tipo === "escalada_respondida") return etiqueta ? `Respondió la escalada de la actividad ${etiqueta}` : FRASE.escalada_respondida;
+    // En uno que añade, la actividad que se pidió todavía no existe: el pedido y la negativa nombran la acción, no la actividad.
+    const que = queSeAjusta(d, e.tipo === "ajustar" || d.tipo !== "agregar" ? etiqueta : null);
+    return que ? `${VERBO_DEL_AJUSTE[e.tipo]} ${que}` : FRASE[e.tipo];
   }
   if (e.tipo === "validar_correccion" && d.resultado === "sin_accion") return "Validó el cierre sin acción";
   if (e.tipo === "corregir" && d.requerida === false) return "Registró que no requiere corrección inmediata";

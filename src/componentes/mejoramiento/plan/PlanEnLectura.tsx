@@ -8,6 +8,8 @@ import { fechaDeDia, fechaLargaDeDia, vencidaHace } from "@/lib/mejoramiento/for
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import { ETIQUETA_CRITERIO, ETIQUETA_ESTADO_ACTIVIDAD, ETIQUETA_TIPO_ACCION } from "@/lib/mejoramiento/textos";
 import { estaAbierta, type EstadoActividad, type TipoAccion } from "@/lib/mejoramiento/tipos";
+import { fechaEnZona } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 /** El indicador enlazado tal como lo puede leer quien mira: con su nombre solo si lo ve (`puedeVerIndicador`). */
 export type IndicadorEnLectura = { visible: true; codigo: string; nombre: string; periodicidad: Periodicidad } | { visible: false } | null;
@@ -38,6 +40,14 @@ function EstadoDeActividad({ a, hoy }: { a: Actividad; hoy: string }) {
       {ETIQUETA_ESTADO_ACTIVIDAD[estado] ?? a.estado}
     </Insignia>
   );
+}
+
+/** El ajuste por decidir de la actividad (spec §10.6), como lo dice la maqueta 2: «Pidió ajuste al 28 nov · por decidir». */
+function textoDelAjustePendiente(ajuste: RondaDeDetalle["ajustes"][number] | undefined): string | null {
+  if (!ajuste) return null;
+  if (ajuste.cambio?.tipo === "reprogramar") return `Pidió ajuste al ${fechaDeDia(ajuste.cambio.finNuevo)} · por decidir`;
+  if (ajuste.tipo === "cancelar") return "Pidió cancelarla · por decidir";
+  return "Ajuste por decidir";
 }
 
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
@@ -84,7 +94,8 @@ function textoDelCriterio(ronda: RondaDeDetalle, indicador: IndicadorEnLectura):
  * texto). Al final, el criterio de eficacia; el indicador enlazado se nombra solo a quien lo ve. Plegable: abierta mientras
  * es la etapa en curso. Se lee en texto también por quien solo es responsable de una actividad. Cada actividad enlaza a su
  * página solo si quien mira la abre (`seAbre`); la de un responsable inactivo lo dice con texto, y `deActividad` añade lo que
- * la página ofrece en esa actividad (reasignarla).
+ * la página ofrece en esa actividad (reasignarla, escalarla). Bajo el estado de cada una, la escalada a Gerencia y el ajuste por
+ * decidir (spec §10.6 y §10.7).
  */
 export function PlanEnLectura({
   ronda,
@@ -112,6 +123,8 @@ export function PlanEnLectura({
       ? "Sin acciones"
       : `${ronda.acciones.length} ${ronda.acciones.length === 1 ? "acción" : "acciones"} · ${actividades} ${actividades === 1 ? "actividad" : "actividades"}`;
   const criterio = textoDelCriterio(ronda, indicador);
+  const zona = zonaHoraria();
+  const pendientes = new Map(ronda.ajustes.filter((x) => x.estado === "pendiente" && x.actividadId !== null).map((x) => [x.actividadId, x]));
   return (
     <details open={abierta} className="group rounded-lg border border-border bg-card">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 rounded-lg px-4 py-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca">
@@ -175,6 +188,12 @@ export function PlanEnLectura({
                       </Dato>
                       <Dato etiqueta="Estado">
                         <EstadoDeActividad a={x} hoy={hoy} />
+                        {x.gerenciaEn ? (
+                          <span className="mt-1 block text-xs">{`Escalada a Gerencia el ${fechaDeDia(fechaEnZona(x.gerenciaEn, zona))}`}</span>
+                        ) : null}
+                        {pendientes.has(x.id) ? (
+                          <span className="mt-1 block text-xs text-muted-foreground">{textoDelAjustePendiente(pendientes.get(x.id))}</span>
+                        ) : null}
                       </Dato>
                     </dl>
                     {deActividad?.(x) ?? null}

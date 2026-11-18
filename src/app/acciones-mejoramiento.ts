@@ -7,6 +7,7 @@
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
+import { decidirAjuste, escalarAGerencia, pedirAjuste, responderEscalada } from "@/db/consultas/mejoramiento/ajustes";
 import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { aprobarPlan, devolverPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
@@ -41,13 +42,17 @@ import {
   EsquemaCriterio,
   EsquemaDevolucion,
   EsquemaDevolverPlan,
+  EsquemaEscalar,
   EsquemaFormularioAccion,
+  EsquemaFormularioAjuste,
   EsquemaFormularioAnalisis,
   EsquemaFormularioArbitraje,
   EsquemaFormularioCausas,
+  EsquemaFormularioDecidirAjuste,
   EsquemaFormularioDecision,
   EsquemaFormularioFirmaDelPlan,
   EsquemaFormularioPreguntas,
+  EsquemaFormularioResponderEscalada,
   EsquemaFormularioRevisarPlan,
   EsquemaHallazgo,
   EsquemaOcurrencia,
@@ -448,5 +453,48 @@ export async function reasignarActividadAccion(_previo: EstadoAccion, formData: 
   return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
     const d = parsearFormulario(datos, EsquemaReasignar);
     await reasignarActividad(sesion, d);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los ajustes al plan aprobado y la escalada a Gerencia (spec 15 §10.6 y §10.7). Quién pide qué, quién decide y si la actividad
+// sigue vencida lo comprueba cada función del dominio dentro de su transacción. Decidir lo dan dos roles con permisos distintos
+// de la matriz: una acción por permiso, y las dos llaman la misma función. No redirigen: la página se vuelve a leer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Pide un ajuste: el responsable, reprogramar la suya; un líder del proceso o el Admin SGC, también añadir y cancelar. */
+export async function pedirAjusteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioAjuste);
+    // Los campos llegan como texto: `pedirAjuste` los lee con `EsquemaPedirAjuste` antes de escribir.
+    await pedirAjuste(sesion, d as unknown as Parameters<typeof pedirAjuste>[1]);
+  });
+}
+
+/** El Admin SGC decide un ajuste de un plan que valió la revisión (o que pidió Gerencia, si nadie más puede). */
+export async function decidirAjusteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    await decidirAjuste(sesion, parsearFormulario(datos, EsquemaFormularioDecidirAjuste));
+  });
+}
+
+/** Gerencia decide un ajuste de un plan que aprobó (o que pidió el único Admin SGC activo). */
+export async function decidirAjusteGerenciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.aprobar", async (_usuarioId, datos, sesion) => {
+    await decidirAjuste(sesion, parsearFormulario(datos, EsquemaFormularioDecidirAjuste));
+  });
+}
+
+/** El Admin SGC escala a Gerencia una actividad vencida, con una nota. */
+export async function escalarAGerenciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    await escalarAGerencia(sesion, parsearFormulario(datos, EsquemaEscalar));
+  });
+}
+
+/** Gerencia responde una escalada, con su nota y, si quiere, el acta del Comité. */
+export async function responderEscaladaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.aprobar", async (_usuarioId, datos, sesion) => {
+    await responderEscalada(sesion, parsearFormulario(datos, EsquemaFormularioResponderEscalada));
   });
 }

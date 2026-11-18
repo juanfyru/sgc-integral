@@ -10,7 +10,12 @@ import { FormularioSeguimiento, TerminarActividad, focoDeLaConfirmacion } from "
 import { ListaDeSeguimientos } from "@/componentes/mejoramiento/actividad/ListaDeSeguimientos";
 import { MisActividades } from "@/componentes/mejoramiento/actividad/MisActividades";
 import { PaginaDeActividad } from "@/componentes/mejoramiento/actividad/PaginaDeActividad";
+import { AjustesDelPlan } from "@/componentes/mejoramiento/ajustes/AjustesDelPlan";
+import { DialogoAjusteDelPlan, DialogoPedirAjuste } from "@/componentes/mejoramiento/ajustes/DialogoPedirAjuste";
+import { DialogoEscalar, DialogoResponderEscalada } from "@/componentes/mejoramiento/ajustes/DialogoEscalar";
+import { PasoDecidirAjuste } from "@/componentes/mejoramiento/ajustes/PasoDecidirAjuste";
 import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
+import type { AjusteDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { resolverPanelDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
@@ -720,6 +725,7 @@ describe("el plan de acción (maqueta 5)", () => {
           ],
         },
       ],
+      ajustes: [],
     } as unknown as Parameters<typeof PlanEnLectura>[0]["ronda"];
     const visible = { visible: true as const, codigo: "FAR-ID-002", nombre: "Registros de temperatura completos", periodicidad: "mensual" as const };
     const html = renderToStaticMarkup(<PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={visible} />);
@@ -1016,6 +1022,8 @@ describe("las actividades (maqueta 6)", () => {
     puedeReasignar: false,
     avanceMinimo: 30,
     ajustePendiente: null,
+    puedePedirAjuste: false,
+    gerenciaEn: null,
     ...extra,
   });
 
@@ -1027,7 +1035,7 @@ describe("las actividades (maqueta 6)", () => {
         usuarios={[{ id: 8, nombre: "J. Perdomo" }, { id: 9, nombre: "M. Cuéllar" }]}
         subida={x?.subida ?? null}
         quitables={[]}
-        acciones={{ seguimiento: accion, terminar: accion, reasignar: accion }}
+        acciones={{ seguimiento: accion, terminar: accion, reasignar: accion, pedirAjuste: accion }}
       />,
     );
 
@@ -1185,6 +1193,7 @@ describe("las actividades (maqueta 6)", () => {
           ],
         },
       ],
+      ajustes: [],
     } as unknown as Parameters<typeof PlanEnLectura>[0]["ronda"];
     const html = renderToStaticMarkup(
       <PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={null} deActividad={(x) => (x.id === 21 ? <span>Reasignar A1.1</span> : null)} />,
@@ -1195,5 +1204,244 @@ describe("las actividades (maqueta 6)", () => {
     expect(html).toContain("Responsable inactivo");
     expect(html.split("Responsable inactivo").length - 1).toBe(1);
     expect(html).toContain("Reasignar A1.1");
+  });
+});
+
+describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => {
+  const accion = vi.fn(async () => null);
+  const aviso = (html: string) => html.split(AVISO_SIN_PACIENTES).length - 1;
+  const pedido = new Date("2026-11-18T15:00:00Z");
+
+  it("«Pedir ajuste de fecha»: la fecha original se conserva, la nueva desde hoy, la causa con el aviso y la nota de que sigue vencida", () => {
+    const html = renderToStaticMarkup(
+      <DialogoPedirAjuste hallazgoId={14} actividadId={22} etiqueta="A2.1" fin="2026-11-14" finOriginal="2026-11-14" hoy="2026-11-18" accion={accion} />,
+    );
+    expect(html).toContain("Pedir ajuste de fecha");
+    expect(html).toContain('name="hallazgoId" value="14"');
+    expect(html).toContain('name="tipo" value="reprogramar"');
+    expect(html).toContain('name="actividadId" value="22"');
+    expect(html).toMatch(/min="2026-11-18"[^>]*name="finNuevo"/);
+    expect(html).toContain(`${fechaDeDia("2026-11-14")} (se conserva siempre)`);
+    expect(html).toContain('name="causa"');
+    expect(html).toContain('minLength="10"');
+    expect(html).toContain("Mientras se decide, la actividad sigue contando como vencida.");
+    expect(aviso(html)).toBe(1);
+  });
+
+  it("«Pedir un ajuste» del plan: añadir (en una acción del plan o en una nueva, con sus causas) o cancelar una actividad sin terminar", () => {
+    const html = renderToStaticMarkup(
+      <DialogoAjusteDelPlan
+        hallazgoId={14}
+        actividades={[{ id: 22, etiqueta: "A2.1", descripcion: "Comprar e instalar el equipo" }]}
+        acciones={[{ id: 5, etiqueta: "A2", descripcion: "Instalar un termómetro con registro automático" }]}
+        causas={[{ id: 3, orden: 1, texto: "El procedimiento no asigna el registro al turno de noche" }]}
+        tipoPropuesto="correctiva"
+        usuarios={[{ id: 8, nombre: "J. Perdomo" }, { id: 9, nombre: "M. Cuéllar" }]}
+        hoy="2026-11-18"
+        accion={accion}
+      />,
+    );
+    expect(html).toContain("Pedir un ajuste");
+    expect(html).toContain('name="hallazgoId" value="14"');
+    expect(html).toContain("Añadir una actividad");
+    expect(html).toContain("Cancelar una actividad");
+    expect(html).toContain('value="agregar"');
+    expect(html).toContain('value="cancelar"');
+    // Añadir: en una acción del plan o en una nueva (con su tipo, su descripción y las causas que ataca).
+    expect(html).toContain('name="accionId"');
+    expect(html).toContain("A2 · Instalar un termómetro");
+    expect(html).toContain('value="nueva"');
+    expect(html).toContain('name="accionTipo"');
+    expect(html).toContain('name="accionDescripcion"');
+    expect(html).toContain('name="causaIds"');
+    expect(html).toContain("El procedimiento no asigna el registro");
+    expect(html).toContain('name="descripcion"');
+    expect(html).toContain('name="responsableId"');
+    expect(html).toContain("M. Cuéllar");
+    expect(html).toMatch(/min="2026-11-18"[^>]*name="fin"/);
+    // Cancelar: una de las actividades sin terminar, por su etiqueta.
+    expect(html).toContain('name="actividadId"');
+    expect(html).toContain("A2.1 · Comprar e instalar el equipo");
+    expect(html).toContain('name="causa"');
+    expect(html).toContain("Lo decide quien aprobó el plan.");
+    // Un solo aviso de pacientes para los textos libres del formulario.
+    expect(aviso(html)).toBe(1);
+    // Sin actividades sin terminar no se ofrece cancelar.
+    const sinCancelar = renderToStaticMarkup(
+      <DialogoAjusteDelPlan hallazgoId={14} actividades={[]} acciones={[]} causas={[]} tipoPropuesto="mejora" usuarios={[]} hoy="2026-11-18" accion={accion} />,
+    );
+    expect(sinCancelar).not.toContain('value="cancelar"');
+  });
+
+  it("«Lo que sigue» de quien decide: qué se pidió, la causa, aprobar con nota opcional y negar con nota, los dos con el acta", () => {
+    const html = renderToStaticMarkup(
+      <PasoDecidirAjuste
+        ajusteId={9}
+        frase="Reprogramar la actividad A2.1 del 14 nov 2026 al 28 nov 2026."
+        causa="El proveedor no tiene existencias hasta el 24."
+        pedidoPor="J. Perdomo"
+        pedidoEn="18 nov 2026"
+        vence="23 nov 2026"
+        hoy="2026-11-18"
+        accion={accion}
+      />,
+    );
+    expect(html).toContain("Decidir el ajuste");
+    expect(html).toContain("Reprogramar la actividad A2.1 del 14 nov 2026 al 28 nov 2026.");
+    expect(html).toContain("El proveedor no tiene existencias hasta el 24.");
+    expect(html).toContain("Lo pidió J. Perdomo el 18 nov 2026 · vence el 23 nov 2026");
+    expect(html).toContain("Aprobar el ajuste");
+    expect(html).toContain("Negar el ajuste");
+    expect(html).toContain('name="aprueba" value="si"');
+    expect(html).toContain('name="aprueba" value="no"');
+    expect(html.split('name="ajusteId" value="9"').length - 1).toBe(2);
+    expect(html.split('name="actaNumero"').length - 1).toBe(2);
+    expect(aviso(html)).toBe(2);
+  });
+
+  it("«Ajustes del plan»: qué se pidió, por qué, quién lo pidió y quién lo decidió, con su nota y su acta", () => {
+    const ajustes: AjusteDeDetalle[] = [
+      {
+        id: 1, tipo: "reprogramar", estado: "pendiente", actividadId: 22, causa: "El proveedor no tiene existencias",
+        cambio: { tipo: "reprogramar", finAntes: "2026-11-14", finNuevo: "2026-11-28" }, responsableNuevo: null,
+        pedidoPor: "J. Perdomo", pedidoEn: pedido, venceEn: new Date("2026-11-24T04:59:59.999Z"), decididoPor: null, decididoEn: null,
+        nota: null, acta: null, puedeDecidir: false,
+      },
+      {
+        id: 2, tipo: "agregar", estado: "aprobado", actividadId: 30, causa: "Hace falta capacitar al turno de noche",
+        cambio: { tipo: "agregar", accionId: 5, accion: null, descripcion: "Capacitar al turno de noche", responsableId: 9, inicio: "2026-11-18", fin: "2026-12-01" },
+        responsableNuevo: "M. Cuéllar", pedidoPor: "L. Rojas", pedidoEn: pedido, venceEn: null, decididoPor: "El Gerente", decididoEn: pedido,
+        nota: "De acuerdo con el Comité", acta: { numero: "07-2026", fecha: "2026-11-18" }, puedeDecidir: false,
+      },
+      {
+        id: 3, tipo: "cancelar", estado: "negado", actividadId: 21, causa: "Ya no hace falta pedir el cambio",
+        cambio: { tipo: "cancelar", estadoAntes: "en_proceso" }, responsableNuevo: null, pedidoPor: "L. Rojas", pedidoEn: pedido, venceEn: null,
+        decididoPor: "El Gerente", decididoEn: pedido, nota: "Hace falta para la eficacia", acta: null, puedeDecidir: false,
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <AjustesDelPlan ajustes={ajustes} etiquetas={{ 22: "A2.1", 21: "A1.1", 30: "A2.2" }} acciones={{ 5: "A2" }} zona="America/Bogota" />,
+    );
+    expect(html).toContain("Ajustes del plan");
+    expect(html).toContain(`Reprogramar la actividad A2.1 del ${fechaDeDia("2026-11-14")} al ${fechaDeDia("2026-11-28")}.`);
+    expect(html).toContain("Por decidir");
+    expect(html).toContain("Aprobado");
+    expect(html).toContain("Negado");
+    expect(html).toContain("Causa: El proveedor no tiene existencias");
+    expect(html).toContain(`Lo pidió J. Perdomo el ${fechaDeDia("2026-11-18")}`);
+    expect(html).toContain("Añadir una actividad a la acción A2");
+    expect(html).toContain("Capacitar al turno de noche");
+    expect(html).toContain("M. Cuéllar");
+    expect(html).toContain(`Lo aprobó El Gerente el ${fechaDeDia("2026-11-18")}`);
+    expect(html).toContain("Nota: De acuerdo con el Comité");
+    expect(html).toContain(`Acta del Comité: 07-2026, del ${fechaDeDia("2026-11-18")}`);
+    expect(html).toContain("Cancelar la actividad A1.1.");
+    expect(html).toContain(`Lo negó El Gerente el ${fechaDeDia("2026-11-18")}`);
+    expect(renderToStaticMarkup(<AjustesDelPlan ajustes={[]} etiquetas={{}} acciones={{}} zona="America/Bogota" />)).toContain(
+      "Aún no se ha pedido ningún ajuste.",
+    );
+  });
+
+  it("escalar a Gerencia y responder la escalada: una nota con el aviso de pacientes, y el acta en la respuesta", () => {
+    const escalar = renderToStaticMarkup(<DialogoEscalar actividadId={22} etiqueta="A2.1" accion={accion} />);
+    expect(escalar).toContain("Escalar a Gerencia");
+    expect(escalar).toContain('name="actividadId" value="22"');
+    expect(escalar).toContain('name="nota"');
+    expect(escalar).toContain('minLength="10"');
+    expect(aviso(escalar)).toBe(1);
+    const responder = renderToStaticMarkup(<DialogoResponderEscalada actividadId={22} etiqueta="A2.1" hoy="2026-11-18" accion={accion} />);
+    expect(responder).toContain("Responder la escalada");
+    expect(responder).toContain('name="nota"');
+    expect(responder).toContain('name="actaNumero"');
+    expect(aviso(responder)).toBe(1);
+  });
+
+  it("la página de la actividad: «Pedir ajuste de fecha» a quien puede, el ajuste por decidir y la marca de la escalada", () => {
+    const base: DetalleDeActividad = {
+      id: 22, etiqueta: "A2.1", descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
+      inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0,
+      terminadaEn: null, terminadaPor: null, verificacion: null, verificacionNota: null, corregirAntesDe: null, vencida: true,
+      accion: { id: 5, etiqueta: "A2", tipo: "correctiva", descripcion: "Instalar un termómetro" },
+      hallazgo: { id: 14, codigo: "HZ-2026-014", titulo: "Dos turnos sin registro", proceso: "Farmacia", estado: "en_ejecucion", etiqueta: "En ejecución", ronda: 1, ve: "actividad" },
+      seguimientos: [], archivos: [], esResponsable: true, puedeSeguir: true, puedeReasignar: false, avanceMinimo: 0,
+      ajustePendiente: null, puedePedirAjuste: true, gerenciaEn: null,
+    };
+    const pagina = (a: DetalleDeActividad) =>
+      renderToStaticMarkup(
+        <PaginaDeActividad
+          actividad={a}
+          hoy="2026-11-18"
+          usuarios={[]}
+          subida={null}
+          quitables={[]}
+          acciones={{ seguimiento: accion, terminar: accion, reasignar: accion, pedirAjuste: accion }}
+        />,
+      );
+    expect(pagina(base)).toContain("Pedir ajuste de fecha");
+    expect(pagina({ ...base, puedePedirAjuste: false })).not.toContain("Pedir ajuste de fecha");
+    const pendiente = pagina({ ...base, puedePedirAjuste: false, ajustePendiente: { id: 4, tipo: "reprogramar", pedidoEn: pedido, finNuevo: "2026-11-28" } });
+    expect(pendiente).toContain(`Hay un ajuste de fecha por decidir: al ${fechaDeDia("2026-11-28")}, pedido el ${fechaDeDia("2026-11-18")}.`);
+    expect(pendiente).toContain("Mientras se decide, la actividad sigue contando como vencida.");
+    const escalada = pagina({ ...base, gerenciaEn: pedido });
+    expect(escalada).toContain(`Escalada a Gerencia el ${fechaDeDia("2026-11-18")}`);
+  });
+
+  it("«4. Plan de acción» dice la escalada y el ajuste por decidir de cada actividad", () => {
+    const ronda = {
+      id: 1, numero: 1, estadoPlan: "aprobado", fechaEvaluacion: null, criterios: ["no_recurrencia"], criterioOtro: null, indicadorEficaciaId: null,
+      causas: [],
+      acciones: [
+        {
+          id: 3, orden: 2, tipo: "correctiva", descripcion: "Instalar un termómetro", recursos: null, indicadorCumplimiento: null, meta: null,
+          causaIds: [], avance: 30,
+          actividades: [
+            { id: 22, orden: 1, descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
+              inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0, seAbre: true,
+              gerenciaEn: pedido },
+            { id: 23, orden: 2, descripcion: "Capacitar al turno de noche", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
+              inicio: "2026-11-01", finOriginal: "2026-12-01", fin: "2026-12-01", avance: 0, estado: "abierta", reprogramaciones: 0, seAbre: true,
+              gerenciaEn: null },
+          ],
+        },
+      ],
+      ajustes: [
+        { id: 9, tipo: "reprogramar", estado: "pendiente", actividadId: 22, causa: "Sin existencias", cambio: { tipo: "reprogramar", finAntes: "2026-11-14", finNuevo: "2026-11-28" } },
+        { id: 10, tipo: "cancelar", estado: "pendiente", actividadId: 23, causa: "Ya no hace falta", cambio: { tipo: "cancelar", estadoAntes: "abierta" } },
+      ],
+    } as unknown as Parameters<typeof PlanEnLectura>[0]["ronda"];
+    const html = renderToStaticMarkup(<PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={null} />);
+    expect(html).toContain(`Escalada a Gerencia el ${fechaDeDia("2026-11-18")}`);
+    expect(html).toContain(`Pidió ajuste al ${fechaDeDia("2026-11-28")} · por decidir`);
+    expect(html).toContain("Pidió cancelarla · por decidir");
+  });
+
+  it("el historial dice qué se pidió, qué se aprobó o negó y la escalada con su nota y su acta, sin la causa", () => {
+    const evento = (id: number, tipo: string, detalle: Record<string, unknown>) => ({ id, tipo, ronda: 1, quien: "Ana", cuando: pedido, detalle });
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        etiquetasDeActividad={{ 22: "A2.1", 21: "A1.1" }}
+        eventos={[
+          evento(1, "ajuste_pedido", { ajusteId: 9, tipo: "reprogramar", actividadId: 22, actividad: "A2.1", finAntes: "2026-11-14", finNuevo: "2026-11-28" }),
+          evento(2, "ajustar", {
+            ajusteId: 9, tipo: "reprogramar", actividadId: 22, actividad: "A2.1", finAntes: "2026-11-14", finNuevo: "2026-11-28",
+            estado: { antes: "en_ejecucion", despues: "en_ejecucion" },
+          }),
+          evento(3, "ajuste_negado", { ajusteId: 10, tipo: "cancelar", actividadId: 21, actividad: "A1.1" }),
+          evento(4, "ajuste_pedido", { ajusteId: 11, tipo: "agregar", accion: "A1", finNuevo: "2026-12-01" }),
+          evento(5, "escalada", { actividadId: 22, actividad: "A2.1", nota: "Lleva un mes vencida" }),
+          evento(6, "escalada_respondida", { actividadId: 22, actividad: "A2.1", nota: "Se autoriza otro proveedor", acta: { numero: "12-2026", fecha: "2026-11-18" } }),
+        ]}
+      />,
+    );
+    expect(html).toContain(`Pidió reprogramar la actividad A2.1 al ${fechaDeDia("2026-11-28")}`);
+    expect(html).toContain(`Aprobó reprogramar la actividad A2.1 al ${fechaDeDia("2026-11-28")}`);
+    expect(html).toContain("Negó cancelar la actividad A1.1");
+    expect(html).toContain("Pidió añadir una actividad a la acción A1");
+    expect(html).toContain("Escaló a Gerencia la actividad A2.1");
+    expect(html).toContain("Nota: Lleva un mes vencida");
+    expect(html).toContain("Respondió la escalada de la actividad A2.1");
+    expect(html).toContain("Nota: Se autoriza otro proveedor");
+    expect(html).toContain(`Acta del Comité: 12-2026, del ${fechaDeDia("2026-11-18")}`);
   });
 });
