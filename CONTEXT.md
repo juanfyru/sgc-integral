@@ -4,7 +4,7 @@
 > mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree `F:\sgc-integral-f15a` y contra
 > la base aparte `sgc_f15a`; **fusionada en `main` el 2026-11-18 por decisión del usuario, por avance rápido, y `main`
 > publicado en `origin` ese mismo día** (`a218f4d`, CI en verde), con la `0018` aplicada a la base `sgc`; ver su sección,
-> arriba de la del complemento de la 14C). **Lo siguiente es ejecutar la Fase 15B:** su anexo y su plan están aprobados desde el 2026-11-18 y falta construirla, con subagentes y en otra sesión (punto 1 del punto de reanudación). El 2026-11-17 el usuario aprobó el **diseño de la
+> arriba de la del complemento de la 14C). **La Fase 15B está en curso** desde el 2026-11-18, con subagentes, en el worktree `F:\sgc-integral-f15b` y contra la base aparte `sgc_f15b` (punto 1 del punto de reanudación). El 2026-11-17 el usuario aprobó el **diseño de la
 > Fase 15** (`docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`; tres entregas, 15A, 15B y 15C) y
 > el plan de la 15A. Ese mismo día, antes, se fusionó el
 > **complemento de la
@@ -38,7 +38,11 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 15B tiene su anexo y su plan aprobados** (2026-11-18) y **no se ha empezado a construir**.
+1. **Dónde quedamos:** la **Fase 15B está en curso** desde el 2026-11-18, con subagentes, en el worktree
+   `F:\sgc-integral-f15b` (rama `fase-15b-planes-enganches`, sale de `main` en `a52d155`) y contra la base aparte `sgc_f15b`
+   (Paso 0 hecho: diecinueve migraciones y la demo recién sembrada). El registro de la ejecución, con la línea base, está en
+   `.superpowers/sdd/2026-11-18-fase15b-planes-y-enganches/progress.md` de ese worktree (ignorado por git), con su guarda
+   `con-f15b.sh`. Mientras se construye, `F:\sgc-integral` no se toca y la base `sgc` del usuario solo se lee.
    El usuario aprobó el anexo («aprobado el anexo, continuemos con el plan de la 15B») y el plan («apruebo el plan»), y pidió
    ejecutarlo **con subagentes, en otra sesión**. Anexo:
    `docs/superpowers/specs/2026-11-18-fase15b-planes-y-enganches-design.md` (amplía §17 del spec 15 y manda sobre él; su §1
@@ -46,7 +50,7 @@
    `docs/superpowers/plans/2026-11-18-fase15b-planes-y-enganches.md` (dieciséis tareas; una migración, la `0019`; sin
    dependencias npm nuevas). **Para empezar:** la skill de ejecución con subagentes sobre ese plan, desde el Paso 0 de su
    Tarea 1 (worktree `F:\sgc-integral-f15b`, rama `fase-15b-planes-enganches`, base aparte `sgc_f15b`, su guarda
-   `con-f15b.sh` y el puerto 3016 para los puntos de control; ni el worktree ni la base existen todavía). Las maquetas
+   `con-f15b.sh` y el puerto 3016 para los puntos de control; ya existen, ver arriba). Las maquetas
    aprobadas («están ok»; no versionadas) están en `.superpowers/brainstorm/963-1795030914/content/pantallas-15b.html`: el
    Paso 0 las copia al espacio de trabajo. **Lo que cambió respecto de lo que este archivo decía:** el formato del ente **ya
    no espera ninguna plantilla**: el usuario pidió diseñarlo (trece columnas, anexo §4), y «efecto», «unidad de medida» y
