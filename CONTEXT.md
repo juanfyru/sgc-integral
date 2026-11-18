@@ -44,11 +44,11 @@
    seguimientos y ajustes, verificación, eficacia con su espera, cierre y rondas, plazos en días hábiles, tareas, avisos,
    vencimientos, la carga de lo que está en curso en papel, impresos, Excel y búsqueda. **Sin dependencias npm nuevas.** Una
    migración, la `0018`; diecinueve en total. Detalle en «Hecho (Fase 15A)»; el recorrido, en «Qué probar y cómo (Fase
-   15A)»; las decisiones, en «Decisiones adicionales (Fase 15A)»; el manual, en el capítulo 9. **Falta:** la verificación
-   de cierre (la suite con la demo recién sembrada, lint, build, la `0018` sobre una copia de `sgc` y el recorrido en el
-   navegador; la hace quien coordina la ejecución), la revisión de toda la rama, el visto bueno del usuario a las 38
-   decisiones de la ejecución y su recorrido, y después su decisión de fusionar; al fusionar, aplicar la `0018` a la base
-   `sgc` («Avisos para el usuario (Fase 15A)»). La 15B y la 15C esperan su anexo (la 15B, además, la plantilla del ente).
+   15A)»; las decisiones, en «Decisiones adicionales (Fase 15A)»; el manual, en el capítulo 9. **La verificación de cierre
+   y la revisión de toda la rama están hechas** (2026-11-18, «Verificación de cierre (Fase 15A)»), con su ola de
+   corrección. **Falta:** el visto bueno del usuario a las 46 decisiones de la ejecución y de la revisión final, su
+   recorrido y después su decisión de fusionar; al fusionar, aplicar la `0018` a la base `sgc` («Avisos para el usuario
+   (Fase 15A)»). La 15B y la 15C esperan su anexo (la 15B, además, la plantilla del ente).
    **Antes:** la **Fase 15 — Planes de mejoramiento** tuvo su **diseño aprobado por el usuario el 2026-11-17**
    («aprobado el spec, continuemos con el plan de la 15A»). El spec es uno solo para las
    tres entregas: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`. **15A**, el hallazgo de
@@ -430,11 +430,37 @@ de `AGENTS.md`), así que debe aplicarse sobre una base de `sgc-suaza` y sobre l
 cierre sobre una copia de `sgc`). Mientras se construyó, `F:\sgc-integral`, su
 base `sgc` y su `next dev` del 3002 no se tocaron.
 
-**Verificación de cierre: pendiente** (la hace quien coordina la ejecución, el paso 8 de la Tarea 22): la suite completa con
-la demo recién sembrada, `npm run lint`, `npm run build` sin `DATABASE_URL`, la `0018` sobre una copia de la base `sgc` y el
-recorrido de «Qué probar y cómo (Fase 15A)» en el navegador, en claro, oscuro y 390 px, con cada rol. Las 21 tareas
-anteriores pasaron cada una su revisión, con sus rondas de corrección; los puntos de control 1 a 5 se recorrieron en el
-navegador durante la construcción (el registro de la ejecución, `progress.md` del espacio de trabajo, ignorado por git).
+**Verificación de cierre (Fase 15A)** (2026-11-18; la hizo quien coordinó la ejecución). Las 21 primeras tareas pasaron
+cada una su revisión, con sus rondas de corrección, y los puntos de control 1 a 5 se recorrieron en el navegador durante la
+construcción (el registro de la ejecución, `progress.md` del espacio de trabajo, ignorado por git). La cabeza del código es
+`6e838e0`.
+
+- **Pruebas:** `SEMILLA_RECIEN=1 npm test`, con la demo recién sembrada, sobre `6e838e0`: **311 archivos, 8312 pruebas en
+  verde y 1 saltada** (la de la línea base), salida 0, unos 820 s. La línea base (`d45ec52`, el primer commit de la rama, solo
+  documentos) era 280 archivos y 7040. La primera corrida de cierre (sobre `544a2de`) halló un fallo: la invariante de `tests/esquema-fase13c.test.ts` no
+  admitía las firmas del hallazgo, y la `0018` sí; se corrigió la prueba (`5d799f8`).
+- **`npm run lint`** limpio sobre `6e838e0`. **`npm run build`** en verde sin `DATABASE_URL` sobre `544a2de` (las 17 rutas de
+  mejoramiento, dinámicas; el aviso de Turbopack de `src/lib/almacen.ts` de siempre) y otra vez sobre `6e838e0`.
+- **La `0018` sobre una copia de la base `sgc`** (leída una sola vez con `pg_dump`, restaurada en `sgc_f15a_copia0018`,
+  migrada con `db:preparar` desde el worktree y borrada al terminar): de 18 a 19 migraciones; los conteos y la huella de
+  cada fila, iguales (documentos 36, trámites 6, indicadores 14, mediciones 35, firmas 44, archivos 51, auditoría 270,
+  usuarios 8; las firmas comparadas sin la columna nueva `mejora_hallazgo_id`); las catorce tablas `mejora_*` con sus quince
+  triggers; `sgc_app` sin `UPDATE` en `mejora_eventos`. `sgc` sigue en 18.
+- **El recorrido en el navegador** de «Qué probar y cómo (Fase 15A)», pasos 1 a 17, a 1280 px y en claro, más oscuro y 390 px
+  en la lista, el 005, una actividad, «Mis actividades», «Mis reportes», reportar, evaluar, la configuración y el impreso
+  (claro también en oscuro): **los 17 pasos pasan**, sin ningún 500 (en la consola, solo avisos de hidratación que inyecta la
+  captura de Playwright). `jefe.urgencias` ve 5 hallazgos y
+  `regente.farmacia` 2, los de su participación; «Mejoramiento» está en la navegación de los ocho usuarios. Dejó ocho
+  defectos sin bloqueo, corregidos en la ola final: el desborde a 390 px de reportar, registrar y la carga (medido después:
+  375 px de ancho, eran 411, 827 y 844), la frase del turno de Gerencia, el porqué de no verificar, «Reprogramada» solo en
+  el impreso, dos textos de este archivo y del manual, y etiquetas accesibles repetidas.
+- **La revisión final de toda la rama** (de solo lectura): ningún hallazgo Crítico ni fuga; tres Importantes (la
+  reprogramación de una actividad devuelta no movía la fecha que rige, nadie pedía el formato firmado de una carga, y el
+  cierre con corrección o sin acción, el arbitraje y el retiro no avisaban), menores y el triage de los 55 diferidos de las
+  tareas. Una ola de corrección (17 commits, `f5b3e46..63c9d71`) con su re-revisión: los 17 puntos, corregidos; la
+  re-revisión halló un Importante nuevo (el aviso del desenlace dejaba fuera a quien también había reportado, contra §11.5),
+  que corrigió quien coordinó en `6e838e0` con su prueba (sin revisor aparte: lo cubren la suite y este recorrido).
+  Decisiones 39 a 46; lo que no entró, en «Deuda técnica (Fase 15A)».
 
 ### Hecho (Fase 15A)
 
@@ -612,12 +638,13 @@ hallazgos ya sembrados.
 - **Las decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (Fase 15A)», abajo). Las que más pesan:
   quien ve un hallazgo por su actividad no lee las lecciones ni los ajustes ajenos (2), la evidencia que no se quita (9),
   el plan firmado es el congelado al enviarlo (12), quien elaboró sin revisor puede devolver su plan (15), el respaldo de
-  Gerencia a Admin SGC en los ajustes (20) y la carga en dos pasos (33).
+  Gerencia a Admin SGC en los ajustes (20), la carga en dos pasos (33) y, de la revisión final, quién recibe el aviso de
+  cada desenlace (41) y el texto libre fuera de la bitácora (42).
 
 ### Decisiones adicionales (Fase 15A)
 
 Las tomó quien coordinó la ejecución cuando el spec o el plan callaban o un revisor halló un defecto; las 37 y 38, quien
-implementó la demo. Cada una dice qué se decidió y por qué, con su base. El detalle está en el registro de la ejecución
+implementó la demo; las 39 a 46, quien coordinó, con la revisión final de toda la rama. Cada una dice qué se decidió y por qué, con su base. El detalle está en el registro de la ejecución
 (`progress.md` del espacio de trabajo, líneas «Ruling»). Lo que ya dice el spec no se repite.
 
 1. **Dos entradas con nombres distintos:** el módulo es **Mejoramiento** (grupo Mejoramiento) y su configuración,
@@ -730,14 +757,54 @@ implementó la demo. Cada una dice qué se decidió y por qué, con su base. El 
     Una no conformidad con indicador mensual habría tenido que terminar tres meses antes y, según el día, vencía. Su
     actividad termina 64 días antes de la siembra, para que la evaluación muestre el indicador antes, durante y después del
     plan. El día no hábil de ejemplo es el primer día hábil desde tres semanas después de la siembra. Práctica.
+39. **Reprogramar una actividad devuelta mueve también su fecha para corregir:** la fecha que rige es la que el ajuste pidió
+    mover, así deja de estar vencida y de escalar; «la misma fecha» del ajuste se compara con la que rige. La fecha de fin
+    original no cambia. Práctica.
+40. **Una carga sin su formato firmado es tarea del Administrador del SGC** («Adjuntar el formato firmado de HZ-…», sin
+    fecha límite, porque ningún plazo del procedimiento la fija), y la lista dice «El Administrador del SGC: falta el
+    formato firmado». Sin ella nadie lo pedía y el hallazgo quedaba detenido. Práctica.
+41. **Cada desenlace avisa a quien tomó parte,** con el código en el título y el título del hallazgo en el cuerpo, nunca un
+    texto escrito (tampoco la nota del arbitraje): el cierre con corrección o sin acción, como el eficaz, a los líderes del
+    proceso, a quien lo registró y a Gerencia; el arbitraje, a quien lo registró (y a los líderes si se confirmó el rechazo;
+    si el hallazgo sigue, ellos ya reciben su turno); el retiro, a los líderes. Quien también reportó lo que dio origen al
+    hallazgo recibe ese aviso y, además, el neutro de «Mis reportes». Una primera versión lo dejaba solo con el neutro: se
+    corrigió porque §11.5 nombra a los tres sin excepción y todos ellos ven el hallazgo completo. Práctica (spec §11.5).
+42. **El texto libre del hallazgo no va a la bitácora:** las justificaciones, las notas, la réplica, la descripción de la
+    corrección, las observaciones del plan y el antes y el después de una reclasificación quedan solo en el historial del
+    hallazgo (`soloEnElEvento`); la bitácora dice qué se hizo y qué campos cambiaron. El título sí va, porque identifica el
+    hallazgo, como el de un documento o una norma (tras reclasificar o editar, la bitácora conserva el título original). Una
+    copia menos del texto que pudo llevar un dato de paciente, en una tabla de solo inserción. Regulación (Ley 1581 de 2012).
+43. **Quien registró no tiene el turno de «Por aceptar»** (no acepta lo suyo). Si no queda nadie, la página lo dice y qué
+    hacer: «Nadie puede aceptarlo: el proceso no tiene líder y quien lo registró no puede aceptar su propio hallazgo…» o, si
+    el único líder es quien lo registró (por un cambio de rol posterior), «…el único líder del proceso es quien lo
+    registró…»; la lista dice «Nadie puede aceptarlo» y la pasada no avisa ni escala a nadie. Práctica.
+44. **Cambiar el proceso de un hallazgo «Por aceptar»** (con «Cambiar el proceso» o al editarlo) cuenta el plazo de aceptar
+    desde ese momento: los líderes del proceso nuevo lo reciben entonces. Práctica.
+45. **Tres protecciones baratas entraron ya:** una prueba estática que falla si algo fuera del motor crea un hallazgo o le
+    cambia el estado o la ronda (`tests/mejora-motor.test.ts`; la 15B creará hallazgos desde otros módulos); 60 consultas por
+    minuto por persona en los parecidos, como la búsqueda; y los errores crudos de la base traducidos al quitar un archivo
+    y al guardar la configuración. Práctica.
+46. **Quien participó no verifica, y se le dice:** junto a «Lo que sigue», «No puede verificarlo: participó en la corrección
+    o en la ejecución del plan.», sin decir en qué (la regla cuenta la corrección y las actividades). La primera versión
+    decía «tuvo a su cargo una de sus actividades», falso para quien solo registró la corrección. Práctica.
 
 ### Deuda técnica (Fase 15A)
 
 Los menores que los revisores dejaron para después y siguen siendo verdad (del registro de la ejecución; un archivo sin
 carpeta es de `src/db/consultas/mejoramiento/`):
 
-- Un Admin SGC que registró un hallazgo en un proceso que perdió a su líder, siendo el único Admin SGC, no puede aceptarlo
-  (el turno lo nombra a él): se resuelve reclasificando el proceso o dando el rol a otra persona.
+- **Para la 15B, de la revisión final:** la lista resuelve el turno hallazgo por hallazgo (tomar las tareas de la
+  petición) y no tiene filtro por omisión ni paginación; los adjuntos del análisis y la evidencia del registro se pueden
+  quitar después de firmado el plan (congelarlos desde el envío); una prueba que acote lo que cuestan las tareas de
+  mejoramiento en el cascarón (hoy `tests/cascaron-consultas.test.ts` las simula: con la demo, unas diez sentencias más por
+  render para un Admin SGC o Gerencia, decisión 30); `puedeAbrirArchivoDeMejora` no mira `fin_original` de la actividad;
+  las dobles acciones se prueban en serie y no con dos conexiones; «…el único líder del proceso es quien lo registró…»
+  (decisión 43) no tiene prueba propia; la prueba del motor no ve `UPDATE mejora_hallazgos AS h`, un nombre con esquema o
+  entre comillas, ni `SET (estado, ronda)`; las frases de `legible.ts` para un 40P01 y un 42501 nombran «el hallazgo» también
+  en la configuración; cuando un Admin SGC retira o sostiene en lugar de quien registró, no se avisa a quien lo registró del
+  retiro ni a quien lo sostuvo del arbitraje; el `min-w-0` de `Campo` vale en todos los módulos y solo se midió a 390 px en
+  los de mejoramiento; y «Reprogramada» en pantalla se probó con pruebas de componente, no en el navegador (se ve en el
+  paso 7 del recorrido).
 - En un hallazgo externo con líder, el texto del turno y el aviso todavía dicen «aceptar o rechazar» a quien no tiene el
   paso; el panel de firmas dice «Revisó · Pendiente · Administrador del SGC» cuando no hay revisores activos.
 - La lectura de la configuración al guardar no toma candado (dos guardados a la vez: gana el último); las causas raíz
@@ -747,7 +814,7 @@ carpeta es de `src/db/consultas/mejoramiento/`):
 - `indicadorDeEficacia` toma la última ficha aprobada, no la que regía ese día; `huellaDeLoVisto` no incluye la fecha mínima
   ni los criterios de la ronda (los cubre la huella de la evaluación).
 - La evidencia de una actividad de una carga sin escaneo la frena solo la visibilidad de la ruta (un Admin SGC que ve el
-  hallazgo completo puede adjuntarla); no hay tarea de «subir el escaneo».
+  hallazgo completo puede adjuntarla).
 - `ListaDeHallazgos.tsx` y `SeccionIdentificacion.tsx` arman su propio mapa de orígenes; `formatos.ts` repite la unión de
   `lideresDeProceso`; `filasParaExcel` vive en `lectura.ts`; en pantalla, el «%» de `PlanEnLectura` va con espacio normal.
 - Varias pruebas faltan o se hacen en serie: dos decisiones de un ajuste a la vez, la página de edición, el rechazo de dominio
@@ -756,9 +823,6 @@ carpeta es de `src/db/consultas/mejoramiento/`):
 - La semilla de indicadores (de la 14A y la 14C, no de esta entrega) no siembra antes del 2026-09-11 (su lote importado
   lleva una fecha de aprobación fija) y, con el reloj falseado, falló el 1.º de un mes y el domingo 1 de noviembre («No se
   puede dar la sigla TSR al subproceso Gestión Tesorería»); no se probó una siembra real en esos días.
-- Lo que cuestan las tareas de mejoramiento en el cascarón crece con los hallazgos abiertos de quien tiene un turno por rol
-  (el turno se resuelve hallazgo por hallazgo, decisión 30): con la demo, unas diez sentencias más por render para un Admin
-  SGC o Gerencia. `tests/cascaron-consultas.test.ts` las deja fuera; queda para la revisión final.
 
 ## Complemento de la 14C — El punto de miles, el soporte obligatorio con su fecha y el periodo de un dato sin categorías
 
