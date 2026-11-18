@@ -147,6 +147,20 @@ describe("autorizarSubida: la ronda", () => {
       expect(await autorizarSubida(b.control, d, subida(tx))).toMatchObject({ ok: false, estado: 409 });
     }));
 
+  it("verificación: quien ejecutó no verifica, y tampoco sube su evidencia (`puedeVerificar`)", () =>
+    revertida(sql, async (tx) => {
+      const { b, h } = await escena(tx);
+      const r1 = await rondaPorSql(tx, h.id, 1);
+      const d = { contexto: "mejora_ronda", id: r1, rol: "verificacion" } as const;
+      await estado(tx, h.id, "por_verificar");
+      const ejecuto = await usuarioDePrueba(tx, { rol: "control_interno" });
+      expect((await autorizarSubida(ejecuto, d, subida(tx))).ok).toBe(true);
+      await actividadPorSql(tx, h.id, ejecuto.usuarioId, { estado: "terminada", avance: 100 });
+      expect(await autorizarSubida(ejecuto, d, subida(tx))).toMatchObject({ ok: false, estado: 403 });
+      await expect(exigirDestinoAbierto(tx, "mejora_ronda", r1, ejecuto.usuarioId, "verificacion")).rejects.toBeInstanceOf(ErrorTramite);
+      expect((await autorizarSubida(b.control, d, subida(tx))).ok).toBe(true);
+    }));
+
   it("una ronda anterior queda congelada: ni subir ni quitar, tampoco el Admin SGC", () =>
     revertida(sql, async (tx) => {
       const { b, h } = await escena(tx);

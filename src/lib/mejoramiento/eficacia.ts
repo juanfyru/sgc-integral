@@ -44,6 +44,14 @@ export function fechaMinimaDeEficacia(
 }
 
 /**
+ * Si ya se puede registrar «eficaz»: el día de `ahora` en la zona es la fecha mínima o posterior. Es lo que pinta «Por evaluar
+ * la eficacia» (`etiquetaDeEstado`, con la fecha de `fechaMinimaDe`, `verificacion.ts`) y lo que exige `evaluarEficacia`.
+ */
+export function yaSePuedeEvaluar(minima: string, ahora: Date, zona: string): boolean {
+  return fechaEnZona(ahora, zona) >= minima;
+}
+
+/**
  * Hasta cuándo se evalúa la eficacia: el plazo de evaluar (días hábiles) desde la fecha mínima y, con indicador enlazado,
  * después de sumarle los días calendario de su plazo de reporte, para que el resultado del segundo periodo ya esté.
  */

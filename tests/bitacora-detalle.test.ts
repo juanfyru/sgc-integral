@@ -410,6 +410,28 @@ describe("frases con el detalle real", () => {
     expect(nombreDeAccion("mejora_ajustar")).toBe("Aprobó un ajuste del plan de un hallazgo");
     expect(nombreDeAccion("mejora_escalada")).toBe("Escaló a Gerencia una actividad vencida");
   });
+  it("la verificación, la eficacia y el cierre: las devueltas, el cierre en el mismo acto y la ronda nueva, nunca la nota", () => {
+    const base = { codigo: "HZ-2026-001", ronda: 1 };
+    const metodos = ["evidencias"];
+    expect(e("mejora_verificar_implementacion", { ...base, metodos, conformes: ["A1.1", "A1.2"], devueltas: [] })).toBe(
+      "Verificó la implementación del plan del hallazgo HZ-2026-001",
+    );
+    expect(e("mejora_verificar_implementacion", { ...base, metodos, conformes: ["A1.1"], devueltas: ["A1.2"] })).toBe(
+      "Verificó la implementación del plan del hallazgo HZ-2026-001 y devolvió la actividad A1.2",
+    );
+    expect(e("mejora_verificar_implementacion", { ...base, metodos, conformes: [], devueltas: ["A1.1", "A1.2", "A2.1"] })).toBe(
+      "Verificó la implementación del plan del hallazgo HZ-2026-001 y devolvió las actividades A1.1, A1.2 y A2.1",
+    );
+    expect(e("mejora_evaluar_eficaz", { ...base, resultado: "eficaz", criterios: ["no_recurrencia"] })).toBe(
+      "Evaluó como eficaz el plan del hallazgo HZ-2026-001",
+    );
+    expect(e("mejora_evaluar_eficaz", { ...base, resultado: "eficaz", cierra: true })).toBe("Evaluó como eficaz y cerró el hallazgo HZ-2026-001");
+    expect(e("mejora_evaluar_no_eficaz", { ...base, resultado: "no_eficaz", rondaNueva: 2 })).toBe(
+      "Evaluó como no eficaz el plan del hallazgo HZ-2026-001: se abre la ronda 2",
+    );
+    expect(e("mejora_cerrar", { ...base, huella: "a".repeat(64) })).toBe("Cerró el hallazgo HZ-2026-001");
+    expect(nombreDeAccion("mejora_evaluar_no_eficaz")).toBe("Evaluó como no eficaz el plan de un hallazgo");
+  });
 });
 
 /**

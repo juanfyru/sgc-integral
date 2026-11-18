@@ -7,7 +7,7 @@ import type { Cliente } from "@/db/cliente";
 import { avisarA, type Destinatario } from "@/db/consultas/avisos-vencimiento";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
-import { validadoresDeCorreccion } from "@/lib/alcance";
+import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
 import { turnoDe, type Turno } from "@/lib/mejoramiento/estados";
 import type { EstadoHallazgo, HallazgoBase } from "@/lib/mejoramiento/tipos";
 import type { Rol } from "@/lib/roles";
@@ -110,12 +110,13 @@ const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>
       ORDER BY a.responsable_id`;
     return filas.map((f) => Number(f.id));
   },
-  verificadores: (tx) => activosDeRol(tx, ["admin_sgc", "control_interno"]),
+  // Quien ejecutó no verifica; Gerencia, solo si ningún Admin SGC ni Control Interno activo puede (spec §11.1).
+  verificadores: (tx, h) => quienesVerifican(tx, h.id),
   // Quien registró la corrección o es su responsable no la valida; en el cierre sin acción, tampoco quien decidió el «no».
   validadores: (tx, h) => validadoresDeCorreccion(h.id, { sql: tx }),
 };
 
-/** Quienes pueden verificar un hallazgo (Admin SGC y Control Interno activos): la Tarea 16 lo afina. */
+/** Quienes pueden verificar un hallazgo y evaluar su eficacia (`quienesVerifican`): los avisos de una posible recurrencia. */
 export function verificadoresActivos(tx: Cliente, h: HallazgoBase): Promise<number[]> {
   return QUIENES.verificadores(tx, h);
 }

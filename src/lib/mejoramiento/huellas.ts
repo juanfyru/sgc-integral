@@ -7,6 +7,9 @@
  * que cambian los actos o el reloj: el estado, los vencimientos, el estado del plan, la fecha original de las actividades,
  * su avance, ni los ids propios de las filas. Las listas van en el orden del plan (`orden`); los conjuntos (las causas que
  * ataca una acción, los criterios), ordenados.
+ *
+ * «Verificó» y «Cerró» (Tarea 16) firman la evaluación de la eficacia y el cierre con la misma forma (`huellaDeEvaluacion`,
+ * `huellaDeCierre`): cada una encadena la huella de lo anterior (el plan, la evaluación).
  */
 import { createHash } from "node:crypto";
 import type { Periodicidad } from "@/lib/indicadores/tipos";
@@ -91,7 +94,30 @@ function canonico(valor: unknown): unknown {
   return valor === undefined ? null : valor;
 }
 
+const sha256 = (valor: unknown) => createHash("sha256").update(JSON.stringify(canonico(valor))).digest("hex");
+
 /** SHA-256 en hexadecimal del plan en JSON canónico. */
 export function huellaDePlan(p: PlanFirmado): string {
-  return createHash("sha256").update(JSON.stringify(canonico(p))).digest("hex");
+  return sha256(p);
+}
+
+/**
+ * Lo que firma «Verificó» (spec §12.1): el resultado, los criterios evaluados (un conjunto: ordenados), el periodo, la
+ * justificación y lo que la pantalla mostró (`visto`, spec §11.4), más la huella del plan aprobado de la ronda.
+ */
+export function huellaDeEvaluacion(e: {
+  huellaDelPlan: string;
+  resultado: string;
+  criterios: string[];
+  desde: string;
+  hasta: string;
+  justificacion: string;
+  visto: unknown;
+}): string {
+  return sha256({ ...e, criterios: [...new Set(e.criterios)].sort() });
+}
+
+/** Lo que firma «Cerró» (spec §12.1): las lecciones aprendidas, cómo se atendieron los cambios, el resultado y la huella de la evaluación. */
+export function huellaDeCierre(c: { huellaDeLaEvaluacion: string; resultado: string; lecciones: string; cambiosAtendidos: string | null }): string {
+  return sha256(c);
 }

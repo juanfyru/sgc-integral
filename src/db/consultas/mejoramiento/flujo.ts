@@ -34,13 +34,15 @@ export const NO_EXISTE = "El hallazgo no existe";
  * `codigo` y `ronda`, y rechaza un detalle que ya traiga alguna de esas claves (`CLAVES_DEL_MOTOR`). `soloEnElEvento` va
  * al detalle del evento y nunca a la bitácora (el plan congelado al enviarlo y al aprobarlo, spec §12.2): sus claves no
  * pueden ser del motor ni repetir las de `detalle`. `sinAvisoDelTurno` no avisa el turno del estado nuevo: lo pasa solo quien
- * avisa por su cuenta a quienes lo reciben (la aprobación del plan, con un aviso por actividad, spec §14.2).
+ * avisa por su cuenta a quienes lo reciben (la aprobación del plan, con un aviso por actividad, spec §14.2). `nuevaRonda` abre
+ * la ronda siguiente (spec §8.7: la evaluación «no eficaz»): solo hacia «Por formular».
  */
 export type Paso_x = {
   rumbo?: Rumbo;
   detalle?: Record<string, unknown>;
   soloEnElEvento?: Record<string, unknown>;
   sinAvisoDelTurno?: boolean;
+  nuevaRonda?: boolean;
   fuera?: boolean;
   ocurrioEn?: Date;
   acta?: { numero: string; fecha: string } | null;
@@ -149,8 +151,11 @@ async function formularDeLaRonda(tx: TransactionSql, hallazgoId: number, ronda: 
 
 const conActa = (x: Paso_x) => (x.acta ? { acta: x.acta } : {});
 
-/** Las claves del detalle que pone el motor: el cambio de estado va en `estado: { antes, despues }`, aparte del de quien llama. */
-const CLAVES_DEL_MOTOR = ["estado", "codigo", "ronda", "acta"] as const;
+/**
+ * Las claves del detalle que pone el motor: el cambio de estado va en `estado: { antes, despues }`, aparte del de quien llama;
+ * la ronda que abre `nuevaRonda`, en `rondaNueva`.
+ */
+const CLAVES_DEL_MOTOR = ["estado", "codigo", "ronda", "acta", "rondaNueva"] as const;
 
 /**
  * El detalle de quien llama, tal cual, y lo que va solo al evento; si alguno trae una clave del motor, o lo del evento repite
@@ -264,6 +269,10 @@ export async function nacerHallazgo(
  * otra transacción lo cambió después de que quien llama lo leyó, y lanza `YA_CAMBIO` sin escribir nada. El destino, el
  * turno y el vencimiento salen de la fila releída. Un paso que deja el hallazgo en el mismo estado (`reclasificar`,
  * `ajustar`) no cambia de paso: deja su evento y su bitácora, conserva el vencimiento y sus marcas y no vuelve a avisar.
+ *
+ * Con `nuevaRonda` (spec §8.7), el evento y la bitácora son de la ronda que termina (la evaluada), con `rondaNueva`; después se
+ * inserta la fila de la ronda siguiente con su plazo de formular (antes de leerlo para el vencimiento), el hallazgo pasa a
+ * ella en el mismo `UPDATE` que su estado y el turno se avisa con la ronda nueva. Las filas de la ronda anterior no se tocan.
  */
 export async function transicionarHallazgo(
   tx: TransactionSql,
@@ -278,25 +287,35 @@ export async function transicionarHallazgo(
   if (actual.estado !== h.estado || actual.ronda !== h.ronda) throw new ErrorMejora(YA_CAMBIO);
   const antes = actual.estado;
   const despues = destinoDe(accion, actual, x.rumbo ?? {});
+  if (x.nuevaRonda && despues !== "por_formular") {
+    throw new Error(`Una ronda nueva empieza en «Por formular», no en ${despues}`);
+  }
   const ronda = actual.ronda;
+  const rondaSiguiente = x.nuevaRonda ? ronda + 1 : ronda;
+  const deLaRondaNueva = x.nuevaRonda ? { rondaNueva: rondaSiguiente } : {};
   const usuarioId = sesion?.usuarioId ?? null;
 
   await dejarEvento(tx, {
     hallazgoId: actual.id,
     ronda,
     tipo: accion,
-    detalle: { ...detalle, ...soloEvento, ...conActa(x), estado: { antes, despues } },
+    detalle: { ...detalle, ...soloEvento, ...conActa(x), ...deLaRondaNueva, estado: { antes, despues } },
     usuarioId,
     fuera: x.fuera,
     ocurrioEn: x.ocurrioEn ?? c.ahora,
   });
+  if (x.nuevaRonda) {
+    await tx`INSERT INTO mejora_rondas (hallazgo_id, numero, formular_antes_de)
+      VALUES (${actual.id}, ${rondaSiguiente}, ${venceEn("formular", c.ahora, c)})`;
+  }
   const cambia = despues !== antes;
   if (cambia) {
     const formularAntes =
-      despues === "por_formular" && accion !== "devolver_plan" ? await formularDeLaRonda(tx, actual.id, ronda) : null;
+      despues === "por_formular" && accion !== "devolver_plan" ? await formularDeLaRonda(tx, actual.id, rondaSiguiente) : null;
     const vence = vencimientoDe(despues, accion, formularAntes, c);
     await tx`UPDATE mejora_hallazgos
-      SET estado = ${despues}, vence_en = ${vence}, aviso_vencido_en = NULL, escalado_en = NULL, aviso_evaluar_en = NULL
+      SET estado = ${despues}, ronda = ${rondaSiguiente}, vence_en = ${vence}, aviso_vencido_en = NULL, escalado_en = NULL,
+        aviso_evaluar_en = NULL
       WHERE id = ${actual.id}`;
   }
   await registrarAuditoria(tx, {
@@ -304,10 +323,12 @@ export async function transicionarHallazgo(
     accion: `mejora_${accion}`,
     entidad: ENTIDAD_HALLAZGO,
     entidadId: actual.id,
-    detalle: { ...detalle, ...conActa(x), codigo: actual.codigo, estado: { antes, despues }, ronda },
+    detalle: { ...detalle, ...conActa(x), ...deLaRondaNueva, codigo: actual.codigo, estado: { antes, despues }, ronda },
   });
-  if (cambia && !x.sinAvisoDelTurno) await avisarDelTurno(tx, { ...actual, estado: despues }, titulo, usuarioId);
-  return { antes, despues, ronda };
+  if (cambia && !x.sinAvisoDelTurno) {
+    await avisarDelTurno(tx, { ...actual, estado: despues, ronda: rondaSiguiente }, titulo, usuarioId);
+  }
+  return { antes, despues, ronda: rondaSiguiente };
 }
 
 /** Lo que el dominio dice de cada error crudo de PostgreSQL que puede escaparse de una escritura del módulo. */

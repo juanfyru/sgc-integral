@@ -11,10 +11,9 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { enTransaccion, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { puedeAbrirArchivoDeMejora, type SujetoVisibilidad } from "@/lib/alcance";
+import { puedeAbrirArchivoDeMejora, puedeVerificar, type SujetoVisibilidad } from "@/lib/alcance";
 import { resolverRutaAlmacen } from "@/lib/almacen";
 import { ErrorMejora, TERMINALES } from "@/lib/mejoramiento/tipos";
-import { puede } from "@/lib/permisos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
 import { actuaPorElProceso } from "./avisos";
 
@@ -130,8 +129,8 @@ async function esQuienSube(sql: Cliente, p: Persona, d: DestinoDeMejora, f: Duen
       return f.procesoId !== null && (await actuaPorElProceso(sql, p, f.procesoId));
     case "mejora_ronda":
       if (d.rol === "analisis") return f.procesoId !== null && (await actuaPorElProceso(sql, p, f.procesoId));
-      // La Tarea 16 lo cambia por `puedeVerificar` (quien ejecuta no verifica).
-      return puede(p, "mejora.verificar");
+      // Quien ejecutó no verifica, y tampoco sube la evidencia de la verificación (spec §11.1).
+      return f.hallazgoId !== null && (await puedeVerificar(f.hallazgoId, { ...p, verHistorial: false }, { sql }));
     case "mejora_actividad":
       return f.responsableId === p.usuarioId;
     case "mejora_reporte":

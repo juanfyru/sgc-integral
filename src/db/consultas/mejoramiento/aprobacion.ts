@@ -107,8 +107,11 @@ async function bloquearRondaYActividades(tx: TransactionSql, h: Pick<HallazgoBas
     ORDER BY a.id FOR UPDATE OF a`;
 }
 
-/** La clave, fuera de la transacción (F13A-R4): sus fallos cuentan para el bloqueo de la cuenta aunque el acto no siga. */
-async function verificarFirma(
+/**
+ * La clave, fuera de la transacción (F13A-R4): sus fallos cuentan para el bloqueo de la cuenta aunque el acto no siga. La usan
+ * también los actos firmados de la verificación (`verificacion.ts`).
+ */
+export async function verificarFirma(
   sesion: SesionFlujo,
   credenciales: CredencialesFirma,
   opciones: OpcionesFlujo,

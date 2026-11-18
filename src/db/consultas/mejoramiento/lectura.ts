@@ -494,14 +494,18 @@ async function loQueSigue(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, tur
   return { paso, puede, turno: fraseDeLoQueSigue(h, turno, puede, { sinRechazo }) };
 }
 
+/** Lo congelado de un evento (spec §12.2): el plan del envío y de la aprobación, y lo que mostró la evaluación de la eficacia. */
+const CONGELADO = ["plan", "visto"] as const;
+
 /**
- * El detalle de un evento sin el plan congelado (`detalle.plan` del envío y de la aprobación, spec §12.2): no se pinta en el
- * historial ni viaja a la página; quien lo necesite (los impresos) lo lee con su propia regla de lo que nombra (§6.3).
+ * El detalle de un evento sin lo congelado (`detalle.plan` del envío y de la aprobación, y `detalle.visto` de la evaluación,
+ * que nombra el indicador enlazado con sus resultados): no se pinta en el historial ni viaja a la página; quien lo necesite (los
+ * impresos, la evaluación) lo lee con su propia regla de lo que nombra (§6.3: el indicador, solo a quien `puedeVerIndicador`).
  */
-function sinPlanCongelado(detalle: unknown): unknown {
-  if (typeof detalle !== "object" || detalle === null || !Object.hasOwn(detalle, "plan")) return detalle;
+function sinLoCongelado(detalle: unknown): unknown {
+  if (typeof detalle !== "object" || detalle === null || !CONGELADO.some((k) => Object.hasOwn(detalle, k))) return detalle;
   const resto = { ...(detalle as Record<string, unknown>) };
-  delete resto.plan;
+  for (const k of CONGELADO) delete resto[k];
   return resto;
 }
 
@@ -745,7 +749,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       id: Number(e.id),
       tipo: e.tipo as string,
       ronda: Number(e.ronda),
-      detalle: sinPlanCongelado(e.detalle),
+      detalle: sinLoCongelado(e.detalle),
       quien: (e.quien as string | null) ?? null,
       cuando: e.ocurrio_en as Date,
       fuera: e.fuera === true,

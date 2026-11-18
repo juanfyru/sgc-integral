@@ -614,12 +614,35 @@ function fraseDelPlan(accion: AccionHallazgo, d: Record<string, unknown>, h: Hal
   return null;
 }
 
+/**
+ * Lo que la verificación y la evaluación de la eficacia añaden a su frase (spec 15 §11.4 y §11.5, Tarea 16): las actividades
+ * devueltas (por su etiqueta), el cierre en el mismo acto y la ronda que se abre. Nunca las notas, la justificación, las lecciones
+ * ni lo que la pantalla mostró (quedan en el evento).
+ */
+function fraseDeLaEficacia(accion: AccionHallazgo, d: Record<string, unknown>, h: HallazgoEnFrase): string | null {
+  if (accion === "verificar_implementacion") {
+    const devueltas = Array.isArray(d.devueltas) ? d.devueltas.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+    if (devueltas.length === 0) return null;
+    const cuales =
+      devueltas.length === 1
+        ? `la actividad ${devueltas[0]}`
+        : `las actividades ${devueltas.slice(0, -1).join(", ")} y ${devueltas[devueltas.length - 1]}`;
+    return `${FRASES_DE_MEJORA.verificar_implementacion(h)} y devolvió ${cuales}`;
+  }
+  if (accion === "evaluar_eficaz" && d.cierra === true) return `Evaluó como eficaz y cerró ${h.el}`;
+  if (accion === "evaluar_no_eficaz" && typeof d.rondaNueva === "number") {
+    return `${FRASES_DE_MEJORA.evaluar_no_eficaz(h)}: se abre la ronda ${d.rondaNueva}`;
+  }
+  return null;
+}
+
 function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): string {
   const codigo = texto(d.codigo);
   const h = codigo ? { el: `el hallazgo ${codigo}`, del: `del hallazgo ${codigo}` } : SIN_CODIGO;
   // Sin corrección y sin acción correctiva se validan las dos justificaciones, no una corrección (spec 15 §8.5).
   const frase =
     fraseDelPlan(accion, d, h) ??
+    fraseDeLaEficacia(accion, d, h) ??
     (accion === "validar_correccion" && d.resultado === "sin_accion" ? `Validó el cierre sin acción ${h.del}` : FRASES_DE_MEJORA[accion](h));
   const titulo = accion === "registrar" || accion === "cargar" ? texto(d.titulo) : null;
   return `${frase}${titulo ? ` — ${titulo}` : ""}${conMotivo(d.justificacion)}`;

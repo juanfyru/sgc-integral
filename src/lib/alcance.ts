@@ -955,3 +955,48 @@ export async function puedeValidarCorreccion(
   if (!puede(sujeto, "mejora.verificar")) return false;
   return (await validadoresDeCorreccion(hallazgoId, opciones)).includes(sujeto.usuarioId);
 }
+
+/**
+ * Quienes pueden verificar la implementación del plan y evaluar su eficacia (spec 15 §11.1): los Admin SGC y Control Interno
+ * activos que **no ejecutaron** en el hallazgo y, solo si ninguno de ellos puede, Gerencia con las mismas exclusiones. Sin
+ * excepción de «único administrador»: si nadie cumple, la lista queda vacía y el acto se rechaza. «Ejecutó» es la lista cerrada
+ * de F15-DC22, en cualquier ronda: ser responsable de una actividad de un plan aprobado o haberlo sido (los eventos
+ * `reasignada`, `detalle.antes`), haber registrado un seguimiento, haber terminado una actividad (la fila o el evento
+ * `actividad_terminada`: una devolución borra la marca de la fila, el evento queda) y haber registrado la corrección (la fila o
+ * un evento `corregir`, también el de una corrección devuelta) o ser su responsable. Una sola regla: la usan el turno de «Por
+ * verificar», la página, los archivos de la verificación y los actos, dentro de su transacción.
+ */
+export async function quienesVerifican(sql: Cliente, hallazgoId: number): Promise<number[]> {
+  if (!Number.isSafeInteger(hallazgoId) || hallazgoId <= 0) return [];
+  const filas = await sql`
+    WITH h AS (SELECT id, correccion_registrada_por, correccion_responsable_id FROM mejora_hallazgos WHERE id = ${hallazgoId}),
+    ejecutaron AS (
+      SELECT a.responsable_id AS id FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id WHERE a.fin_original IS NOT NULL
+      UNION SELECT a.terminada_por FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id
+      UNION SELECT s.registrado_por FROM mejora_seguimientos s JOIN h ON h.id = s.hallazgo_id
+      UNION SELECT (e.detalle->>'antes')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
+        WHERE e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'antes') = 'number'
+      UNION SELECT e.usuario_id FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id WHERE e.tipo IN ('actividad_terminada', 'corregir')
+      UNION SELECT (e.detalle->>'responsableId')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
+        WHERE e.tipo = 'corregir' AND jsonb_typeof(e.detalle->'responsableId') = 'number'
+      UNION SELECT correccion_registrada_por FROM h
+      UNION SELECT correccion_responsable_id FROM h),
+    cumplen AS (
+      SELECT u.id, u.rol FROM usuarios u CROSS JOIN h
+      WHERE u.activo AND u.rol IN ('admin_sgc', 'control_interno', 'gerencia')
+        AND NOT EXISTS (SELECT 1 FROM ejecutaron x WHERE x.id = u.id))
+    SELECT id FROM cumplen
+    WHERE rol <> 'gerencia' OR NOT EXISTS (SELECT 1 FROM cumplen WHERE rol <> 'gerencia')
+    ORDER BY id`;
+  return filas.map((f) => Number(f.id));
+}
+
+/** Si la persona puede verificar la implementación y evaluar la eficacia de ese hallazgo: `mejora.verificar` y `quienesVerifican`. */
+export async function puedeVerificar(
+  hallazgoId: number,
+  sujeto: SujetoVisibilidad,
+  opciones?: { sql?: Cliente },
+): Promise<boolean> {
+  if (!puede(sujeto, "mejora.verificar")) return false;
+  return (await quienesVerifican(opciones?.sql ?? obtenerSql(), hallazgoId)).includes(sujeto.usuarioId);
+}

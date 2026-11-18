@@ -9,6 +9,7 @@ import { guardarAnalisis, guardarCausas, responderPreguntas } from "@/db/consult
 import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
+import { cerrarHallazgo, evaluarEficacia, fechaMinimaDe, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { guardarAccion, guardarCriterio } from "@/db/consultas/mejoramiento/plan";
 import {
   aceptarHallazgo,
@@ -112,10 +113,25 @@ export type EstadoDeEscena =
   | "en_revision"
   | "en_aprobacion"
   | "en_ejecucion"
-  | "por_verificar";
+  | "por_verificar"
+  | "en_espera"
+  | "por_cerrar"
+  | "cerrado";
 
 /** Los estados que pasan por el plan: para llegar a ellos, la decisión es «sí». */
-const CON_PLAN: readonly EstadoDeEscena[] = ["por_formular", "en_revision", "en_aprobacion", "en_ejecucion", "por_verificar"];
+const CON_PLAN: readonly EstadoDeEscena[] = [
+  "por_formular",
+  "en_revision",
+  "en_aprobacion",
+  "en_ejecucion",
+  "por_verificar",
+  "en_espera",
+  "por_cerrar",
+  "cerrado",
+];
+
+/** Las lecciones aprendidas con que `hallazgoEn` cierra un hallazgo. */
+export const LECCIONES_DE_ESCENA = "Asignar el registro a cada turno evita que se pierda en el cambio de turno";
 
 /** La hora de todos los pasos de `hallazgoEn` (martes 17 de noviembre de 2026, 10:00 en Bogotá). */
 export const HORA_DE_ESCENA = "2026-11-17T15:00:00Z";
@@ -187,8 +203,11 @@ export async function planDePrueba(
  * («no», salvo para llegar a «Por formular» o más allá). Del plan en adelante: quien formula arma `planDePrueba` (si la
  * ronda no tiene acciones, con `plan` como sus opciones) y lo envía; el Admin SGC lo revisa (otro Admin SGC, si elaboró el
  * de la base), con «requiere recursos» solo para llegar a «En aprobación»; Gerencia lo aprueba; y, para llegar a «Por
- * verificar», cada responsable termina su actividad (`terminarTodas`). Lanza si el camino no lleva a `estado` (p. ej. una
- * oportunidad no pasa por «Por corregir»). Todo a `HORA_DE_ESCENA`.
+ * verificar», cada responsable termina su actividad (`terminarTodas`). Control Interno verifica la implementación con todas
+ * las actividades conformes («En espera de eficacia») y la evalúa «eficaz» («Por cerrar»), y el Admin SGC la cierra («Cerrado»).
+ * Lanza si el camino no lleva a `estado` (p. ej. una oportunidad no pasa por «Por corregir»). Todo a `HORA_DE_ESCENA`, salvo
+ * la evaluación y el cierre: «eficaz» se registra desde la fecha mínima, así que van ese día (`fechaMinimaDe`) a las 10:00 en
+ * Bogotá. Un hallazgo cerrado solo dentro de `revertida`.
  */
 export async function hallazgoEn(
   tx: TransactionSql,
@@ -199,7 +218,7 @@ export async function hallazgoEn(
 ): Promise<HallazgoBase> {
   const o = c(HORA_DE_ESCENA, tx);
   const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, cambios), o);
-  for (let paso = 0; paso < 12; paso++) {
+  for (let paso = 0; paso < 16; paso++) {
     const h = await bloquearHallazgo(tx, id);
     if (h.estado === estado) return h;
     switch (h.estado) {
@@ -272,6 +291,48 @@ export async function hallazgoEn(
       case "en_ejecucion":
         await terminarTodas(tx, b, id, HORA_DE_ESCENA);
         break;
+      case "por_verificar": {
+        const terminadas = await tx`SELECT a.id FROM mejora_actividades a
+          JOIN mejora_acciones ac ON ac.id = a.accion_id
+          JOIN mejora_rondas r ON r.id = ac.ronda_id
+          WHERE a.hallazgo_id = ${id} AND r.numero = ${h.ronda} AND a.estado = 'terminada'
+          ORDER BY a.id`;
+        await verificarImplementacion(
+          b.control,
+          { hallazgoId: id, actividades: terminadas.map((a) => ({ id: Number(a.id), conforme: true })), metodos: ["evidencias"] },
+          o,
+        );
+        break;
+      }
+      case "en_espera": {
+        const fm = await fechaMinimaDe(tx, id, zonaHoraria());
+        if (!fm) throw new Error("hallazgoEn: el hallazgo en espera no tiene fecha mínima de eficacia");
+        await evaluarEficacia(
+          b.control,
+          {
+            hallazgoId: id,
+            resultado: "eficaz",
+            criterios: ["no_recurrencia"],
+            desde: fm.r,
+            hasta: fm.minima,
+            justificacion: "No se repitió el hecho desde que terminó el plan de prueba",
+            confirmaOcurrencias: true,
+            credenciales: { clave: "ok" },
+          },
+          c(`${fm.minima}T15:00:00Z`, tx),
+        );
+        break;
+      }
+      case "por_cerrar": {
+        // El mismo día en que se evaluó.
+        const [r] = await tx`SELECT evaluada_en FROM mejora_rondas WHERE hallazgo_id = ${id} AND numero = ${h.ronda}`;
+        await cerrarHallazgo(
+          b.admin,
+          { hallazgoId: id, lecciones: LECCIONES_DE_ESCENA, credenciales: { clave: "ok" } },
+          c((r.evaluada_en as Date).toISOString(), tx),
+        );
+        break;
+      }
       default:
         throw new Error(`hallazgoEn: el hallazgo quedó en ${h.estado} y no lleva a ${estado}`);
     }

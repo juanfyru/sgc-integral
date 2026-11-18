@@ -52,6 +52,10 @@ export type CriterioEficacia = (typeof CRITERIOS_EFICACIA)[number];
 export const METODOS_ANALISIS = ["cinco_porques", "ishikawa", "pareto", "otro"] as const;
 export type MetodoAnalisis = (typeof METODOS_ANALISIS)[number];
 
+/** Cómo verificó quien verifica la implementación (spec §11.4): revisión de evidencias, observación en sitio, auditoría de seguimiento o entrevista. */
+export const METODOS_DE_VERIFICACION = ["evidencias", "observacion", "auditoria", "entrevista"] as const;
+export type MetodoDeVerificacion = (typeof METODOS_DE_VERIFICACION)[number];
+
 export const ESTADOS_ACTIVIDAD = ["abierta", "en_proceso", "terminada", "cancelada"] as const;
 export type EstadoActividad = (typeof ESTADOS_ACTIVIDAD)[number];
 

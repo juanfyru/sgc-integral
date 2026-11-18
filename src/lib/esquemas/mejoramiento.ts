@@ -6,8 +6,10 @@ import {
   CRITERIOS_EFICACIA,
   CRITICIDADES,
   ESTADOS_ACTIVIDAD,
+  MAXIMO_DE_ACCIONES,
   MAXIMO_DE_ACTIVIDADES,
   METODOS_ANALISIS,
+  METODOS_DE_VERIFICACION,
   ORIGENES_HALLAZGO,
   TIPOS_ACCION,
   TIPOS_AJUSTE,
@@ -924,3 +926,95 @@ export function cambioDeAjuste(tipo: string, datos: unknown): CambioDeAjuste | n
   }
   return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verificar la implementación, evaluar la eficacia y cerrar (spec 15 §11.4 y §11.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const SIN_METODO = "Indique cómo verificó";
+export const SIN_DECIDIR = "Marque cada actividad como conforme o devuélvala";
+export const SIN_LECCIONES = "Escriba las lecciones aprendidas";
+
+/** Lo elegido en un conjunto de casillas, sin repetir y en el orden de la lista de valores. */
+const enSuOrden = <T extends string>(valores: readonly T[]) => (elegidos: T[]) => valores.filter((x) => elegidos.includes(x));
+
+/**
+ * Lo que decide quien verifica de una actividad terminada: conforme, o devuelta con su nota y su fecha para corregir. Que la
+ * nota tenga diez caracteres y la fecha sea de hoy en adelante lo mira el dominio, que sabe la etiqueta de la actividad («A1.2»).
+ */
+const decisionDeActividad = z
+  .object({
+    id: idDeActividad,
+    conforme: z.boolean({ error: SIN_DECIDIR }),
+    nota: textoOpcional("La nota de la actividad devuelta", 1000),
+    corregirAntesDe: fechaOpcional("Escriba una fecha válida para corregir la actividad devuelta"),
+  })
+  .strict();
+
+/**
+ * Verificar la implementación (spec §11.4): una decisión por actividad terminada de la ronda (las mira el dominio), al menos un
+ * método y, si se quiere, una nota.
+ */
+export const EsquemaVerificacion = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    actividades: z.array(decisionDeActividad, { error: SIN_DECIDIR }).max(MAXIMO_DE_ACCIONES * MAXIMO_DE_ACTIVIDADES, SIN_DECIDIR),
+    metodos: variosValores(SIN_METODO)
+      .pipe(z.array(z.enum(METODOS_DE_VERIFICACION, { error: "Elija un método de verificación válido" })))
+      .transform(enSuOrden(METODOS_DE_VERIFICACION))
+      .refine((m) => m.length > 0, SIN_METODO),
+    nota: textoOpcional("La nota de la verificación", 2000),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    if (new Set(d.actividades.map((a) => a.id)).size !== d.actividades.length) {
+      ctx.addIssue({ code: "custom", path: ["actividades"], message: "Marque cada actividad una sola vez" });
+    }
+  });
+
+/** Las lecciones aprendidas del cierre (spec §11.5): al menos diez caracteres. */
+const lecciones = z
+  .string({ error: SIN_LECCIONES })
+  .trim()
+  .min(1, SIN_LECCIONES)
+  .min(10, "Las lecciones aprendidas deben tener al menos 10 caracteres")
+  .max(4000, "Las lecciones aprendidas no pueden pasar de 4000 caracteres");
+
+/** Lo opcional del cierre: vacío es «nada»; escrito, al menos diez caracteres. */
+const textoDelCierre = (nombre: string, corto: string) =>
+  textoOpcional(nombre, 4000).refine((v) => v === null || v.length >= 10, corto);
+
+const cambiosAtendidos = textoDelCierre("Cómo se atendieron los cambios", "Diga cómo se atendieron los cambios en al menos 10 caracteres");
+
+/**
+ * Evaluar la eficacia (spec §11.4): el resultado, los criterios evaluados, el periodo evaluado, la justificación (al menos 20
+ * caracteres) y la confirmación de las ocurrencias posteriores. Las lecciones y los cambios atendidos valen solo cuando evalúa
+ * y cierra el Admin SGC (lo decide el dominio). Lo que depende de la base y de la hora (la fecha mínima, el indicador, las
+ * ocurrencias) lo mira el dominio.
+ */
+export const EsquemaEvaluacion = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    resultado: z.enum(["eficaz", "no_eficaz"], { error: "Elija el resultado de la evaluación" }),
+    criterios: variosValores("Marque los criterios que evaluó")
+      .pipe(z.array(z.enum(CRITERIOS_EFICACIA, { error: "Elija un criterio de eficacia válido" })))
+      .transform(enSuOrden(CRITERIOS_EFICACIA))
+      .refine((c) => c.length > 0, "Marque los criterios que evaluó"),
+    desde: fechaDelDia("Escriba el inicio del periodo evaluado"),
+    hasta: fechaDelDia("Escriba el fin del periodo evaluado"),
+    justificacion: textoAcotado("La justificación", 20, 4000),
+    confirmaOcurrencias: z.boolean({ error: "La confirmación de las ocurrencias no es válida" }).optional().transform((v) => v === true),
+    lecciones: textoDelCierre("Las lecciones aprendidas", "Las lecciones aprendidas deben tener al menos 10 caracteres"),
+    cambiosAtendidos,
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    if (d.desde > d.hasta) {
+      ctx.addIssue({ code: "custom", path: ["desde"], message: "El inicio del periodo evaluado no puede ser posterior a su fin" });
+    }
+  });
+export type EvaluacionValidada = z.output<typeof EsquemaEvaluacion>;
+
+/** Cerrar un hallazgo eficaz (spec §11.5): las lecciones aprendidas y, si el análisis pidió cambios, cómo se atendieron. */
+export const EsquemaCierre = z.object({ hallazgoId: idDeHallazgo, lecciones, cambiosAtendidos }).strict();
+export type CierreValidado = z.output<typeof EsquemaCierre>;
