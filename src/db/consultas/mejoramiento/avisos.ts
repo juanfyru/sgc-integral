@@ -80,7 +80,12 @@ async function turnoDeLaRevision(tx: Cliente, h: Pick<HallazgoBase, "id" | "rond
 
 /** Cómo se resuelve cada turno a usuarios activos. Un solo lugar: las tareas 10, 13 y 16 lo refinan aquí. */
 const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>> = {
-  lideres: (tx, h) => lideresOAdmins(tx, h.procesoId),
+  // Quien lo registró no lo acepta (`puedeAceptar`, spec §6.1): fuera del turno de «Por aceptar», aunque lidere el proceso o
+  // sea el Admin SGC que actúa por él. Sin nadie más, el turno queda vacío: nadie recibe el aviso, la tarea ni el vencido.
+  lideres: async (tx, h) => {
+    const lideres = await lideresOAdmins(tx, h.procesoId);
+    return h.estado === "por_aceptar" ? lideres.filter((u) => u !== h.registradoPor) : lideres;
+  },
   registrador: async (tx, h) => {
     const [u] = await tx`SELECT id FROM usuarios WHERE id = ${h.registradoPor} AND activo`;
     return u ? [Number(u.id)] : adminsActivos({ sql: tx });

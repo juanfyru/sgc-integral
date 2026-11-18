@@ -132,6 +132,7 @@ const QUIEN_VERIFICA = "Quien puede verificar";
 /** El turno de un paso que nadie puede dar hoy (la lista lo dice así; «Lo que sigue», con su porqué). */
 const NADIE_VERIFICA_TURNO = "Nadie puede verificarlo";
 const NADIE_ARBITRA_TURNO = "Nadie puede arbitrarlo";
+const NADIE_ACEPTA_TURNO = "Nadie puede aceptarlo";
 /** El turno de un hallazgo cargado sin su formato firmado (spec §15): es del Admin SGC, que lo adjunta (la tarea `mej-escaneo`). */
 const TURNO_SIN_EL_FORMATO = "El Administrador del SGC: falta el formato firmado";
 
@@ -165,9 +166,10 @@ async function resolverTurno(
   }
   const turno = turnoDe(h.estado);
   if (!turno) return { ids: [], texto: esTerminal(h.estado) ? "Sin pendientes" : "Nadie por ahora" };
-  // Quién tiene el turno depende solo de esto: el proceso, quien registró, el hallazgo o nada.
+  // Quién tiene el turno depende solo de esto: el proceso (en «Por aceptar», también quien lo registró, que no acepta), quien
+  // registró, el hallazgo o nada.
   const clave =
-    turno === "lideres" ? `lideres:${h.procesoId}`
+    turno === "lideres" ? `lideres:${h.procesoId}${h.estado === "por_aceptar" ? `:sin:${h.registradoPor}` : ""}`
     : turno === "registrador" ? `registrador:${h.registradoPor}`
     // El árbitro depende también de quién lo sostuvo; los validadores, de quién registró la corrección y decidió; los
     // verificadores, de quién ejecutó en ese hallazgo (`quienesVerifican`); quienes revisan el plan, de quién lo elaboró
@@ -178,6 +180,7 @@ async function resolverTurno(
   const ids = await recordar(m, clave, () => quienTieneElTurno(tx, h));
   switch (turno) {
     case "lideres": {
+      if (ids.length === 0) return { ids, texto: NADIE_ACEPTA_TURNO };
       const lideres = await recordar(m, `hay-lideres:${h.procesoId}`, () => lideresDeProceso(h.procesoId, { sql: tx }));
       return { ids, texto: lideres.length > 0 ? "La líder del proceso" : ADMIN };
     }
@@ -838,6 +841,18 @@ export const NADIE_ARBITRA =
   "Nadie puede arbitrarlo: no hay un Administrador del SGC ni Gerencia activos que no hayan tomado parte en el hallazgo. Dé el " +
   "rol a otra persona.";
 
+/**
+ * Cuando nadie puede aceptar un hallazgo «Por aceptar» (§6.1, F15-DC3): quien lo registró no lo acepta, y el proceso no tiene
+ * otro líder ni (sin líder) otro Admin SGC activo. Pasa tras un cambio de proceso o una edición; la pantalla dice por qué y qué
+ * hacer. Si el proceso tiene líder y es quien lo registró, lo dice así.
+ */
+export const NADIE_ACEPTA =
+  "Nadie puede aceptarlo: el proceso no tiene líder y quien lo registró no puede aceptar su propio hallazgo. Asigne un líder al " +
+  "proceso o cambie el proceso del hallazgo.";
+export const NADIE_ACEPTA_SU_LIDER =
+  "Nadie puede aceptarlo: el único líder del proceso es quien lo registró, y no puede aceptar su propio hallazgo. Asigne otro " +
+  "líder al proceso o cambie el proceso del hallazgo.";
+
 /** Cuando nadie cumple la regla de quién verifica (§11.1): el acto se rechaza y la pantalla dice por qué. */
 export const NADIE_VERIFICA = `${NADIE_PUEDE_VERIFICAR}. Dé el rol de Administrador del SGC o de Control Interno a otra persona.`;
 
@@ -907,6 +922,10 @@ async function loQueSigue(
   const daElPaso = await puedeDarElPaso(tx, sesion, h);
   if (!daElPaso && (h.estado === "por_validar" || h.estado === "arbitraje") && (await quienTieneElTurno(tx, h)).length === 0) {
     return { paso, puede: daElPaso, turno: h.estado === "por_validar" ? NADIE_VALIDA : NADIE_ARBITRA };
+  }
+  if (!daElPaso && h.estado === "por_aceptar" && (await quienTieneElTurno(tx, h)).length === 0) {
+    const conLider = (await lideresDeProceso(h.procesoId, { sql: tx })).length > 0;
+    return { paso, puede: false, turno: conLider ? NADIE_ACEPTA_SU_LIDER : NADIE_ACEPTA };
   }
   // «o rechazarlo», solo a quien puede rechazar; a los demás, sin él si el origen es externo (no se rechaza: se responde) o si el
   // turno es del Admin SGC (proceso sin líder).

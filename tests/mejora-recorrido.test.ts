@@ -14,10 +14,11 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, NO_EXISTE } from "@/db/consultas/mejoramiento/flujo";
-import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import {
   aceptarHallazgo,
   arbitrarHallazgo,
@@ -32,11 +33,21 @@ import {
 } from "@/db/consultas/mejoramiento/recorrido";
 import { cambiarProceso, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
+import { tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
+import { revisarVencimientosDeMejoramiento } from "@/db/consultas/mejoramiento/vencimientos";
 import { participacionEnHallazgo, puedeValidarCorreccion } from "@/lib/alcance";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
-import { baseDeMejora, c, datosDeHallazgo, evidenciaDeCorreccion, hallazgoEn, otroProcesoConLider } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeHallazgo,
+  evidenciaDeCorreccion,
+  hallazgoEn,
+  otroProcesoConLider,
+  silenciarMejoramiento,
+} from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
@@ -705,5 +716,54 @@ describe("los desenlaces avisan a quien tomó parte (revisión final, I3)", () =
       ]);
       const neutros = await tx`SELECT usuario_id FROM notificaciones WHERE tipo = 'mejora.reporte_atendido' AND entidad_id = ${reporteId}`;
       expect(neutros.map((n) => Number(n.usuario_id))).toEqual([b.lider.usuarioId]);
+    }));
+});
+
+describe("«Por aceptar» sin nadie que pueda aceptar (revisión final, m2)", () => {
+  it("el único Admin SGC lo registró y el proceso no tiene líder: nadie tiene el turno, ni la tarea, y la pasada no avisa ni escala", () =>
+    revertida(sql, async (tx) => {
+      await silenciarMejoramiento(tx);
+      const b = await baseDeMejora(tx);
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND id <> ${b.admin.usuarioId}`;
+      const { id } = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId), c(REGISTRO, tx));
+      const sinLider = await procesoNuevo(tx);
+      await cambiarProceso(b.admin, { hallazgoId: id, procesoId: sinLider, justificacion: "El hecho ocurrió en otro servicio" }, c(REGISTRO, tx));
+      const h = await bloquearHallazgo(tx, id);
+      expect(h.estado).toBe("por_aceptar");
+      expect(await quienTieneElTurno(tx, h)).toEqual([]);
+      expect((await leerHallazgo(b.admin, id, { sql: tx }))?.loQueSigue).toEqual({
+        paso: "aceptar",
+        puede: false,
+        turno:
+          "Nadie puede aceptarlo: el proceso no tiene líder y quien lo registró no puede aceptar su propio hallazgo. Asigne un líder al " +
+          "proceso o cambie el proceso del hallazgo.",
+      });
+      const { tareas } = await tareasDeMejoramiento(b.admin, { sql: tx, ahora: new Date(DESPUES) });
+      expect(tareas.filter((t) => t.id === `mej-aceptar:${id}`)).toEqual([]);
+      const { filas } = await listarHallazgos(b.admin, {}, { sql: tx, ahora: new Date(DESPUES) });
+      expect(filas.find((f) => f.id === id)?.turno).toBe("Nadie puede aceptarlo");
+
+      // Vencido el plazo de aceptar, y pasado el del aviso al jefe: sin destinatario no hay aviso ni marca.
+      const config = await obtenerConfigDocumental({ sql: tx });
+      for (const ahora of [DESPUES, "2026-12-15T15:00:00Z"]) {
+        await revisarVencimientosDeMejoramiento({ sql: tx, ahora: new Date(ahora), config });
+      }
+      expect(await fila(tx, id)).toMatchObject({ aviso_vencido_en: null, escalado_en: null });
+      const avisos = await tx`SELECT tipo FROM notificaciones WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id} AND tipo = 'mejora.vencido'`;
+      expect(avisos).toEqual([]);
+    }));
+
+  it("con otro Admin SGC activo, el turno es suyo y no de quien lo registró", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const { id } = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId), c(REGISTRO, tx));
+      await cambiarProceso(b.admin, { hallazgoId: id, procesoId: await procesoNuevo(tx), justificacion: "El hecho ocurrió en otro servicio" }, c(REGISTRO, tx));
+      const turno = await quienTieneElTurno(tx, await bloquearHallazgo(tx, id));
+      expect(turno).toContain(otro.usuarioId);
+      expect(turno).not.toContain(b.admin.usuarioId);
+      expect((await leerHallazgo(b.admin, id, { sql: tx }))?.loQueSigue.turno).toBe(
+        "Tiene el turno: el Administrador del SGC, para aceptar el hallazgo.",
+      );
     }));
 });

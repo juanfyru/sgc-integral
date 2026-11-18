@@ -28,7 +28,7 @@ import {
   registrarHallazgo,
   registrarOcurrencia,
 } from "@/db/consultas/mejoramiento/registro";
-import { formularAntesDe } from "@/lib/mejoramiento/plazos";
+import { formularAntesDe, venceEn } from "@/lib/mejoramiento/plazos";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -462,6 +462,32 @@ describe("cambiarProceso (reincidencia, subproceso y avisos)", () => {
       expect(f).toMatchObject({ reincidente_de: null, subproceso_id: null, aviso_vencido_en: null, escalado_en: null });
       const [ev] = await eventos(tx, h.id, "proceso_cambiado");
       expect(ev.detalle).toMatchObject({ antes: { reincidenteDe: anterior.id }, despues: { reincidenteDe: null } });
+    });
+  });
+
+  it("cambiar el proceso cuenta otra vez el plazo de aceptar desde ese momento (revisión final, punto 6)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const h = await nuevo(tx, b);
+      const CAMBIO = "2026-11-20T15:00:00Z";
+      expect((await fila(tx, h.id)).vence_en).toEqual(venceEn("aceptar", new Date(AHORA), await contextoDeMejora(tx, new Date(AHORA))));
+      await cambiarProceso(b.admin, { hallazgoId: h.id, procesoId: otro.procesoId, justificacion: "Corresponde a otro proceso" }, c(CAMBIO, tx));
+      expect((await fila(tx, h.id)).vence_en).toEqual(venceEn("aceptar", new Date(CAMBIO), await contextoDeMejora(tx, new Date(CAMBIO))));
+    });
+  });
+
+  it("editar el registro cuenta otra vez el plazo de aceptar solo si cambia el proceso (revisión final, punto 6)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const h = await nuevo(tx, b);
+      const original = (await fila(tx, h.id)).vence_en as Date;
+      await editarHallazgo(b.control, h.id, datosDeHallazgo(b.procesoId, { titulo: "Entrega de turno sin diligenciar" }), c(DESPUES, tx));
+      expect((await fila(tx, h.id)).vence_en).toEqual(original);
+      const CAMBIO = "2026-11-20T15:00:00Z";
+      await editarHallazgo(b.control, h.id, datosDeHallazgo(otro.procesoId), c(CAMBIO, tx));
+      expect((await fila(tx, h.id)).vence_en).toEqual(venceEn("aceptar", new Date(CAMBIO), await contextoDeMejora(tx, new Date(CAMBIO))));
     });
   });
 

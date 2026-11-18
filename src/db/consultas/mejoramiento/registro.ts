@@ -19,7 +19,7 @@ import {
   type HallazgoValidado,
 } from "@/lib/esquemas/mejoramiento";
 import { esExterno } from "@/lib/mejoramiento/origenes";
-import { formularAntesDe } from "@/lib/mejoramiento/plazos";
+import { formularAntesDe, venceEn } from "@/lib/mejoramiento/plazos";
 import { destinoDeReclasificacion, type Perfil } from "@/lib/mejoramiento/reclasificar";
 import { aceptadoVaA } from "@/lib/mejoramiento/reglas";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
@@ -366,7 +366,8 @@ export async function registrarOcurrencia(
 
 /**
  * Mientras el hallazgo está «Por aceptar», quien lo registró corrige cualquier campo de la identificación menos el código;
- * el evento `editado` guarda el antes y el después de lo que cambió. Si el origen pasa a externo, queda aceptado (§7.4).
+ * el evento `editado` guarda el antes y el después de lo que cambió. Si cambia el proceso, avisa a sus líderes y el plazo de
+ * aceptar se cuenta otra vez desde este acto (como `cambiarProceso`). Si el origen pasa a externo, queda aceptado (§7.4).
  */
 export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDeHallazgo, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.registrar");
@@ -420,8 +421,10 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
         detalle: { codigo: h.codigo, campos: Object.keys(cambios.antes) },
       });
       if (antes.procesoId !== despues.procesoId) {
-        // Los líderes nuevos reciben su propio aviso de vencido y de escalamiento.
-        await tx`UPDATE mejora_hallazgos SET aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${h.id}`;
+        // Los líderes nuevos lo reciben ahora: su plazo de aceptar cuenta desde este acto, con su propio aviso de vencido y de
+        // escalamiento.
+        await tx`UPDATE mejora_hallazgos SET vence_en = ${venceEn("aceptar", c.ahora, c)}, aviso_vencido_en = NULL, escalado_en = NULL
+          WHERE id = ${h.id}`;
         await avisarAlProcesoNuevo(tx, h, v.procesoId, v.titulo, sesion.usuarioId);
       }
       if (!esExterno(antes.origen as Origen) && esExterno(v.origen)) {
@@ -563,7 +566,10 @@ export async function reclasificarHallazgo(
   );
 }
 
-/** El proceso solo se cambia mientras el hallazgo está «Por aceptar», y avisa a los líderes del proceso nuevo (spec §7.6). */
+/**
+ * El proceso solo se cambia mientras el hallazgo está «Por aceptar», y avisa a los líderes del proceso nuevo (spec §7.6), que lo
+ * reciben entonces: el plazo de aceptar se cuenta otra vez desde este acto.
+ */
 export async function cambiarProceso(
   sesion: SesionFlujo,
   d: { hallazgoId: number; procesoId: number; justificacion: string },
@@ -584,10 +590,10 @@ export async function cambiarProceso(
       const c = await contextoDeMejora(tx, ahora);
       const [viejo] = await tx`SELECT p.nombre, h.titulo, h.subproceso_id, h.reincidente_de
         FROM mejora_hallazgos h JOIN procesos p ON p.id = h.proceso_id WHERE h.id = ${h.id}`;
-      // El subproceso es del proceso anterior, y una reincidencia solo vale dentro de su proceso. Los líderes nuevos reciben
-      // su propio aviso de vencido y de escalamiento.
+      // El subproceso es del proceso anterior, y una reincidencia solo vale dentro de su proceso. Los líderes nuevos lo reciben
+      // ahora: su plazo de aceptar cuenta desde este acto, con su propio aviso de vencido y de escalamiento.
       await tx`UPDATE mejora_hallazgos SET proceso_id = ${r.procesoId}, subproceso_id = NULL, reincidente_de = NULL,
-        aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${h.id}`;
+        vence_en = ${venceEn("aceptar", c.ahora, c)}, aviso_vencido_en = NULL, escalado_en = NULL WHERE id = ${h.id}`;
       await dejarEvento(tx, {
         hallazgoId: h.id,
         ronda: h.ronda,
