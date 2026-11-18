@@ -76,10 +76,12 @@ describe("esquema de la Fase 13C", () => {
       expect(await fallaCon(firmar("aprobo", null))).toBe("23514");
       expect(await fallaCon(firmar("otra", null))).toBe("23514");
       // Desde la 14A, la ficha de un indicador también se firma sin trámite: «Elaboró» y «Aprobó» con su
-      // `indicador_version_id` (spec 14 §19.1).
+      // `indicador_version_id` (spec 14 §19.1). Desde la 15A, las del hallazgo de mejoramiento también: «Elaboró»,
+      // «Revisó», «Aprobó», «Verificó» y «Cerró» con su `mejora_hallazgo_id` (spec 15 §12).
       const [{ n }] = await tx`SELECT count(*)::int AS n FROM firmas
         WHERE tramite_id IS NULL AND firma NOT IN ('ratifico', 'adopto')
-          AND NOT (indicador_version_id IS NOT NULL AND firma IN ('elaboro', 'aprobo'))`;
+          AND NOT (indicador_version_id IS NOT NULL AND firma IN ('elaboro', 'aprobo'))
+          AND NOT (mejora_hallazgo_id IS NOT NULL AND firma IN ('elaboro', 'reviso', 'aprobo', 'verifico', 'cerro'))`;
       expect(n).toBe(0);
     }));
 
