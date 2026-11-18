@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { obtenerSql } from "@/db/cliente";
 import { parecidosDelProceso } from "@/db/consultas/mejoramiento/parecidos";
 import { alcanceProcesos, enAlcance } from "@/lib/alcance";
+import { crearLimitador } from "@/lib/limite";
 import { puede } from "@/lib/permisos";
 import { sesionDePeticion } from "@/lib/sesion-actual";
 
@@ -11,6 +12,10 @@ export const dynamic = "force-dynamic";
 const MINIMO = 15;
 const MAXIMO = 4200;
 
+// Se consulta mientras se escribe (con espera), con `similarity()` sobre los hallazgos del proceso: el mismo cupo que la búsqueda
+// global (`api/buscar`), 60 por minuto por persona.
+const permitirConsulta = crearLimitador({ limite: 60, ventanaMs: 60_000 });
+
 /**
  * Los hallazgos del mismo proceso que se parecen a lo que se está escribiendo (spec 15 §7.5). Quien no puede registrar en
  * ese proceso recibe 404, como si el proceso no existiera: ni dice cuántos hallazgos tiene.
@@ -18,6 +23,12 @@ const MAXIMO = 4200;
 export async function GET(peticion: NextRequest): Promise<Response> {
   const sesion = await sesionDePeticion(peticion);
   if (!sesion) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!permitirConsulta(String(sesion.usuarioId))) {
+    return NextResponse.json(
+      { error: "Demasiadas peticiones, intente de nuevo en un momento" },
+      { status: 429, headers: { "Retry-After": "60" } },
+    );
+  }
   const proceso = peticion.nextUrl.searchParams.get("proceso") ?? "";
   const texto = (peticion.nextUrl.searchParams.get("q") ?? "").trim().slice(0, MAXIMO);
   const noExiste = () => NextResponse.json({ error: "No encontrado" }, { status: 404 });

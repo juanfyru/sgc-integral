@@ -136,6 +136,20 @@ describe("la ruta de parecidos", () => {
     expect(largo.status).toBe(200);
     expect(Array.isArray((await largo.json()).parecidos)).toBe(true);
   });
+
+  it("limita a 60 consultas por minuto por persona, como la búsqueda global (revisión final, m8)", async () => {
+    // Un id que ningún otro caso usa: el límite vive en la memoria del módulo de la ruta. Sin el permiso de registrar, cada
+    // consulta responde 404 sin tocar la base.
+    sesionDePeticion.mockResolvedValue({ usuarioId: 2147483060, rol: "consulta", verHistorial: false });
+    for (let i = 0; i < 60; i++) expect((await pedir(`proceso=1&${TEXTO}`)).status).toBe(404);
+    const res = await pedir(`proceso=1&${TEXTO}`);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(await res.json()).toEqual({ error: "Demasiadas peticiones, intente de nuevo en un momento" });
+    // Otra persona no comparte su cupo.
+    sesionDePeticion.mockResolvedValue({ usuarioId: 2147483061, rol: "consulta", verHistorial: false });
+    expect((await pedir(`proceso=1&${TEXTO}`)).status).toBe(404);
+  });
 });
 
 describe("registrarOcurrencia", () => {
