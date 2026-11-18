@@ -9,7 +9,14 @@ import { guardarAnalisis, guardarCausas, responderPreguntas } from "@/db/consult
 import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
-import { cerrarHallazgo, evaluarEficacia, fechaMinimaDe, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
+import {
+  cerrarHallazgo,
+  datosDeEvaluacion,
+  evaluarEficacia,
+  fechaMinimaDe,
+  huellaDeLoVisto,
+  verificarImplementacion,
+} from "@/db/consultas/mejoramiento/verificacion";
 import { guardarAccion, guardarCriterio } from "@/db/consultas/mejoramiento/plan";
 import {
   aceptarHallazgo,
@@ -311,6 +318,7 @@ export async function hallazgoEn(
       case "en_espera": {
         const fm = await fechaMinimaDe(tx, id, zonaHoraria());
         if (!fm) throw new Error("hallazgoEn: el hallazgo en espera no tiene fecha mínima de eficacia");
+        const evalua = c(`${fm.minima}T15:00:00Z`, tx);
         await evaluarEficacia(
           b.control,
           {
@@ -321,9 +329,10 @@ export async function hallazgoEn(
             hasta: fm.minima,
             justificacion: "No se repitió el hecho desde que terminó el plan de prueba",
             confirmaOcurrencias: true,
+            vistoHuella: huellaDeLoVisto(await datosDeEvaluacion(b.control, id, evalua)),
             credenciales: { clave: "ok" },
           },
-          c(`${fm.minima}T15:00:00Z`, tx),
+          evalua,
         );
         break;
       }

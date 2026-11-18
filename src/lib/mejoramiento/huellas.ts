@@ -96,6 +96,11 @@ function canonico(valor: unknown): unknown {
 
 const sha256 = (valor: unknown) => createHash("sha256").update(JSON.stringify(canonico(valor))).digest("hex");
 
+/** SHA-256 en hexadecimal de cualquier valor en JSON canónico: la huella de lo que la pantalla mostró (`huellaDeLoVisto`). */
+export function huellaDeContenido(valor: unknown): string {
+  return sha256(valor);
+}
+
 /** SHA-256 en hexadecimal del plan en JSON canónico. */
 export function huellaDePlan(p: PlanFirmado): string {
   return sha256(p);

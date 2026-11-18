@@ -934,6 +934,7 @@ export function cambioDeAjuste(tipo: string, datos: unknown): CambioDeAjuste | n
 export const SIN_METODO = "Indique cómo verificó";
 export const SIN_DECIDIR = "Marque cada actividad como conforme o devuélvala";
 export const SIN_LECCIONES = "Escriba las lecciones aprendidas";
+export const SIN_LO_VISTO = "Vuelva a cargar la página: falta lo que se mostró para evaluar";
 
 /** Lo elegido en un conjunto de casillas, sin repetir y en el orden de la lista de valores. */
 const enSuOrden = <T extends string>(valores: readonly T[]) => (elegidos: T[]) => valores.filter((x) => elegidos.includes(x));
@@ -988,9 +989,10 @@ const cambiosAtendidos = textoDelCierre("Cómo se atendieron los cambios", "Diga
 
 /**
  * Evaluar la eficacia (spec §11.4): el resultado, los criterios evaluados, el periodo evaluado, la justificación (al menos 20
- * caracteres) y la confirmación de las ocurrencias posteriores. Las lecciones y los cambios atendidos valen solo cuando evalúa
- * y cierra el Admin SGC (lo decide el dominio). Lo que depende de la base y de la hora (la fecha mínima, el indicador, las
- * ocurrencias) lo mira el dominio.
+ * caracteres), la confirmación de las ocurrencias posteriores y la huella de lo que la pantalla mostró (`vistoHuella`, de
+ * `huellaDeLoVisto`): se firma lo que se vio. Las lecciones y los cambios atendidos valen solo cuando evalúa y cierra el Admin
+ * SGC (lo decide el dominio). Lo que depende de la base y de la hora (la fecha mínima, el indicador, las ocurrencias, que el
+ * periodo no termine después de hoy) lo mira el dominio.
  */
 export const EsquemaEvaluacion = z
   .object({
@@ -1006,6 +1008,7 @@ export const EsquemaEvaluacion = z
     confirmaOcurrencias: z.boolean({ error: "La confirmación de las ocurrencias no es válida" }).optional().transform((v) => v === true),
     lecciones: textoDelCierre("Las lecciones aprendidas", "Las lecciones aprendidas deben tener al menos 10 caracteres"),
     cambiosAtendidos,
+    vistoHuella: z.string({ error: SIN_LO_VISTO }).regex(/^[0-9a-f]{64}$/, SIN_LO_VISTO),
   })
   .strict()
   .superRefine((d, ctx) => {

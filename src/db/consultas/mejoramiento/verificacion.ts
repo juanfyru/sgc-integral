@@ -31,7 +31,7 @@ import type { CredencialesFirma } from "@/lib/firma";
 import type { Periodicidad } from "@/lib/indicadores/tipos";
 import { fechaMinimaDeEficacia, leerCriterios, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
-import { huellaDeCierre, huellaDeEvaluacion } from "@/lib/mejoramiento/huellas";
+import { huellaDeCierre, huellaDeContenido, huellaDeEvaluacion } from "@/lib/mejoramiento/huellas";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import { ErrorMejora, METODOS_DE_VERIFICACION, type CriterioEficacia, type HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
@@ -58,6 +58,8 @@ export const INDICADOR_RETIRADO = "El indicador se retiró: evalúe con otro cri
 export const SIN_INDICADOR_ENLAZADO = "El plan no enlazó un indicador: evalúe con otro criterio";
 export const CAMBIOS_SIN_ATENDER = "Diga cómo se atendieron los cambios que el análisis pidió";
 export const SIN_FIRMA_DE_LA_EVALUACION = "La evaluación de la eficacia no tiene su firma «Verificó»: vuelva a cargar la página";
+export const LO_VISTO_CAMBIO = "Cambió lo que se muestra para evaluar: revíselo";
+export const PERIODO_DESPUES_DE_HOY = "El periodo evaluado no puede terminar después de hoy";
 
 /** El aviso al responsable de una actividad devuelta (spec §11.4 y §14.2): sin la nota ni el contenido del hallazgo. */
 export const ACTIVIDAD_DEVUELTA = "Se devolvió una actividad suya en la verificación";
@@ -153,7 +155,8 @@ async function avisarDelCierre(tx: TransactionSql, sesion: Persona, h: HallazgoB
  * En un solo acto, quien puede verificar marca cada actividad terminada de la ronda en curso como conforme o la devuelve (con
  * su nota, de al menos diez caracteres, y una fecha para corregir de hoy en adelante) y dice cómo verificó. No se verifica con
  * un ajuste por decidir en la ronda. Si devuelve alguna, esas vuelven a «En proceso» (su fin original y su fin no cambian) y
- * el hallazgo a «En ejecución», con un aviso a cada responsable de una devuelta (y no el de turno a todos). Con todas
+ * el hallazgo a «En ejecución», con un aviso a cada responsable de una devuelta (y no el de turno a todos); el evento guarda
+ * de cada devuelta los archivos y el último seguimiento que tenía, para que terminarla otra vez pida algo nuevo. Con todas
  * conformes, la ronda guarda quién, cuándo, los métodos y la nota, y el hallazgo pasa a «En espera de eficacia».
  */
 export async function verificarImplementacion(
@@ -190,7 +193,15 @@ export async function verificarImplementacion(
       const c = await contextoDeMejora(tx, ahora);
       const hoy = fechaEnZona(ahora, c.zona);
       const conformes: Array<{ id: number; etiqueta: string }> = [];
-      const devueltas: Array<{ id: number; etiqueta: string; responsableId: number; nota: string; corregirAntesDe: string }> = [];
+      const devueltas: Array<{
+        id: number;
+        etiqueta: string;
+        responsableId: number;
+        nota: string;
+        corregirAntesDe: string;
+        archivos: number[];
+        seguimiento: number | null;
+      }> = [];
       for (const a of actividades) {
         const id = Number(a.id);
         const etiqueta = etiquetaDeActividad(Number(a.accion_orden), Number(a.orden));
@@ -202,7 +213,19 @@ export async function verificarImplementacion(
         if (!x.nota || x.nota.length < 10) throw new ErrorMejora(notaCorta(etiqueta));
         if (!x.corregirAntesDe) throw new ErrorMejora(sinFechaParaCorregir(etiqueta));
         if (x.corregirAntesDe < hoy) throw new ErrorMejora(fechaParaCorregirPasada(etiqueta));
-        devueltas.push({ id, etiqueta, responsableId: Number(a.responsable_id), nota: x.nota, corregirAntesDe: x.corregirAntesDe });
+        // Lo que había al devolverla: terminarla otra vez pide un seguimiento y un archivo posteriores (por id, `terminarActividad`).
+        const archivos = await tx`SELECT id FROM archivos
+          WHERE contexto = 'mejora_actividad' AND contexto_id = ${id} AND version_id IS NULL ORDER BY id`;
+        const [ultimo] = await tx`SELECT max(id) AS id FROM mejora_seguimientos WHERE actividad_id = ${id}`;
+        devueltas.push({
+          id,
+          etiqueta,
+          responsableId: Number(a.responsable_id),
+          nota: x.nota,
+          corregirAntesDe: x.corregirAntesDe,
+          archivos: archivos.map((f) => Number(f.id)),
+          seguimiento: ultimo?.id === null || ultimo?.id === undefined ? null : Number(ultimo.id),
+        });
       }
 
       if (conformes.length > 0) {
@@ -233,7 +256,16 @@ export async function verificarImplementacion(
           soloEnElEvento: {
             ...(v.nota ? { nota: v.nota } : {}),
             ...(devueltas.length > 0
-              ? { notas: devueltas.map((x) => ({ actividadId: x.id, actividad: x.etiqueta, nota: x.nota, corregirAntesDe: x.corregirAntesDe })) }
+              ? {
+                  notas: devueltas.map((x) => ({
+                    actividadId: x.id,
+                    actividad: x.etiqueta,
+                    nota: x.nota,
+                    corregirAntesDe: x.corregirAntesDe,
+                    archivos: x.archivos,
+                    seguimiento: x.seguimiento,
+                  })),
+                }
               : {}),
           },
           // El aviso por actividad devuelta reemplaza el de turno («Ejecutar las actividades…»), que llegaría también a quien no
@@ -373,7 +405,7 @@ export type DatosDeEvaluacion = {
   indicador: { codigo: string; nombre: string; filas: FilaDelIndicador[] } | null;
   /** El indicador enlazado se retiró: el criterio «mejora del indicador» no se puede marcar como evaluado. */
   indicadorRetirado: boolean;
-  /** Las ocurrencias con fecha posterior a R, de la más antigua a la más reciente. */
+  /** Las ocurrencias con fecha de R en adelante (una del mismo día pudo ser posterior), de la más antigua a la más reciente. */
   ocurrencias: Array<{ fecha: string; descripcion: string }>;
 };
 
@@ -395,7 +427,7 @@ async function loQueSeMuestra(
       : { codigo: "", nombre: "un indicador", filas: [] };
   }
   const ocurrencias = await sql`SELECT to_char(fecha, 'YYYY-MM-DD') AS fecha, descripcion FROM mejora_ocurrencias
-    WHERE hallazgo_id = ${h.id} AND fecha > ${fm.r} ORDER BY fecha, id`;
+    WHERE hallazgo_id = ${h.id} AND fecha >= ${fm.r} ORDER BY fecha, id`;
   return {
     r: fm.r,
     indicadorId: fm.indicador?.id ?? null,
@@ -409,6 +441,14 @@ async function loQueSeMuestra(
       ocurrencias: ocurrencias.map((o) => ({ fecha: o.fecha as string, descripcion: o.descripcion as string })),
     },
   };
+}
+
+/**
+ * La huella de lo que la pantalla de evaluar muestra (spec §11.4 y §12.2): las filas del indicador y las ocurrencias. La página
+ * la manda con el formulario (`vistoHuella`) y `evaluarEficacia` la compara con lo que vuelve a leer: se firma lo que se vio.
+ */
+export function huellaDeLoVisto(datos: DatosDeEvaluacion): string {
+  return huellaDeContenido({ indicador: datos.indicador, ocurrencias: datos.ocurrencias });
 }
 
 /**
@@ -462,9 +502,10 @@ type Evaluacion = {
 };
 
 /**
- * Lo que debe cumplirse para evaluar, sin escribir nada: quien puede verificar, «En espera de eficacia», el criterio del
- * indicador solo si sigue enlazado y activo, «eficaz» desde la fecha mínima (el día de `c.ahora` en la zona) y con las
- * ocurrencias posteriores confirmadas, y, si cierra, lo del cierre. Devuelve lo que se firma.
+ * Lo que debe cumplirse para evaluar, sin escribir nada: quien puede verificar, «En espera de eficacia», un periodo evaluado que
+ * no termina después de hoy, lo que se muestra igual a lo que vio la persona (`vistoHuella`), el criterio del indicador solo
+ * si sigue enlazado y activo, «eficaz» desde la fecha mínima (el día de `c.ahora` en la zona) y con las ocurrencias posteriores
+ * confirmadas, y, si cierra, lo del cierre. Devuelve lo que se firma.
  */
 async function validarEvaluacion(
   sql: Cliente,
@@ -475,7 +516,10 @@ async function validarEvaluacion(
   const h = await existente(sql, v.hallazgoId);
   await exigirVerificador(sql, sesion, h.id);
   if (h.estado !== "en_espera") throw new ErrorMejora(YA_CAMBIO);
+  if (v.hasta > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(PERIODO_DESPUES_DE_HOY);
   const { r, indicadorId, ronda, datos } = await loQueSeMuestra(sql, sesion, h, c.ahora, c.zona);
+  // Se firma lo que se vio: si cambió lo que se muestra (otra ocurrencia, otro resultado del indicador), la persona lo revisa.
+  if (huellaDeLoVisto(datos) !== v.vistoHuella) throw new ErrorMejora(LO_VISTO_CAMBIO);
   if (v.criterios.includes("mejora_indicador")) {
     if (datos.indicador === null) throw new ErrorMejora(SIN_INDICADOR_ENLAZADO);
     if (datos.indicadorRetirado) throw new ErrorMejora(INDICADOR_RETIRADO);
@@ -526,6 +570,8 @@ export async function evaluarEficacia(
     confirmaOcurrencias?: boolean;
     lecciones?: string | null;
     cambiosAtendidos?: string | null;
+    /** La huella de lo que la pantalla mostró al evaluar (`huellaDeLoVisto`). */
+    vistoHuella: string;
     credenciales: CredencialesFirma;
   },
   opciones: OpcionesFlujo = {},
@@ -605,12 +651,10 @@ async function firmaDeLaEvaluacion(sql: Cliente, h: Pick<HallazgoBase, "id" | "r
 
 type Cierre = { h: HallazgoBase; evaluacion: { firmaId: number; huella: string }; cambiosAtendidos: string | null; huella: string };
 
-/** Lo que debe cumplirse para cerrar, sin escribir nada: el Admin SGC, «Por cerrar», las lecciones y los cambios atendidos. */
+/** Lo que debe cumplirse para cerrar, sin escribir nada: «Por cerrar», las lecciones y los cambios atendidos. */
 async function validarCierre(sql: Cliente, sesion: Persona, v: CierreValidado): Promise<Cierre> {
+  // El permiso (`mejora.gestionar`) lo exige `cerrarHallazgo` antes de llamarlo.
   const h = await existente(sql, v.hallazgoId);
-  if (!puede(sesion, "mejora.gestionar")) {
-    throw (await puedeVerHallazgo(h.id, sesion, { sql })) ? new ErrorPermiso() : new ErrorMejora(NO_EXISTE);
-  }
   if (h.estado !== "por_cerrar") throw new ErrorMejora(YA_CAMBIO);
   const ronda = await rondaEnCurso(sql, h);
   exigirLoDelCierre(v.lecciones, v.cambiosAtendidos, ronda.cambios);

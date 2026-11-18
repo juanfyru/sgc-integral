@@ -6,8 +6,8 @@
 import type { TransactionSql } from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
-import { ErrorTramite } from "@/db/consultas/flujo/contrato";
-import { reasignarActividad } from "@/db/consultas/mejoramiento/actividades";
+import { ErrorFirma, ErrorTramite, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
 import { quitarAnalisis } from "@/db/consultas/mejoramiento/analisis";
 import { enviarPlan } from "@/db/consultas/mejoramiento/aprobacion";
@@ -22,6 +22,7 @@ import {
   evaluableDesde,
   evaluarEficacia,
   fechaMinimaDe,
+  huellaDeLoVisto,
   METODOS_DE_VERIFICACION,
   verificarImplementacion,
 } from "@/db/consultas/mejoramiento/verificacion";
@@ -34,7 +35,7 @@ import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, versionTrimestral } from "./utiles/indicadores";
-import { baseDeMejora, c, hallazgoEn, planDePrueba, terminarTodas, type BaseDeMejora } from "./utiles/mejoramiento";
+import { baseDeMejora, c, evidenciaDeActividad, hallazgoEn, planDePrueba, terminarTodas, type BaseDeMejora } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -84,6 +85,9 @@ async function enEspera(tx: TransactionSql, b: BaseDeMejora, plan?: Plan): Promi
   return leido;
 }
 
+/** Una huella que no es la de nada: para los actos que se rechazan antes de mirar lo que se mostró. */
+const SIN_VISTO = "0".repeat(64);
+
 const evaluacion = (hallazgoId: number, x?: Partial<Parameters<typeof evaluarEficacia>[1]>): Parameters<typeof evaluarEficacia>[1] => ({
   hallazgoId,
   resultado: "eficaz",
@@ -91,9 +95,27 @@ const evaluacion = (hallazgoId: number, x?: Partial<Parameters<typeof evaluarEfi
   desde: "2026-12-05",
   hasta: "2027-02-05",
   justificacion: "No se repitió el hecho en los dos meses siguientes al plan",
+  vistoHuella: SIN_VISTO,
   credenciales: CLAVE,
   ...x,
 });
+
+/** La huella de lo que `quien` ve para evaluar a `ahora`: la que la página (Tarea 17) manda con el formulario. */
+const loQueVe = async (tx: TransactionSql, quien: SesionFlujo, hallazgoId: number, ahora: string) =>
+  huellaDeLoVisto(await datosDeEvaluacion(quien, hallazgoId, c(ahora, tx)));
+
+/** Evalúa como `quien` a `ahora`, con la huella de lo que ve en ese momento (salvo que `x` traiga otra). */
+async function evaluar(
+  tx: TransactionSql,
+  quien: SesionFlujo,
+  hallazgoId: number,
+  ahora: string,
+  x?: Partial<Parameters<typeof evaluarEficacia>[1]>,
+  opciones?: Partial<OpcionesFlujo>,
+) {
+  const vistoHuella = x?.vistoHuella ?? (await loQueVe(tx, quien, hallazgoId, ahora));
+  return evaluarEficacia(quien, evaluacion(hallazgoId, { ...x, vistoHuella }), { ...c(ahora, tx), ...opciones });
+}
 
 const LECCIONES = "Asignar cada registro a un turno evita que se pierda en el cambio de turno";
 
@@ -213,6 +235,67 @@ describe("puedeVerificar: quien ejecutó no verifica", () => {
       expect(await puedeVerificar(h.id, b.gerencia, { sql: tx })).toBe(true);
       expect(await puedeVerificar(h.id, b.control, { sql: tx })).toBe(false);
       expect(await quienesVerifican(tx, h.id)).toContain(b.gerencia.usuarioId);
+    }));
+
+  it("el responsable actual, sin seguimientos ni actividades terminadas, no verifica", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion");
+      const [a] = await actividadesDe(tx, h.id);
+      expect(await puedeVerificar(h.id, responsable, { sql: tx })).toBe(true);
+      // Solo la fila: ni reasignación, ni seguimiento, ni la terminó.
+      await tx`UPDATE mejora_actividades SET responsable_id = ${responsable.usuarioId} WHERE id = ${a.id}`;
+      expect(await puedeVerificar(h.id, responsable, { sql: tx })).toBe(false);
+      expect(await quienesVerifican(tx, h.id)).not.toContain(responsable.usuarioId);
+    }));
+
+  it("la corrección por sus eventos: quien registró una (también devuelta) y quien fue su responsable no verifican", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const registro = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const fueResponsable = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const h = await porVerificar(tx, b);
+      expect(await puedeVerificar(h.id, registro, { sql: tx })).toBe(true);
+      expect(await puedeVerificar(h.id, fueResponsable, { sql: tx })).toBe(true);
+      // Un evento `corregir` (de solo inserción) de otra persona: las columnas siguen con la corrección del líder.
+      const corregir = (usuarioId: number, responsableId: number) =>
+        dejarEvento(tx, {
+          hallazgoId: h.id,
+          ronda: 1,
+          tipo: "corregir",
+          detalle: { requerida: true, descripcion: "Una corrección anterior", responsableId, responsableNombre: null },
+          usuarioId,
+          ocurrioEn: new Date("2026-11-16T15:00:00Z"),
+        });
+      await corregir(registro.usuarioId, b.lider.usuarioId);
+      expect(await puedeVerificar(h.id, registro, { sql: tx })).toBe(false);
+      expect(await puedeVerificar(h.id, fueResponsable, { sql: tx })).toBe(true);
+      await corregir(b.lider.usuarioId, fueResponsable.usuarioId);
+      expect(await puedeVerificar(h.id, fueResponsable, { sql: tx })).toBe(false);
+      const [f] = await tx`SELECT correccion_registrada_por, correccion_responsable_id FROM mejora_hallazgos WHERE id = ${h.id}`;
+      expect([Number(f.correccion_registrada_por), Number(f.correccion_responsable_id)]).toEqual([b.lider.usuarioId, b.lider.usuarioId]);
+    }));
+
+  it("Gerencia respalda cuando los Admin SGC y Control Interno activos ejecutaron todos; una Gerencia que ejecutó, no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const gerenteQueSiguio = await usuarioDePrueba(tx, { rol: "gerencia" });
+      const h = await porVerificar(tx, b);
+      const [a] = await actividadesDe(tx, h.id);
+      // Quedan activos solo el Admin SGC y el Control Interno de la base, y los dos registraron un seguimiento.
+      await desactivar(tx, ["admin_sgc", "control_interno"], [b.admin.usuarioId, b.control.usuarioId]);
+      for (const quien of [b.admin, b.control, gerenteQueSiguio]) {
+        await tx`INSERT INTO mejora_seguimientos (hallazgo_id, actividad_id, fecha, realizado, avance, registrado_por, creado_en)
+          VALUES (${h.id}, ${a.id}, '2026-12-05', 'Se acompañó la revisión del turno', 100, ${quien.usuarioId}, now())`;
+      }
+      expect(await puedeVerificar(h.id, b.admin, { sql: tx })).toBe(false);
+      expect(await puedeVerificar(h.id, b.control, { sql: tx })).toBe(false);
+      expect(await puedeVerificar(h.id, b.gerencia, { sql: tx })).toBe(true);
+      expect(await puedeVerificar(h.id, gerenteQueSiguio, { sql: tx })).toBe(false);
+      const quienes = await quienesVerifican(tx, h.id);
+      expect(quienes).toContain(b.gerencia.usuarioId);
+      expect(quienes).not.toContain(gerenteQueSiguio.usuarioId);
     }));
 
   it("el turno de «Por verificar» es de quienes pueden verificar", () =>
@@ -336,6 +419,40 @@ describe("verificarImplementacion", () => {
       expect(await firmasDe(tx, h.id)).toHaveLength(0);
     }));
 
+  it("una actividad devuelta no se termina con lo mismo: pide un seguimiento y un archivo nuevos", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await porVerificar(tx, b);
+      const [a] = await actividadesDe(tx, h.id);
+      const archivosAntes = (await tx`SELECT id FROM archivos WHERE contexto = 'mejora_actividad' AND contexto_id = ${a.id} ORDER BY id`).map((x) =>
+        Number(x.id),
+      );
+      await verificarImplementacion(
+        b.control,
+        {
+          hallazgoId: h.id,
+          actividades: [{ id: Number(a.id), conforme: false, nota: "Falta el registro firmado del turno de noche", corregirAntesDe: "2026-12-18" }],
+          metodos: ["evidencias"],
+        },
+        c(VERIFICA, tx),
+      );
+      // La devolución guarda los archivos que había: lo que se suba después tiene un id mayor.
+      const [evento] = await eventosDe(tx, h.id, "verificar_implementacion");
+      expect((evento.detalle as { notas: { actividadId: number; archivos: number[] }[] }).notas[0]).toMatchObject({
+        actividadId: Number(a.id),
+        archivos: archivosAntes,
+      });
+      const LUEGO = c("2026-12-08T15:00:00Z", tx);
+      const actividadId = Number(a.id);
+      await expect(terminarActividad(b.lider, { actividadId }, LUEGO)).rejects.toThrow("Registre un seguimiento de lo que corrigió antes de terminarla");
+      await registrarSeguimiento(b.lider, { actividadId, fecha: "2026-12-08", realizado: "Se recogió la firma del turno de noche", avance: 100 }, LUEGO);
+      await expect(terminarActividad(b.lider, { actividadId }, LUEGO)).rejects.toThrow("Adjunte la evidencia nueva de lo que corrigió");
+      await evidenciaDeActividad(tx, actividadId, b.lider.usuarioId);
+      await terminarActividad(b.lider, { actividadId }, LUEGO);
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("por_verificar");
+      expect((await actividadesDe(tx, h.id))[0]).toMatchObject({ estado: "terminada", verificacion: null });
+    }));
+
   it("un ajuste por decidir impide verificar", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
@@ -374,17 +491,17 @@ describe("evaluarEficacia", () => {
       expect((await datosDeEvaluacion(b.control, h.id, c(LA_VISPERA, tx))).yaSePuede).toBe(false);
       expect(await evaluableDesde(tx, h.id, new Date(LA_VISPERA))).toEqual({ desde: "2027-02-05", yaSePuede: false });
       expect(await evaluableDesde(tx, h.id, new Date(LA_MINIMA))).toEqual({ desde: "2027-02-05", yaSePuede: true });
-      await expect(evaluarEficacia(b.control, evaluacion(h.id), c(LA_VISPERA, tx))).rejects.toThrow(
+      await expect(evaluar(tx, b.control, h.id, LA_VISPERA, { hasta: "2027-02-04" })).rejects.toThrow(
         "La eficacia se puede evaluar desde el 5 de febrero de 2027",
       );
       // Sin indicador enlazado, «mejora del indicador» no se marca como evaluado.
-      await expect(evaluarEficacia(b.control, evaluacion(h.id, { criterios: ["mejora_indicador"] }), c(LA_MINIMA, tx))).rejects.toThrow(
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA, { criterios: ["mejora_indicador"] })).rejects.toThrow(
         "El plan no enlazó un indicador: evalúe con otro criterio",
       );
       // A quien no puede verificar (el líder no tiene el permiso), ni los datos de la evaluación.
       await expect(datosDeEvaluacion(b.lider, h.id, c(LA_MINIMA, tx))).rejects.toBeInstanceOf(ErrorPermiso);
       expect(await firmasDe(tx, h.id)).toHaveLength(0);
-      await evaluarEficacia(b.control, evaluacion(h.id), c(LA_MINIMA, tx));
+      await evaluar(tx, b.control, h.id, LA_MINIMA);
       expect((await bloquearHallazgo(tx, h.id)).estado).toBe("por_cerrar");
     }));
 
@@ -400,11 +517,11 @@ describe("evaluarEficacia", () => {
       });
       const antes = await foto();
       const AHORA = "2026-12-10T15:00:00Z";
-      await evaluarEficacia(
-        b.control,
-        evaluacion(h.id, { resultado: "no_eficaz", hasta: "2026-12-10", justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre" }),
-        c(AHORA, tx),
-      );
+      await evaluar(tx, b.control, h.id, AHORA, {
+        resultado: "no_eficaz",
+        hasta: "2026-12-10",
+        justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre",
+      });
       const despues = await bloquearHallazgo(tx, h.id);
       expect(despues).toMatchObject({ estado: "por_formular", ronda: 2 });
       const [r1, r2] = await rondasDe(tx, h.id);
@@ -435,11 +552,11 @@ describe("evaluarEficacia", () => {
       const b = await baseDeMejora(tx);
       const h = await enEspera(tx, b);
       const AHORA = "2026-12-10T15:00:00Z";
-      await evaluarEficacia(
-        b.control,
-        evaluacion(h.id, { resultado: "no_eficaz", hasta: "2026-12-10", justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre" }),
-        c(AHORA, tx),
-      );
+      await evaluar(tx, b.control, h.id, AHORA, {
+        resultado: "no_eficaz",
+        hasta: "2026-12-10",
+        justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre",
+      });
       const foto = async () => ({
         analisis: await tx`SELECT * FROM mejora_analisis WHERE hallazgo_id = ${h.id} ORDER BY id`,
         causas: await tx`SELECT * FROM mejora_causas WHERE hallazgo_id = ${h.id} ORDER BY id`,
@@ -489,7 +606,7 @@ describe("evaluarEficacia", () => {
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const h = await enEspera(tx, b);
-      await evaluarEficacia(b.control, evaluacion(h.id), c(LA_MINIMA, tx));
+      await evaluar(tx, b.control, h.id, LA_MINIMA);
       const evaluado = await bloquearHallazgo(tx, h.id);
       expect(evaluado.estado).toBe("por_cerrar");
       const [verifico] = await firmasDe(tx, h.id);
@@ -529,13 +646,13 @@ describe("evaluarEficacia", () => {
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const h = await enEspera(tx, b);
-      await expect(evaluarEficacia(b.admin, evaluacion(h.id), c(LA_MINIMA, tx))).rejects.toThrow("Escriba las lecciones aprendidas");
+      await expect(evaluar(tx, b.admin, h.id, LA_MINIMA)).rejects.toThrow("Escriba las lecciones aprendidas");
       let veces = 0;
       const contando: Verificador = async (...args) => {
         veces += 1;
         return firmaDePrueba(...args);
       };
-      await evaluarEficacia(b.admin, evaluacion(h.id, { lecciones: LECCIONES }), { ...c(LA_MINIMA, tx), verificar: contando });
+      await evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES }, { verificar: contando });
       expect(veces).toBe(1);
       expect(await bloquearHallazgo(tx, h.id)).toMatchObject({ estado: "cerrado", resultadoCierre: "eficaz" });
       const firmas = await firmasDe(tx, h.id);
@@ -558,7 +675,7 @@ describe("evaluarEficacia", () => {
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const h = await enEspera(tx, b);
-      await evaluarEficacia(b.control, evaluacion(h.id), c(LA_MINIMA, tx));
+      await evaluar(tx, b.control, h.id, LA_MINIMA);
       await tx`UPDATE mejora_rondas SET cambios = ${tx.json({ documentos: true, riesgos: false, controles: false })}
         WHERE hallazgo_id = ${h.id} AND numero = 1`;
       const CIERRA = "2027-02-08T15:00:00Z";
@@ -582,11 +699,130 @@ describe("evaluarEficacia", () => {
       );
       const datos = await datosDeEvaluacion(b.control, h.id, c(LA_MINIMA, tx));
       expect(datos.ocurrencias).toEqual([{ fecha: "2027-01-10", descripcion: "Otra vez un turno sin el formato de entrega diligenciado" }]);
-      await expect(evaluarEficacia(b.control, evaluacion(h.id), c(LA_MINIMA, tx))).rejects.toThrow(
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA)).rejects.toThrow(
         "Hay 1 ocurrencia posterior a la implementación: confírmelo para registrar la eficacia",
       );
-      await evaluarEficacia(b.control, evaluacion(h.id, { confirmaOcurrencias: true }), c(LA_MINIMA, tx));
+      await evaluar(tx, b.control, h.id, LA_MINIMA, { confirmaOcurrencias: true });
       expect((await bloquearHallazgo(tx, h.id)).estado).toBe("por_cerrar");
+    }));
+
+  it("se firma lo que se vio: una ocurrencia registrada entre la lectura y la evaluación la rechaza sin escribir nada", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const vistoHuella = await loQueVe(tx, b.control, h.id, LA_MINIMA);
+      await registrarOcurrencia(
+        b.control,
+        { hallazgoId: h.id, fecha: "2027-02-05", descripcion: "Otra vez un turno sin el formato de entrega diligenciado" },
+        c(LA_MINIMA, tx),
+      );
+      expect(await loQueVe(tx, b.control, h.id, LA_MINIMA)).not.toBe(vistoHuella);
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA, { vistoHuella, confirmaOcurrencias: true })).rejects.toThrow(
+        "Cambió lo que se muestra para evaluar: revíselo",
+      );
+      expect(await firmasDe(tx, h.id)).toHaveLength(0);
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_espera");
+    }));
+
+  it("lo que se mostró cambia mientras se pide la clave: dentro de la transacción no se firma (F13A-R4)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, periodicidad: "mensual" });
+      const h = await enEspera(tx, b, { indicadorId: ind.id });
+      const sinEscribir = async () => {
+        expect(await firmasDe(tx, h.id)).toHaveLength(0);
+        const [r] = await rondasDe(tx, h.id);
+        expect(r).toMatchObject({ evaluada_por: null, evaluada_en: null, resultado: null, evaluacion_justificacion: null });
+        expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_espera");
+      };
+      // Una ocurrencia llega dentro del gancho de la clave: la huella de lo visto ya no es la del formulario.
+      const conOcurrencia: Verificador = async (...args) => {
+        await registrarOcurrencia(
+          b.control,
+          { hallazgoId: h.id, fecha: "2027-02-20", descripcion: "Un turno de febrero quedó sin el formato" },
+          c(CON_INDICADOR, tx),
+        );
+        return firmaDePrueba(...args);
+      };
+      await expect(
+        evaluar(tx, b.control, h.id, CON_INDICADOR, { confirmaOcurrencias: true, hasta: "2027-02-28" }, { verificar: conOcurrencia }),
+      ).rejects.toThrow("Cambió lo que se muestra para evaluar: revíselo");
+      await sinEscribir();
+      // El indicador se retira dentro del gancho: lo visto es igual, pero la fecha mínima no, y la huella de la evaluación tampoco.
+      const conRetiro: Verificador = async (...args) => {
+        await tx`UPDATE indicadores SET estado = 'retirado', baja_por = ${b.admin.usuarioId}, baja_en = ${new Date(CON_INDICADOR)},
+          baja_motivo = 'Ya no se mide' WHERE id = ${ind.id}`;
+        return firmaDePrueba(...args);
+      };
+      await expect(
+        evaluar(tx, b.control, h.id, CON_INDICADOR, { confirmaOcurrencias: true, hasta: "2027-02-28" }, { verificar: conRetiro }),
+      ).rejects.toThrow(YA_CAMBIO);
+      await sinEscribir();
+    }));
+
+  it("una clave equivocada no escribe nada, ni al evaluar ni al cerrar", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const MAL = { clave: "mal" };
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA, { credenciales: MAL })).rejects.toBeInstanceOf(ErrorFirma);
+      await expect(evaluar(tx, b.admin, h.id, LA_MINIMA, { credenciales: MAL, lecciones: LECCIONES })).rejects.toBeInstanceOf(ErrorFirma);
+      expect(await firmasDe(tx, h.id)).toHaveLength(0);
+      const [r] = await rondasDe(tx, h.id);
+      expect(r).toMatchObject({ evaluada_por: null, evaluada_en: null, resultado: null });
+      const cierre = async () => (await tx`SELECT estado, cerrado_en, cerrado_por, lecciones FROM mejora_hallazgos WHERE id = ${h.id}`)[0];
+      expect(await cierre()).toMatchObject({ estado: "en_espera", cerrado_en: null, cerrado_por: null, lecciones: null });
+
+      await evaluar(tx, b.control, h.id, LA_MINIMA);
+      const CIERRA = "2027-02-08T15:00:00Z";
+      await expect(cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, credenciales: MAL }, c(CIERRA, tx))).rejects.toBeInstanceOf(
+        ErrorFirma,
+      );
+      expect((await firmasDe(tx, h.id)).map((f) => f.firma)).toEqual(["verifico"]);
+      expect(await cierre()).toMatchObject({ estado: "por_cerrar", cerrado_en: null, cerrado_por: null, lecciones: null });
+    }));
+
+  it("las ocurrencias del mismo día de R cuentan; las de antes, no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const o = c("2026-12-08T15:00:00Z", tx);
+      await registrarOcurrencia(b.control, { hallazgoId: h.id, fecha: "2026-12-04", descripcion: "Un turno sin el formato antes de terminar el plan" }, o);
+      await registrarOcurrencia(b.control, { hallazgoId: h.id, fecha: "2026-12-05", descripcion: "El mismo día en que terminó la última actividad" }, o);
+      const datos = await datosDeEvaluacion(b.control, h.id, c(LA_MINIMA, tx));
+      expect(datos.ocurrencias.map((x) => x.fecha)).toEqual(["2026-12-05"]);
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA)).rejects.toThrow(
+        "Hay 1 ocurrencia posterior a la implementación: confírmelo para registrar la eficacia",
+      );
+    }));
+
+  it("el periodo evaluado no termina después de hoy ni empieza después de su fin", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA, { hasta: "2027-02-06" })).rejects.toThrow(
+        "El periodo evaluado no puede terminar después de hoy",
+      );
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA, { desde: "2027-02-05", hasta: "2027-01-31" })).rejects.toThrow(
+        "El inicio del periodo evaluado no puede ser posterior a su fin",
+      );
+      expect(await firmasDe(tx, h.id)).toHaveLength(0);
+    }));
+
+  it("el Admin SGC que evalúa y cierra con cambios pedidos por el análisis dice cómo se atendieron", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      await tx`UPDATE mejora_rondas SET cambios = ${tx.json({ documentos: false, riesgos: true, controles: false })}
+        WHERE hallazgo_id = ${h.id} AND numero = 1`;
+      await expect(evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES })).rejects.toThrow(
+        "Diga cómo se atendieron los cambios que el análisis pidió",
+      );
+      expect(await firmasDe(tx, h.id)).toHaveLength(0);
+      const ATENDIDOS = "Se actualizó la matriz de riesgos del proceso con el turno de noche";
+      await evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES, cambiosAtendidos: ATENDIDOS });
+      const [f] = await tx`SELECT estado, cambios_atendidos FROM mejora_hallazgos WHERE id = ${h.id}`;
+      expect(f).toMatchObject({ estado: "cerrado", cambios_atendidos: ATENDIDOS });
     }));
 
   it("dos evaluaciones a la vez: la segunda lanza YA_CAMBIO y queda una sola firma «Verificó»", () =>
@@ -596,10 +832,10 @@ describe("evaluarEficacia", () => {
       const h = await enEspera(tx, b);
       // Mientras el primero espera su clave, la otra evaluación llega y se confirma.
       const conOtra: Verificador = async (...args) => {
-        await evaluarEficacia(otro, evaluacion(h.id), c(LA_MINIMA, tx));
+        await evaluar(tx, otro, h.id, LA_MINIMA);
         return firmaDePrueba(...args);
       };
-      await expect(evaluarEficacia(b.control, evaluacion(h.id), { ...c(LA_MINIMA, tx), verificar: conOtra })).rejects.toThrow(YA_CAMBIO);
+      await expect(evaluar(tx, b.control, h.id, LA_MINIMA, undefined, { verificar: conOtra })).rejects.toThrow(YA_CAMBIO);
       const firmas = await firmasDe(tx, h.id);
       expect(firmas).toHaveLength(1);
       expect(Number(firmas[0].usuario_id)).toBe(otro.usuarioId);
@@ -629,7 +865,7 @@ describe("el indicador enlazado", () => {
         baja_motivo = 'Ya no se mide' WHERE id = ${ind.id}`;
       expect(await fechaMinimaDe(tx, h.id, zona)).toMatchObject({ minima: "2027-02-05", indicadorRetirado: true });
       await expect(
-        evaluarEficacia(b.control, evaluacion(h.id, { criterios: ["mejora_indicador"] }), c(LA_MINIMA, tx)),
+        evaluar(tx, b.control, h.id, LA_MINIMA, { criterios: ["mejora_indicador"] }),
       ).rejects.toThrow("El indicador se retiró: evalúe con otro criterio");
 
       await tx`UPDATE indicadores SET estado = 'activo', baja_por = NULL, baja_en = NULL, baja_motivo = NULL WHERE id = ${ind.id}`;
@@ -654,7 +890,7 @@ describe("el indicador enlazado", () => {
         ["2027-01", "despues", null],
         ["2027-02", "despues", null],
       ]);
-      await evaluarEficacia(b.control, evaluacion(h.id, { criterios: ["mejora_indicador"], hasta: "2027-02-28" }), c(CON_INDICADOR, tx));
+      await evaluar(tx, b.control, h.id, CON_INDICADOR, { criterios: ["mejora_indicador"], hasta: "2027-02-28" });
       expect((await bloquearHallazgo(tx, h.id)).estado).toBe("por_cerrar");
     }));
 
@@ -666,11 +902,12 @@ describe("el indicador enlazado", () => {
       const OCURRENCIA = "Un turno de enero quedó otra vez sin el formato";
       await registrarOcurrencia(b.control, { hallazgoId: h.id, fecha: "2027-01-20", descripcion: OCURRENCIA }, c("2027-01-20T15:00:00Z", tx));
       const JUSTIFICACION = "El indicador no bajó y la ocurrencia de enero fue un turno de reemplazo";
-      await evaluarEficacia(
-        b.control,
-        evaluacion(h.id, { criterios: ["mejora_indicador", "no_recurrencia"], confirmaOcurrencias: true, justificacion: JUSTIFICACION, hasta: "2027-02-28" }),
-        c(CON_INDICADOR, tx),
-      );
+      await evaluar(tx, b.control, h.id, CON_INDICADOR, {
+        criterios: ["mejora_indicador", "no_recurrencia"],
+        confirmaOcurrencias: true,
+        justificacion: JUSTIFICACION,
+        hasta: "2027-02-28",
+      });
       const [evento] = await eventosDe(tx, h.id, "evaluar_eficaz");
       const visto = (
         evento.detalle as { visto: { indicadorId: number; indicador: { filas: { momento: string }[] }; ocurrencias: { descripcion: string }[] } }

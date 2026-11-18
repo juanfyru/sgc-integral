@@ -52,6 +52,8 @@ export const ACTIVIDAD_CERRADA = "La actividad ya terminó o se canceló";
 export const SEGUIMIENTO_FUTURO = "La fecha del seguimiento no puede ser futura";
 export const SIN_EVIDENCIA_PARA_TERMINAR = "Adjunte al menos un archivo de evidencia antes de terminar";
 export const AVANCE_INCOMPLETO = "Registre el avance en 100 % antes de terminar";
+export const SEGUIMIENTO_TRAS_LA_DEVOLUCION = "Registre un seguimiento de lo que corrigió antes de terminarla";
+export const EVIDENCIA_TRAS_LA_DEVOLUCION = "Adjunte la evidencia nueva de lo que corrigió";
 export const SOLO_SIN_TERMINAR = "Solo se reasigna una actividad sin terminar";
 export const MISMO_RESPONSABLE = "El responsable nuevo debe ser otra persona";
 export const RESPONSABLE_NUEVO_INACTIVO = "El responsable nuevo debe ser un usuario activo";
@@ -253,11 +255,28 @@ export async function registrarSeguimiento(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Lo que había en la actividad cuando la verificación la devolvió por última vez (spec §11.4): los archivos y el último
+ * seguimiento, guardados en la nota de su evento `verificar_implementacion`. Lo que se registre o suba después tiene un id
+ * mayor: el id dice «después» sin depender de dos relojes, como la evidencia de la corrección. Sin ese evento, nada.
+ */
+async function loDeLaDevolucion(tx: TransactionSql, h: Pick<HallazgoBase, "id">, actividadId: number): Promise<{ archivos: number[]; seguimiento: number }> {
+  const [e] = await tx`SELECT detalle->'notas' AS notas FROM mejora_eventos
+    WHERE hallazgo_id = ${h.id} AND tipo = 'verificar_implementacion' AND detalle->'notas' @> ${tx.json([{ actividadId }] as never)}
+    ORDER BY id DESC LIMIT 1`;
+  const nota = Array.isArray(e?.notas)
+    ? (e.notas as Array<{ actividadId?: unknown; archivos?: unknown; seguimiento?: unknown }>).find((n) => n.actividadId === actividadId)
+    : undefined;
+  const archivos = Array.isArray(nota?.archivos) ? nota.archivos.map(Number).filter(Number.isSafeInteger) : [];
+  return { archivos, seguimiento: typeof nota?.seguimiento === "number" ? nota.seguimiento : 0 };
+}
+
+/**
  * El responsable termina su actividad: con el avance en 100 y al menos un archivo de evidencia de esa actividad, contado
  * dentro de la transacción (una subida en curso espera al hallazgo bloqueado, o ya está confirmada y se cuenta). Guarda
- * cuándo terminó de verdad y quién, y borra la verificación de una vuelta anterior. Si no queda ninguna actividad abierta en
- * la ronda en curso (leídas y bloqueadas después del hallazgo: dos responsables que terminan a la vez van en fila), el
- * hallazgo pasa a «Por verificar» por `transicionarHallazgo`.
+ * cuándo terminó de verdad y quién, y borra la verificación de una vuelta anterior. Una actividad devuelta en la verificación
+ * no se termina con lo mismo: pide además un seguimiento y un archivo posteriores a la devolución (`loDeLaDevolucion`). Si no
+ * queda ninguna actividad abierta en la ronda en curso (leídas y bloqueadas después del hallazgo: dos responsables que
+ * terminan a la vez van en fila), el hallazgo pasa a «Por verificar» por `transicionarHallazgo`.
  */
 export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: number }, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.ejecutar");
@@ -270,6 +289,15 @@ export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: n
       WHERE contexto = 'mejora_actividad' AND contexto_id = ${a.id} AND version_id IS NULL`;
     const archivos = Number(n);
     if (archivos === 0) throw new ErrorMejora(SIN_EVIDENCIA_PARA_TERMINAR);
+    // Una devuelta no se termina con lo mismo (spec §11.4, PC-05): un seguimiento y un archivo posteriores a la devolución.
+    if (a.verificacion === "devuelta") {
+      const antes = await loDeLaDevolucion(tx, h, a.id);
+      const [seguimiento] = await tx`SELECT 1 FROM mejora_seguimientos WHERE actividad_id = ${a.id} AND id > ${antes.seguimiento} LIMIT 1`;
+      if (!seguimiento) throw new ErrorMejora(SEGUIMIENTO_TRAS_LA_DEVOLUCION);
+      const [nuevo] = await tx`SELECT 1 FROM archivos
+        WHERE contexto = 'mejora_actividad' AND contexto_id = ${a.id} AND version_id IS NULL AND id > ${Math.max(0, ...antes.archivos)} LIMIT 1`;
+      if (!nuevo) throw new ErrorMejora(EVIDENCIA_TRAS_LA_DEVOLUCION);
+    }
     await tx`UPDATE mejora_actividades
       SET estado = 'terminada', terminada_en = ${c.ahora}, terminada_por = ${sesion.usuarioId},
         verificacion = NULL, verificacion_nota = NULL, corregir_antes_de = NULL
