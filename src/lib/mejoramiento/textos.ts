@@ -88,9 +88,16 @@ export const ETIQUETA_ESTADO_ACTIVIDAD: Record<EstadoActividad, string> = {
 };
 
 /**
+ * La marca de una actividad con un ajuste de reprogramación aprobado (spec §10.6): un solo texto y una sola regla para la página
+ * del hallazgo, la de la actividad, el impreso y el Excel.
+ */
+export const REPROGRAMADA = "Reprogramada";
+export const esReprogramada = (a: { reprogramaciones: number }): boolean => a.reprogramaciones > 0;
+
+/**
  * El estado de una actividad en texto (spec §10.2): «Vencida hace N días» (sin terminar y con su fecha pasada: `vencida`, el día en
- * que venció y el de hoy) o el guardado, con su verificación («Conforme», «Devuelta») y «Reprogramada». Una sola regla para el
- * impreso y el Excel.
+ * que venció y el de hoy) o el guardado, con su verificación («Conforme», «Devuelta») y «Reprogramada» (`esReprogramada`). Una
+ * sola regla para el impreso y el Excel.
  */
 export function estadoDeActividadEnTexto(a: {
   estado: string;
@@ -101,7 +108,7 @@ export function estadoDeActividadEnTexto(a: {
   return [
     a.vencida ? vencidaHace(a.vencida.vence, a.vencida.hoy) : (ETIQUETA_ESTADO_ACTIVIDAD[a.estado as EstadoActividad] ?? a.estado),
     a.verificacion === "conforme" ? "Conforme" : a.verificacion === "devuelta" ? "Devuelta" : null,
-    a.reprogramada ? "Reprogramada" : null,
+    a.reprogramada ? REPROGRAMADA : null,
   ]
     .filter(Boolean)
     .join(" · ");

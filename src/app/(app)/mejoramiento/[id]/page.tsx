@@ -905,7 +905,7 @@ export default async function PaginaHallazgo({
           ) : null}
         </div>
         <div className="flex min-w-0 flex-col gap-4">
-          <LoQueSigue texto={sigue.turno}>
+          <LoQueSigue texto={sigue.turno} nota={sigue.nota}>
             {formulario || decidirAjustes.length > 0 ? (
               <>
                 {formulario}

@@ -1097,6 +1097,24 @@ describe("Tarea 17, ronda 1: cada hallazgo con sus verificadores y lo que se lee
       });
     }));
 
+  it("quien podría verificar por su rol pero ejecutó una actividad lo lee en «Lo que sigue», sin decir cuál (recorrido de cierre, D3)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_verificar", undefined, { responsableId: b.admin.usuarioId });
+      const ahora = new Date(VERIFICA);
+      const lee = async (quien: typeof b.admin) => (await leerHallazgo(quien, h.id, { sql: tx, ahora }))!.loQueSigue;
+      expect(await lee(b.admin)).toEqual({
+        paso: "verificar",
+        puede: false,
+        turno: "Tiene el turno: quien puede verificar, para verificar la implementación.",
+        nota: "No puede verificar este plan: tuvo a su cargo una de sus actividades.",
+      });
+      expect(await lee(b.control)).toEqual({ paso: "verificar", puede: true, turno: "A usted le toca verificar la implementación." });
+      // Gerencia no verifica mientras un Admin SGC o Control Interno pueda, sin haber ejecutado nada; el líder no tiene el rol.
+      expect(await lee(b.gerencia)).not.toHaveProperty("nota");
+      expect(await lee(b.lider)).not.toHaveProperty("nota");
+    }));
+
   it("4. después de un «no eficaz» real, la ronda anterior trae su evaluación con lo que se mostró", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);

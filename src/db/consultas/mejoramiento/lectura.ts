@@ -10,6 +10,7 @@ import { nombreSql } from "@/db/consultas/normograma/busqueda";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import {
   componentesVisibles,
+  ejecutoEnElHallazgo,
   filtroAcceso,
   filtroHallazgos,
   participacionEnHallazgo,
@@ -26,6 +27,7 @@ import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import type { ActividadDeExcel, FilaDeExcel } from "@/lib/mejoramiento/excel";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { esReprogramada } from "@/lib/mejoramiento/textos";
 import {
   METODOS_DE_VERIFICACION,
   SE_AJUSTA_EN,
@@ -529,7 +531,7 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
           verificacion: a.verificacion === "conforme" || a.verificacion === "devuelta" ? a.verificacion : null,
           // La regla de la pasada (`venceLaActividad`); la de una carga sin su formato firmado no vence todavía.
           vencida: a.entregada === true && estaAbierta(estado) && vence < hoy ? { vence, hoy } : null,
-          reprogramada: Number(a.reprogramaciones) > 0,
+          reprogramada: esReprogramada({ reprogramaciones: Number(a.reprogramaciones) }),
           evidencias: abre ? Number(a.evidencias) : null,
           ultimoSeguimiento:
             abre && a.seg_fecha
@@ -782,8 +784,9 @@ export type DetalleDeHallazgo = {
 /**
  * «Lo que sigue» (spec §16.2): el paso del estado (el formulario que pinta la página), si quien mira puede darlo y la frase
  * que lo dice («A usted le toca…» o quién tiene el turno). `paso` es nulo en los estados cuyo formulario llega en otra tarea.
+ * `nota`, solo cuando hace falta: por qué quien mira, que por su rol daría el paso, no lo da (va donde iría el botón).
  */
-export type LoQueSigueDelHallazgo = { paso: PasoDelHallazgo | null; puede: boolean; turno: string };
+export type LoQueSigueDelHallazgo = { paso: PasoDelHallazgo | null; puede: boolean; turno: string; nota?: string };
 
 /** Los pasos que pinta «Lo que sigue»: los del recorrido hasta el plan y, después, verificar, evaluar la eficacia y cerrar. */
 export type PasoDelHallazgo = PasoDelRecorrido | "verificar" | "evaluar" | "cerrar";
@@ -853,6 +856,23 @@ export const NADIE_ACEPTA_SU_LIDER =
   "Nadie puede aceptarlo: el único líder del proceso es quien lo registró, y no puede aceptar su propio hallazgo. Asigne otro " +
   "líder al proceso o cambie el proceso del hallazgo.";
 
+/**
+ * A quien por su rol verificaría (Admin SGC o Control Interno; Gerencia, cuando solo ella puede) pero ejecutó en el hallazgo
+ * (`ejecutoEnElHallazgo`, la regla de `quienesVerifican`, spec §11.1): por qué no ve «Ir a verificar», sin decir qué hizo.
+ */
+export const NO_VERIFICA_QUIEN_EJECUTO = "No puede verificar este plan: tuvo a su cargo una de sus actividades.";
+
+/** Si la persona, que no puede verificar, verificaría por su rol de no haber ejecutado en el hallazgo. */
+async function noVerificaPorqueEjecuto(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, verificadores: number[]): Promise<boolean> {
+  if (!puede(sesion, "mejora.verificar")) return false;
+  if (sesion.rol === "gerencia") {
+    // Gerencia verifica solo si ningún Admin SGC ni Control Interno puede: entonces los que pueden son todos de Gerencia.
+    const [f] = await tx`SELECT bool_and(rol = 'gerencia') AS solo FROM usuarios WHERE id = ANY(${verificadores}::bigint[])`;
+    if (f?.solo !== true) return false;
+  }
+  return ejecutoEnElHallazgo(tx, h.id, sesion.usuarioId);
+}
+
 /** Cuando nadie cumple la regla de quién verifica (§11.1): el acto se rechaza y la pantalla dice por qué. */
 export const NADIE_VERIFICA = `${NADIE_PUEDE_VERIFICAR}. Dé el rol de Administrador del SGC o de Control Interno a otra persona.`;
 
@@ -905,8 +925,13 @@ async function loQueSigue(
   if (h.estado === "en_espera") return laEspera(tx, h, sesion, evaluable);
   if (h.estado === "por_verificar") {
     const verifica = await puedeVerificar(h.id, sesion, { sql: tx });
-    if (!verifica && (await quienesVerifican(tx, h.id)).length === 0) return { paso: "verificar", puede: false, turno: NADIE_VERIFICA };
-    return { paso: "verificar", puede: verifica, turno: fraseDeLoQueSigue(h, turno, verifica) };
+    if (verifica) return { paso: "verificar", puede: true, turno: fraseDeLoQueSigue(h, turno, true) };
+    const verificadores = await quienesVerifican(tx, h.id);
+    if (verificadores.length === 0) return { paso: "verificar", puede: false, turno: NADIE_VERIFICA };
+    const frase = fraseDeLoQueSigue(h, turno, false);
+    return (await noVerificaPorqueEjecuto(tx, h, sesion, verificadores))
+      ? { paso: "verificar", puede: false, turno: frase, nota: NO_VERIFICA_QUIEN_EJECUTO }
+      : { paso: "verificar", puede: false, turno: frase };
   }
   if (h.estado === "por_cerrar") {
     const cierra = puede(sesion, "mejora.gestionar");

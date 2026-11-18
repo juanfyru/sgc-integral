@@ -6,6 +6,7 @@ import { leerCriterios } from "@/lib/mejoramiento/eficacia";
 import { fechaDeDia, fechaLargaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
 import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
 import {
+  esReprogramada,
   estadoDeActividadEnTexto,
   ETIQUETA_CLASE,
   ETIQUETA_CRITERIO,
@@ -220,7 +221,7 @@ function estadoDeActividad(x: ActividadDeDetalle, hoy: string, entregada: boolea
   return estadoDeActividadEnTexto({
     estado: x.estado,
     verificacion: x.verificacion,
-    reprogramada: x.reprogramaciones > 0,
+    reprogramada: esReprogramada(x),
     vencida: vencida ? { vence: x.vence, hoy } : null,
   });
 }

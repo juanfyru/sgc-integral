@@ -6,7 +6,7 @@ import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipo
 import { leerCriterios } from "@/lib/mejoramiento/eficacia";
 import { fechaDeDia, fechaLargaDeDia, vencidaHace } from "@/lib/mejoramiento/formato";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
-import { ETIQUETA_CRITERIO, ETIQUETA_ESTADO_ACTIVIDAD, ETIQUETA_TIPO_ACCION } from "@/lib/mejoramiento/textos";
+import { esReprogramada, ETIQUETA_CRITERIO, ETIQUETA_ESTADO_ACTIVIDAD, ETIQUETA_TIPO_ACCION, REPROGRAMADA } from "@/lib/mejoramiento/textos";
 import { estaAbierta, type EstadoActividad, type TipoAccion } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -180,6 +180,12 @@ export function PlanEnLectura({
                         {fechaDeDia(x.fin)}
                         {x.finOriginal && x.finOriginal !== x.fin ? (
                           <span className="block text-xs text-muted-foreground">{`original: ${fechaDeDia(x.finOriginal)}`}</span>
+                        ) : null}
+                        {/* La misma marca que el impreso y el Excel (`estadoDeActividadEnTexto`). */}
+                        {esReprogramada(x) ? (
+                          <span className="mt-1 block">
+                            <Insignia variante="neutra">{REPROGRAMADA}</Insignia>
+                          </span>
                         ) : null}
                       </Dato>
                       <Dato etiqueta="Avance">

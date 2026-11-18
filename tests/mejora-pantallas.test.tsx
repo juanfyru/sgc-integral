@@ -60,7 +60,7 @@ import { fraseDeLoQueSigue } from "@/db/consultas/mejoramiento/lectura";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
-import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
+import { AVISO_SIN_PACIENTES, esReprogramada, estadoDeActividadEnTexto, REPROGRAMADA } from "@/lib/mejoramiento/textos";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { EnlacesDelHallazgo } from "@/componentes/mejoramiento/EnlacesDelHallazgo";
 import { FechasDelHallazgo } from "@/componentes/mejoramiento/FechasDelHallazgo";
@@ -101,6 +101,8 @@ vi.mock("next/navigation", async (importar) => ({
 // 18 de noviembre de 2026 (miércoles), 10:00 en Bogotá. El lunes 16 es festivo: del 11 al 18 hay cuatro días hábiles.
 const AHORA = new Date("2026-11-18T15:00:00Z");
 const CONTEXTO = { ahora: AHORA, zona: "America/Bogota", calendario: SIN_AJUSTES };
+/** El texto de un HTML, sin sus etiquetas. */
+const sinEtiquetas = (html: string) => html.replace(/<[^>]+>/g, "");
 
 const fila = (extra: Partial<FilaDeHallazgo>): FilaDeHallazgo => ({
   id: 14,
@@ -263,6 +265,13 @@ describe("LoQueSigue", () => {
   it("a quien no tiene el turno le dice quién lo tiene y no ofrece botones", () => {
     const html = renderToStaticMarkup(<LoQueSigue texto="Tiene el turno: la líder del proceso, para aceptar el hallazgo o rechazarlo." />);
     expect(html).toContain("Tiene el turno: la líder del proceso");
+    expect(html).not.toMatch(/<(button|a)[\s>]/);
+  });
+
+  it("donde iría el botón, la línea de por qué no puede dar el paso, sin botones (recorrido de cierre, D3)", () => {
+    const nota = "No puede verificar este plan: tuvo a su cargo una de sus actividades.";
+    const html = renderToStaticMarkup(<LoQueSigue texto="Tiene el turno: quien puede verificar, para verificar la implementación." nota={nota} />);
+    expect(html).toContain(`<p class="mt-3 text-sm">${nota}</p>`);
     expect(html).not.toMatch(/<(button|a)[\s>]/);
   });
 });
@@ -596,6 +605,15 @@ describe("el análisis de causa raíz (maqueta 4)", () => {
     expect(renderToStaticMarkup(<CausasRaiz hallazgoId={1} causas={[{ id: 4, texto: "Una", sinAccionPorque: null }]} guardar={accion} />)).toContain(
       "Quitar la causa 1",
     );
+    // Cada «Si no requiere acción…» con su nombre propio para un lector de pantalla: el de su causa (recorrido de cierre, D7).
+    const dos = renderToStaticMarkup(
+      <CausasRaiz hallazgoId={1} causas={[{ id: 4, texto: "Una", sinAccionPorque: null }, { id: 5, texto: "Otra", sinAccionPorque: null }]} guardar={accion} />,
+    );
+    const nombres = [...dos.matchAll(/<label for="causa-sin-(\d+)"[^>]*>([\s\S]*?)<\/label>/g)].map((m) => sinEtiquetas(m[2]));
+    expect(nombres).toEqual([
+      "Si no requiere acción, diga por qué (opcional ahora; se pide al enviar el plan) (causa raíz 1)",
+      "Si no requiere acción, diga por qué (opcional ahora; se pide al enviar el plan) (causa raíz 2)",
+    ]);
   });
 
   it("la lectura no confía en lo guardado: un contenido que no pasa su esquema no rompe la página", () => {
@@ -852,8 +870,9 @@ describe("las firmas del plan (maqueta 5)", () => {
   it("razonDeGerencia dice la primera de las cuatro condiciones, o nada si la revisión vale como aprobación", () => {
     const nc = { clase: "no_conformidad" as const, criticidad: "media" as const, origen: "auditoria_interna" as const };
     expect(razonDeGerencia(nc, { requiereRecursos: false, elaboroAdmin: false })).toBeNull();
-    expect(razonDeGerencia({ ...nc, criticidad: "alta" }, { requiereRecursos: false, elaboroAdmin: false })).toBe("criticidad alta");
-    expect(razonDeGerencia({ ...nc, origen: "ente_control" }, { requiereRecursos: false, elaboroAdmin: false })).toBe("origen externo");
+    // Cada razón se lee tras «porque» (recorrido de cierre, D2): «Le toca a Gerencia porque la criticidad es alta».
+    expect(razonDeGerencia({ ...nc, criticidad: "alta" }, { requiereRecursos: false, elaboroAdmin: false })).toBe("la criticidad es alta");
+    expect(razonDeGerencia({ ...nc, origen: "ente_control" }, { requiereRecursos: false, elaboroAdmin: false })).toBe("el origen es externo");
     expect(razonDeGerencia(nc, { requiereRecursos: true, elaboroAdmin: false })).toBe("requiere recursos adicionales o tiene impacto institucional");
     expect(razonDeGerencia(nc, { requiereRecursos: false, elaboroAdmin: true })).toBe("lo elaboró el Administrador del SGC");
   });
@@ -865,7 +884,7 @@ describe("las firmas del plan (maqueta 5)", () => {
         firmas={{ elaboro: null, reviso: null, aprobo: null }}
         elabora="Usted, con su clave, al enviar"
         sinRevision={false}
-        gerencia="criticidad alta"
+        gerencia="la criticidad es alta"
         enCurso="elaboro"
         vence={vence}
         plazos={{ revisar: 3, aprobar: 3 }}
@@ -875,7 +894,7 @@ describe("las firmas del plan (maqueta 5)", () => {
     for (const t of ["Elaboró", "Revisó", "Aprobó"]) expect(html).toContain(t);
     expect(html).toContain("Usted, con su clave, al enviar");
     expect(html).toContain("Administrador del SGC · 3 días hábiles");
-    expect(html).toContain("Gerencia · aplica: criticidad alta · 3 días hábiles");
+    expect(html).toContain("Gerencia · aplica: la criticidad es alta · 3 días hábiles");
     expect(html.split(">Pendiente<").length - 1).toBe(3);
     const t = textoDeVence(vence, CONTEXTO)!;
     expect(html).toContain(`Vence el ${t.fecha} · ${t.plazo}`);
@@ -974,9 +993,9 @@ describe("las firmas del plan (maqueta 5)", () => {
     expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Firmar la revisión<\/button>/);
     expect(html).toContain("su revisión vale como aprobación");
     const aGerencia = renderToStaticMarkup(
-      <PasoRevisar hallazgoId={7} causasSinAccion={[]} gerencia="criticidad alta" huella={HUELLA} pideCodigo={false} firmar={accion} devolver={accion} />,
+      <PasoRevisar hallazgoId={7} causasSinAccion={[]} gerencia="la criticidad es alta" huella={HUELLA} pideCodigo={false} firmar={accion} devolver={accion} />,
     );
-    expect(aGerencia).toContain("el plan pasa a Gerencia para su aprobación (criticidad alta)");
+    expect(aGerencia).toContain("el plan pasa a Gerencia para su aprobación (la criticidad es alta)");
     expect(aGerencia).toContain("Todas las causas tienen al menos una acción.");
   });
 
@@ -997,6 +1016,24 @@ describe("las firmas del plan (maqueta 5)", () => {
     expect(html).toContain("Le toca a Gerencia porque requiere recursos adicionales o tiene impacto institucional.");
     expect(html).toContain("Hay que comprar un registrador de temperatura");
     expect(aviso(html)).toBe(1);
+  });
+
+  it("la frase de por qué aprueba Gerencia es gramatical con cada razón (recorrido de cierre, D2)", () => {
+    const nc = { clase: "no_conformidad" as const, criticidad: "alta" as const, origen: "auditoria_interna" as const };
+    const frase = (h: typeof nc | { clase: "no_conformidad"; criticidad: "media"; origen: "ente_control" }) =>
+      renderToStaticMarkup(
+        <PasoAprobar
+          hallazgoId={7}
+          gerencia={razonDeGerencia(h, { requiereRecursos: false, elaboroAdmin: false })}
+          notaRecursos={null}
+          huella={HUELLA}
+          pideCodigo={false}
+          aprobar={accion}
+          devolver={accion}
+        />,
+      );
+    expect(frase(nc)).toContain("Le toca a Gerencia porque la criticidad es alta.");
+    expect(frase({ clase: "no_conformidad", criticidad: "media", origen: "ente_control" })).toContain("Le toca a Gerencia porque el origen es externo.");
   });
 
   it("el historial muestra lo que dijo quien devolvió el plan y la nota de recursos de la revisión", () => {
@@ -1092,6 +1129,18 @@ describe("las actividades (maqueta 6)", () => {
         acciones={{ seguimiento: accion, terminar: accion, reasignar: accion, pedirAjuste: accion }}
       />,
     );
+
+  it("la actividad con una reprogramación aprobada lleva la marca «Reprogramada» junto a su fecha original (recorrido de cierre, D4)", () => {
+    const reprogramada = pagina(actividad({ fin: "2026-12-08", vence: "2026-12-08", vencida: false, reprogramaciones: 1 }));
+    expect(sinEtiquetas(reprogramada)).toContain(`Fin: ${fechaDeDia("2026-12-08")}original: ${fechaDeDia("2026-11-14")}${REPROGRAMADA}`);
+    expect(reprogramada).toMatch(new RegExp(`<span[^>]*data-variante="neutra"[^>]*>${REPROGRAMADA}</span>`));
+    expect(pagina(actividad())).not.toContain(REPROGRAMADA);
+    // La misma regla y el mismo texto que el impreso y el Excel.
+    expect(estadoDeActividadEnTexto({ estado: "en_proceso", verificacion: null, reprogramada: esReprogramada({ reprogramaciones: 1 }), vencida: null })).toBe(
+      `En proceso · ${REPROGRAMADA}`,
+    );
+    expect(esReprogramada({ reprogramaciones: 0 })).toBe(false);
+  });
 
   it("el formulario de seguimiento lleva el aviso de pacientes, la fecha hasta hoy y el avance desde el del anterior", () => {
     const html = renderToStaticMarkup(<FormularioSeguimiento actividadId={22} hoy="2026-11-18" avanceActual={30} avanceMinimo={30} accion={accion} />);
@@ -1569,6 +1618,12 @@ describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => 
       ],
     } as unknown as Parameters<typeof PlanEnLectura>[0]["ronda"];
     const html = renderToStaticMarkup(<PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={null} />);
+    expect(html).not.toContain(REPROGRAMADA);
+    // Con una reprogramación aprobada, la marca va en la página del hallazgo como en el impreso (recorrido de cierre, D4).
+    const conReprogramada = structuredClone(ronda);
+    Object.assign(conReprogramada.acciones[0].actividades[1], { fin: "2026-12-08", vence: "2026-12-08", reprogramaciones: 1 });
+    const marcada = sinEtiquetas(renderToStaticMarkup(<PlanEnLectura ronda={conReprogramada} abierta hoy="2026-11-18" indicador={null} />));
+    expect(marcada).toContain(`${fechaDeDia("2026-12-08")}original: ${fechaDeDia("2026-12-01")}${REPROGRAMADA}`);
     expect(html).toContain(`Escalada a Gerencia el ${fechaDeDia("2026-11-18")}`);
     expect(html).toContain(`Pidió ajuste al ${fechaDeDia("2026-11-28")} · por decidir`);
     expect(html).toContain("Pidió cancelarla · por decidir");

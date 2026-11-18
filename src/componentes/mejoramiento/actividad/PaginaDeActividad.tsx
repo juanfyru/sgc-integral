@@ -6,7 +6,7 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
-import { ETIQUETA_TIPO_ACCION, type UsuarioDeSelector } from "@/lib/mejoramiento/textos";
+import { esReprogramada, ETIQUETA_TIPO_ACCION, REPROGRAMADA, type UsuarioDeSelector } from "@/lib/mejoramiento/textos";
 import { estaAbierta } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -78,6 +78,8 @@ export function PaginaDeActividad({
             {a.finOriginal && a.finOriginal !== a.fin ? (
               <span className="text-muted-foreground">{`original: ${fechaDeDia(a.finOriginal)}`}</span>
             ) : null}
+            {/* La misma marca que el impreso y el Excel (`estadoDeActividadEnTexto`). */}
+            {esReprogramada(a) ? <Insignia variante="neutra">{REPROGRAMADA}</Insignia> : null}
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="min-w-0 break-words">

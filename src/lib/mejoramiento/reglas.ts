@@ -59,14 +59,15 @@ export function rolQueAproboEnPapel(
 /**
  * Por qué aprueba Gerencia, en palabras: la primera que se cumple de las cuatro condiciones de `apruebaGerencia`, en el orden
  * del spec §8.6 (criticidad alta, origen externo, recursos adicionales o impacto institucional, elaboró un Admin SGC), o
- * `null` si no se cumple ninguna (la revisión vale como aprobación). La usan las pantallas de las firmas.
+ * `null` si no se cumple ninguna (la revisión vale como aprobación). Cada una es una oración que se lee tras «porque» («Le toca
+ * a Gerencia porque la criticidad es alta»), tras «aplica:» y entre paréntesis. La usan las pantallas de las firmas.
  */
 export function razonDeGerencia(
   h: Pick<HallazgoBase, "clase" | "criticidad" | "origen">,
   x: { requiereRecursos: boolean; elaboroAdmin: boolean },
 ): string | null {
-  if (h.clase === "no_conformidad" && h.criticidad === "alta") return "criticidad alta";
-  if (esExterno(h.origen)) return "origen externo";
+  if (h.clase === "no_conformidad" && h.criticidad === "alta") return "la criticidad es alta";
+  if (esExterno(h.origen)) return "el origen es externo";
   if (x.requiereRecursos) return "requiere recursos adicionales o tiene impacto institucional";
   if (x.elaboroAdmin) return "lo elaboró el Administrador del SGC";
   return null;

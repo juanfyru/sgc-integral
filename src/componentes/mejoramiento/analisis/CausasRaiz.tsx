@@ -65,6 +65,8 @@ export function CausasRaiz({
             />
             <label htmlFor={`causa-sin-${i}`} className="text-xs font-medium text-muted-foreground">
               Si no requiere acción, diga por qué (opcional ahora; se pide al enviar el plan)
+              {/* Cada campo, con el nombre de su causa para un lector de pantalla (como los del Ishikawa). */}
+              <span className="sr-only">{` (causa raíz ${i + 1})`}</span>
             </label>
             <input
               id={`causa-sin-${i}`}
