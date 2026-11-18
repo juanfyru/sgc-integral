@@ -9,8 +9,10 @@
  *
  * Orden de candados: el plan `FOR UPDATE` (o los dos de un cambio, por id ascendente), después cada hallazgo `FOR UPDATE` por id
  * ascendente (`bloquearHallazgo`: su fila no se escribe; el candado pone en fila a quienes clasifican el mismo hallazgo) y al
- * final su fila de clasificación. Ningún camino toma un plan después de un hallazgo, salvo `clasificarAlNacer`, con un hallazgo
- * que acaba de nacer en su misma transacción y que ninguna otra ve todavía. No importa `lectura.ts`.
+ * final su fila de clasificación (también `ponerObjetivo`, con el plan que tenga el hallazgo). Los caminos de este módulo no toman
+ * un plan después de un hallazgo, salvo `clasificarAlNacer`: su hallazgo acaba de nacer y ninguna otra transacción lo ve, pero el
+ * registro que la llama puede tener ya `FOR KEY SHARE` sobre otro hallazgo (el de origen o el anterior de una reincidencia) y
+ * cruzarse con quien pone ese otro en el mismo plan; el `40P01` llega legible. No importa `lectura.ts`.
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -283,13 +285,18 @@ export async function ponerObjetivo(
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-      // Sin el candado del plan: este camino no toca el plan del hallazgo, y el del hallazgo pone en fila a todo el que lo clasifica.
+      // El orden de todo camino que escribe una fila de clasificación: el plan del hallazgo, si lo tiene, antes que la fila.
+      const leida = await filaSinCandado(tx, r.hallazgoId);
+      const planId = leida?.planId ?? null;
+      if (planId !== null) await bloquearPlan(tx, planId);
       const h = await bloquearHallazgo(tx, r.hallazgoId);
       const fila = await filaBloqueada(tx, h.id);
+      // Entre la lectura sin candado y el candado del plan, otro lo pudo poner en un plan, sacar o mover.
+      if ((fila?.planId ?? null) !== planId) throw new ErrorMejora(YA_CAMBIO);
       const antes = fila?.objetivoId ?? null;
       if (antes === r.objetivoId) return;
       if (r.objetivoId !== null) await objetivoActivo(tx, r.objetivoId);
-      await guardarFila(tx, sesion, h.id, { planId: fila?.planId ?? null, objetivoId: r.objetivoId }, ahora);
+      await guardarFila(tx, sesion, h.id, { planId, objetivoId: r.objetivoId }, ahora);
       await dejarRastroDelObjetivo(tx, sesion, h, antes, r.objetivoId, {});
     }),
   );
@@ -300,7 +307,7 @@ export async function ponerObjetivo(
  * y después de `nacerHallazgo`. El objetivo lo elige quien registra, si quiere: debe estar activo (`OBJETIVO_INACTIVO`). El plan
  * se vuelve a validar aquí (que exista, que no esté anulado y que quien registra tenga `mejora.planes`); si no pasa, el hallazgo
  * nace sin plan y nadie dice por qué (el patrón de `?revision=`). Es el único camino que toma el plan después de un hallazgo: el
- * suyo, recién insertado, que ninguna otra transacción ve.
+ * suyo, recién insertado, que ninguna otra transacción ve (los que el registro ya tiene `FOR KEY SHARE`, ver la cabecera).
  */
 export async function clasificarAlNacer(
   tx: TransactionSql,
