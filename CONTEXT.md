@@ -86,7 +86,7 @@
    diligenciados; la matriz SGC-MZ-AC-01, si existe; registrar los siete formatos como documentos; y los ajustes a sus
    textos del Apéndice B. Desde ese día `.git/info/exclude` excluye todo Excel, Word o PDF de la raíz.
    **Antes, el complemento de la 14C** está terminado y **fusionado en `main`** (el 2026-11-17, por decisión
-   del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se construyó (las siete tareas de su plan y
+   del usuario y por avance rápido; publicado en `origin` el 2026-11-18, con la 15A). Se construyó (las siete tareas de su plan y
    la decisión 12 del usuario) en la rama `f14c-complemento` (salía de `main` en `07cb1e6`), en el worktree
    `F:\sgc-integral-f14c` y contra la base `sgc_f14c`; **la rama, el worktree y esa base se conservan** hasta que el
    usuario pida borrarlos. Construye las tres entregas que el usuario aprobó al cerrar la 14C: el punto de miles se rechaza
@@ -102,7 +102,7 @@
    `F:\sgc-integral` y reiniciar `next dev`; lo hace el usuario: hasta entonces las páginas de indicadores fallan ahí),
    publicar `main` cuando el usuario lo pida y el recorrido del usuario («Qué probar y cómo (complemento de la 14C)»).
    **Antes, la Fase 14C — Datos compartidos, desagregación y compuestos** está terminada y **fusionada en
-   `main`** (el 2026-11-16, por decisión del usuario y por avance rápido; **`main` no se ha publicado en `origin`**). Se
+   `main`** (el 2026-11-16, por decisión del usuario y por avance rápido; publicado en `origin` el 2026-11-18, con la 15A). Se
    construyó (las dieciocho tareas del plan) en la rama `fase-14c-datos-desagregacion-compuestos` (salía de `main` en
    `44d8b9f`), en el worktree `F:\sgc-integral-f14c` y contra la base aparte `sgc_f14c`; **la rama, el worktree y esa base
    se conservan** hasta que el usuario pida borrarlos. Con ella, un dato que usan varios
