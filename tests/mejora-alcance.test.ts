@@ -15,9 +15,10 @@ import { quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
 import { leerHallazgo, listarHallazgos, turnoEnTexto } from "@/db/consultas/mejoramiento/lectura";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { lideresDeProceso } from "@/db/consultas/tramites";
-import { participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
+import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
+import { filtroPlanes, participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
-import { actividadPorSql, baseDeMejora, c, datosDeHallazgo, otroProcesoConLider } from "./utiles/mejoramiento";
+import { actividadPorSql, baseDeMejora, c, datosDeHallazgo, otroProcesoConLider, planDeMejoraDePrueba } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 
@@ -348,6 +349,30 @@ describe("el detalle", () => {
       const dAdmin = (await leerHallazgo(b.admin, a.id, opt(tx)))!;
       expect(dAdmin.reincidenteDe).toMatchObject({ id: x.id, codigo: x.codigo });
       expect(otro.lider.usuarioId).not.toBe(b.lider.usuarioId);
+    });
+  });
+});
+
+describe("alcance de los planes de mejoramiento (15B)", () => {
+  it("filtroPlanes en un WHERE: quien ve todo, todos; el líder, los que tienen un hallazgo suyo completo; Consulta, ninguno", async () => {
+    await revertida(sql, async (tx) => {
+      const { b, otro, a, x } = await escena(tx);
+      const delA = await planDeMejoraDePrueba(tx, b.control);
+      const delB = await planDeMejoraDePrueba(tx, b.control);
+      const vacio = await planDeMejoraDePrueba(tx, b.control);
+      await ponerEnPlan(b.control, { planId: delA.id, hallazgoIds: [a.id] }, c(AHORA, tx));
+      await ponerEnPlan(b.control, { planId: delB.id, hallazgoIds: [x.id] }, c(AHORA, tx));
+      // El responsable de una actividad de A lo ve por su actividad, no completo: no ve su plan.
+      const persona = await usuarioDePrueba(tx, { rol: "consulta" });
+      await actividadPorSql(tx, a.id, persona.usuarioId, { aprobada: true });
+      const todos = [delA.id, delB.id, vacio.id];
+      const ve = async (s: Parameters<typeof filtroPlanes>[1]) =>
+        (await tx`SELECT p.id FROM mejora_planes p WHERE p.id IN ${tx(todos)} AND ${filtroPlanes(tx, s)} ORDER BY p.id`).map((f) => Number(f.id));
+      for (const s of [b.admin, b.gerencia, b.control]) expect(await ve(s)).toEqual(todos);
+      expect(await ve(b.lider)).toEqual([delA.id]);
+      expect(await ve(otro.lider)).toEqual([delB.id]);
+      expect(await ve(b.consulta)).toEqual([]);
+      expect(await ve(persona)).toEqual([]);
     });
   });
 });

@@ -19,6 +19,7 @@ import {
   verificarImplementacion,
 } from "@/db/consultas/mejoramiento/verificacion";
 import { guardarAccion, guardarCriterio } from "@/db/consultas/mejoramiento/plan";
+import { crearPlan, type DatosDePlan } from "@/db/consultas/mejoramiento/planes";
 import {
   aceptarHallazgo,
   decidirAccionCorrectiva,
@@ -530,4 +531,22 @@ export async function terminarTodas(tx: TransactionSql, b: BaseDeMejora, hallazg
     await evidenciaDeActividad(tx, actividadId, responsable.usuarioId);
     await terminarActividad(responsable, { actividadId }, o);
   }
+}
+
+/**
+ * Un plan de mejoramiento (Fase 15B) que crea `sesion` por el dominio (`crearPlan`), a `ahora` (`HORA_DE_ESCENA` por omisión):
+ * una auditoría interna del 10 de noviembre de 2026, de la vigencia 2099 por omisión (lejana: ningún plan confirmado la usa, así
+ * que el primero de un test es `PM-2099-01`). `cambios` reemplaza lo que diga.
+ */
+export async function planDeMejoraDePrueba(
+  tx: TransactionSql,
+  sesion: SesionFlujo,
+  cambios?: Partial<DatosDePlan>,
+  ahora?: string,
+): Promise<{ id: number; codigo: string }> {
+  return crearPlan(
+    sesion,
+    { nombre: "Auditoría interna de calidad de noviembre", origen: "auditoria_interna", fechaEvento: "2026-11-10", vigencia: 2099, ...cambios },
+    c(ahora ?? HORA_DE_ESCENA, tx),
+  );
 }

@@ -784,7 +784,8 @@ export async function sinResponsableDeDato(sql: Cliente, datoId: number): Promis
 // ─────────────────────────────────────────────────────────────────────────────
 // Mejoramiento (15A, spec §6.3): quinta excepción nombrada a `alcanceProcesos()`: ser responsable de una actividad da
 // alcance sobre ese hallazgo sin liderar su proceso. No usa `alcanceProcesos`: a Consulta le devuelve `{ todos: true }`,
-// y quien solo consulta no ve ningún hallazgo que no sea suyo.
+// y quien solo consulta no ve ningún hallazgo que no sea suyo. Los planes de mejoramiento (15B) se ven por sus hallazgos
+// (`filtroPlanes`).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Los procesos activos que lidera la persona, para un `WHERE` sobre `mejora_hallazgos h`; `false` si no es líder. */
@@ -834,6 +835,26 @@ export function filtroHallazgos(sql: Cliente, sujeto: SujetoVisibilidad) {
 export function vistaCompletaDeHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
   if (puede(sujeto, "mejora.ver_todo")) return sql`true`;
   return sql`(${liderDelProcesoDelHallazgo(sql, sujeto)} OR ${registroElHallazgo(sql, sujeto)})`;
+}
+
+/**
+ * Qué planes de mejoramiento ve una persona (Fase 15B, anexo §3.6), para un `WHERE` sobre `mejora_planes p`: con
+ * `mejora.ver_todo`, todos, también los vacíos y los anulados; si no, los que tienen algún hallazgo que la persona ve completo
+ * (`vistaCompletaDeHallazgo`: el líder de su proceso o quien lo registró). Quien ve un hallazgo solo por su actividad no ve su
+ * plan (F15B-DC9). Lo que cada uno ve del plan (solo sus hallazgos, sus cifras) lo deciden las lecturas.
+ */
+export function filtroPlanes(sql: Cliente, sujeto: SujetoVisibilidad) {
+  if (puede(sujeto, "mejora.ver_todo")) return sql`true`;
+  return sql`EXISTS (SELECT 1 FROM mejora_clasificacion pl_c JOIN mejora_hallazgos h ON h.id = pl_c.hallazgo_id
+    WHERE pl_c.plan_id = p.id AND ${vistaCompletaDeHallazgo(sql, sujeto)})`;
+}
+
+/** Quién ve un plan: el que pasa `filtroPlanes`. `false` si no existe: la misma respuesta. */
+export async function puedeVerPlan(planId: number, sujeto: SujetoVisibilidad, opciones?: { sql?: Cliente }): Promise<boolean> {
+  if (!Number.isSafeInteger(planId) || planId <= 0) return false;
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT 1 FROM mejora_planes p WHERE p.id = ${planId} AND ${filtroPlanes(sql, sujeto)}`;
+  return f !== undefined;
 }
 
 /**

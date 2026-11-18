@@ -459,6 +459,56 @@ describe("frases con el detalle real", () => {
     expect(nombreDeAccion("mejora_reporte_convertido")).toBe("Convirtió un reporte en hallazgo");
     expect(nombreDeAccion("mejora_reporte_sumado")).toBe("Añadió un reporte como ocurrencia de un hallazgo");
   });
+  it("el plan de mejoramiento (15B): el código, el nombre y el hallazgo; nunca el objetivo escrito ni el motivo", () => {
+    const plan = { codigo: "PM-2026-01", nombre: "Auditoría de cumplimiento vigencia 2025" };
+    expect(e("mejora_plan_crear", { ...plan, origen: "ente_control", vigencia: 2026 })).toBe(
+      "Creó el plan de mejoramiento PM-2026-01 — Auditoría de cumplimiento vigencia 2025",
+    );
+    expect(e("mejora_plan_editar", { ...plan, campos: ["nombre", "fechaLimiteEnte", "objetivoTexto"] })).toBe(
+      "Editó el plan de mejoramiento PM-2026-01 (nombre, fecha límite del ente, objetivo del plan)",
+    );
+    // Una fila que trajera el motivo no lo muestra.
+    expect(e("mejora_plan_anular", { ...plan, motivo: "Se registró dos veces" })).toBe("Anuló el plan de mejoramiento PM-2026-01");
+    const hz = { ...plan, hallazgoId: 40, hallazgo: "HZ-2026-004" };
+    expect(e("mejora_plan_entra", hz)).toBe("Añadió el hallazgo HZ-2026-004 al plan de mejoramiento PM-2026-01");
+    expect(e("mejora_plan_entra", { ...hz, alRegistrar: true })).toBe("Registró el hallazgo HZ-2026-004 dentro del plan de mejoramiento PM-2026-01");
+    expect(e("mejora_plan_entra", { ...hz, desde: "PM-2026-02" })).toBe(
+      "Añadió el hallazgo HZ-2026-004 al plan de mejoramiento PM-2026-01, desde el plan PM-2026-02",
+    );
+    expect(e("mejora_plan_sale", { ...hz, motivo: "Corresponde a otro evento" })).toBe("Sacó el hallazgo HZ-2026-004 del plan de mejoramiento PM-2026-01");
+    expect(e("mejora_plan_sale", { ...hz, hacia: "PM-2026-02" })).toBe(
+      "Sacó el hallazgo HZ-2026-004 del plan de mejoramiento PM-2026-01, para pasarlo al plan PM-2026-02",
+    );
+    expect(e("mejora_plan_respuesta", { ...plan, enviadaEn: "2026-11-20", hallazgos: ["HZ-2026-004", "HZ-2026-005"] })).toBe(
+      "Registró la respuesta al ente del plan de mejoramiento PM-2026-01, enviada el 20 nov 2026 (2 hallazgos)",
+    );
+    const uno = { id: 3, enunciado: "Mejorar la oportunidad de la atención" };
+    const dos = { id: 4, enunciado: "Reducir los eventos adversos" };
+    expect(e("mejora_objetivo", { codigo: "HZ-2026-004", antes: null, despues: uno })).toBe(
+      "Puso el objetivo «Mejorar la oportunidad de la atención» al hallazgo HZ-2026-004",
+    );
+    expect(e("mejora_objetivo", { codigo: "HZ-2026-004", antes: uno, despues: dos })).toBe(
+      "Cambió el objetivo del hallazgo HZ-2026-004 de «Mejorar la oportunidad de la atención» a «Reducir los eventos adversos»",
+    );
+    expect(e("mejora_objetivo", { codigo: "HZ-2026-004", antes: dos, despues: null })).toBe(
+      "Quitó el objetivo «Reducir los eventos adversos» del hallazgo HZ-2026-004",
+    );
+    expect(e("mejora_objetivo", { codigo: "HZ-2026-004", antes: null, despues: uno, plan: "PM-2026-01" })).toBe(
+      "Puso el objetivo «Mejorar la oportunidad de la atención» al hallazgo HZ-2026-004, al entrar al plan PM-2026-01",
+    );
+    expect(e("mejora_objetivo", { codigo: "HZ-2026-004", antes: null, despues: uno, alRegistrar: true })).toBe(
+      "Puso el objetivo «Mejorar la oportunidad de la atención» al hallazgo HZ-2026-004, al registrarlo",
+    );
+    // Sin detalle, cada una sigue siendo una frase.
+    expect(e("mejora_plan_crear", {})).toBe("Creó un plan de mejoramiento");
+    expect(e("mejora_plan_entra", {})).toBe("Añadió un hallazgo a un plan de mejoramiento");
+    expect(e("mejora_plan_respuesta", {})).toBe("Registró la respuesta al ente de un plan de mejoramiento");
+    expect(e("mejora_objetivo", {})).toBe("Cambió el objetivo de un hallazgo");
+    for (const a of ["mejora_plan_crear", "mejora_plan_editar", "mejora_plan_anular", "mejora_plan_entra", "mejora_plan_sale", "mejora_plan_respuesta", "mejora_objetivo"]) {
+      expect(nombreDeAccion(a), a).not.toBe(a.replace(/_+/g, " "));
+      expect(e(a, {}), a).not.toMatch(/^Acción «|undefined|null|NaN|\[object/);
+    }
+  });
 });
 
 /**

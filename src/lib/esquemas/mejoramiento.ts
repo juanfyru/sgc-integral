@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
+import { FALTA_LA_FECHA_DEL_ENTE, MOTIVO_CORTO } from "@/lib/mejoramiento/planes";
 import { inicioDespuesDelFin } from "@/lib/mejoramiento/textos";
 import {
   CLASES,
@@ -14,6 +15,7 @@ import {
   TIPOS_ACCION,
   TIPOS_AJUSTE,
   type EstadoActividad,
+  type Origen,
 } from "@/lib/mejoramiento/tipos";
 import { textoAcotado } from "@/lib/validacion";
 
@@ -1422,4 +1424,87 @@ export const EsquemaDescarte = z
       .min(10, MOTIVO_DEL_DESCARTE)
       .max(1000, "El motivo no puede pasar de 1000 caracteres"),
   })
+  .strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El plan de mejoramiento y la clasificación de un hallazgo (Fase 15B, anexo §3.1 a §3.4 y §10.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Los campos del plan que se escriben al crearlo y al editarlo (la vigencia solo al crearlo: está en su código). */
+const camposDelPlan = {
+  nombre: textoAcotado("El nombre del plan", 5, 200),
+  origen: z.enum(ORIGENES_HALLAZGO, { error: "Elija el origen del plan" }),
+  fechaEvento: z
+    .string({ error: "Escriba la fecha del evento" })
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Escriba una fecha válida del evento")
+    .refine(esFechaReal, "Escriba una fecha válida del evento")
+    .refine(enRango, FECHA_FUERA_DE_RANGO),
+  objetivoTexto: textoOpcional("El objetivo del plan", 1000),
+  objetivoId: idOpcional("El objetivo elegido no es válido"),
+  fechaLimiteEnte: fechaOpcional("Escriba una fecha límite del ente válida"),
+};
+
+/** La fecha del ente es obligatoria en «Ente de control» (spec 15 §13.4); en «Auditoría externa», opcional. */
+const fechaDelEnteDelPlan = (d: { origen: Origen; fechaLimiteEnte: string | null }, ctx: z.RefinementCtx) => {
+  if (d.origen === "ente_control" && !d.fechaLimiteEnte) {
+    ctx.addIssue({ code: "custom", path: ["fechaLimiteEnte"], message: FALTA_LA_FECHA_DEL_ENTE });
+  }
+};
+
+/** Con un origen interno la fecha del ente no existe: la que llegue se ignora. */
+const soloConOrigenExterno = <T extends { origen: Origen; fechaLimiteEnte: string | null }>(d: T): T => ({
+  ...d,
+  fechaLimiteEnte: esExterno(d.origen) ? d.fechaLimiteEnte : null,
+});
+
+/** El plan que recibe `crearPlan`: la vigencia, del 2000 al 2100 y, por omisión, el año de la fecha del evento. */
+export const EsquemaPlan = z
+  .object({ ...camposDelPlan, vigencia: entero("La vigencia", 2000, 2100).optional() })
+  .strict()
+  .superRefine(fechaDelEnteDelPlan)
+  .transform((d) => ({ ...soloConOrigenExterno(d), vigencia: d.vigencia ?? Number(d.fechaEvento.slice(0, 4)) }));
+export type PlanValidado = z.output<typeof EsquemaPlan>;
+
+/** El plan que recibe `editarPlan`: todo menos el código y la vigencia (anexo §3.2). */
+export const EsquemaEdicionDePlan = z.object(camposDelPlan).strict().superRefine(fechaDelEnteDelPlan).transform(soloConOrigenExterno);
+export type EdicionDePlanValidada = z.output<typeof EsquemaEdicionDePlan>;
+
+const idDePlan = idRequerido("El plan no es válido");
+
+/** El motivo de anular un plan o de sacar o mover un hallazgo: al menos diez caracteres. Va al historial del plan, no a la bitácora. */
+const motivoDelPlan = z
+  .string({ error: MOTIVO_CORTO })
+  .trim()
+  .min(10, MOTIVO_CORTO)
+  .max(1000, "El motivo no puede pasar de 1000 caracteres");
+
+/** Si el que entra sin objetivo recibe el del plan (spec 15 §17.7): por omisión, sí. */
+const conElObjetivoDelPlan = z
+  .boolean({ error: "Diga si el hallazgo recibe el objetivo del plan" })
+  .optional()
+  .transform((v) => v ?? true);
+
+export const EsquemaAnulacionDePlan = z.object({ planId: idDePlan, motivo: motivoDelPlan }).strict();
+
+export const EsquemaPonerEnPlan = z
+  .object({
+    planId: idDePlan,
+    hallazgoIds: z
+      .array(idDeHallazgo, { error: "Elija al menos un hallazgo" })
+      .min(1, "Elija al menos un hallazgo")
+      .max(200, "Se añaden doscientos hallazgos a la vez como máximo")
+      .transform((ids) => [...new Set(ids)].sort((a, b) => a - b)),
+    conObjetivo: conElObjetivoDelPlan,
+  })
+  .strict();
+
+export const EsquemaSacarDelPlan = z.object({ hallazgoId: idDeHallazgo, motivo: motivoDelPlan }).strict();
+
+export const EsquemaCambiarDePlan = z
+  .object({ hallazgoId: idDeHallazgo, planId: idDePlan, motivo: motivoDelPlan, conObjetivo: conElObjetivoDelPlan })
+  .strict();
+
+/** El objetivo de un hallazgo: uno del maestro, o ninguno (lo quita). */
+export const EsquemaObjetivoDelHallazgo = z
+  .object({ hallazgoId: idDeHallazgo, objetivoId: idOpcional("El objetivo elegido no es válido") })
   .strict();

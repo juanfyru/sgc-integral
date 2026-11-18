@@ -694,6 +694,90 @@ function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): st
   return `${frase}${titulo ? ` — ${titulo}` : ""}${reporte !== null ? `, desde el reporte n.º ${reporte}` : ""}`;
 }
 
+/** Cómo se nombra un plan o un hallazgo en una frase de la 15B, con su código o sin él. */
+type NombreEnFrase = { el: string; al: string; del: string };
+
+const nombrado = (codigo: string | null, que: string): NombreEnFrase =>
+  codigo
+    ? { el: `el ${que} ${codigo}`, al: `al ${que} ${codigo}`, del: `del ${que} ${codigo}` }
+    : { el: `un ${que}`, al: `a un ${que}`, del: `de un ${que}` };
+
+/** Los campos de un plan que nombra `mejora_plan_editar` (`CAMPOS_DEL_PLAN` de `planes.ts`). */
+const CAMPOS_DE_PLAN: Record<string, string> = {
+  nombre: "nombre",
+  origen: "origen",
+  fechaEvento: "fecha del evento",
+  objetivoTexto: "objetivo del plan",
+  objetivoId: "objetivo",
+  fechaLimiteEnte: "fecha límite del ente",
+};
+
+/** ««Enunciado»» de un objetivo del rastro (`{ id, enunciado }`), o nulo. */
+function objetivoDeRastro(v: unknown): string | null {
+  const enunciado = typeof v === "object" && v !== null ? texto((v as Record<string, unknown>).enunciado) : null;
+  return enunciado ? `«${enunciado}»` : null;
+}
+
+/**
+ * Las acciones del plan de mejoramiento y del objetivo de un hallazgo (Fase 15B, anexo §3.10): el código y el nombre del plan, el
+ * código del hallazgo y el enunciado del objetivo (un maestro). Nunca el objetivo escrito del plan ni un motivo: no llegan a la
+ * bitácora (quedan en el historial del plan), y una fila que los trajera tampoco los muestra.
+ */
+type AccionDePlan =
+  | "mejora_plan_crear"
+  | "mejora_plan_editar"
+  | "mejora_plan_anular"
+  | "mejora_plan_entra"
+  | "mejora_plan_sale"
+  | "mejora_plan_respuesta"
+  | "mejora_objetivo";
+
+function describirPlan(accion: AccionDePlan, d: Record<string, unknown>): string {
+  const plan = nombrado(texto(d.codigo), "plan de mejoramiento");
+  const hallazgo = nombrado(texto(d.hallazgo), "hallazgo");
+  switch (accion) {
+    case "mejora_plan_crear": {
+      const nombre = texto(d.nombre);
+      return `Creó ${plan.el}${nombre ? ` — ${nombre}` : ""}`;
+    }
+    case "mejora_plan_editar": {
+      const campos = Array.isArray(d.campos)
+        ? d.campos.map((c) => (typeof c === "string" && Object.hasOwn(CAMPOS_DE_PLAN, c) ? CAMPOS_DE_PLAN[c] : null))
+        : [];
+      return `Editó ${plan.el}${entreParentesis(campos)}`;
+    }
+    case "mejora_plan_anular":
+      return `Anuló ${plan.el}`;
+    case "mejora_plan_entra": {
+      if (d.alRegistrar === true) return `Registró ${hallazgo.el} dentro ${plan.del}`;
+      const desde = texto(d.desde);
+      return `Añadió ${hallazgo.el} ${plan.al}${desde ? `, desde el plan ${desde}` : ""}`;
+    }
+    case "mejora_plan_sale": {
+      const hacia = texto(d.hacia);
+      return `Sacó ${hallazgo.el} ${plan.del}${hacia ? `, para pasarlo al plan ${hacia}` : ""}`;
+    }
+    case "mejora_plan_respuesta": {
+      const enviada = dia(d.enviadaEn);
+      const n = Array.isArray(d.hallazgos) ? d.hallazgos.length : numero(d.hallazgos);
+      return `Registró la respuesta al ente ${plan.del}${enviada ? `, enviada el ${enviada}` : ""}${entreParentesis([
+        n === null || n === 0 ? null : cuenta(n, "hallazgo", "hallazgos"),
+      ])}`;
+    }
+    case "mejora_objetivo": {
+      const del = nombrado(texto(d.codigo), "hallazgo");
+      const antes = objetivoDeRastro(d.antes);
+      const despues = objetivoDeRastro(d.despues);
+      const enPlan = texto(d.plan);
+      const cuando = d.alRegistrar === true ? ", al registrarlo" : enPlan ? `, al entrar al plan ${enPlan}` : "";
+      if (antes && despues) return `Cambió el objetivo ${del.del} de ${antes} a ${despues}${cuando}`;
+      if (despues) return `Puso el objetivo ${despues} ${del.al}${cuando}`;
+      if (antes) return `Quitó el objetivo ${antes} ${del.del}${cuando}`;
+      return `Cambió el objetivo ${del.del}`;
+    }
+  }
+}
+
 const NOMBRES_DE_MEJORA: Record<string, string> = Object.fromEntries(
   Object.entries(FRASES_DE_MEJORA).map(([accion, frase]) => [`mejora_${accion}`, frase(SIN_CODIGO)]),
 );
@@ -1122,6 +1206,15 @@ export function describirEvento(e: EventoAuditoria): string {
       const codigo = texto(d.codigo);
       return `Adjuntó el formato firmado de la carga ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}: su plan llega a sus responsables`;
     }
+    // ── Mejoramiento (15B): el plan de mejoramiento y el objetivo de un hallazgo (`describirPlan`)
+    case "mejora_plan_crear":
+    case "mejora_plan_editar":
+    case "mejora_plan_anular":
+    case "mejora_plan_entra":
+    case "mejora_plan_sale":
+    case "mejora_plan_respuesta":
+    case "mejora_objetivo":
+      return describirPlan(e.accion, d);
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1603,6 +1696,13 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_respuesta_ente: "Registró la respuesta al ente de un hallazgo",
   mejora_carga_confirmada: "Adjuntó el formato firmado de la carga de un hallazgo",
   mejora_exporto_hallazgos: "Emitió la matriz de hallazgos de mejoramiento",
+  mejora_plan_crear: "Creó un plan de mejoramiento",
+  mejora_plan_editar: "Editó un plan de mejoramiento",
+  mejora_plan_anular: "Anuló un plan de mejoramiento",
+  mejora_plan_entra: "Añadió un hallazgo a un plan de mejoramiento",
+  mejora_plan_sale: "Sacó un hallazgo de un plan de mejoramiento",
+  mejora_plan_respuesta: "Registró la respuesta al ente de un plan de mejoramiento",
+  mejora_objetivo: "Cambió el objetivo de un hallazgo",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",
