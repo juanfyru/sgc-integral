@@ -38,17 +38,18 @@
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
 1. **Dónde quedamos:** la **Fase 15A está construida** (2026-11-18): las 22 tareas de su plan (las 21 primeras, cada una
-   con su revisión), en la rama `fase-15a-mejoramiento` del worktree `F:\sgc-integral-f15a`, contra la base `sgc_f15a`, **sin fusionar ni
-   publicar**. Con ella, el hallazgo de mejoramiento va de punta a punta: reporte de cualquier funcionario, registro con
+   con su revisión), en la rama `fase-15a-mejoramiento` del worktree `F:\sgc-integral-f15a`, contra la base `sgc_f15a`, y
+   **fusionada en `main` el 2026-11-18** por decisión del usuario («fusionemos en main»), por avance rápido y sin publicar en
+   `origin`, con la `0018` aplicada a la base `sgc` (después de un respaldo). Con ella, el hallazgo de mejoramiento va de punta a punta: reporte de cualquier funcionario, registro con
    parecidos y reincidencia, aceptación, corrección y camino corto, causa raíz, plan con sus firmas, ejecución con
    seguimientos y ajustes, verificación, eficacia con su espera, cierre y rondas, plazos en días hábiles, tareas, avisos,
    vencimientos, la carga de lo que está en curso en papel, impresos, Excel y búsqueda. **Sin dependencias npm nuevas.** Una
    migración, la `0018`; diecinueve en total. Detalle en «Hecho (Fase 15A)»; el recorrido, en «Qué probar y cómo (Fase
    15A)»; las decisiones, en «Decisiones adicionales (Fase 15A)»; el manual, en el capítulo 9. **La verificación de cierre
    y la revisión de toda la rama están hechas** (2026-11-18, «Verificación de cierre (Fase 15A)»), con su ola de
-   corrección. **Falta:** el visto bueno del usuario a las 46 decisiones de la ejecución y de la revisión final, su
-   recorrido y después su decisión de fusionar; al fusionar, aplicar la `0018` a la base `sgc` («Avisos para el usuario
-   (Fase 15A)»). La 15B y la 15C esperan su anexo (la 15B, además, la plantilla del ente).
+   corrección. **Falta:** el visto bueno del usuario a las 46 decisiones de la ejecución y de la revisión final, y su
+   recorrido sobre la demo («Qué probar y cómo (Fase 15A)»). La 15B y la 15C esperan su anexo (la 15B, además, la
+   plantilla del ente).
    **Antes:** la **Fase 15 — Planes de mejoramiento** tuvo su **diseño aprobado por el usuario el 2026-11-17**
    («aprobado el spec, continuemos con el plan de la 15A»). El spec es uno solo para las
    tres entregas: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`. **15A**, el hallazgo de
@@ -423,8 +424,9 @@ Spec: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md
 con su enmienda de ese día: el festivo del 9 de julio, F15-DC39 y cuatro contextos de archivo), §6 a §16 para esta entrega.
 Plan: `docs/superpowers/plans/2026-11-17-fase15a-mejoramiento.md` (22 tareas, con subagentes; aprobado el 2026-11-17).
 Rama `fase-15a-mejoramiento` (sale de `main` en `780d3d9`), en el worktree `F:\sgc-integral-f15a` y contra la base aparte
-`sgc_f15a` (todo comando que la toca va por el guard `.superpowers/sdd/2026-11-17-fase15a-mejoramiento/con-f15a.sh`). **Sin
-fusionar ni publicar:** lo decide el usuario después de su recorrido. **Sin dependencias npm nuevas.** Una migración, la
+`sgc_f15a` (todo comando que la toca va por el guard `.superpowers/sdd/2026-11-17-fase15a-mejoramiento/con-f15a.sh`).
+**Fusionada en `main` el 2026-11-18** por decisión del usuario, por avance rápido (`780d3d9..45236b9`) y sin publicar en
+`origin`; la rama, el worktree y la base `sgc_f15a` se conservan. **Sin dependencias npm nuevas.** Una migración, la
 `0018` (`drizzle/0018_fase15a-mejoramiento.sql`); diecinueve en total (`drizzle/0000` a `drizzle/0018`). Solo añade (regla 11
 de `AGENTS.md`), así que debe aplicarse sobre una base de `sgc-suaza` y sobre la de la 14C (lo comprueba la verificación de
 cierre sobre una copia de `sgc`). Mientras se construyó, `F:\sgc-integral`, su
@@ -621,10 +623,13 @@ hallazgos ya sembrados.
 
 ### Avisos para el usuario (Fase 15A)
 
-- **La rama no está fusionada.** Cuando decida fusionarla, **aplique la `0018` a la base `sgc`** (`npm run db:preparar` en
-  `F:\sgc-integral` y reinicie `next dev`): hasta entonces el módulo **Mejoramiento** falla allí. Solo añade: no cambia
-  ningún documento, trámite, indicador, medición ni firma (lo comprueba, sobre una copia de `sgc`, la verificación de
-  cierre). La base `sgc` no trae hallazgos de la demo: los tiene la demo (`npm run db:seed`, que vacía la base).
+- **La `0018` ya está aplicada a la base `sgc`** (2026-11-18, al fusionar, con `npm run db:preparar` en
+  `F:\sgc-integral`): de 18 a 19 migraciones y de 84 a 99 tablas, con las mismas cifras de antes en documentos (36),
+  trámites (6), indicadores (14), mediciones (35), firmas (44), archivos (51), bitácora (270) y usuarios (8). El respaldo de
+  antes está en `F:\respaldos-sgc\sgc-antes-de-0018-2026-11-18.dump` (`pg_dump -Fc`; se restaura con `pg_restore`).
+  **Reinicie el `next dev` del 3002** si no lo ha hecho: la fusión trae Server Actions nuevas y un servidor viejo responde
+  500. Sin la `0018`, falla toda página con sesión, no solo **Mejoramiento**: el cascarón pide las tareas de mejoramiento en
+  cada página. La base `sgc` no trae hallazgos de la demo: los tiene la demo (`npm run db:seed`, que vacía la base).
 - **Registre los siete formatos como documentos** en la plataforma (SGC-PR-03, SGC-FO-AC-01 a 04, SGC-FO-14 y SGC-FO-28;
   conviene unificar antes sus códigos, ver el Apéndice B, punto 13) y **elija los tres de esta entrega** en **Configuración
   de mejoramiento** (el registro SGC-FO-AC-01, el de 5 porqués SGC-FO-AC-02 y el de Ishikawa SGC-FO-AC-03): así los
