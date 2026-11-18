@@ -12,13 +12,24 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
-const contexto = vi.hoisted(() => ({ sql: null as unknown, sesion: null as unknown }));
+const contexto = vi.hoisted(() => ({ sql: null as unknown, sesion: null as unknown, seguimientosLeidos: 0 }));
 
 vi.mock("@/db/cliente", async (original) => {
   const real = await original<typeof import("@/db/cliente")>();
   return { ...real, obtenerSql: () => (contexto.sql ?? real.obtenerSql()) as ReturnType<typeof real.obtenerSql> };
 });
 vi.mock("@/lib/paginas", () => ({ exigirSesion: async () => contexto.sesion }));
+// Cuántas veces la página lee los seguimientos: solo el registro completo los pinta.
+vi.mock("@/db/consultas/mejoramiento/formatos", async (original) => {
+  const real = await original<typeof import("@/db/consultas/mejoramiento/formatos")>();
+  return {
+    ...real,
+    seguimientosDelHallazgo: (...args: Parameters<typeof real.seguimientosDelHallazgo>) => {
+      contexto.seguimientosLeidos += 1;
+      return real.seguimientosDelHallazgo(...args);
+    },
+  };
+});
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("NO_ENCONTRADA");
@@ -29,7 +40,7 @@ vi.mock("next/navigation", () => ({
 import PaginaImprimirHallazgo from "@/app/(app)/mejoramiento/[id]/imprimir/page";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { CONFIG_MEJORA_DEFECTO, guardarConfigMejora } from "@/db/consultas/mejoramiento/config";
+import { guardarConfigMejora, obtenerConfigMejora, type ConfigMejora } from "@/db/consultas/mejoramiento/config";
 import { baseDeMejora, hallazgoEn } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { documentoLibre, opc, usuarioDePrueba } from "./utiles/tramites";
@@ -51,6 +62,11 @@ const enTransaccion = (prueba: (tx: TransactionSql) => Promise<void>) =>
     }
   });
 
+/** Los formatos elegidos, dentro de la transacción: la base de trabajo puede traer los del punto de control. */
+async function formatosElegidos(tx: TransactionSql, admin: SesionFlujo, formatos: ConfigMejora["formatos"]): Promise<void> {
+  await guardarConfigMejora(admin, { ...(await obtenerConfigMejora({ sql: tx })), formatos }, opc(tx));
+}
+
 async function imprimir(sesion: SesionFlujo, id: number | string, analisis?: string | string[]): Promise<string> {
   contexto.sesion = sesion;
   const pagina = await PaginaImprimirHallazgo({
@@ -65,6 +81,7 @@ describe("/mejoramiento/[id]/imprimir", () => {
     enTransaccion(async (tx) => {
       const b = await baseDeMejora(tx);
       const h = await hallazgoEn(tx, b, "en_ejecucion");
+      await formatosElegidos(tx, b.admin, { registro: null, porques: null, ishikawa: null });
       const sinFormato = await imprimir(b.lider, h.id);
       expect(sinFormato).toContain(">1. Identificación<");
       expect(sinFormato).toContain(">7. Cierre<");
@@ -72,7 +89,7 @@ describe("/mejoramiento/[id]/imprimir", () => {
       expect(sinFormato).toContain(`por ${b.lider.nombre}`);
 
       const doc = await documentoLibre(tx, { proceso: "CEX", tipo: "FO" });
-      await guardarConfigMejora(b.admin, { ...CONFIG_MEJORA_DEFECTO, formatos: { registro: doc.id, porques: null, ishikawa: null } }, opc(tx));
+      await formatosElegidos(tx, b.admin, { registro: doc.id, porques: null, ishikawa: null });
       const conFormato = await imprimir(b.lider, h.id);
       expect(conFormato).toContain(doc.codigo);
       expect(conFormato).toContain("Fecha de emisión");
@@ -83,6 +100,18 @@ describe("/mejoramiento/[id]/imprimir", () => {
       expect(analisis).toContain("Nadie asignó el registro al turno de noche");
       expect(analisis).not.toContain(doc.codigo);
       expect(analisis).not.toContain(">1. Identificación<");
+    }));
+
+  it("imprimir un análisis no lee los seguimientos; el registro completo, sí", () =>
+    enTransaccion(async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_ejecucion");
+      const [a] = await tx`SELECT id FROM mejora_analisis WHERE hallazgo_id = ${h.id}`;
+      contexto.seguimientosLeidos = 0;
+      await imprimir(b.admin, h.id, String(a.id));
+      expect(contexto.seguimientosLeidos).toBe(0);
+      await imprimir(b.admin, h.id);
+      expect(contexto.seguimientosLeidos).toBe(1);
     }));
 
   it("quien lo ve solo por una actividad, un análisis de otro hallazgo o un id que no se entiende: «no encontrado»", () =>

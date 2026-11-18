@@ -339,6 +339,13 @@ describe("RegistroImpreso (SGC-FO-AC-01)", () => {
     expect(texto).not.toContain("Rita Revisora");
   });
 
+  it("entre una cifra y «%» va un espacio duro: la meta, el avance y los seguimientos no se parten", () => {
+    const html = registro();
+    expect(html).toContain("100\u00a0%");
+    expect(html).toContain("60\u00a0%");
+    expect(html).not.toMatch(/\d %/);
+  });
+
   it("el pie dice «Impreso el … por …»", () => {
     expect(leer(registro())).toContain(`Impreso el ${fechaYHora(IMPRESO_EN, ZONA).replace(/\s+/g, " ")} por Ana Admin`);
   });
@@ -486,6 +493,15 @@ describe("los formatos del análisis", () => {
     expect(texto).toContain("Posible");
     expect(texto).toContain("Alto");
     expect(texto).toContain("El turno de noche no tiene responsable del registro");
+  });
+
+  it("la hoja de un análisis de un hallazgo cargado lleva también su marca: puede viajar sola", () => {
+    const cargado = leer(renderToStaticMarkup(<CincoPorquesImpreso {...comunes} hallazgo={detalle({ cargado: true })} ronda={r1} analisis={r1.analisis[0]} formato={null} />));
+    expect(cargado).toContain("Cargado: tramitado antes fuera de la plataforma");
+    const ishikawa = leer(renderToStaticMarkup(<IshikawaImpreso {...comunes} hallazgo={detalle({ cargado: true })} ronda={r2} analisis={r2.analisis[0]} formato={null} />));
+    expect(ishikawa).toContain("Cargado: tramitado antes fuera de la plataforma");
+    const normal = leer(renderToStaticMarkup(<CincoPorquesImpreso {...comunes} ronda={r1} analisis={r1.analisis[0]} formato={null} />));
+    expect(normal).not.toContain("Cargado: tramitado antes fuera de la plataforma");
   });
 
   it("un análisis cargado sin contenido dice dónde está, sin niveles ni diagrama vacíos", () => {

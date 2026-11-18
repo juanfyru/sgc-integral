@@ -18,6 +18,12 @@ export const ORIGENES: ReadonlyArray<{ clave: Origen; etiqueta: string; externo:
   { clave: "ente_control", etiqueta: "Ente de control", externo: true },
 ];
 
+/** La etiqueta de cada origen: un solo mapa para la lista de filtros, la bitácora, el impreso y el Excel. */
+export const ETIQUETA_ORIGEN: Readonly<Record<Origen, string>> = Object.fromEntries(ORIGENES.map((o) => [o.clave, o.etiqueta])) as Record<
+  Origen,
+  string
+>;
+
 export function esExterno(o: Origen): boolean {
   return o === "auditoria_externa" || o === "ente_control";
 }

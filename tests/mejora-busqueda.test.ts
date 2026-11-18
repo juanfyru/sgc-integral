@@ -8,6 +8,7 @@ import { obtenerSql } from "@/db/cliente";
 import { buscarHallazgos } from "@/db/consultas/mejoramiento/busqueda";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { HALLAZGOS_EN_LA_PALETA } from "@/lib/busqueda-rapida";
 import { baseDeMejora, c, datosDeCarga, datosDeHallazgo, escaneoDeLaCarga, HORA_DE_ESCENA, otroProcesoConLider } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
@@ -54,6 +55,24 @@ describe("buscarHallazgos", () => {
       expect(await buscarHallazgos(codigo, b.consulta, 10, { sql: tx })).toEqual([]);
       // Control positivo: el mismo texto sí lo encuentra quien lo ve.
       expect(await buscarHallazgos(m, b.admin, 10, { sql: tx })).toHaveLength(1);
+    }));
+
+  it("quien reportó el reporte convertido en el hallazgo no lo encuentra, ni por su código ni por su título", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const m = marca();
+      const o = c(HORA_DE_ESCENA, tx);
+      const { id: reporteId } = await enviarReporte(
+        quien,
+        { descripcion: `La nevera de urgencias marcaba 12 grados ${m}`, vistoEn: "2026-11-09", procesoId: b.procesoId, referenciaCaso: null },
+        o,
+      );
+      const { id, codigo } = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId, { reporteId, titulo: `Nevera sin registro ${m}` }), o);
+      expect(await buscarHallazgos(m, quien, 10, { sql: tx })).toEqual([]);
+      expect(await buscarHallazgos(codigo, quien, 10, { sql: tx })).toEqual([]);
+      // Control positivo: quien lo registró sí.
+      expect((await buscarHallazgos(m, b.admin, 10, { sql: tx })).map((r) => r.id)).toEqual([id]);
     }));
 
   it("una carga sin su formato firmado no la encuentra quien solo es responsable declarado; con el escaneo, sí", () =>

@@ -12,7 +12,7 @@ import { obtenerSql } from "@/db/cliente";
 import { firmasDeHallazgo } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe } from "@/db/consultas/mejoramiento/archivos";
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
-import { encabezadoDeFormato, lecturaDelImpreso } from "@/db/consultas/mejoramiento/formatos";
+import { encabezadoDeFormato, lideresDelProceso, seguimientosDelHallazgo } from "@/db/consultas/mejoramiento/formatos";
 import { ETIQUETA_METODO_ANALISIS } from "@/lib/mejoramiento/textos";
 import type { MetodoAnalisis } from "@/lib/mejoramiento/tipos";
 import { exigirSesion } from "@/lib/paginas";
@@ -55,17 +55,17 @@ export default async function PaginaImprimirHallazgo({
   const sql = obtenerSql();
   const zona = zonaHoraria();
   const cual = !analisis ? "registro" : analisis.metodo === "cinco_porques" ? "porques" : analisis.metodo === "ishikawa" ? "ishikawa" : null;
-  const [marca, formato, firmas, lectura] = await Promise.all([
+  const [marca, formato, firmas, lideres] = await Promise.all([
     obtenerMarcaSegura(),
     cual ? encabezadoDeFormato(sql, cual) : Promise.resolve(null),
     firmasDeHallazgo(sql, h.id),
-    lecturaDelImpreso(sql, h),
+    lideresDelProceso(sql, h.procesoId),
   ]);
   const comunes = {
     entidad: marca.nombre,
     logo: marca.logo ? `/marca/logo?v=${marca.logo.version}` : null,
     firmas,
-    lideres: lectura.lideres,
+    lideres,
     impresoEn: ahora,
     impresoPor: sesion.nombre,
     zona,
@@ -88,16 +88,18 @@ export default async function PaginaImprimirHallazgo({
         <OtroMetodoImpreso {...datos} />
       );
   } else {
-    const [indicadores, archivos] = await Promise.all([
+    // Lo que solo pinta el registro completo: un análisis impreso no lee los seguimientos ni los archivos.
+    const [indicadores, archivos, seguimientos] = await Promise.all([
       Promise.all(h.rondas.map(async (r) => [r.id, await indicadorParaQuienLee(r, sesion)] as const)),
       archivosDe(sql, sesion, { contexto: "mejora_hallazgo", contextoId: h.id }),
+      seguimientosDelHallazgo(sql, h.id),
     ]);
     hoja = (
       <RegistroImpreso
         {...comunes}
         hallazgo={h}
         formato={formato}
-        seguimientos={lectura.seguimientos}
+        seguimientos={seguimientos}
         indicadores={Object.fromEntries(indicadores)}
         evidenciaDeCorreccion={archivos.filter((a) => a.rol === "correccion").map((a) => a.nombre)}
       />

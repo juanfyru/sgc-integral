@@ -13,6 +13,7 @@ import {
   Firmas,
   firmasDelPlan,
   Hoja,
+  MarcaDeCarga,
   PieDeImpreso,
   preguntasDeCierre,
 } from "./Partes";
@@ -40,6 +41,7 @@ export type DatosDelAnalisisImpreso = {
  * (del hallazgo y del análisis), el contenido del método (`children`), la conclusión (las causas raíz de la ronda, las dos
  * preguntas de cierre y las observaciones) y las firmas del plan de su ronda, que incluye el análisis: «Realizó» es «Elaboró»,
  * «Validó» es «Revisó» y «Visto bueno» es «Aprobó». En un plan aprobado en papel, quién lo aprobó y cuándo, sin firma del sistema.
+ * La de un hallazgo cargado lleva su marca, como el registro: la hoja puede viajar sola.
  */
 export function HojaDeAnalisis({ d, titulo, children }: { d: DatosDelAnalisisImpreso; titulo: string; children: React.ReactNode }) {
   const { hallazgo: h, ronda: r, analisis: a, zona } = d;
@@ -49,6 +51,7 @@ export function HojaDeAnalisis({ d, titulo, children }: { d: DatosDelAnalisisImp
   return (
     <Hoja titulo={id("titulo")}>
       <EncabezadoDeFormato entidad={d.entidad} logo={d.logo} titulo={titulo} formato={d.formato} zona={zona} idTitulo={id("titulo")} />
+      {h.cargado ? <MarcaDeCarga /> : null}
       <Bloque id={id("general")} titulo="Información general" corto>
         <Campos
           nombre="Información general"

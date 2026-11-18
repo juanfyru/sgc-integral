@@ -18,6 +18,20 @@ export const TD = `${BORDE} px-2 py-1 align-top break-words`;
 export const SIN_REGISTRAR = "Sin registrar todavía.";
 /** Un análisis cargado sin su contenido estructurado (spec §15): lo que se hizo en papel está en el escaneo. */
 export const CONTENIDO_EN_LA_CARGA = "El contenido de este análisis está en el formato firmado de la carga.";
+/** La marca de un hallazgo cargado (spec §15): lo hecho antes, en papel, no lleva firmas del sistema. */
+export const MARCA_DE_CARGA = "Cargado: tramitado antes fuera de la plataforma";
+
+/** La marca de un hallazgo cargado, arriba de cada hoja: el registro y la de un análisis, que puede viajar sola. */
+export function MarcaDeCarga() {
+  return <p className="ficha-corto border-l-4 border-mod-planes bg-muted px-3 py-2 font-semibold">{MARCA_DE_CARGA}</p>;
+}
+
+/** Entre una cifra y «%» va un espacio duro: «100 %» no se parte en dos líneas al imprimir. */
+export const ESPACIO_DURO = "\u00a0";
+export const porcentaje = (n: number) => `${n}${ESPACIO_DURO}%`;
+/** Un texto escrito por una persona («meta: 100 %») con sus «%» pegados a la cifra por un espacio duro. */
+export const conPorcentajesUnidos = (t: string) => t.replace(/(\d)\s+%/g, `$1${ESPACIO_DURO}%`);
+
 /** Un paso de un hallazgo cargado: se hizo en papel, sin firma del sistema (spec §15). */
 export const HECHO_FUERA = "Hecho fuera de la plataforma, sin firma del sistema";
 

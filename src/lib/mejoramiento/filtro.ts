@@ -1,7 +1,7 @@
 /** El filtro de la lista de hallazgos, leído de la URL: un valor que no se entiende se ignora. Sin Node ni BD. */
 import type { FiltroDeLista } from "@/db/consultas/mejoramiento/lectura";
 import { etiquetaDeEstado } from "./estados";
-import { ORIGENES } from "./origenes";
+import { ETIQUETA_ORIGEN } from "./origenes";
 import { ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "./textos";
 import { ORIGENES_HALLAZGO, CLASES, CRITICIDADES, ESTADOS_HALLAZGO, type EstadoHallazgo } from "./tipos";
 
@@ -28,8 +28,6 @@ export function etiquetaDelFiltroDeEstado(estado: NonNullable<FiltroDeLista["est
     : etiquetaDeEstado({ estado: estado as EstadoHallazgo, resultadoCierre: null, correccionRequerida: null });
 }
 
-const ETIQUETA_ORIGEN = new Map<string, string>(ORIGENES.map((o) => [o.clave, o.etiqueta]));
-
 /**
  * Los filtros de la lista en palabras, uno por parte («Proceso: Urgencias», «Estado: Por aceptar», «Solo vencidos»), en el orden
  * del formulario: la línea de filtros del Excel. El proceso por su nombre en `procesos` (los del alcance de quien exporta); uno que
@@ -39,7 +37,7 @@ export function filtrosEnPalabras(f: FiltroDeLista, procesos: ReadonlyArray<{ id
   return [
     f.q ? `Texto: «${f.q}»` : null,
     f.procesoId !== undefined ? `Proceso: ${procesos.find((p) => p.id === f.procesoId)?.nombre ?? "no disponible"}` : null,
-    f.origen ? `Origen: ${ETIQUETA_ORIGEN.get(f.origen) ?? f.origen}` : null,
+    f.origen ? `Origen: ${ETIQUETA_ORIGEN[f.origen] ?? f.origen}` : null,
     f.clase ? `Clase: ${ETIQUETA_CLASE[f.clase]}` : null,
     f.criticidad ? `Criticidad: ${ETIQUETA_CRITICIDAD[f.criticidad]}` : null,
     f.estado ? `Estado: ${etiquetaDelFiltroDeEstado(f.estado)}` : null,

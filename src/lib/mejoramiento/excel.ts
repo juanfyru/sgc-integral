@@ -7,9 +7,9 @@
 import ExcelJS from "exceljs";
 import { agregarHoja, type Celda, type Columna, type MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { cuenta } from "@/lib/plural";
-import { fechaDeDia, vencidaHace } from "./formato";
-import { ORIGENES } from "./origenes";
-import { ETIQUETA_CRITERIO, ETIQUETA_ESTADO_ACTIVIDAD, ETIQUETA_METODO_ANALISIS, ETIQUETA_TIPO_ACCION } from "./textos";
+import { fechaDeDia } from "./formato";
+import { ETIQUETA_ORIGEN } from "./origenes";
+import { estadoDeActividadEnTexto, ETIQUETA_CRITERIO, ETIQUETA_METODO_ANALISIS, ETIQUETA_TIPO_ACCION } from "./textos";
 import type { CriterioEficacia, EstadoActividad, EstadoAjuste, MetodoAnalisis, Origen, TipoAccion, TipoAjuste } from "./tipos";
 
 /** Una actividad de un plan aprobado, con lo que la persona ve de ella; nulo lo que no ve. */
@@ -64,8 +64,6 @@ export type FilaDeExcel = {
 
 type FilaNumerada = FilaDeExcel & { n: number };
 
-const ETIQUETA_ORIGEN = new Map<string, string>(ORIGENES.map((o) => [o.clave, o.etiqueta]));
-
 const DEL_AJUSTE: Record<TipoAjuste, string> = { reprogramar: "Reprogramación", agregar: "Actividad añadida", cancelar: "Cancelación" };
 
 const dia = (d: string | null) => (d ? fechaDeDia(d) : null);
@@ -79,13 +77,6 @@ const deLaActividad = (f: FilaNumerada, valor: (a: ActividadDeExcel) => Celda): 
 function causaRaiz(a: ActividadDeExcel): Celda {
   const metodos = [...new Set(a.metodos)].map((m) => ETIQUETA_METODO_ANALISIS[m]);
   return unir([a.causas.join("; "), metodos.length > 0 ? `Método: ${metodos.join(", ")}` : null]);
-}
-
-/** El estado de la actividad en texto (spec §10.2): «Vencida hace N días» o el guardado, con la verificación y «Reprogramada». */
-function estadoEnTexto(a: ActividadDeExcel): string {
-  const base = a.vencida ? vencidaHace(a.vencida.vence, a.vencida.hoy) : ETIQUETA_ESTADO_ACTIVIDAD[a.estado];
-  const verificada = a.verificacion === "conforme" ? "Conforme" : a.verificacion === "devuelta" ? "Devuelta" : null;
-  return unir([base, verificada, a.reprogramada ? "Reprogramada" : null]) ?? base;
 }
 
 function evidencia(a: ActividadDeExcel): Celda {
@@ -127,22 +118,23 @@ function decision(f: FilaNumerada): Celda {
 }
 
 const COLUMNAS: Array<Columna<FilaNumerada>> = [
-  { cab: "Código", ancho: 16, valor: (f) => f.codigo },
+  // El código de la actividad («A1.2»; vacío en un hallazgo sin actividades): el del hallazgo va en «Código del hallazgo».
+  { cab: "Código", ancho: 9, valor: (f) => f.actividad?.etiqueta ?? null },
   { cab: "Ronda", ancho: 7, valor: (f) => f.ronda },
   { cab: "N°", ancho: 6, valor: (f) => f.n },
   { cab: "Proceso", ancho: 28, valor: (f) => f.proceso },
-  { cab: "Fuente u origen", ancho: 32, valor: (f) => unir([ETIQUETA_ORIGEN.get(f.origen) ?? f.origen, f.fuente]) },
+  { cab: "Fuente u origen", ancho: 32, valor: (f) => unir([ETIQUETA_ORIGEN[f.origen] ?? f.origen, f.fuente]) },
   { cab: "Tipo de acción", ancho: 14, valor: (f) => deLaActividad(f, (a) => ETIQUETA_TIPO_ACCION[a.tipo]) },
   { cab: "Código del hallazgo", ancho: 16, valor: (f) => f.codigo },
   { cab: "Descripción del hallazgo", ancho: 60, valor: (f) => `${f.titulo} — ${f.descripcion}` },
   { cab: "Causa raíz identificada", ancho: 50, valor: (f) => deLaActividad(f, causaRaiz) },
-  { cab: "Acción formulada", ancho: 50, valor: (f) => deLaActividad(f, (a) => `${a.accion} · Actividad ${a.etiqueta}: ${a.descripcion}`) },
+  { cab: "Acción formulada", ancho: 50, valor: (f) => deLaActividad(f, (a) => `${a.accion} · Actividad: ${a.descripcion}`) },
   { cab: "Responsable", ancho: 30, valor: (f) => deLaActividad(f, (a) => unir([a.responsable, a.cargo])) },
   { cab: "Fecha de inicio", ancho: 13, valor: (f) => deLaActividad(f, (a) => dia(a.inicio)) },
   { cab: "Fecha límite", ancho: 13, valor: (f) => deLaActividad(f, (a) => dia(a.fin)) },
   { cab: "Fin original", ancho: 13, valor: (f) => deLaActividad(f, (a) => dia(a.finOriginal)) },
   { cab: "Avance", ancho: 9, valor: (f) => deLaActividad(f, (a) => `${a.avance} %`) },
-  { cab: "Estado", ancho: 28, valor: (f) => deLaActividad(f, estadoEnTexto) },
+  { cab: "Estado", ancho: 28, valor: (f) => deLaActividad(f, estadoDeActividadEnTexto) },
   { cab: "Evidencia de implementación", ancho: 50, valor: (f) => deLaActividad(f, evidencia) },
   { cab: "Evaluación de eficacia y criterio", ancho: 40, valor: eficacia },
   { cab: "Observaciones o causa del retraso", ancho: 50, valor: (f) => deLaActividad(f, observaciones) },

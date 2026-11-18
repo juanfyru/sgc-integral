@@ -24,12 +24,24 @@ vi.mock("@/db/cliente", async (original) => {
 import { GET as excelDeHallazgos } from "@/app/(app)/mejoramiento/excel/route";
 import { obtenerSql } from "@/db/cliente";
 import { reasignarActividad, registrarSeguimiento } from "@/db/consultas/mejoramiento/actividades";
+import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { filasParaExcel } from "@/db/consultas/mejoramiento/lectura";
+import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import type { MetaHoja } from "@/lib/distribucion/hoja-excel";
 import { construirExcelDeHallazgos, type ActividadDeExcel, type FilaDeExcel } from "@/lib/mejoramiento/excel";
+import { estadoDeActividadEnTexto } from "@/lib/mejoramiento/textos";
 import { crearSesion } from "@/lib/sesion";
-import { baseDeMejora, c, datosDeHallazgo, hallazgoEn, HORA_DE_ESCENA, otroProcesoConLider } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeCarga,
+  datosDeHallazgo,
+  escaneoDeLaCarga,
+  hallazgoEn,
+  HORA_DE_ESCENA,
+  otroProcesoConLider,
+} from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 
@@ -141,8 +153,9 @@ describe("construirExcelDeHallazgos", () => {
     expect(datos).toHaveLength(3);
     const col = (n: string) => COLUMNAS.indexOf(n);
     expect(datos.map((f) => f[col("N°")])).toEqual(["1", "2", "3"]);
-    expect(datos.map((f) => f[col("Código")])).toEqual(["HZ-2026-004", "HZ-2026-004", "HZ-2026-005"]);
-    expect(datos.map((f) => f[col("Acción formulada")].split(" · Actividad ")[1]?.split(":")[0] ?? "")).toEqual(["A1.1", "A1.2", ""]);
+    // «Código» es el de la actividad; el del hallazgo, solo en «Código del hallazgo» (ruling de la ronda 1).
+    expect(datos.map((f) => f[col("Código")])).toEqual(["A1.1", "A1.2", ""]);
+    expect(datos[0][col("Acción formulada")]).toBe("Actualizar el procedimiento de entrega de turno · Actividad: Redactar la versión nueva");
     expect(datos.map((f) => f[col("Código del hallazgo")])).toEqual(["HZ-2026-004", "HZ-2026-004", "HZ-2026-005"]);
     const [a, b, sin] = datos;
     expect(a[col("Fecha límite")]).not.toBe(a[col("Fin original")]);
@@ -176,6 +189,16 @@ describe("construirExcelDeHallazgos", () => {
   });
 });
 
+describe("el estado de una actividad en texto", () => {
+  it("una sola regla para el impreso y el Excel: vencida, guardado, verificación y «Reprogramada»", () => {
+    expect(estadoDeActividadEnTexto({ estado: "en_proceso", verificacion: null, reprogramada: true, vencida: null })).toBe("En proceso · Reprogramada");
+    expect(estadoDeActividadEnTexto({ estado: "terminada", verificacion: "devuelta", reprogramada: false, vencida: null })).toBe("Terminada · Devuelta");
+    expect(estadoDeActividadEnTexto({ estado: "abierta", verificacion: null, reprogramada: false, vencida: { vence: "2026-11-15", hoy: "2026-11-18" } })).toBe(
+      "Vencida hace 3 días",
+    );
+  });
+});
+
 describe("filasParaExcel", () => {
   it("una fila por actividad de un plan aprobado y una por hallazgo sin actividades; respeta los filtros de la lista", () =>
     revertida(sql, async (tx) => {
@@ -205,6 +228,38 @@ describe("filasParaExcel", () => {
       await hallazgoEn(tx, b, "en_ejecucion");
       const ajeno = (await otroProcesoConLider(tx)).lider;
       expect(await filasParaExcel(ajeno, {}, { sql: tx, ahora: new Date(HORA_DE_ESCENA) })).toEqual([]);
+    }));
+
+  it("quien reportó el reporte convertido en el hallazgo no lo recibe", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const quien = await usuarioDePrueba(tx, { rol: "consulta" });
+      const o = c(HORA_DE_ESCENA, tx);
+      const { id: reporteId } = await enviarReporte(
+        quien,
+        { descripcion: "La nevera de urgencias marcaba 12 grados y nadie la registró", vistoEn: "2026-11-09", procesoId: b.procesoId, referenciaCaso: null },
+        o,
+      );
+      const h = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId, { reporteId }), o);
+      const lee = { sql: tx, ahora: new Date(HORA_DE_ESCENA) };
+      expect(await filasParaExcel(quien, {}, lee)).toEqual([]);
+      // Control positivo: quien lo registró sí.
+      expect((await filasParaExcel(b.admin, { procesoId: b.procesoId }, lee)).map((f) => f.codigo)).toEqual([h.codigo]);
+    }));
+
+  it("una carga sin su formato firmado no le llega a quien solo es su responsable declarado; con el escaneo, sí", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { id, codigo } = await cargarHallazgo(b.admin, datosDeCarga(b.procesoId, responsable.usuarioId), c("2026-11-18T15:00:00Z", tx));
+      const lee = { sql: tx, ahora: new Date("2026-11-18T17:00:00Z") };
+      expect(await filasParaExcel(responsable, {}, lee)).toEqual([]);
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId, "2026-11-18T16:00:00Z");
+      const filas = await filasParaExcel(responsable, {}, lee);
+      expect(filas.map((f) => [f.codigo, f.actividad?.etiqueta])).toEqual([
+        [codigo, "A1.1"],
+        [codigo, "A1.2"],
+      ]);
     }));
 
   it("quien ve el hallazgo solo por su actividad no recibe los seguimientos ni la evidencia de las de otros", () =>

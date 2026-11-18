@@ -3,19 +3,19 @@ import type { FirmaDelHallazgo } from "@/db/consultas/mejoramiento/aprobacion";
 import type { EncabezadoDelFormato } from "@/db/consultas/mejoramiento/formatos";
 import type { ActividadDeDetalle, DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { leerCriterios } from "@/lib/mejoramiento/eficacia";
-import { fechaDeDia, fechaLargaDeDia, fechaYHora, vencidaHace } from "@/lib/mejoramiento/formato";
-import { ORIGENES } from "@/lib/mejoramiento/origenes";
+import { fechaDeDia, fechaLargaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
+import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
 import {
+  estadoDeActividadEnTexto,
   ETIQUETA_CLASE,
   ETIQUETA_CRITERIO,
   ETIQUETA_CRITICIDAD,
-  ETIQUETA_ESTADO_ACTIVIDAD,
   ETIQUETA_ESTADO_AJUSTE,
   ETIQUETA_METODO_ANALISIS,
   ETIQUETA_METODO_VERIFICACION,
   ETIQUETA_TIPO_ACCION,
 } from "@/lib/mejoramiento/textos";
-import { estaAbierta, TERMINALES, type EstadoActividad, type EstadoAjuste, type MetodoAnalisis, type TipoAccion } from "@/lib/mejoramiento/tipos";
+import { estaAbierta, TERMINALES, type EstadoAjuste, type MetodoAnalisis, type TipoAccion } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { fraseDeAjusteDeDetalle, lineasDeLoQueSeAnade } from "../ajustes/AjustesDelPlan";
 import { textoDelCriterio, type IndicadorEnLectura } from "../plan/PlanEnLectura";
@@ -30,12 +30,15 @@ import {
   CasillaDeFirma,
   CasillaEnPapel,
   CausasRaiz,
+  conPorcentajesUnidos,
   Firmas,
   firmasDelPlan,
   Hoja,
+  MarcaDeCarga,
   Nota,
   pasoEnPapel,
   PieDeImpreso,
+  porcentaje,
   preguntasDeCierre,
   SIN_REGISTRAR,
   Subtitulo,
@@ -45,10 +48,6 @@ import {
   type Campo,
 } from "./Partes";
 
-/** La marca de un hallazgo cargado (spec §15): lo hecho antes, en papel, no lleva firmas del sistema. */
-export const MARCA_DE_CARGA = "Cargado: tramitado antes fuera de la plataforma";
-
-const ETIQUETA_ORIGEN = new Map<string, string>(ORIGENES.map((o) => [o.clave, o.etiqueta]));
 const ESTADO_PLAN: Record<string, string> = { borrador: "plan en borrador", enviado: "plan enviado", aprobado: "plan aprobado" };
 
 /** Lo que recibe el SGC-FO-AC-01: el hallazgo como lo ve quien lo ve completo y lo que la página leyó aparte. */
@@ -61,7 +60,7 @@ export type DatosDelRegistro = {
   formato: EncabezadoDelFormato | null;
   /** Las firmas del hallazgo, en el orden en que se dieron (`firmasDeHallazgo`). */
   firmas: readonly FirmaDelHallazgo[];
-  /** Los seguimientos de cada actividad, por su id (`lecturaDelImpreso`). */
+  /** Los seguimientos de cada actividad, por su id (`seguimientosDelHallazgo`). */
   seguimientos: Readonly<Record<number, readonly SeguimientoDeActividad[]>>;
   /** Los líderes activos del proceso: el responsable del proceso. */
   lideres: readonly string[];
@@ -97,7 +96,7 @@ function Identificacion({ c, id }: { c: Contexto; id: string }) {
     h.criticidad ? { termino: "Criticidad", valor: ETIQUETA_CRITICIDAD[h.criticidad] } : null,
     { termino: "Proceso afectado", valor: h.proceso },
     { termino: "Responsable del proceso", valor: d.lideres.length > 0 ? d.lideres.join(", ") : "Sin líder activo" },
-    { termino: "Fuente", valor: [ETIQUETA_ORIGEN.get(h.origen) ?? h.origen, h.fuente].filter(Boolean).join(" · ") },
+    { termino: "Fuente", valor: [ETIQUETA_ORIGEN[h.origen] ?? h.origen, h.fuente].filter(Boolean).join(" · ") },
     h.referenciaCaso ? { termino: "Referencia del caso", valor: h.referenciaCaso } : null,
     { termino: "Fecha en que se detectó", valor: fechaDeDia(h.detectadoEn) },
     { termino: "Requisito incumplido", valor: h.requisitoClausula ?? "Sin registrar" },
@@ -212,16 +211,18 @@ function CausaRaiz({ c, id }: { c: Contexto; id: string }) {
   );
 }
 
-/** El estado de una actividad en texto (spec §10.2): «Vencida hace N días» o el guardado, con su verificación y «Reprogramada». */
+/**
+ * El estado de una actividad en texto (`estadoDeActividadEnTexto`, la regla del Excel): vencida solo con el plan aprobado, sin
+ * terminar ni cancelar y, en una carga, desde su formato firmado (`venceLaActividad`, que la lectura trae en `vence`).
+ */
 function estadoDeActividad(x: ActividadDeDetalle, hoy: string, entregada: boolean): string {
   const vencida = entregada && x.finOriginal !== null && estaAbierta(x.estado) && x.vence < hoy;
-  return [
-    vencida ? vencidaHace(x.vence, hoy) : (ETIQUETA_ESTADO_ACTIVIDAD[x.estado as EstadoActividad] ?? x.estado),
-    x.verificacion === "conforme" ? "Conforme" : x.verificacion === "devuelta" ? "Devuelta" : null,
-    x.reprogramaciones > 0 ? "Reprogramada" : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  return estadoDeActividadEnTexto({
+    estado: x.estado,
+    verificacion: x.verificacion,
+    reprogramada: x.reprogramaciones > 0,
+    vencida: vencida ? { vence: x.vence, hoy } : null,
+  });
 }
 
 function AjustesImpresos({ r, c }: { r: RondaDeDetalle; c: Contexto }) {
@@ -237,8 +238,8 @@ function AjustesImpresos({ r, c }: { r: RondaDeDetalle; c: Contexto }) {
             <tr key={x.id}>
               <td className={TD}>
                 {fraseDeAjusteDeDetalle(x, c.etiquetas, acciones)}
-                {lineasDeLoQueSeAnade(x, causas).map((linea) => (
-                  <span key={linea} className="block text-muted-foreground">
+                {lineasDeLoQueSeAnade(x, causas).map((linea, i) => (
+                  <span key={i} className="block text-muted-foreground">
                     {linea}
                   </span>
                 ))}
@@ -308,8 +309,8 @@ function Plan({ c, id }: { c: Contexto; id: string }) {
                             <td className={TD}>{ETIQUETA_TIPO_ACCION[a.tipo as TipoAccion] ?? a.tipo}</td>
                             <td className={TD}>{numeros.length > 0 ? numeros.join(", ") : "—"}</td>
                             <td className={TD}>{a.recursos ?? "—"}</td>
-                            <td className={TD}>{a.indicadorCumplimiento ?? "—"}</td>
-                            <td className={TD}>{a.meta ?? "—"}</td>
+                            <td className={TD}>{a.indicadorCumplimiento ? conPorcentajesUnidos(a.indicadorCumplimiento) : "—"}</td>
+                            <td className={TD}>{a.meta ? conPorcentajesUnidos(a.meta) : "—"}</td>
                           </tr>
                         );
                       })}
@@ -327,7 +328,7 @@ function Plan({ c, id }: { c: Contexto; id: string }) {
                           <td className={`${TD} whitespace-nowrap`}>{fechaDeDia(x.inicio)}</td>
                           <td className={`${TD} whitespace-nowrap`}>{x.finOriginal ? fechaDeDia(x.finOriginal) : "—"}</td>
                           <td className={`${TD} whitespace-nowrap`}>{fechaDeDia(x.fin)}</td>
-                          <td className={`${TD} text-right tabular-nums`}>{x.finOriginal ? `${x.avance} %` : "—"}</td>
+                          <td className={`${TD} text-right tabular-nums`}>{x.finOriginal ? porcentaje(x.avance) : "—"}</td>
                           <td className={TD}>{estadoDeActividad(x, hoy, d.hallazgo.cargaConfirmada)}</td>
                         </tr>
                       ))}
@@ -397,7 +398,7 @@ function Seguimiento({ c, id }: { c: Contexto; id: string }) {
                           <tr key={s.id}>
                             <td className={`${TD} whitespace-nowrap`}>{fechaDeDia(s.fecha)}</td>
                             <td className={`${TD} whitespace-pre-line`}>{s.realizado}</td>
-                            <td className={`${TD} text-right tabular-nums`}>{`${s.avance} %`}</td>
+                            <td className={`${TD} text-right tabular-nums`}>{porcentaje(s.avance)}</td>
                             <td className={`${TD} whitespace-pre-line`}>{s.barreras ?? "—"}</td>
                             <td className={TD}>{s.quien}</td>
                           </tr>
@@ -554,7 +555,7 @@ export function RegistroImpreso(d: DatosDelRegistro) {
         idTitulo={id("titulo")}
       />
       {h.cargado ? (
-        <p className="ficha-corto border-l-4 border-mod-planes bg-muted px-3 py-2 font-semibold">{MARCA_DE_CARGA}</p>
+        <MarcaDeCarga />
       ) : null}
       <Identificacion c={contexto} id={id("identificacion")} />
       <Correccion c={contexto} id={id("correccion")} />

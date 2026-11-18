@@ -1,4 +1,4 @@
-import { fechaDeDia, fechaLargaDeDia } from "./formato";
+import { fechaDeDia, fechaLargaDeDia, vencidaHace } from "./formato";
 import type { Clase, CriterioEficacia, Criticidad, EstadoActividad, EstadoAjuste, MetodoAnalisis, MetodoDeVerificacion, TipoAccion } from "./tipos";
 
 /**
@@ -86,6 +86,26 @@ export const ETIQUETA_ESTADO_ACTIVIDAD: Record<EstadoActividad, string> = {
   terminada: "Terminada",
   cancelada: "Cancelada",
 };
+
+/**
+ * El estado de una actividad en texto (spec §10.2): «Vencida hace N días» (sin terminar y con su fecha pasada: `vencida`, el día en
+ * que venció y el de hoy) o el guardado, con su verificación («Conforme», «Devuelta») y «Reprogramada». Una sola regla para el
+ * impreso y el Excel.
+ */
+export function estadoDeActividadEnTexto(a: {
+  estado: string;
+  verificacion: string | null;
+  reprogramada: boolean;
+  vencida: { vence: string; hoy: string } | null;
+}): string {
+  return [
+    a.vencida ? vencidaHace(a.vencida.vence, a.vencida.hoy) : (ETIQUETA_ESTADO_ACTIVIDAD[a.estado as EstadoActividad] ?? a.estado),
+    a.verificacion === "conforme" ? "Conforme" : a.verificacion === "devuelta" ? "Devuelta" : null,
+    a.reprogramada ? "Reprogramada" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 /** Una sola frase por regla (la del guardado y la de las faltas del plan). */
 export const inicioDespuesDelFin = (actividad: string) => `El inicio de la actividad ${actividad} no puede ser posterior a su fin`;

@@ -12,8 +12,10 @@ import {
   type ContenidoOtroMetodo,
   type ImpactoDeCausa,
 } from "@/lib/mejoramiento/analisis";
+import { ETIQUETA_METODO_ANALISIS } from "@/lib/mejoramiento/textos";
+import type { MetodoAnalisis } from "@/lib/mejoramiento/tipos";
 
-const METODO: Record<string, string> = { cinco_porques: "5 porqués", ishikawa: "Ishikawa (6M)", pareto: "Pareto", otro: "Otro método" };
+const metodo = (m: string) => ETIQUETA_METODO_ANALISIS[m as MetodoAnalisis] ?? m;
 
 type Analisis = RondaDeDetalle["analisis"][number];
 
@@ -133,8 +135,8 @@ export function AnalisisEnLectura({
       </summary>
       <div className="flex flex-col gap-4 border-t border-linea-suave px-4 py-3">
         {ronda.analisis.map((a) => (
-          <section key={a.id} aria-label={`Análisis: ${METODO[a.metodo] ?? a.metodo}`} className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">{METODO[a.metodo] ?? a.metodo}</h3>
+          <section key={a.id} aria-label={`Análisis: ${metodo(a.metodo)}`} className="flex flex-col gap-2">
+            <h3 className="text-sm font-semibold">{metodo(a.metodo)}</h3>
             {a.equipo ? <p className="break-words text-xs text-muted-foreground">Equipo: {a.equipo}</p> : null}
             <ContenidoDe a={a} />
             {a.observaciones ? <p className="whitespace-pre-line break-words text-sm">Observaciones: {a.observaciones}</p> : null}

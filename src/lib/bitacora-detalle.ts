@@ -2,7 +2,7 @@ import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { periodosDeDatos } from "@/lib/indicadores/cierre";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "@/lib/indicadores/filtros";
 import { ESTADOS_ESPECIALES, etiquetaDelFiltroDeEstado } from "@/lib/mejoramiento/filtro";
-import { ORIGENES } from "@/lib/mejoramiento/origenes";
+import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
 import { ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
 import { ESTADOS_HALLAZGO, type AccionHallazgo } from "@/lib/mejoramiento/tipos";
 import { ETIQUETA_ESTADO_NORMA, ETIQUETA_RELACION } from "@/lib/normograma/tipos";
@@ -251,7 +251,6 @@ function filtrosDeLista(v: unknown): (string | null)[] {
   ];
 }
 
-const ETIQUETA_ORIGEN_DE_MEJORA: Record<string, string> = Object.fromEntries(ORIGENES.map((o) => [o.clave, o.etiqueta]));
 const ESTADOS_DEL_FILTRO: readonly string[] = [...ESTADOS_HALLAZGO, ...ESTADOS_ESPECIALES];
 
 /**
@@ -265,7 +264,7 @@ function filtrosDeMejora(v: unknown): (string | null)[] {
     const t = etiquetaTal(mapa, valor);
     return t ? minuscula(t) : null;
   };
-  const origen = de(ETIQUETA_ORIGEN_DE_MEJORA, f.origen);
+  const origen = de(ETIQUETA_ORIGEN, f.origen);
   const clase = de(ETIQUETA_CLASE, f.clase);
   const criticidad = de(ETIQUETA_CRITICIDAD, f.criticidad);
   const estado = texto(f.estado);
