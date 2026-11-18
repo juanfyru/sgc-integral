@@ -30,6 +30,14 @@ vi.mock("next/server", async (original) => ({ ...(await original<typeof import("
 vi.mock("@/lib/vencimientos-disparo", () => ({ dispararRevisionDeVencimientos: vi.fn() }));
 // La marca va en caché por petición: no es del cascarón de esta tarea.
 vi.mock("@/db/consultas/entidad", () => ({ obtenerMarcaSegura: async () => ({ nombre: "Entidad", sigla: "E", logo: null }) }));
+// Las tareas de mejoramiento (Fase 15A) resuelven el turno hallazgo por hallazgo (Tarea 19: aceptado, para la revisión final),
+// así que lo que cuestan depende de cuántos hallazgos abiertos hay en la base, y la demo trae catorce: aquí solo se cuenta que el
+// cascarón las pide una vez por render. Sus tareas las prueba `tests/mejora-tareas.test.ts`.
+const mejoramiento = vi.hoisted(() => ({ tareasDeMejoramiento: vi.fn(async () => ({ tareas: [] })) }));
+vi.mock("@/db/consultas/mejoramiento/tareas", async (original) => ({
+  ...(await original<typeof import("@/db/consultas/mejoramiento/tareas")>()),
+  tareasDeMejoramiento: mejoramiento.tareasDeMejoramiento,
+}));
 
 import { Cascaron } from "@/componentes/cascaron/Cascaron";
 import { obtenerSql } from "@/db/cliente";
@@ -168,7 +176,9 @@ describe("el costo del cascarón por render", () => {
           }
         > = {};
         for (const [nombre, sesion] of casos) {
+          mejoramiento.tareasDeMejoramiento.mockClear();
           const s = await sentenciasDelCascaron(tx, sesion);
+          expect(mejoramiento.tareasDeMejoramiento, nombre).toHaveBeenCalledTimes(1);
           cuentas[nombre] = {
             total: s.length,
             vigencia: deVigencia(s),

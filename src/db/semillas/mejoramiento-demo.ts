@@ -584,7 +584,11 @@ async function enEspera(s: Siembra): Promise<void> {
   await verificar(s, h, [confirmar, publicar], { dias: 18, nota: "Se revisaron los registros de confirmación y la agenda de tres días." });
 }
 
-/** «Por evaluar la eficacia»: una observación de Atención Inmediata con `AIN-IND-01` enlazado y la fecha de evaluación ya cumplida. */
+/**
+ * «Por evaluar la eficacia»: una observación de Atención Inmediata con `AIN-IND-01` enlazado y la fecha de evaluación ya cumplida.
+ * Su actividad termina 64 días antes de la siembra: así el mes siguiente al de R ya terminó y la pantalla de evaluar muestra el
+ * indicador antes, durante y después del plan, sea el día que sea.
+ */
 async function porEvaluar(s: Siembra): Promise<void> {
   const { id: h } = await registrarHallazgo(
     s.s.coordinadora,
@@ -613,7 +617,7 @@ async function porEvaluar(s: Siembra): Promise<void> {
           descripcion: "Reorganizar la clasificación de triage en el turno de la noche",
           causas: [],
           actividades: [
-            { descripcion: "Asignar una enfermera de clasificación exclusiva para el turno de la noche", responsable: s.s.jefeUrgencias, inicio: 70, fin: 40 },
+            { descripcion: "Asignar una enfermera de clasificación exclusiva para el turno de la noche", responsable: s.s.jefeUrgencias, inicio: 70, fin: 64 },
           ],
         },
       ],
@@ -626,16 +630,16 @@ async function porEvaluar(s: Siembra): Promise<void> {
   await enviarPlan(s.s.coordinadora, { hallazgoId: h, credenciales: FIRMA }, en(s, hace(s, 72)));
   await aprobarPlan(s.s.gerente, { hallazgoId: h, credenciales: FIRMA }, en(s, hace(s, 71)));
   await seguir(s, clasificacion, s.s.jefeUrgencias, {
-    dias: 55,
+    dias: 68,
     realizado: "Se ajustó el cuadro de turnos: la clasificación de la noche quedó a cargo de una enfermera exclusiva.",
     avance: 50,
   });
   await terminar(s, clasificacion, s.s.jefeUrgencias, {
-    dias: 41,
-    realizado: "Se cumplió un mes completo con la enfermera de clasificación exclusiva en la noche.",
+    dias: 64,
+    realizado: "La enfermera de clasificación exclusiva quedó fija en el cuadro de turnos de la noche.",
     evidencia: "Cuadro de turnos de urgencias",
   });
-  await verificar(s, h, [clasificacion], { dias: 36, nota: "Se revisó el cuadro de turnos y se observó la clasificación en una noche." });
+  await verificar(s, h, [clasificacion], { dias: 60, nota: "Se revisó el cuadro de turnos y se observó la clasificación en una noche." });
 }
 
 /**

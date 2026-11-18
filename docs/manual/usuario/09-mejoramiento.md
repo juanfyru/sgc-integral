@@ -176,7 +176,7 @@ salidas:
 
 Nada se borra: el reporte queda con su clasificación y su historia.
 
-## 3. Registrar un hallazgo
+## 3. Registrar un hallazgo (clases, orígenes, parecidos y reincidencia)
 
 Registran el Administrador del SGC, Control Interno y los líderes (estos, solo en sus procesos).
 **Mejoramiento** → **Registrar hallazgo**.
@@ -266,7 +266,7 @@ vuelve a pasar después del cierre no es una ocurrencia: es un hallazgo reincide
   un hallazgo que el ente retiró. Queda **Anulado**, con su código y su historia, y no cuenta en
   ningún cálculo.
 
-## 4. El recorrido, paso a paso
+## 4. El recorrido, paso a paso, y qué formato del hospital reemplaza cada pantalla
 
 ### 4.1 Los pasos y quién tiene el turno
 
@@ -323,7 +323,7 @@ Comité. Es definitivo.
 El Pareto (SGC-FO-AC-04), el plan consolidado por proceso (SGC-FO-14) y el informe trimestral
 (SGC-FO-28) llegan con las entregas siguientes de esta fase.
 
-## 5. La corrección y el camino corto
+## 5. La corrección y el camino corto (incluido «Cerrado sin acción»)
 
 ### 5.1 Registrar la corrección
 

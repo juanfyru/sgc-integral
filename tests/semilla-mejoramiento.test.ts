@@ -21,12 +21,14 @@ import { evaluableDesde, fechaMinimaDe } from "@/db/consultas/mejoramiento/esper
 import { hallazgoBase } from "@/db/consultas/mejoramiento/flujo";
 import { venceLaActividad } from "@/db/consultas/mejoramiento/vence-actividad";
 import { revisarVencimientosDeMejoramiento } from "@/db/consultas/mejoramiento/vencimientos";
+import { datosDeEvaluacion } from "@/db/consultas/mejoramiento/verificacion";
 import { DIA_NO_HABIL_DE_EJEMPLO, HALLAZGOS_DE_LA_DEMO, REPORTES_DE_LA_DEMO } from "@/db/semillas/mejoramiento-demo";
 import { diasHabilesEntre } from "@/lib/dias-habiles";
 import { etiquetaDeEstado, marcasDeHallazgo } from "@/lib/mejoramiento/estados";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirDemo, sembradaEn } from "./utiles/demo";
+import { sesionDe } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -162,12 +164,18 @@ describe("los planes de mejoramiento de la demo", () => {
 
   it("el «Por evaluar» ya llegó a su fecha mínima y el «En espera», con CEX-ID-001, todavía no", async (ctx) => {
     await exigirMejoramiento(ctx);
-    const hoy = fechaEnZona(await sembradaEn(sql), ZONA);
-    const porEvaluar = await fechaMinimaDe(sql, Number((await hallazgo("porEvaluar")).id), ZONA);
+    const t = await sembradaEn(sql);
+    const hoy = fechaEnZona(t, ZONA);
+    const porEvaluarId = Number((await hallazgo("porEvaluar")).id);
+    const porEvaluar = await fechaMinimaDe(sql, porEvaluarId, ZONA);
     const enEspera = await fechaMinimaDe(sql, Number((await hallazgo("enEspera")).id), ZONA);
     expect(porEvaluar!.minima <= hoy).toBe(true);
     expect(enEspera!.minima > hoy).toBe(true);
     expect(enEspera!.indicador).toMatchObject({ codigo: "CEX-ID-001", periodicidad: "mensual" });
+    // Lo que la pantalla de evaluar muestra del «Por evaluar» (spec §11.4): AIN-IND-01 antes, durante y después del plan.
+    const datos = await datosDeEvaluacion(await sesionDe(sql, "control.interno"), porEvaluarId, { sql, ahora: t });
+    expect(datos.indicador?.codigo).toBe("AIN-IND-01");
+    expect(new Set(datos.indicador!.filas.map((f) => f.momento))).toEqual(new Set(["antes", "durante", "despues"]));
   });
 
   it("el cargado tiene su escaneo y ninguna firma del plan", async (ctx) => {

@@ -46,7 +46,7 @@
    migración, la `0018`; diecinueve en total. Detalle en «Hecho (Fase 15A)»; el recorrido, en «Qué probar y cómo (Fase
    15A)»; las decisiones, en «Decisiones adicionales (Fase 15A)»; el manual, en el capítulo 9. **Falta:** la verificación
    de cierre (la suite con la demo recién sembrada, lint, build, la `0018` sobre una copia de `sgc` y el recorrido en el
-   navegador; la hace quien coordina la ejecución), la revisión de toda la rama, el visto bueno del usuario a las 36
+   navegador; la hace quien coordina la ejecución), la revisión de toda la rama, el visto bueno del usuario a las 38
    decisiones de la ejecución y su recorrido, y después su decisión de fusionar; al fusionar, aplicar la `0018` a la base
    `sgc` («Avisos para el usuario (Fase 15A)»). La 15B y la 15C esperan su anexo (la 15B, además, la plantilla del ente).
    **Antes:** la **Fase 15 — Planes de mejoramiento** tuvo su **diseño aprobado por el usuario el 2026-11-17**
@@ -491,8 +491,10 @@ navegador durante la construcción (el registro de la ejecución, `progress.md` 
   completa que cuentan totales (`tests/indicadores-vencimientos.test.ts`, `tests/vigencia-vencimientos.test.ts`,
   `tests/semilla-tramites.test.ts`; `tests/vencimientos.test.ts` ya lo tenía), y una aserción de
   `tests/mejora-vencimientos.test.ts` que con los ids bajos de una base recién sembrada fallaba por azar (buscaba la cifra
-  suelta del id del reporte en «hace 10 días» y en «Prueba 48»). El capítulo 9 del manual
-  (`docs/manual/usuario/09-mejoramiento.md`), `AGENTS.md` y este archivo.
+  suelta del id del reporte en «hace 10 días» y en «Prueba 48»). `tests/cascaron-consultas.test.ts` contaba desde la Tarea
+  19 una sentencia de más para todos (las actividades de mejoramiento de «Mis tareas») y, con la demo, las del turno de cada
+  hallazgo abierto: ahora deja fuera las tareas de mejoramiento (las simula) y comprueba que el cascarón las pide una vez por
+  render. El capítulo 9 del manual (`docs/manual/usuario/09-mejoramiento.md`), `AGENTS.md` y este archivo.
 
 ### Qué probar y cómo (Fase 15A)
 
@@ -608,7 +610,7 @@ hallazgos ya sembrados.
 
 ### Decisiones adicionales (Fase 15A)
 
-Las tomó quien coordinó la ejecución cuando el spec o el plan callaban o un revisor halló un defecto; las 35 y 36, quien
+Las tomó quien coordinó la ejecución cuando el spec o el plan callaban o un revisor halló un defecto; las 37 y 38, quien
 implementó la demo. Cada una dice qué se decidió y por qué, con su base. El detalle está en el registro de la ejecución
 (`progress.md` del espacio de trabajo, líneas «Ruling»). Lo que ya dice el spec no se repite.
 
@@ -707,13 +709,21 @@ implementó la demo. Cada una dice qué se decidió y por qué, con su base. El 
     «Código del hallazgo» (§16.3: una fila por actividad); el encabezado del formato muestra el código, la versión y la fecha
     de su versión vigente sin mirar su nivel de acceso (es la plantilla que el Admin SGC eligió); la hoja de un análisis de un
     hallazgo cargado lleva la marca «Cargado…» (la hoja viaja sola); la cifra y el «%» van con espacio duro. Práctica.
-35. **El «Por formular» de la demo que vence pronto** se registra ocho días hábiles atrás contando hoy si es hábil (nueve si
+35. **Un hallazgo externo avisa a toda Gerencia y a todo Admin SGC activos** (`mejora.externo`), salvo a quien lo registró,
+    aunque también reciban el aviso de turno: son dos avisos distintos, y en la Fase 16 el del externo sale además de
+    inmediato por correo (§14.2). Práctica.
+36. **Una sola regla de actividad vencida** (`venceLaActividad`: la fecha para corregir si la verificación la devolvió y, si
+    no, su fin vigente) en «Mis tareas», «Mis actividades», la página de la actividad y la del hallazgo, «Con algo vencido»,
+    la pasada de vencimientos y «Escalar a Gerencia». Cada superficie tenía su cuenta y una persona veía dos respuestas,
+    también para escalar. Práctica.
+37. **El «Por formular» de la demo que vence pronto** se registra ocho días hábiles atrás contando hoy si es hábil (nueve si
     la siembra cae en un día no hábil), con el calendario de la entidad: así le quedan dos de sus diez, sea el día que sea.
     Contado siempre ocho, en un fin de semana le quedaban tres. Práctica.
-36. **El «Por evaluar la eficacia» de la demo es una observación** con `AIN-IND-01` enlazado: su fecha mínima es la fecha de
+38. **El «Por evaluar la eficacia» de la demo es una observación** con `AIN-IND-01` enlazado: su fecha mínima es la fecha de
     evaluación del plan (dos días antes de la siembra), así que la evaluación nunca amanece vencida, el día que se siembre.
-    Una no conformidad con indicador mensual habría tenido que terminar tres meses antes y, según el día, vencía. El día no
-    hábil de ejemplo es el primer día hábil desde tres semanas después de la siembra. Práctica.
+    Una no conformidad con indicador mensual habría tenido que terminar tres meses antes y, según el día, vencía. Su
+    actividad termina 64 días antes de la siembra, para que la evaluación muestre el indicador antes, durante y después del
+    plan. El día no hábil de ejemplo es el primer día hábil desde tres semanas después de la siembra. Práctica.
 
 ### Deuda técnica (Fase 15A)
 
@@ -739,6 +749,9 @@ carpeta es de `src/db/consultas/mejoramiento/`):
   `import()`; la del tope simultáneo de archivos depende de una espera de 300 ms.
 - La demo no deja leídos los avisos de lo que la historia sembrada ya resolvió (la de indicadores sí): la campana de los
   usuarios de la demo trae los avisos de turno de cada paso sembrado.
+- Lo que cuestan las tareas de mejoramiento en el cascarón crece con los hallazgos abiertos de quien tiene un turno por rol
+  (el turno se resuelve hallazgo por hallazgo, decisión 30): con la demo, unas diez sentencias más por render para un Admin
+  SGC o Gerencia. `tests/cascaron-consultas.test.ts` las deja fuera; queda para la revisión final.
 
 ## Complemento de la 14C — El punto de miles, el soporte obligatorio con su fecha y el periodo de un dato sin categorías
 
