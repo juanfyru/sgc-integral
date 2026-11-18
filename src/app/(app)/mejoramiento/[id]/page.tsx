@@ -282,6 +282,11 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
         pedidoEn={fechaDeDia(fechaEnZona(x.pedidoEn, zona))}
         vence={x.venceEn ? fechaDeDia(fechaEnZona(x.venceEn, zona)) : null}
         hoy={hoy}
+        confirmar={
+          x.tipo === "cancelar"
+            ? `Al aprobarlo, la actividad ${x.actividadId !== null ? (etiquetas[x.actividadId] ?? "") : ""} queda «Cancelada» y no se puede deshacer.`
+            : null
+        }
         accion={comoGerencia ? decidirAjusteGerenciaAccion : decidirAjusteAccion}
       />
     ));

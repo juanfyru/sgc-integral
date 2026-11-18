@@ -1297,6 +1297,25 @@ describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => 
     expect(html.split('name="ajusteId" value="9"').length - 1).toBe(2);
     expect(html.split('name="actaNumero"').length - 1).toBe(2);
     expect(aviso(html)).toBe(2);
+    expect(html).not.toContain("Sí, aprobarlo");
+    // Aprobar una cancelación no se deshace: se confirma en un diálogo.
+    const cancelacion = renderToStaticMarkup(
+      <PasoDecidirAjuste
+        ajusteId={10}
+        frase="Cancelar la actividad A1.1."
+        causa="Ya no hace falta pedir el cambio documental."
+        pedidoPor="L. Rojas"
+        pedidoEn="18 nov 2026"
+        vence={null}
+        hoy="2026-11-18"
+        confirmar="Al aprobarlo, la actividad A1.1 queda «Cancelada» y no se puede deshacer."
+        accion={accion}
+      />,
+    );
+    expect(cancelacion).toContain('aria-haspopup="dialog"');
+    expect(cancelacion).toContain("<dialog");
+    expect(cancelacion).toContain("Al aprobarlo, la actividad A1.1 queda «Cancelada» y no se puede deshacer.");
+    expect(cancelacion).toContain("Sí, aprobarlo");
   });
 
   it("«Ajustes del plan»: qué se pidió, por qué, quién lo pidió y quién lo decidió, con su nota y su acta", () => {

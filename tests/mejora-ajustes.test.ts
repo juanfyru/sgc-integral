@@ -21,6 +21,13 @@ import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, NO_EXISTE } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { participacionEnHallazgo } from "@/lib/alcance";
+import {
+  EsquemaDecidirAjuste,
+  EsquemaFormularioAjuste,
+  EsquemaFormularioDecidirAjuste,
+  EsquemaPedirAjuste,
+} from "@/lib/esquemas/mejoramiento";
+import { parsearFormulario } from "@/lib/validacion";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import type { Criticidad } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -94,6 +101,79 @@ async function terminar(tx: TransactionSql, quien: SesionFlujo, actividadId: num
   await evidenciaDeActividad(tx, actividadId, quien.usuarioId);
   await terminarActividad(quien, { actividadId }, c(AHORA, tx));
 }
+
+describe("lo que manda el formulario llega a la forma del dominio (sin base)", () => {
+  const formulario = (campos: Array<[string, string]>) => {
+    const f = new FormData();
+    for (const [k, v] of campos) f.append(k, v);
+    return f;
+  };
+  const pedido = (campos: Array<[string, string]>) => EsquemaPedirAjuste.parse(parsearFormulario(formulario(campos), EsquemaFormularioAjuste));
+  const nueva: Array<[string, string]> = [
+    ["descripcion", "Capacitar al turno de noche"],
+    ["responsableId", "9"],
+    ["inicio", HOY],
+    ["fin", "2026-12-30"],
+    ["causa", CAUSA],
+  ];
+
+  it("reprogramar y cancelar: la actividad (y la fecha nueva), sin actividad nueva", () => {
+    expect(pedido([["hallazgoId", "14"], ["tipo", "reprogramar"], ["actividadId", "22"], ["finNuevo", "2026-12-30"], ["causa", CAUSA]])).toEqual({
+      hallazgoId: 14,
+      tipo: "reprogramar",
+      actividadId: 22,
+      finNuevo: "2026-12-30",
+      nueva: null,
+      causa: CAUSA,
+    });
+    expect(pedido([["hallazgoId", "14"], ["tipo", "cancelar"], ["actividadId", "22"], ["causa", CAUSA]])).toEqual({
+      hallazgoId: 14,
+      tipo: "cancelar",
+      actividadId: 22,
+      finNuevo: null,
+      nueva: null,
+      causa: CAUSA,
+    });
+  });
+
+  it("añadir: en una acción del plan, o en una nueva con una causa o con varias", () => {
+    expect(pedido([["hallazgoId", "14"], ["tipo", "agregar"], ["accionId", "5"], ...nueva]).nueva).toEqual({
+      accionId: 5,
+      accion: null,
+      descripcion: "Capacitar al turno de noche",
+      responsableId: 9,
+      inicio: HOY,
+      fin: "2026-12-30",
+    });
+    const enUnaNueva = (causas: string[]) =>
+      pedido([
+        ["hallazgoId", "14"],
+        ["tipo", "agregar"],
+        ["accionId", "nueva"],
+        ["accionTipo", "correctiva"],
+        ["accionDescripcion", "Instalar un termómetro con registro automático"],
+        ...causas.map((c): [string, string] => ["causaIds", c]),
+        ...nueva,
+      ]).nueva;
+    expect(enUnaNueva(["3"])).toMatchObject({
+      accionId: null,
+      accion: { tipo: "correctiva", descripcion: "Instalar un termómetro con registro automático", causaIds: [3] },
+    });
+    expect(enUnaNueva(["3", "4"])?.accion?.causaIds).toEqual([3, 4]);
+    // Un campo que el formulario no tiene lo rechaza el esquema estricto.
+    expect(() => parsearFormulario(formulario([["hallazgoId", "14"], ["tipo", "agregar"], ["otro", "x"]]), EsquemaFormularioAjuste)).toThrow();
+  });
+
+  it("decidir: «si» o «no», la nota y el acta en dos campos", () => {
+    const negar = parsearFormulario(
+      formulario([["ajusteId", "9"], ["aprueba", "no"], ["nota", NOTA], ["actaNumero", "07-2026"], ["actaFecha", "2026-12-15"]]),
+      EsquemaFormularioDecidirAjuste,
+    );
+    expect(EsquemaDecidirAjuste.parse(negar)).toEqual({ ajusteId: 9, aprueba: false, nota: NOTA, acta: { numero: "07-2026", fecha: "2026-12-15" } });
+    const aprobar = parsearFormulario(formulario([["ajusteId", "9"], ["aprueba", "si"]]), EsquemaFormularioDecidirAjuste);
+    expect(EsquemaDecidirAjuste.parse(aprobar)).toEqual({ ajusteId: 9, aprueba: true, nota: null, acta: null });
+  });
+});
 
 describe("pedirAjuste", () => {
   it("quién pide: el responsable reprograma la suya y no la de otro, ni añade ni cancela; un líder y el Admin SGC, los tres tipos", () =>
