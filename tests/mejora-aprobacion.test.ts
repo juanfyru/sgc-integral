@@ -21,6 +21,7 @@ import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import type { TipoAccion } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { baseDeMejora, c, hallazgoEn, planDePrueba, type BaseDeMejora } from "./utiles/mejoramiento";
+import { indicadorDePrueba } from "./utiles/indicadores";
 import { procesoNuevo } from "./utiles/mixto";
 import { usuarioDePrueba } from "./utiles/tramites";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -223,6 +224,69 @@ describe("devolverPlan", () => {
     }));
 });
 
+describe("revisar y aprobar firman el envío exacto, con la clave buena", () => {
+  it("devuelto y reenviado sin cambios entre el validador y la transacción de la revisión: YA_CAMBIO, aunque la huella sea la misma", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_revision");
+      const conReenvio: Verificador = async (sesion, credenciales, contexto, ahora) => {
+        await devolverPlan(b.admin, { hallazgoId: h.id, observaciones: "Lo devuelvo y se reenvía igual" }, c(AHORA, tx));
+        await enviarPlan(b.lider, { hallazgoId: h.id, credenciales: CLAVE }, c(AHORA, tx));
+        return firmaDePrueba(sesion, credenciales, contexto, ahora);
+      };
+      await expect(
+        firmarRevision(b.admin, { hallazgoId: h.id, requiereRecursos: false, credenciales: CLAVE }, { ...c(AHORA, tx), verificar: conReenvio }),
+      ).rejects.toThrow(YA_CAMBIO);
+      const firmas = await firmasDe(tx, h.id);
+      expect(firmas.map((f) => f.firma)).toEqual(["elaboro", "elaboro"]);
+      expect(firmas[1].hash_sha256).toBe(firmas[0].hash_sha256);
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_revision");
+    }));
+
+  it("la clave equivocada tampoco escribe nada al revisar ni al aprobar", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_revision", { criticidad: "alta" });
+      const mala = { clave: "mala" };
+      await expect(
+        firmarRevision(b.admin, { hallazgoId: h.id, requiereRecursos: true, notaRecursos: "Un registrador", credenciales: mala }, c(AHORA, tx)),
+      ).rejects.toBeInstanceOf(ErrorFirma);
+      expect((await firmasDe(tx, h.id)).map((f) => f.firma)).toEqual(["elaboro"]);
+      expect(await eventosDe(tx, h.id, "revisar_plan")).toHaveLength(0);
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_revision");
+      expect(await rondaDe(tx, h.id)).toMatchObject({ revisado_por: null, requiere_recursos: false, nota_recursos: null });
+
+      await firmarRevision(b.admin, { hallazgoId: h.id, requiereRecursos: false, credenciales: CLAVE }, c(AHORA, tx));
+      await expect(aprobarPlan(b.gerencia, { hallazgoId: h.id, credenciales: mala }, c(LUEGO, tx))).rejects.toBeInstanceOf(ErrorFirma);
+      expect((await firmasDe(tx, h.id)).map((f) => f.firma)).toEqual(["elaboro", "reviso"]);
+      expect(await eventosDe(tx, h.id, "aprobar_plan")).toHaveLength(0);
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_aprobacion");
+      expect(await rondaDe(tx, h.id)).toMatchObject({ estado_plan: "enviado", aprobado_por: null, cierre_previsto: null });
+      expect(await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id} AND fin_original IS NOT NULL`).toHaveLength(0);
+      expect(await tx`SELECT id FROM notificaciones WHERE tipo = 'mejora.actividad_asignada' AND usuario_id = ${b.lider.usuarioId}`).toHaveLength(0);
+    }));
+
+  it("revisar y aprobar toman a los responsables FOR SHARE: otra conexión no los desactiva mientras tanto", async () => {
+    // Un usuario ya confirmado en la base: otra conexión solo ve los candados sobre filas confirmadas.
+    const [real] = await sql`SELECT id FROM usuarios WHERE activo ORDER BY id LIMIT 1`;
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { criticidad: "alta" });
+      await planDePrueba(tx, b, h.id, { responsableId: Number(real.id) });
+      await enviarPlan(b.lider, { hallazgoId: h.id, credenciales: CLAVE }, c(AHORA, tx));
+      await firmarRevision(b.admin, { hallazgoId: h.id, requiereRecursos: false, credenciales: CLAVE }, c(AHORA, tx));
+      await aprobarPlan(b.gerencia, { hallazgoId: h.id, credenciales: CLAVE }, c(LUEGO, tx));
+      // Las llaves foráneas solo lo toman `FOR KEY SHARE`, que no impide cambiar `activo`; `FOR SHARE` sí.
+      const desactivar = sql.begin(async (otra) => {
+        await otra`SET LOCAL lock_timeout = '300ms'`;
+        await otra`UPDATE usuarios SET activo = activo WHERE id = ${real.id}`;
+        throw new Error("Se pudo cambiar al responsable: no estaba tomado");
+      });
+      await expect(desactivar).rejects.toMatchObject({ code: "55P03" });
+    });
+  });
+});
+
 describe("las cuatro condiciones de Gerencia", () => {
   const revisar = (tx: TransactionSql, b: BaseDeMejora, hallazgoId: number, requiereRecursos = false, notaRecursos: string | null = null) =>
     firmarRevision(b.admin, { hallazgoId, requiereRecursos, notaRecursos, credenciales: CLAVE }, c(AHORA, tx));
@@ -284,6 +348,28 @@ describe("las cuatro condiciones de Gerencia", () => {
       expect(bitacora.detalle).not.toHaveProperty("plan");
       const sinFin = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id} AND fin_original IS DISTINCT FROM fin`;
       expect(sinFin).toHaveLength(0);
+      // Un solo aviso por actividad: el de la actividad reemplaza el de turno «Ejecutar las actividades…».
+      const avisos = await tx`SELECT tipo FROM notificaciones WHERE usuario_id = ${b.lider.usuarioId}
+        AND (tipo = 'mejora.actividad_asignada' OR (tipo = 'mejora.turno' AND titulo LIKE 'Ejecutar las actividades%'))`;
+      expect(avisos.map((a) => a.tipo)).toEqual(["mejora.actividad_asignada"]);
+    }));
+
+  it("con indicador enlazado, el cierre previsto cuenta sus periodos y su plazo de reporte", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, periodicidad: "mensual" });
+      const h = await hallazgoEn(tx, b, "por_formular");
+      await planDePrueba(tx, b, h.id, { indicadorId: ind.id, fin: "2026-12-11" });
+      await enviarPlan(b.lider, { hallazgoId: h.id, credenciales: CLAVE }, c(AHORA, tx));
+      await revisar(tx, b, h.id);
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_ejecucion");
+      const [i] = await tx`SELECT plazo_reporte_dias FROM indicadores WHERE id = ${ind.id}`;
+      const ctx = await contextoDeMejora(tx, new Date(AHORA));
+      const base = { clase: "no_conformidad" as const, finPlaneado: "2026-12-11", fechaEvaluacion: null };
+      const conIndicador = cierrePrevisto({ ...base, periodicidad: "mensual", plazoReporteDias: Number(i.plazo_reporte_dias) }, ctx);
+      const sinIndicador = cierrePrevisto({ ...base, periodicidad: null, plazoReporteDias: null }, ctx);
+      expect(conIndicador.getTime()).not.toBe(sinIndicador.getTime());
+      expect(((await rondaDe(tx, h.id)).cierre_previsto as Date).toISOString()).toBe(conIndicador.toISOString());
     }));
 });
 
@@ -318,6 +404,33 @@ describe("cuando elabora un Admin SGC (proceso sin líder)", () => {
       expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_aprobacion");
       const leido = await leerHallazgo(otro, h.id, { sql: tx });
       expect(leido?.rondas[0]).toMatchObject({ elaboroAdmin: true, requiereRecursos: false });
+    }));
+
+  it("sin otro Admin SGC que revise, quien elaboró lo devuelve y, al reenviarlo, pasa a Gerencia; con otro activo, no lo devuelve", () =>
+    revertida(sql, async (tx) => {
+      const { b, h } = await sinLider(tx);
+      await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      await enviarPlan(b.admin, { hallazgoId: h.id, credenciales: CLAVE }, c(AHORA, tx));
+      const obs = { hallazgoId: h.id, observaciones: "No hay quien lo revise: lo reenvío para que lo apruebe Gerencia" };
+      await expect(devolverPlan(b.admin, obs, c(LUEGO, tx))).rejects.toBeInstanceOf(ErrorPermiso);
+
+      // Los demás Admin SGC dejan de estar activos: el turno es de quien lo elaboró, para devolverlo y reenviarlo.
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND id <> ${b.admin.usuarioId}`;
+      expect(await quienTieneElTurno(tx, await bloquearHallazgo(tx, h.id))).toEqual([b.admin.usuarioId]);
+      const suyo = await leerHallazgo(b.admin, h.id, { sql: tx });
+      expect(suyo?.turno).toBe("Quien lo elaboró");
+      expect(suyo?.loQueSigue.turno).toBe("A usted le toca devolverlo y reenviarlo: no hay otro Administrador del SGC activo que lo revise.");
+      expect((await leerHallazgo(b.gerencia, h.id, { sql: tx }))?.loQueSigue.turno).toBe(
+        "Tiene el turno: quien lo elaboró, para devolverlo y reenviarlo: no hay otro Administrador del SGC activo que lo revise.",
+      );
+      // Devolver sí; firmar la revisión de lo que elaboró, nunca.
+      await expect(
+        firmarRevision(b.admin, { hallazgoId: h.id, requiereRecursos: false, credenciales: CLAVE }, c(LUEGO, tx)),
+      ).rejects.toBeInstanceOf(ErrorPermiso);
+      await devolverPlan(b.admin, obs, c(LUEGO, tx));
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("por_formular");
+      await enviarPlan(b.admin, { hallazgoId: h.id, credenciales: CLAVE }, c(DESPUES, tx));
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_aprobacion");
     }));
 
   it("en la lista, «espera su decisión» de revisar cada plan según quién lo elaboró, no el primero que se resolvió", () =>
@@ -387,10 +500,11 @@ describe("aprobarPlan", () => {
       expect(bitacora.detalle).toMatchObject({ codigo: h.codigo, ronda: 1, huella: firmas[0].hash_sha256 });
       expect(bitacora.detalle).not.toHaveProperty("plan");
 
-      // Un aviso por actividad a su responsable, sin el contenido del hallazgo.
+      // Un aviso por actividad a su responsable, sin el contenido del hallazgo, y ningún aviso de turno de la aprobación.
       const avisos = await tx`SELECT titulo, cuerpo, entidad, entidad_id, enlace FROM notificaciones
         WHERE usuario_id = ${responsable.usuarioId} AND tipo = 'mejora.actividad_asignada' ORDER BY entidad_id`;
       expect(avisos).toHaveLength(2);
+      expect(await tx`SELECT id FROM notificaciones WHERE usuario_id = ${responsable.usuarioId} AND tipo = 'mejora.turno'`).toHaveLength(0);
       expect(avisos.map((a) => Number(a.entidad_id))).toEqual(actividades.map((a) => Number(a.id)));
       for (const a of avisos) {
         expect(a).toMatchObject({ titulo: "Tiene una actividad a su cargo", entidad: "mejora_actividad" });

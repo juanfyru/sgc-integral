@@ -893,6 +893,10 @@ describe("las firmas del plan (maqueta 5)", () => {
     expect(html).toContain("<p>Los parecidos</p>");
     expect(html).toMatch(/<input[^>]*type="checkbox"/);
     expect(html).toContain("Requiere recursos adicionales o tiene impacto institucional");
+    // Sin la casilla, la nota no se edita y su rótulo dice que se usa solo con ella.
+    expect(html).toMatch(/<textarea(?=[^>]*name="notaRecursos")(?=[^>]*disabled="")/);
+    expect(html).toContain("se usa solo si marca la casilla");
+    expect(html).not.toContain("opacity");
     // La nota de los recursos y las observaciones de la devolución: dos textos libres.
     expect(aviso(html)).toBe(2);
     expect(html).toContain("Devolver con observaciones");

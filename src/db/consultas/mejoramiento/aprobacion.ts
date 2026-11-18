@@ -10,7 +10,8 @@
  * el evento que deja el plan aprobado lleva ese mismo plan y esa misma huella. Entre el envío y la aprobación el plan no se
  * edita: `exigirBorrador` (`analisis.ts`) solo deja escribir con el plan en borrador.
  *
- * Orden de candados: el hallazgo `FOR UPDATE` (`bloquearHallazgo`), después la ronda en curso y después sus actividades.
+ * Orden de candados: el hallazgo `FOR UPDATE` (`bloquearHallazgo`), después la ronda en curso y sus actividades, y al final
+ * los usuarios responsables `FOR SHARE` (al revisar y al aprobar).
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -31,7 +32,7 @@ import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import type { Firma } from "@/lib/tramites/tipos";
 import { leer, puedeFormular } from "./analisis";
-import { revisoresDe } from "./avisos";
+import { elaboradorDelPlan, revisoresDe } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, hallazgoBase, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 import { indicadorDeEficacia } from "./indicador-de-eficacia";
@@ -52,6 +53,18 @@ const ENTIDAD_ACTIVIDAD = "mejora_actividad";
 /** Revisa el plan un Admin SGC activo que no lo elaboró (spec §6.1 y §8.6, `revisoresDe`). */
 export async function puedeRevisar(sql: Cliente, p: Persona, h: Pick<HallazgoBase, "id" | "ronda">): Promise<boolean> {
   return puede(p, "mejora.gestionar") && (await revisoresDe(sql, h)).includes(p.usuarioId);
+}
+
+/**
+ * Quien elaboró el plan (un Admin SGC) puede devolverlo desde «En revisión» solo mientras nadie pueda revisarlo
+ * (`revisoresDe` vacío: el otro Admin SGC dejó de estar activo después del envío). Al reenviarlo pasa directo a Gerencia
+ * (`saltaLaRevision`). Nunca firma la revisión de lo que elaboró (F15-DC15: la falta de un segundo Admin SGC nunca traba el
+ * camino).
+ */
+export async function puedeDevolverSinRevisor(sql: Cliente, p: Persona, h: Pick<HallazgoBase, "id" | "ronda">): Promise<boolean> {
+  return (
+    puede(p, "mejora.gestionar") && (await elaboradorDelPlan(sql, h)) === p.usuarioId && (await revisoresDe(sql, h)).length === 0
+  );
 }
 
 /** Aprueba el plan Gerencia (spec §6.1): `mejora.aprobar`. */
@@ -111,15 +124,19 @@ async function verificarFirma(
   return { metodo: r.metodo, contexto };
 }
 
-/** El envío vigente de la ronda en curso: la última firma «Elaboró» y el plan que congeló el último evento `enviar_plan`. */
-export type EnvioDelPlan = { huella: string; plan: PlanFirmado; elaboroAdmin: boolean; elaboradoPor: number };
+/**
+ * El envío vigente de la ronda en curso: la última firma «Elaboró» (`firmaId` lo identifica: un reenvío sin cambios tiene la
+ * misma huella y otra firma) y el plan que congeló el último evento `enviar_plan`.
+ */
+export type EnvioDelPlan = { firmaId: number; huella: string; plan: PlanFirmado; elaboroAdmin: boolean; elaboradoPor: number };
 
 /**
  * El envío vigente de la ronda en curso del hallazgo, por orden (la última «Elaboró» y el último `enviar_plan`), nunca por
- * huella: un reenvío sin cambios da la misma. Lo que firman «Revisó» y «Aprobó».
+ * huella: un reenvío sin cambios da la misma. Lo que firman «Revisó» y «Aprobó»: dentro de la transacción tiene que ser el
+ * mismo envío (`firmaId`) que leyó el validador antes de pedir la clave.
  */
 export async function envioVigente(sql: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<EnvioDelPlan> {
-  const [f] = await sql`SELECT usuario_id, hash_sha256 FROM firmas
+  const [f] = await sql`SELECT id, usuario_id, hash_sha256 FROM firmas
     WHERE mejora_hallazgo_id = ${h.id} AND ronda = ${h.ronda} AND firma = 'elaboro' ORDER BY id DESC LIMIT 1`;
   const [e] = await sql`SELECT detalle FROM mejora_eventos
     WHERE hallazgo_id = ${h.id} AND ronda = ${h.ronda} AND tipo = 'enviar_plan' ORDER BY id DESC LIMIT 1`;
@@ -127,18 +144,29 @@ export async function envioVigente(sql: Cliente, h: Pick<HallazgoBase, "id" | "r
   if (!f || !d || d.huella !== f.hash_sha256 || typeof d.plan !== "object" || d.plan === null) {
     throw new ErrorMejora("El plan enviado no coincide con su firma «Elaboró»: devuélvalo para que se envíe otra vez");
   }
-  return { huella: f.hash_sha256 as string, plan: d.plan as PlanFirmado, elaboroAdmin: d.elaboroAdmin === true, elaboradoPor: Number(f.usuario_id) };
+  return {
+    firmaId: Number(f.id),
+    huella: f.hash_sha256 as string,
+    plan: d.plan as PlanFirmado,
+    elaboroAdmin: d.elaboroAdmin === true,
+    elaboradoPor: Number(f.usuario_id),
+  };
 }
 
-/** Ninguna actividad sin cancelar de la ronda tiene un responsable inactivo: el plan no se aprueba con una actividad sin dueño. */
-async function exigirResponsablesActivos(sql: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<void> {
-  const [f] = await sql`SELECT ac.orden AS accion, a.orden
+/**
+ * Ninguna actividad sin cancelar de la ronda tiene un responsable inactivo: el plan no se aprueba con una actividad sin dueño.
+ * Dentro de la transacción (`bloquear`) toma a los responsables `FOR SHARE OF u`, después del hallazgo y de las actividades:
+ * nadie los desactiva hasta que el acto termine. Fuera, en el validador de solo lectura, solo lee.
+ */
+async function exigirResponsablesActivos(sql: Cliente, h: Pick<HallazgoBase, "id" | "ronda">, bloquear: boolean): Promise<void> {
+  const filas = await sql`SELECT ac.orden AS accion, a.orden, u.activo
     FROM mejora_actividades a
     JOIN mejora_acciones ac ON ac.id = a.accion_id
     JOIN mejora_rondas r ON r.id = ac.ronda_id
     JOIN usuarios u ON u.id = a.responsable_id
-    WHERE a.hallazgo_id = ${h.id} AND r.numero = ${h.ronda} AND a.estado <> 'cancelada' AND NOT u.activo
-    ORDER BY ac.orden, a.orden LIMIT 1`;
+    WHERE a.hallazgo_id = ${h.id} AND r.numero = ${h.ronda} AND a.estado <> 'cancelada'
+    ORDER BY ac.orden, a.orden ${bloquear ? sql`FOR SHARE OF u` : sql``}`;
+  const f = filas.find((x) => x.activo !== true);
   if (f) {
     throw new ErrorMejora(`El responsable de la actividad ${etiquetaDeActividad(Number(f.accion), Number(f.orden))} ya no está activo: devuelva el plan`);
   }
@@ -243,7 +271,10 @@ export async function devolverPlan(
       const h = await bloquearHallazgo(tx, v.hallazgoId);
       await bloquearRondaYActividades(tx, h);
       if (h.estado !== "en_revision" && h.estado !== "en_aprobacion") await yaCambio(tx, sesion, h.id);
-      const puedeDevolver = h.estado === "en_revision" ? await puedeRevisar(tx, sesion, h) : puedeAprobar(sesion);
+      const puedeDevolver =
+        h.estado === "en_revision"
+          ? (await puedeRevisar(tx, sesion, h)) || (await puedeDevolverSinRevisor(tx, sesion, h))
+          : puedeAprobar(sesion);
       if (!puedeDevolver) await negar(tx, sesion, h.id);
       await tx`UPDATE mejora_rondas
         SET estado_plan = 'borrador', revisado_por = NULL, revisado_en = NULL, requiere_recursos = false, nota_recursos = NULL
@@ -310,6 +341,8 @@ async function dejarAprobado(
       rumbo: { apruebaGerencia: false },
       detalle: { ...x.detalle, huella: envio.huella, aprobadoRol: x.rol },
       soloEnElEvento: { plan: envio.plan },
+      // El aviso por actividad de abajo reemplaza el de turno («Ejecutar las actividades…»): uno por actividad (§14.2).
+      sinAvisoDelTurno: true,
     },
     c,
   );
@@ -330,12 +363,18 @@ async function dejarAprobado(
 type Revision = { h: HallazgoBase; envio: EnvioDelPlan; apruebaGerencia: boolean };
 
 /** Lo que debe cumplirse para revisar, sin escribir nada: quien revisa, «En revisión», el envío vigente y sus responsables activos. */
-async function validarRevision(sql: Cliente, sesion: Persona, hallazgoId: number, requiereRecursos: boolean): Promise<Revision> {
+async function validarRevision(
+  sql: Cliente,
+  sesion: Persona,
+  hallazgoId: number,
+  requiereRecursos: boolean,
+  candados: boolean,
+): Promise<Revision> {
   const h = await existente(sql, hallazgoId);
   if (!(await puedeRevisar(sql, sesion, h))) await negar(sql, sesion, h.id);
   if (h.estado !== "en_revision") throw new ErrorMejora(YA_CAMBIO);
   const envio = await envioVigente(sql, h);
-  await exigirResponsablesActivos(sql, h);
+  await exigirResponsablesActivos(sql, h, candados);
   return { h, envio, apruebaGerencia: apruebaGerencia(h, { requiereRecursos, elaboroAdmin: envio.elaboroAdmin }) };
 }
 
@@ -353,15 +392,16 @@ export async function firmarRevision(
   const v = leer(EsquemaRevisarPlan, { hallazgoId: d.hallazgoId, requiereRecursos: d.requiereRecursos, notaRecursos: d.notaRecursos ?? null });
   const sql = opciones.sql ?? obtenerSql();
   const ahora = opciones.ahora ?? new Date();
-  const fuera = await legible(validarRevision(sql, sesion, v.hallazgoId, v.requiereRecursos));
+  const fuera = await legible(validarRevision(sql, sesion, v.hallazgoId, v.requiereRecursos, false));
   const { metodo, contexto } = await verificarFirma(sesion, d.credenciales, opciones, ahora);
 
   await legible(
     enTransaccion(sql, async (tx) => {
       const h = await bloquearHallazgo(tx, v.hallazgoId);
       await bloquearRondaYActividades(tx, h);
-      const r = await validarRevision(tx, sesion, h.id, v.requiereRecursos);
-      if (r.envio.huella !== fuera.envio.huella) throw new ErrorMejora(YA_CAMBIO);
+      const r = await validarRevision(tx, sesion, h.id, v.requiereRecursos, true);
+      // Se firma el envío que se validó antes de pedir la clave, no otro con la misma huella.
+      if (r.envio.firmaId !== fuera.envio.firmaId) throw new ErrorMejora(YA_CAMBIO);
       const c = await contextoDeMejora(tx, ahora);
       await tx`UPDATE mejora_rondas
         SET revisado_por = ${sesion.usuarioId}, revisado_en = ${ahora}, requiere_recursos = ${v.requiereRecursos},
@@ -394,12 +434,17 @@ export async function firmarRevision(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Lo que debe cumplirse para aprobar, sin escribir nada: Gerencia, «En aprobación», el envío vigente y sus responsables activos. */
-async function validarAprobacion(sql: Cliente, sesion: Persona, hallazgoId: number): Promise<{ h: HallazgoBase; envio: EnvioDelPlan }> {
+async function validarAprobacion(
+  sql: Cliente,
+  sesion: Persona,
+  hallazgoId: number,
+  candados: boolean,
+): Promise<{ h: HallazgoBase; envio: EnvioDelPlan }> {
   const h = await existente(sql, hallazgoId);
   if (!puedeAprobar(sesion)) await negar(sql, sesion, h.id);
   if (h.estado !== "en_aprobacion") throw new ErrorMejora(YA_CAMBIO);
   const envio = await envioVigente(sql, h);
-  await exigirResponsablesActivos(sql, h);
+  await exigirResponsablesActivos(sql, h, candados);
   return { h, envio };
 }
 
@@ -413,15 +458,15 @@ export async function aprobarPlan(
   const { hallazgoId } = leer(EsquemaPasoDelHallazgo, { hallazgoId: d.hallazgoId });
   const sql = opciones.sql ?? obtenerSql();
   const ahora = opciones.ahora ?? new Date();
-  const fuera = await legible(validarAprobacion(sql, sesion, hallazgoId));
+  const fuera = await legible(validarAprobacion(sql, sesion, hallazgoId, false));
   const { metodo, contexto } = await verificarFirma(sesion, d.credenciales, opciones, ahora);
 
   await legible(
     enTransaccion(sql, async (tx) => {
       const h = await bloquearHallazgo(tx, hallazgoId);
       await bloquearRondaYActividades(tx, h);
-      const a = await validarAprobacion(tx, sesion, h.id);
-      if (a.envio.huella !== fuera.envio.huella) throw new ErrorMejora(YA_CAMBIO);
+      const a = await validarAprobacion(tx, sesion, h.id, true);
+      if (a.envio.firmaId !== fuera.envio.firmaId) throw new ErrorMejora(YA_CAMBIO);
       await registrarFirma(tx, {
         tramiteId: null,
         versionId: null,

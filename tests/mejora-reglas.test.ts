@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ORIGENES, esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
-import { accionObligada, aceptadoVaA, apruebaGerencia, llevaPlanSiempre, tipoPropuesto } from "@/lib/mejoramiento/reglas";
+import { accionObligada, aceptadoVaA, apruebaGerencia, llevaPlanSiempre, razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import { DESDE, YA_CAMBIO, destinoDe } from "@/lib/mejoramiento/transiciones";
 import { etiquetaDeEstado, pasosDelRecorrido, turnoDe } from "@/lib/mejoramiento/estados";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
@@ -76,6 +76,17 @@ describe("reglas", () => {
     it("recursos adicionales", () => expect(apruebaGerencia(hz, { ...nada, requiereRecursos: true })).toBe(true));
     it("elaboró un Admin SGC", () => expect(apruebaGerencia(hz, { ...nada, elaboroAdmin: true })).toBe(true));
     it("ninguna", () => expect(apruebaGerencia(hz, nada)).toBe(false));
+  });
+  describe("razonDeGerencia: la primera de las cuatro, en el orden del spec §8.6", () => {
+    const nada = { requiereRecursos: false, elaboroAdmin: false };
+    const hz = { clase: "no_conformidad", criticidad: "media", origen: "pamec" } as const;
+    const todas = { requiereRecursos: true, elaboroAdmin: true };
+    it("criticidad alta antes que todo", () => expect(razonDeGerencia({ ...hz, criticidad: "alta", origen: "ente_control" }, todas)).toBe("criticidad alta"));
+    it("origen externo antes que los recursos", () => expect(razonDeGerencia({ ...hz, origen: "auditoria_externa" }, todas)).toBe("origen externo"));
+    it("los recursos antes que quien elaboró", () =>
+      expect(razonDeGerencia(hz, todas)).toBe("requiere recursos adicionales o tiene impacto institucional"));
+    it("quien elaboró es un Admin SGC", () => expect(razonDeGerencia(hz, { ...nada, elaboroAdmin: true })).toBe("lo elaboró el Administrador del SGC"));
+    it("ninguna", () => expect(razonDeGerencia(hz, nada)).toBeNull());
   });
 });
 

@@ -33,12 +33,14 @@ export const NO_EXISTE = "El hallazgo no existe";
  * llega tal cual al evento y a la bitácora; el motor le añade `estado: { antes, despues }`, `acta` y, en la bitácora,
  * `codigo` y `ronda`, y rechaza un detalle que ya traiga alguna de esas claves (`CLAVES_DEL_MOTOR`). `soloEnElEvento` va
  * al detalle del evento y nunca a la bitácora (el plan congelado al enviarlo y al aprobarlo, spec §12.2): sus claves no
- * pueden ser del motor ni repetir las de `detalle`.
+ * pueden ser del motor ni repetir las de `detalle`. `sinAvisoDelTurno` no avisa el turno del estado nuevo: lo pasa solo quien
+ * avisa por su cuenta a quienes lo reciben (la aprobación del plan, con un aviso por actividad, spec §14.2).
  */
 export type Paso_x = {
   rumbo?: Rumbo;
   detalle?: Record<string, unknown>;
   soloEnElEvento?: Record<string, unknown>;
+  sinAvisoDelTurno?: boolean;
   fuera?: boolean;
   ocurrioEn?: Date;
   acta?: { numero: string; fecha: string } | null;
@@ -304,7 +306,7 @@ export async function transicionarHallazgo(
     entidadId: actual.id,
     detalle: { ...detalle, ...conActa(x), codigo: actual.codigo, estado: { antes, despues }, ronda },
   });
-  if (cambia) await avisarDelTurno(tx, { ...actual, estado: despues }, titulo, usuarioId);
+  if (cambia && !x.sinAvisoDelTurno) await avisarDelTurno(tx, { ...actual, estado: despues }, titulo, usuarioId);
   return { antes, despues, ronda };
 }
 

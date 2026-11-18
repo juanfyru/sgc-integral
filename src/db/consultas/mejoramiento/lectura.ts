@@ -20,7 +20,7 @@ import {
 } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { activosDeRol, quienTieneElTurno } from "./avisos";
+import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -84,6 +84,10 @@ function aBase(f: Record<string, unknown>): HallazgoBase {
 }
 
 const ADMIN = "Administrador del SGC";
+const QUIEN_LO_ELABORO = "Quien lo elaboró";
+
+/** Lo que le toca a quien elaboró el plan en revisión cuando no queda ningún Admin SGC que lo revise (F15-DC15). */
+const SIN_REVISOR = "devolverlo y reenviarlo: no hay otro Administrador del SGC activo que lo revise";
 
 /** La resolución de turnos dentro de una llamada: cada clave se resuelve una vez (ver `resolverTurno`). */
 type Memoria = Map<string, Promise<unknown>>;
@@ -116,8 +120,12 @@ async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<
       const gerencia = await recordar(m, "gerencia-activa", () => activosDeRol(tx, ["gerencia"]));
       return { ids, texto: ids.length > 0 && ids.every((id) => gerencia.includes(id)) ? "Gerencia" : ADMIN };
     }
-    case "admin":
-      return { ids, texto: ADMIN };
+    case "admin": {
+      // Sin nadie que revise lo enviado, el turno es de quien lo elaboró, para devolverlo y reenviarlo (`QUIENES.admin`).
+      if (h.estado !== "en_revision") return { ids, texto: ADMIN };
+      const revisores = await recordar(m, `solo-revisores:${h.id}`, () => revisoresDe(tx, h));
+      return { ids, texto: revisores.length > 0 ? ADMIN : QUIEN_LO_ELABORO };
+    }
     case "gerencia":
       return { ids, texto: "Gerencia" };
     case "responsables":
@@ -410,7 +418,7 @@ export function fraseDeLoQueSigue(
   h: Pick<HallazgoBase, "estado" | "resultadoCierre" | "correccionRequerida">,
   turno: string,
   mio: boolean,
-  x?: { sinRechazo?: boolean },
+  x?: { sinRechazo?: boolean; sinRevisor?: boolean },
 ): string {
   if (esTerminal(h.estado)) return "El hallazgo está " + etiquetaDeEstado(h).toLowerCase() + ": no tiene pasos pendientes.";
   if (h.estado === "en_espera") return "Espera el momento de evaluar la eficacia de las acciones.";
@@ -418,6 +426,7 @@ export function fraseDeLoQueSigue(
   const toca =
     h.estado === "por_validar" && h.correccionRequerida === false ? "validar el cierre sin acción"
     : h.estado === "por_aceptar" && x?.sinRechazo ? "aceptar el hallazgo"
+    : h.estado === "en_revision" && x?.sinRevisor ? SIN_REVISOR
     : LE_TOCA[h.estado];
   if (!toca) return "Tiene el turno: " + quien + ".";
   return mio ? "A usted le toca " + toca + "." : "Tiene el turno: " + quien + ", para " + toca + ".";
@@ -438,7 +447,11 @@ async function loQueSigue(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, tur
   if (esTerminal(h.estado) || h.estado === "en_espera" || !LE_TOCA[h.estado]) {
     return { paso: null, puede: false, turno: fraseDeLoQueSigue(h, turno, false) };
   }
-  if (!paso) return { paso, puede: false, turno: fraseDeLoQueSigue(h, turno, (await quienTieneElTurno(tx, h)).includes(sesion.usuarioId)) };
+  if (!paso) {
+    const sinRevisor = h.estado === "en_revision" && (await revisoresDe(tx, h)).length === 0;
+    const mio = (await quienTieneElTurno(tx, h)).includes(sesion.usuarioId);
+    return { paso, puede: false, turno: fraseDeLoQueSigue(h, turno, mio, { sinRevisor }) };
+  }
   const puede = await puedeDarElPaso(tx, sesion, h);
   if (!puede && h.estado === "por_validar" && (await quienTieneElTurno(tx, h)).length === 0) {
     return { paso, puede, turno: NADIE_VALIDA };

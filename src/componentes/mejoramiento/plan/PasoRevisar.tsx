@@ -11,16 +11,17 @@ import { Desplegable, ErrorDelPaso, TextoDelPaso, type AccionDelPaso } from "../
 
 /**
  * «Devolver con observaciones» (spec 15 §8.6): vuelve a «Por formular» y quien formula lo envía otra vez, con una firma
- * «Elaboró» nueva. Lo usan la revisión y la aprobación, cada una con la acción de su permiso.
+ * «Elaboró» nueva. Lo usan la revisión y la aprobación, cada una con la acción de su permiso, y quien elaboró el plan cuando
+ * no queda nadie que lo revise (`texto` lo explica).
  */
-export function DevolverPlan({ hallazgoId, accion }: { hallazgoId: number; accion: AccionDelPaso }) {
+export function DevolverPlan({ hallazgoId, accion, texto }: { hallazgoId: number; accion: AccionDelPaso; texto?: string }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   return (
     <Desplegable titulo="Devolver con observaciones">
       <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex flex-col gap-3">
         <input type="hidden" name="hallazgoId" value={hallazgoId} />
         <p className="text-sm">
-          Vuelve a «Por formular»: quien formula corrige el análisis o el plan y lo envía otra vez, con una firma «Elaboró» nueva.
+          {texto ?? "Vuelve a «Por formular»: quien formula corrige el análisis o el plan y lo envía otra vez, con una firma «Elaboró» nueva."}
         </p>
         <TextoDelPaso etiqueta="Observaciones (al menos 10 caracteres)" nombre="observaciones" id={`devolver-plan-${hallazgoId}`} maximo={2000} />
         <ErrorDelPaso estado={estado} />
@@ -98,8 +99,20 @@ export function PasoRevisar({
           />
           <span>Requiere recursos adicionales o tiene impacto institucional</span>
         </label>
-        <Campo etiqueta="Nota de los recursos o del impacto (obligatoria con la marca)" nombre="notaRecursos" id={`revisar-nota-${hallazgoId}`} ayuda={AVISO_SIN_PACIENTES}>
-          <textarea value={nota} onChange={(e) => setNota(e.target.value)} maxLength={1000} rows={2} className={claseControl} />
+        <Campo
+          etiqueta="Nota de los recursos o del impacto (se usa solo si marca la casilla, y entonces es obligatoria)"
+          nombre="notaRecursos"
+          id={`revisar-nota-${hallazgoId}`}
+          ayuda={AVISO_SIN_PACIENTES}
+        >
+          <textarea
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            disabled={!requiere}
+            maxLength={1000}
+            rows={2}
+            className={`${claseControl} disabled:cursor-not-allowed disabled:bg-muted`}
+          />
         </Campo>
       </fieldset>
       <p className="text-sm">{destino}</p>

@@ -57,14 +57,33 @@ export async function arbitrosDe(tx: Cliente, h: Pick<HallazgoBase, "id" | "regi
   return admins.filter((u) => !tomaronParte.includes(u));
 }
 
+/** Quien elaboró el plan enviado de la ronda en curso (`mejora_rondas.elaborado_por`), o `null`. */
+export async function elaboradorDelPlan(tx: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<number | null> {
+  const [r] = await tx`SELECT elaborado_por FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
+  return r?.elaborado_por === null || r?.elaborado_por === undefined ? null : Number(r.elaborado_por);
+}
+
 /**
- * Quienes revisan el plan enviado de la ronda en curso (spec §8.6, F15-DC15): los Admin SGC activos, salvo quien lo elaboró
- * (`mejora_rondas.elaborado_por`): nadie firma «Revisó» sobre lo que elaboró. Una sola regla: la usan el turno y la revisión.
+ * Quienes revisan el plan enviado de la ronda en curso (spec §8.6, F15-DC15): los Admin SGC activos, salvo quien lo elaboró:
+ * nadie firma «Revisó» sobre lo que elaboró. Una sola regla: la usan el turno y la revisión.
  */
 export async function revisoresDe(tx: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<number[]> {
-  const [r] = await tx`SELECT elaborado_por FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
-  const elaboro = r?.elaborado_por === null || r?.elaborado_por === undefined ? null : Number(r.elaborado_por);
+  const elaboro = await elaboradorDelPlan(tx, h);
   return (await adminsActivos({ sql: tx })).filter((u) => u !== elaboro);
+}
+
+/**
+ * El turno de «En revisión»: quienes lo revisan; si no queda ninguno (el otro Admin SGC dejó de estar activo después del
+ * envío), quien lo elaboró, si sigue activo, para devolverlo y reenviarlo: el reenvío pasa directo a Gerencia (F15-DC15: la
+ * falta de un segundo Admin SGC nunca traba el camino).
+ */
+async function turnoDeLaRevision(tx: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<number[]> {
+  const revisores = await revisoresDe(tx, h);
+  if (revisores.length > 0) return revisores;
+  const elaboro = await elaboradorDelPlan(tx, h);
+  if (elaboro === null) return [];
+  const [u] = await tx`SELECT id FROM usuarios WHERE id = ${elaboro} AND activo`;
+  return u ? [elaboro] : [];
 }
 
 /** Cómo se resuelve cada turno a usuarios activos. Un solo lugar: las tareas 10, 13 y 16 lo refinan aquí. */
@@ -75,7 +94,7 @@ const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>
     return u ? [Number(u.id)] : adminsActivos({ sql: tx });
   },
   arbitro: (tx, h) => arbitrosDe(tx, h),
-  admin: (tx, h) => (h.estado === "en_revision" ? revisoresDe(tx, h) : adminsActivos({ sql: tx })),
+  admin: (tx, h) => (h.estado === "en_revision" ? turnoDeLaRevision(tx, h) : adminsActivos({ sql: tx })),
   gerencia: (tx) => activosDeRol(tx, ["gerencia"]),
   // Los responsables activos de las actividades sin terminar de la ronda en curso (acción → ronda).
   responsables: async (tx, h) => {

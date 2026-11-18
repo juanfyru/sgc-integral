@@ -27,7 +27,7 @@ import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
 import { PanelDeFirmas, firmasDelEnvio } from "@/componentes/mejoramiento/plan/PanelDeFirmas";
 import { ParecidosDeOtrosProcesos } from "@/componentes/mejoramiento/plan/ParecidosDeOtrosProcesos";
 import { PasoAprobar } from "@/componentes/mejoramiento/plan/PasoAprobar";
-import { PasoRevisar } from "@/componentes/mejoramiento/plan/PasoRevisar";
+import { DevolverPlan, PasoRevisar } from "@/componentes/mejoramiento/plan/PasoRevisar";
 import { PlanEnLectura, type IndicadorEnLectura } from "@/componentes/mejoramiento/plan/PlanEnLectura";
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
@@ -50,7 +50,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
-import { firmasDeHallazgo, puedeAprobar, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
+import { firmasDeHallazgo, puedeAprobar, puedeDevolverSinRevisor, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
@@ -220,6 +220,8 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   const elaboroAdmin = rondaEnCurso?.elaboroAdmin ?? false;
   const revisa = completo && h.estado === "en_revision" && huellaDelEnvio !== null && (await puedeRevisar(sqlPlan, sesion, h));
   const aprueba = completo && h.estado === "en_aprobacion" && huellaDelEnvio !== null && puedeAprobar(sesion);
+  // Sin nadie que lo revise, quien lo elaboró lo devuelve para reenviarlo directo a Gerencia (F15-DC15).
+  const devuelveSinRevisor = completo && h.estado === "en_revision" && !revisa && (await puedeDevolverSinRevisor(sqlPlan, sesion, h));
   // Los parecidos de otros procesos, solo al Administrador del SGC que revisa (spec §8.6): la consulta no recibe sesión.
   const parecidosDeOtros = revisa ? await parecidosDeOtrosProcesos(sqlPlan, h.id) : [];
   const anteriorAlRevisar = revisa && h.reincidenteDe && "id" in h.reincidenteDe ? await laVezPasada(sqlPlan, h.id) : null;
@@ -247,6 +249,13 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       <ParecidosDeOtrosProcesos parecidos={parecidosDeOtros} />
       {anteriorAlRevisar ? <LaVezPasada codigo={anteriorAlRevisar.codigo} causas={anteriorAlRevisar.causas} acciones={anteriorAlRevisar.acciones} /> : null}
     </PasoRevisar>
+  ) : devuelveSinRevisor ? (
+    <DevolverPlan
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      accion={devolverPlanAccion}
+      texto="No hay otro Administrador del SGC activo que lo revise: devuélvalo y reenvíelo, y al reenviarlo pasa directo a Gerencia. Usted no firma la revisión de lo que elaboró."
+    />
   ) : aprueba && huellaDelEnvio && rondaEnCurso ? (
     <PasoAprobar
       key={`paso-${clave}`}
