@@ -74,7 +74,7 @@ import { diaCorto } from "@/lib/mejoramiento/formato";
 import { razonDeGerencia } from "@/lib/mejoramiento/reglas";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
-import { TERMINALES } from "@/lib/mejoramiento/tipos";
+import { estaAbierta, TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
 import type { SesionValida } from "@/lib/sesion";
@@ -234,7 +234,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
     h.rondas.flatMap((r) => r.acciones.flatMap((a) => a.actividades.map((x) => [x.id, `A${a.orden}.${x.orden}`] as const))),
   );
   const sinResponsable = (rondaEnCurso?.acciones ?? []).flatMap((a) =>
-    a.actividades.filter((x) => !x.responsableActivo && x.finOriginal !== null && (x.estado === "abierta" || x.estado === "en_proceso")),
+    a.actividades.filter((x) => !x.responsableActivo && x.finOriginal !== null && estaAbierta(x.estado)),
   );
   const reasignaAqui =
     completo && h.estado === "en_ejecucion" && sinResponsable.length > 0 && (await puedeReasignar(sqlPlan, sesion, { procesoId: h.procesoId }));

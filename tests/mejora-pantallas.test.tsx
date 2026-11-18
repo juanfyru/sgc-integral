@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
 import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
-import { FormularioSeguimiento, TerminarActividad } from "@/componentes/mejoramiento/actividad/FormularioSeguimiento";
+import { FormularioSeguimiento, TerminarActividad, focoDeLaConfirmacion } from "@/componentes/mejoramiento/actividad/FormularioSeguimiento";
 import { ListaDeSeguimientos } from "@/componentes/mejoramiento/actividad/ListaDeSeguimientos";
 import { MisActividades } from "@/componentes/mejoramiento/actividad/MisActividades";
 import { PaginaDeActividad } from "@/componentes/mejoramiento/actividad/PaginaDeActividad";
@@ -1053,6 +1053,12 @@ describe("las actividades (maqueta 6)", () => {
     expect(lista).not.toContain("Para terminar hace falta");
   });
 
+  it("el foco de «Terminar»: al abrir la confirmación va a «Sí, terminarla»; al cancelarla vuelve a «Terminar»; al montar, a ninguno", () => {
+    expect(focoDeLaConfirmacion(true, false)).toBe("confirmar");
+    expect(focoDeLaConfirmacion(false, true)).toBe("terminar");
+    expect(focoDeLaConfirmacion(false, false)).toBeNull();
+  });
+
   it("los seguimientos, del más reciente al más antiguo, con quién, cuánto y las barreras", () => {
     const html = renderToStaticMarkup(<ListaDeSeguimientos seguimientos={actividad().seguimientos} />);
     expect(html.indexOf("tres cotizaciones")).toBeLessThan(html.indexOf("especificaciones"));
@@ -1104,6 +1110,9 @@ describe("las actividades (maqueta 6)", () => {
     expect(html).toContain("Responsable inactivo");
     expect(html).toContain("Reasignar");
     expect(aviso(html)).toBe(1);
+    // Una terminada ya no necesita a su responsable: no lo marca.
+    const terminada = pagina(actividad({ estado: "terminada", vencida: false, responsableActivo: false, esResponsable: false, puedeSeguir: false }));
+    expect(terminada).not.toContain("Responsable inactivo");
     const dialogo = renderToStaticMarkup(
       <DialogoReasignar actividadId={22} etiqueta="A2.1" responsableId={8} responsable="J. Perdomo" usuarios={[{ id: 8, nombre: "J. Perdomo" }, { id: 9, nombre: "M. Cuéllar" }]} accion={accion} />,
     );
@@ -1148,14 +1157,14 @@ describe("las actividades (maqueta 6)", () => {
         eventos={[
           evento(1, "seguimiento", { actividadId: 22, actividad: "A2.1", seguimientoId: 3, avance: { antes: 10, despues: 30 } }),
           evento(2, "actividad_terminada", { actividadId: 22, actividad: "A2.1", archivos: 1 }),
-          evento(3, "reasignada", { actividadId: 22, antes: 8, despues: 9, motivo: "Cambió de servicio y ya no atiende" }),
+          { ...evento(3, "reasignada", { actividadId: 22, antes: 8, despues: 9, motivo: "Cambió de servicio y ya no atiende" }), personas: { de: "J. Perdomo", a: "M. Cuéllar" } },
           evento(4, "reasignada", { actividadId: 99, antes: 8, despues: 9, motivo: "Salió de vacaciones largas" }),
         ]}
       />,
     );
     expect(html).toContain("Registró un seguimiento de la actividad A2.1 (30 %)");
     expect(html).toContain("Terminó la actividad A2.1");
-    expect(html).toContain("Reasignó la actividad A2.1");
+    expect(html).toContain("Reasignó la actividad A2.1 de J. Perdomo a M. Cuéllar");
     expect(html).toContain("Motivo: Cambió de servicio y ya no atiende");
     expect(html).toContain("Reasignó una actividad");
   });

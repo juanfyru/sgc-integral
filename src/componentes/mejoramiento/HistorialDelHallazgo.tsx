@@ -1,6 +1,15 @@
 import { fechaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
 
-type Evento = { id: number; tipo: string; ronda: number; quien: string | null; cuando: Date; detalle?: unknown };
+type Evento = {
+  id: number;
+  tipo: string;
+  ronda: number;
+  quien: string | null;
+  cuando: Date;
+  detalle?: unknown;
+  /** En una reasignación, de quién a quién (lo resuelve la lectura con `antes` y `despues`). */
+  personas?: { de: string; a: string } | null;
+};
 
 /** Lo que un evento dice por escrito: la justificación, la réplica, la nota o el motivo que trae su detalle, con su rótulo. */
 const TEXTOS_DEL_DETALLE: ReadonlyArray<readonly [clave: string, rotulo: string]> = [
@@ -77,15 +86,18 @@ const etiquetaValida = (v: unknown): string | null => (typeof v === "string" && 
 /**
  * La frase del evento; algunas dependen de su detalle (el cierre sin acción, el «no» que se cambió por «sí»). Los de una
  * actividad la nombran por su etiqueta: el seguimiento y la terminada la traen; la reasignación solo trae su id, que la página
- * traduce con `etiquetas`.
+ * traduce con `etiquetas`, y dice de quién a quién (`personas`).
  */
 function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string {
   const d = comoObjeto(e.detalle);
   if (e.tipo === "seguimiento" || e.tipo === "actividad_terminada" || e.tipo === "reasignada") {
     const etiqueta = etiquetaValida(d.actividad) ?? (typeof d.actividadId === "number" ? etiquetaValida(etiquetas[d.actividadId]) : null);
+    if (e.tipo === "reasignada") {
+      const cual = etiqueta ? `Reasignó la actividad ${etiqueta}` : FRASE.reasignada;
+      return e.personas ? `${cual} de ${e.personas.de} a ${e.personas.a}` : cual;
+    }
     if (!etiqueta) return FRASE[e.tipo];
     if (e.tipo === "actividad_terminada") return `Terminó la actividad ${etiqueta}`;
-    if (e.tipo === "reasignada") return `Reasignó la actividad ${etiqueta}`;
     const avance = comoObjeto(d.avance).despues;
     return `Registró un seguimiento de la actividad ${etiqueta}${typeof avance === "number" ? ` (${avance} %)` : ""}`;
   }

@@ -6,7 +6,7 @@ import type { ActividadPropia } from "@/db/consultas/mejoramiento/actividades";
 import { fechaDeDia, vencidaHace } from "@/lib/mejoramiento/formato";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import { ETIQUETA_ESTADO_ACTIVIDAD } from "@/lib/mejoramiento/textos";
-import type { EstadoActividad } from "@/lib/mejoramiento/tipos";
+import { ACTIVIDAD_ABIERTA, type EstadoActividad } from "@/lib/mejoramiento/tipos";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -16,8 +16,6 @@ const VARIANTE: Record<EstadoActividad, VarianteInsignia> = {
   terminada: "bien",
   cancelada: "sin-dato",
 };
-
-const ABIERTAS: readonly EstadoActividad[] = ["abierta", "en_proceso"];
 
 /** El estado de una actividad, siempre con texto: «Vencida hace N días», el guardado y, si se devolvió, «Devuelta». */
 export function EstadoDeLaActividad({ estado, vencida, devuelta, fin, hoy }: { estado: EstadoActividad; vencida: boolean; devuelta: boolean; fin: string; hoy: string }) {
@@ -30,7 +28,7 @@ export function EstadoDeLaActividad({ estado, vencida, devuelta, fin, hoy }: { e
           {ETIQUETA_ESTADO_ACTIVIDAD[estado]}
         </Insignia>
       )}
-      {devuelta && ABIERTAS.includes(estado) ? <Insignia variante="atencion">Devuelta</Insignia> : null}
+      {devuelta && ACTIVIDAD_ABIERTA.includes(estado) ? <Insignia variante="atencion">Devuelta</Insignia> : null}
     </span>
   );
 }
@@ -85,8 +83,8 @@ export function MisActividades({ actividades, hoy }: { actividades: readonly Act
       />
     );
   }
-  const abiertas = actividades.filter((a) => ABIERTAS.includes(a.estado));
-  const cerradas = actividades.filter((a) => !ABIERTAS.includes(a.estado));
+  const abiertas = actividades.filter((a) => ACTIVIDAD_ABIERTA.includes(a.estado));
+  const cerradas = actividades.filter((a) => !ACTIVIDAD_ABIERTA.includes(a.estado));
   return (
     <div className="flex min-w-0 flex-col gap-6">
       {abiertas.length > 0 ? (

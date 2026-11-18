@@ -6,7 +6,8 @@ import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramien
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { misActividades } from "@/db/consultas/mejoramiento/actividades";
-import { veAlgunHallazgoCompleto } from "@/db/consultas/mejoramiento/lectura";
+import { veAlgunHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { estaAbierta } from "@/lib/mejoramiento/tipos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
@@ -20,14 +21,14 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 
 /**
  * «Mis actividades» (spec 15 §16.1), para toda sesión: las actividades de planes aprobados a cargo de la persona, cada una con
- * su hallazgo, su fin, su avance y su estado, y el enlace a su página. La pestaña «Hallazgos» solo a quien ve alguno completo
- * (a los demás la lista los trae aquí).
+ * su hallazgo, su fin, su avance y su estado, y el enlace a su página. La pestaña «Hallazgos», con la regla de la lista
+ * (`veAlgunHallazgo`): a quien no ve ninguno, la lista lo trae aquí.
  */
 export default async function PaginaMisActividades() {
   const sesion = await exigirSesion();
   const ahora = new Date();
-  const [actividades, veHallazgos] = await Promise.all([misActividades(sesion, { ahora }), veAlgunHallazgoCompleto(sesion)]);
-  const pendientes = actividades.filter((a) => a.estado === "abierta" || a.estado === "en_proceso").length;
+  const [actividades, veHallazgos] = await Promise.all([misActividades(sesion, { ahora }), veAlgunHallazgo(sesion)]);
+  const pendientes = actividades.filter((a) => estaAbierta(a.estado)).length;
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <EncabezadoPagina

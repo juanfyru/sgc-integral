@@ -32,7 +32,7 @@ import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import type { Firma } from "@/lib/tramites/tipos";
 import { leer, puedeFormular } from "./analisis";
-import { elaboradorDelPlan, revisoresDe } from "./avisos";
+import { elaboradorDelPlan, ENTIDAD_ACTIVIDAD, revisoresDe } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, hallazgoBase, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 import { indicadorDeEficacia } from "./indicador-de-eficacia";
@@ -42,9 +42,6 @@ type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 
 /** El aviso a cada responsable cuando el plan queda aprobado (spec §8.6 y §14.2): es la «delegación». */
 export const ACTIVIDAD_ASIGNADA = "Tiene una actividad a su cargo";
-
-/** La entidad del aviso de una actividad. */
-const ENTIDAD_ACTIVIDAD = "mejora_actividad";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Quién da cada paso: la misma regla para el acto y para la página

@@ -5,6 +5,7 @@ import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { ETIQUETA_TIPO_ACCION } from "@/lib/mejoramiento/textos";
+import { estaAbierta } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import type { AccionDelPaso } from "../pasos/Partes";
@@ -67,7 +68,8 @@ export function PaginaDeActividad({
               <span className="text-muted-foreground">Responsable: </span>
               {a.responsable}
             </span>
-            {a.responsableActivo ? null : <Insignia variante="atencion">Responsable inactivo</Insignia>}
+            {/* Solo en una pendiente: una terminada o cancelada ya no necesita a su responsable (como en el plan). */}
+            {!a.responsableActivo && estaAbierta(a.estado) ? <Insignia variante="atencion">Responsable inactivo</Insignia> : null}
             {a.puedeReasignar ? (
               <DialogoReasignar
                 key={`reasignar-${a.id}-${a.responsableId}`}

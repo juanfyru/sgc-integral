@@ -52,6 +52,12 @@ export type MetodoAnalisis = (typeof METODOS_ANALISIS)[number];
 export const ESTADOS_ACTIVIDAD = ["abierta", "en_proceso", "terminada", "cancelada"] as const;
 export type EstadoActividad = (typeof ESTADOS_ACTIVIDAD)[number];
 
+/** Los estados de una actividad sin terminar ni cancelar: la que todavía necesita a su responsable. */
+export const ACTIVIDAD_ABIERTA: readonly EstadoActividad[] = ["abierta", "en_proceso"];
+
+/** Si la actividad sigue abierta (`ACTIVIDAD_ABIERTA`); acepta el texto tal como lo trae una lectura. */
+export const estaAbierta = (estado: string) => (ACTIVIDAD_ABIERTA as readonly string[]).includes(estado);
+
 export const ACCIONES_HALLAZGO = [
   "registrar", "aceptar", "rechazar", "retirar", "sostener", "confirmar_hallazgo", "confirmar_rechazo", "corregir",
   "decidir_si", "decidir_no", "validar_correccion", "devolver_correccion", "enviar_plan", "devolver_plan",

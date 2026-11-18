@@ -4,10 +4,10 @@ import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import type { AccionDeDetalle, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipos";
 import { leerCriterios } from "@/lib/mejoramiento/eficacia";
-import { fechaDeDia, fechaLargaDeDia } from "@/lib/mejoramiento/formato";
+import { fechaDeDia, fechaLargaDeDia, vencidaHace } from "@/lib/mejoramiento/formato";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import { ETIQUETA_CRITERIO, ETIQUETA_ESTADO_ACTIVIDAD, ETIQUETA_TIPO_ACCION } from "@/lib/mejoramiento/textos";
-import type { EstadoActividad, TipoAccion } from "@/lib/mejoramiento/tipos";
+import { estaAbierta, type EstadoActividad, type TipoAccion } from "@/lib/mejoramiento/tipos";
 
 /** El indicador enlazado tal como lo puede leer quien mira: con su nombre solo si lo ve (`puedeVerIndicador`). */
 export type IndicadorEnLectura = { visible: true; codigo: string; nombre: string; periodicidad: Periodicidad } | { visible: false } | null;
@@ -26,19 +26,13 @@ type Actividad = AccionDeDetalle["actividades"][number];
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
 /** Sin terminar ni cancelar, de un plan aprobado: la que todavía necesita a su responsable. */
-const pendiente = (a: Actividad) => a.finOriginal !== null && a.estado !== "terminada" && a.estado !== "cancelada";
-
-/** Días calendario entre dos días `AAAA-MM-DD`. */
-const diasEntre = (desde: string, hasta: string) => Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000);
+const pendiente = (a: Actividad) => a.finOriginal !== null && estaAbierta(a.estado);
 
 /** El estado, siempre con texto; «Vencida hace N días» (spec §10.2) solo con el plan aprobado y sin terminar ni cancelar. */
 function EstadoDeActividad({ a, hoy }: { a: Actividad; hoy: string }) {
   const estado = a.estado as EstadoActividad;
-  const vencida = a.finOriginal !== null && estado !== "terminada" && estado !== "cancelada" && a.fin < hoy;
-  if (vencida) {
-    const n = diasEntre(a.fin, hoy);
-    return <Insignia variante="critico">{`Vencida hace ${n} ${n === 1 ? "día" : "días"}`}</Insignia>;
-  }
+  const vencida = pendiente(a) && a.fin < hoy;
+  if (vencida) return <Insignia variante="critico">{vencidaHace(a.fin, hoy)}</Insignia>;
   return (
     <Insignia variante={VARIANTE_ACTIVIDAD[estado] ?? "sin-dato"} modulo="planes">
       {ETIQUETA_ESTADO_ACTIVIDAD[estado] ?? a.estado}

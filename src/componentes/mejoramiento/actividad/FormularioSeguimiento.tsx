@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
-import { Boton } from "@/componentes/ui/Boton";
+import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 import { ErrorDelPaso, type AccionDelPaso } from "../pasos/Partes";
@@ -71,12 +71,31 @@ export function FormularioSeguimiento({
 }
 
 /**
+ * A dónde va el foco cuando cambia la confirmación de «Terminar»: al abrirla, a «Sí, terminarla»; al cancelarla, de vuelta a
+ * «Terminar» (el control que la abrió). Al montar, a ninguno: la página no roba el foco.
+ */
+export function focoDeLaConfirmacion(confirmando: boolean, seAbrio: boolean): "confirmar" | "terminar" | null {
+  if (confirmando) return "confirmar";
+  return seAbrio ? "terminar" : null;
+}
+
+/**
  * «Terminar» la actividad (spec §10.4): dice lo que falta (el avance en 100 y al menos un archivo de evidencia) y pide
- * confirmarlo, porque una actividad terminada ya no admite seguimientos ni archivos. El servidor vuelve a comprobarlo.
+ * confirmarlo, porque una actividad terminada ya no admite seguimientos ni archivos. El foco sigue a la confirmación
+ * (`focoDeLaConfirmacion`). El servidor vuelve a comprobarlo.
  */
 export function TerminarActividad({ actividadId, faltan, accion }: { actividadId: number; faltan: readonly string[]; accion: AccionDelPaso }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const [confirmando, setConfirmando] = useState(false);
+  const seAbrio = useRef(false);
+  const terminar = useRef<HTMLButtonElement>(null);
+  const confirmar = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const foco = focoDeLaConfirmacion(confirmando, seAbrio.current);
+    if (confirmando) seAbrio.current = true;
+    if (foco === "confirmar") confirmar.current?.focus();
+    if (foco === "terminar") terminar.current?.focus();
+  }, [confirmando]);
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {faltan.length > 0 ? (
@@ -89,18 +108,18 @@ export function TerminarActividad({ actividadId, faltan, accion }: { actividadId
           <input type="hidden" name="actividadId" value={actividadId} />
           <p className="text-sm">Una actividad terminada ya no admite seguimientos ni archivos. ¿La termina?</p>
           <div className="flex flex-wrap gap-2">
-            <Boton type="submit" pendiente={pendiente}>
+            <button ref={confirmar} type="submit" disabled={pendiente} aria-busy={pendiente ? true : undefined} className={claseBoton("primario")}>
               {pendiente ? "Terminando…" : "Sí, terminarla"}
-            </Boton>
+            </button>
             <Boton variante="secundario" onClick={() => setConfirmando(false)}>
               Cancelar
             </Boton>
           </div>
         </form>
       ) : (
-        <Boton variante="secundario" onClick={() => setConfirmando(true)} className="self-start">
+        <button ref={terminar} type="button" onClick={() => setConfirmando(true)} className={`${claseBoton("secundario")} self-start`}>
           Terminar
-        </Boton>
+        </button>
       )}
       <ErrorDelPaso estado={estado} />
     </div>

@@ -167,6 +167,8 @@ function cerrado(d: DestinoDeMejora, f: Dueno): string | null {
 
 const RONDA_CONGELADA = "Esa ronda ya está congelada: solo la ronda en curso admite archivos";
 
+const EVIDENCIA_DE_ACTIVIDAD_CERRADA = "La evidencia de una actividad terminada o cancelada no se quita";
+
 const SIN_PERMISO = "Sin permiso para adjuntar este archivo";
 
 /** El paso de la persona y del estado, sin saber si el dueño se ve (eso lo decide `autorizarSubida`). */
@@ -266,6 +268,11 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   if (a.contexto === "mejora_hallazgo" && a.rol === "correccion" && f.estado !== "por_corregir") {
     return "La evidencia de la corrección solo se quita mientras está por corregir";
   }
+  // Lo mismo con la de una actividad (PC-05: no se termina sin evidencia): terminada o cancelada, nadie la quita, tampoco el
+  // Admin SGC; si la verificación la devuelve y vuelve a estar en curso, sí.
+  if (a.contexto === "mejora_actividad" && (f.estadoActividad === "terminada" || f.estadoActividad === "cancelada")) {
+    return EVIDENCIA_DE_ACTIVIDAD_CERRADA;
+  }
   const [subio] = await sql`SELECT usuario_id FROM auditoria
     WHERE accion = 'subir_archivo' AND entidad = 'archivo' AND entidad_id = ${a.id} ORDER BY id LIMIT 1`;
   const suyo = subio !== undefined && Number(subio.usuario_id) === sesion.usuarioId;
@@ -294,7 +301,7 @@ export async function archivosQuitables(
 /**
  * Quita un archivo: quien lo subió, mientras su paso sigue abierto, o el Admin SGC mientras el hallazgo no termine (un
  * reporte, mientras esté recibido); en un hallazgo terminado, nadie. La evidencia de la corrección, solo mientras está «Por
- * corregir», tampoco el Admin SGC después. Quien no abre el archivo recibe «no existe». Borra la
+ * corregir», y la de una actividad, solo mientras está abierta o en proceso: después, tampoco el Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
  * fila y deja `eliminar_archivo` en la bitácora; el archivo del almacén se borra después de confirmar y uno ya ausente no
  * es un error.
  */

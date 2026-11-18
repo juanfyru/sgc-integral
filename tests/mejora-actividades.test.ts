@@ -10,14 +10,16 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import {
   avanceDeAccion,
   avanceDeHallazgo,
+  contarMisActividades,
   leerActividad,
   misActividades,
   reasignarActividad,
   registrarSeguimiento,
   terminarActividad,
 } from "@/db/consultas/mejoramiento/actividades";
+import { archivosDe } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
-import { leerHallazgo, listarHallazgos, veAlgunHallazgoCompleto } from "@/db/consultas/mejoramiento/lectura";
+import { leerHallazgo, listarHallazgos, veAlgunHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { participacionEnHallazgo } from "@/lib/alcance";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
@@ -209,7 +211,9 @@ describe("terminarActividad", () => {
       await tx`UPDATE mejora_actividades SET estado = 'cancelada', cancelada_en = ${AHORA} WHERE id = ${a2}`;
       await lista(tx, responsable, a1);
       await terminarActividad(responsable, { actividadId: a1 }, c(AHORA, tx));
-      expect((await estadoDe(tx, h.id)).estado).toBe("por_verificar");
+      const f = await estadoDe(tx, h.id);
+      expect(f.estado).toBe("por_verificar");
+      expect((f.vence_en as Date).toISOString()).toBe(venceEn("verificar", new Date(AHORA), await contextoDeMejora(tx, new Date(AHORA))).toISOString());
     }));
 
   it("otra persona no la termina", () =>
@@ -242,7 +246,13 @@ describe("reasignarActividad", () => {
       const [a] = ids;
       const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
       expect((await misActividades(responsable, c(AHORA, tx))).map((x) => x.id)).toEqual([a]);
+      // Las marcas de los avisos: la de vencida y el recordatorio son de quien la tenía; el escalamiento, de la actividad.
+      await tx`UPDATE mejora_actividades SET aviso_vencido_en = ${AHORA}, escalado_en = ${AHORA}, recordatorio_en = ${AHORA} WHERE id = ${a}`;
       await reasignar(tx, b, a, nuevo.usuarioId);
+      const marcas = await filaDe(tx, a);
+      expect(marcas.aviso_vencido_en).toBeNull();
+      expect(marcas.recordatorio_en).toBeNull();
+      expect((marcas.escalado_en as Date).toISOString()).toBe(new Date(AHORA).toISOString());
       expect((await filaDe(tx, a)).responsable_id).toBe(nuevo.usuarioId);
       expect(await misActividades(responsable, c(AHORA, tx))).toEqual([]);
       expect((await misActividades(nuevo, c(AHORA, tx))).map((x) => x.id)).toEqual([a]);
@@ -252,6 +262,10 @@ describe("reasignarActividad", () => {
       const [e] = await tx`SELECT detalle, usuario_id FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'reasignada'`;
       expect(e.detalle).toEqual({ actividadId: a, antes: responsable.usuarioId, despues: nuevo.usuarioId, motivo });
       expect(e.usuario_id).toBe(b.lider.usuarioId);
+      // El historial (de quien ve el hallazgo completo) nombra a los dos, leídos de `antes` y `despues`.
+      const delLider = await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(AHORA) });
+      expect(delLider?.eventos.find((x) => x.tipo === "reasignada")?.personas).toEqual({ de: responsable.nombre, a: nuevo.nombre });
+      expect(delLider?.eventos.find((x) => x.tipo === "aprobar_plan" || x.tipo === "revisar_plan")?.personas).toBeNull();
       const [bit] = await tx`SELECT detalle FROM auditoria WHERE accion = 'mejora_actividad_reasignada' AND entidad_id = ${a}`;
       expect(bit.detalle).toMatchObject({ codigo: h.codigo, actividad: "A1.1", antes: responsable.usuarioId, despues: nuevo.usuarioId });
       expect(JSON.stringify(bit.detalle)).not.toContain(motivo);
@@ -282,13 +296,35 @@ describe("reasignarActividad", () => {
       await registrarSeguimiento(nuevo, seguimiento(a, 50), c(AHORA, tx));
     }));
 
-  it("quién reasigna: un líder del proceso o el Admin SGC; un responsable no se reasigna a sí mismo", () =>
+  it("la matriz: quien no tiene mejora.formular (el rol Consulta) no reasigna, aunque sea el responsable", () =>
     revertida(sql, async (tx) => {
-      const { b, responsable, ids } = await enEjecucion(tx);
+      const { responsable, ids } = await enEjecucion(tx);
+      const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
+      await expect(
+        reasignarActividad(responsable, { actividadId: ids[0], responsableId: nuevo.usuarioId, motivo }, c(AHORA, tx)),
+      ).rejects.toBeInstanceOf(ErrorPermiso);
+    }));
+
+  it("un líder del proceso que es el responsable entrega su actividad a otra persona", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_ejecucion");
+      const [a] = (await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id}`).map((f) => Number(f.id));
+      expect((await filaDe(tx, a)).responsable_id).toBe(b.lider.usuarioId);
+      const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
+      await reasignar(tx, b, a, nuevo.usuarioId);
+      expect((await filaDe(tx, a)).responsable_id).toBe(nuevo.usuarioId);
+      // Nadie se avisa de lo que acaba de hacer: el aviso es solo para la persona nueva.
+      expect(await avisosDe(tx, b.lider.usuarioId, "mejora.actividad_reasignada")).toHaveLength(0);
+      expect(await avisosDe(tx, nuevo.usuarioId, "mejora.actividad_reasignada")).toHaveLength(1);
+    }));
+
+  it("quién reasigna: un líder del proceso o el Admin SGC; el responsable que no lidera el proceso, no", () =>
+    revertida(sql, async (tx) => {
+      const { b, ids } = await enEjecucion(tx);
       const [a] = ids;
       const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
       const otro = await otroProcesoConLider(tx);
-      await expect(reasignarActividad(responsable, { actividadId: a, responsableId: nuevo.usuarioId, motivo }, c(AHORA, tx))).rejects.toBeInstanceOf(ErrorPermiso);
       // El líder de otro proceso no lo ve: «no existe».
       await expect(reasignarActividad(otro.lider, { actividadId: a, responsableId: nuevo.usuarioId, motivo }, c(AHORA, tx))).rejects.toThrow("La actividad no existe");
       // Responsable que lidera otro proceso: tiene el permiso de la matriz, pero no lidera este.
@@ -361,7 +397,15 @@ describe("lo que se lee", () => {
       expect(d?.rondas[0].analisis.length).toBeGreaterThan(0);
       expect(d?.rondas[0].causas.length).toBeGreaterThan(0);
       expect(d?.rondas[0].acciones[0].actividades.map((x) => x.id)).toEqual([suya, ajena]);
-      expect(JSON.stringify(d)).not.toMatch(/zz-(ajena|del-hallazgo|de-la-ronda|suya)\.pdf/);
+      // De los archivos, solo los de su actividad: la otra actividad, el hallazgo y la ronda le dan la lista vacía.
+      const nombres = async (contexto: string, contextoId: number) => (await archivosDe(tx, responsable, { contexto, contextoId })).map((x) => x.nombre);
+      expect(await nombres("mejora_actividad", suya)).toEqual(["zz-suya.pdf"]);
+      expect(await nombres("mejora_actividad", ajena)).toEqual([]);
+      expect(await nombres("mejora_hallazgo", h.id)).toEqual([]);
+      expect(await nombres("mejora_ronda", Number(r.id))).toEqual([]);
+      // Quien lo ve completo, todos.
+      expect((await archivosDe(tx, b.lider, { contexto: "mejora_hallazgo", contextoId: h.id })).map((x) => x.nombre)).toContain("zz-del-hallazgo.pdf");
+      expect((await archivosDe(tx, b.lider, { contexto: "mejora_actividad", contextoId: ajena })).map((x) => x.nombre)).toEqual(["zz-ajena.pdf"]);
       // La página del hallazgo enlaza solo las actividades que quien mira abre.
       expect(d?.rondas[0].acciones[0].actividades.map((x) => x.seAbre)).toEqual([true, false]);
       const delLider = await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(AHORA) });
@@ -421,13 +465,17 @@ describe("lo que se lee", () => {
       expect(filas.find((f) => f.id === h.id)?.avance).toBe(70);
     }));
 
-  it("quien solo ve hallazgos por sus actividades no ve ninguno completo (la lista lo lleva a «Mis actividades»)", () =>
+  it("ver algún hallazgo (también por una actividad) y cuántas actividades tiene: lo que decide la redirección y las pestañas", () =>
     revertida(sql, async (tx) => {
-      const { b, responsable } = await enEjecucion(tx);
-      expect(await veAlgunHallazgoCompleto(responsable, { sql: tx })).toBe(false);
-      expect(await veAlgunHallazgoCompleto(b.lider, { sql: tx })).toBe(true);
-      expect(await veAlgunHallazgoCompleto(b.control, { sql: tx })).toBe(true);
-      expect(await veAlgunHallazgoCompleto(b.consulta, { sql: tx })).toBe(false);
+      const { b, responsable, ids } = await enEjecucion(tx, 2);
+      expect(await veAlgunHallazgo(responsable, { sql: tx })).toBe(true);
+      expect(await veAlgunHallazgo(b.lider, { sql: tx })).toBe(true);
+      expect(await veAlgunHallazgo(b.consulta, { sql: tx })).toBe(false);
+      expect(await contarMisActividades(responsable, { sql: tx })).toBe(2);
+      expect(await contarMisActividades(b.consulta, { sql: tx })).toBe(0);
+      // Las de un borrador no cuentan.
+      await tx`UPDATE mejora_actividades SET fin_original = NULL WHERE id = ${ids[0]}`;
+      expect(await contarMisActividades(responsable, { sql: tx })).toBe(1);
     }));
 
   it("misActividades: las suyas de un plan aprobado, con lo vencido y lo devuelto", () =>

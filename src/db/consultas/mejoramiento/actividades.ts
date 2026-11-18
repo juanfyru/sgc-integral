@@ -17,12 +17,13 @@ import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
-import { participacionEnHallazgo, puedeVerActividad, puedeVerHallazgo } from "@/lib/alcance";
+import { participacionEnActividad, puedeVerHallazgo } from "@/lib/alcance";
 import { EsquemaActividad, EsquemaReasignar, EsquemaSeguimiento } from "@/lib/esquemas/mejoramiento";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import {
+  ACTIVIDAD_ABIERTA,
   ErrorMejora,
   type EstadoActividad,
   type EstadoHallazgo,
@@ -57,8 +58,6 @@ export const avanceMenor = (anterior: number) => `El avance no puede ser menor q
 /** Los avisos de una reasignación (spec §10.2 y §14.2): a quien la recibe y a quien la tenía. */
 export const SE_LE_REASIGNO = "Se le reasignó una actividad";
 export const SE_REASIGNO_SU_ACTIVIDAD = "Una actividad suya pasó a otra persona";
-
-const ABIERTAS: readonly EstadoActividad[] = ["abierta", "en_proceso"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // El avance (spec §10.3): puro
@@ -151,7 +150,7 @@ const esSuya = (p: Pick<Persona, "usuarioId">, a: Pick<ActividadBloqueada, "resp
 
 /** Sigue abierta: de la ronda en curso, sin terminar ni cancelar. */
 const sigueAbierta = (h: Pick<HallazgoBase, "ronda">, a: Pick<ActividadBloqueada, "rondaNumero" | "estado">) =>
-  a.rondaNumero === h.ronda && ABIERTAS.includes(a.estado);
+  a.rondaNumero === h.ronda && ACTIVIDAD_ABIERTA.includes(a.estado);
 
 /** El hallazgo en ejecución (si no, ya cambió) y la actividad abierta (si no, `cerrada`). */
 function exigirAbierta(h: HallazgoBase, a: ActividadBloqueada, cerrada: string): void {
@@ -289,8 +288,9 @@ export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: n
 
 /**
  * Un líder del proceso o el Admin SGC cambian el responsable de una actividad sin terminar, con motivo y sin aprobación. El
- * responsable nuevo es un usuario activo y distinto. Las marcas de los avisos a quien la tenía (vencida, al jefe,
- * recordatorio) se borran: los del responsable nuevo se cuentan de nuevo. Deja el evento `reasignada` con la forma
+ * responsable nuevo es un usuario activo y distinto. Las marcas del aviso de vencida y del recordatorio se borran (la persona
+ * nueva recibe los suyos); la del escalamiento al jefe se conserva: la actividad ya se escaló y reasignarla no la escala otra
+ * vez, de inmediato, al jefe de la persona nueva (spec §14.3). Deja el evento `reasignada` con la forma
  * `{ actividadId, antes, despues, motivo }` (la Tarea 16 lee de ahí quién **fue** responsable), su bitácora sin el motivo y un
  * aviso a cada uno de los dos (salvo a quien reasigna y a un anterior inactivo): al nuevo, con el enlace a la actividad; al
  * anterior, sin enlace (puede haber perdido el hallazgo).
@@ -311,7 +311,7 @@ export async function reasignarActividad(
     if (!nuevo) throw new ErrorMejora(RESPONSABLE_NUEVO_INACTIVO);
     const [anterior] = await tx`SELECT activo FROM usuarios WHERE id = ${a.responsableId}`;
     await tx`UPDATE mejora_actividades
-      SET responsable_id = ${v.responsableId}, aviso_vencido_en = NULL, escalado_en = NULL, recordatorio_en = NULL
+      SET responsable_id = ${v.responsableId}, aviso_vencido_en = NULL, recordatorio_en = NULL
       WHERE id = ${a.id}`;
     await dejarEvento(tx, {
       hallazgoId: h.id,
@@ -408,14 +408,15 @@ export type DetalleDeActividad = {
 const fechaHoy = (ahora: Date) => fechaEnZona(ahora, zonaHoraria());
 
 /**
- * La actividad de un plan aprobado para quien puede abrirla (`puedeVerActividad`: quien ve el hallazgo completo, su
+ * La actividad de un plan aprobado para quien puede abrirla (`participacionEnActividad`: quien ve el hallazgo completo, su
  * responsable y quien registró un seguimiento en ella); nulo si no existe **o** si no la ve (la misma respuesta).
  */
 export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: Opciones): Promise<DetalleDeActividad | null> {
   if (!Number.isSafeInteger(id) || id <= 0) return null;
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  if (!(await puedeVerActividad(id, sesion, { sql }))) return null;
+  const ve = await participacionEnActividad(id, sesion, { sql });
+  if (ve === null) return null;
   const [f] = await sql`
     SELECT a.id, a.orden, a.descripcion, a.responsable_id, u.nombre AS responsable, u.activo AS responsable_activo, a.avance,
       a.estado, a.reprogramaciones, a.terminada_en, ut.nombre AS terminada_por, a.verificacion, a.verificacion_nota,
@@ -434,15 +435,13 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     WHERE a.id = ${id}`;
   if (!f) return null;
   const hallazgoId = Number(f.hallazgo_id);
-  const [ve, seguimientos, archivos, ajustes] = await Promise.all([
-    participacionEnHallazgo(hallazgoId, sesion, { sql }),
+  const [seguimientos, archivos, ajustes] = await Promise.all([
     sql`SELECT s.id, to_char(s.fecha, 'YYYY-MM-DD') AS fecha, s.realizado, s.avance, s.barreras, s.creado_en, u.nombre AS quien
       FROM mejora_seguimientos s JOIN usuarios u ON u.id = s.registrado_por
       WHERE s.actividad_id = ${id} ORDER BY s.fecha DESC, s.id DESC`,
     archivosDe(sql, sesion, { contexto: "mejora_actividad", contextoId: id }),
     sql`SELECT id, tipo, pedido_en FROM mejora_ajustes WHERE actividad_id = ${id} AND estado = 'pendiente' ORDER BY id DESC LIMIT 1`,
   ]);
-  if (ve === null) return null;
   const estado = f.estado as EstadoActividad;
   const estadoHallazgo = f.hallazgo_estado as EstadoHallazgo;
   const ronda = Number(f.ronda);
@@ -471,7 +470,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     verificacion: (f.verificacion as "conforme" | "devuelta" | null) ?? null,
     verificacionNota: (f.verificacion_nota as string | null) ?? null,
     corregirAntesDe: (f.corregir_antes_de as string | null) ?? null,
-    vencida: ABIERTAS.includes(estado) && fin < fechaHoy(ahora),
+    vencida: ACTIVIDAD_ABIERTA.includes(estado) && fin < fechaHoy(ahora),
     accion: {
       id: Number(f.accion_id),
       etiqueta: etiquetaDeAccion(Number(f.accion_orden)),
@@ -508,6 +507,14 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     avanceMinimo: ultimo && !devuelta ? Number(ultimo.avance) : 0,
     ajustePendiente: ajuste ? { id: Number(ajuste.id), tipo: ajuste.tipo as string, pedidoEn: ajuste.pedido_en as Date } : null,
   };
+}
+
+/** Cuántas actividades de planes aprobados tiene hoy a su cargo la persona (las de `misActividades`), sin leerlas. */
+export async function contarMisActividades(sesion: Pick<SesionFlujo, "usuarioId">, opciones?: Opciones): Promise<number> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT count(*)::int AS n FROM mejora_actividades
+    WHERE responsable_id = ${sesion.usuarioId} AND fin_original IS NOT NULL`;
+  return Number(f.n);
 }
 
 export type ActividadPropia = {
@@ -550,7 +557,7 @@ export async function misActividades(sesion: Pick<SesionFlujo, "usuarioId">, opc
       fin,
       avance: Number(f.avance),
       estado,
-      vencida: ABIERTAS.includes(estado) && fin < hoy,
+      vencida: ACTIVIDAD_ABIERTA.includes(estado) && fin < hoy,
       devuelta: f.verificacion === "devuelta",
     };
   });

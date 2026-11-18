@@ -6,7 +6,7 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
-import { filtroHallazgos, filtroHallazgosCompletos, participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
+import { filtroHallazgos, participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
 import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import {
@@ -274,12 +274,12 @@ export async function listarHallazgos(
 }
 
 /**
- * Si la persona ve completo algún hallazgo (`filtroHallazgosCompletos`): quien solo los ve por sus actividades va de la lista a
- * «Mis actividades» (spec §16.1).
+ * Si la persona ve algún hallazgo (`filtroHallazgos`: completo o por una actividad). Una sola regla para la lista y «Mis
+ * actividades» (spec §16.1): decide la pestaña «Hallazgos», y quien no ve ninguno y tiene actividades va a las suyas.
  */
-export async function veAlgunHallazgoCompleto(sesion: SesionFlujo, opciones?: Opciones): Promise<boolean> {
+export async function veAlgunHallazgo(sesion: SesionFlujo, opciones?: Opciones): Promise<boolean> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [f] = await sql`SELECT EXISTS (SELECT 1 FROM mejora_hallazgos h WHERE ${filtroHallazgosCompletos(sql, sesion)}) AS ve`;
+  const [f] = await sql`SELECT EXISTS (SELECT 1 FROM mejora_hallazgos h WHERE ${filtroHallazgos(sql, sesion)}) AS ve`;
   return f?.ve === true;
 }
 
@@ -406,7 +406,17 @@ export type DetalleDeHallazgo = {
   cierre: { resultado: ResultadoCierre | null; cerradoEn: Date | null; lecciones: string | null; anuladoMotivo: string | null };
   rondas: RondaDeDetalle[];
   ocurrencias: Array<{ id: number; fecha: string; descripcion: string; origen: string; quien: string }>;
-  eventos: Array<{ id: number; tipo: string; ronda: number; detalle: unknown; quien: string | null; cuando: Date; fuera: boolean }>;
+  eventos: Array<{
+    id: number;
+    tipo: string;
+    ronda: number;
+    detalle: unknown;
+    quien: string | null;
+    cuando: Date;
+    fuera: boolean;
+    /** En una reasignación, de quién a quién (los nombres de `antes` y `despues`); nulo en los demás eventos. */
+    personas: { de: string; a: string } | null;
+  }>;
   turno: string;
   loQueSigue: LoQueSigueDelHallazgo;
   /** El de las acciones de la ronda en curso (`avanceDeHallazgo`); nulo sin plan aprobado. */
@@ -652,9 +662,15 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
         FROM mejora_ocurrencias o JOIN usuarios u ON u.id = o.registrado_por
         WHERE o.hallazgo_id = ${id} ORDER BY o.fecha, o.id`
     : [];
+  // En una reasignación, `antes` y `despues` son ids de usuario (el CASE guarda el cast: otros eventos usan `antes` para otra
+  // cosa).
   const eventos = completo
-    ? await sql`SELECT e.id, e.tipo, e.ronda, e.detalle, e.fuera, e.ocurrio_en, u.nombre AS quien
+    ? await sql`SELECT e.id, e.tipo, e.ronda, e.detalle, e.fuera, e.ocurrio_en, u.nombre AS quien, ua.nombre AS de, ud.nombre AS a
         FROM mejora_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
+        LEFT JOIN usuarios ua ON ua.id = (CASE WHEN e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'antes') = 'number'
+          THEN (e.detalle->>'antes')::bigint END)
+        LEFT JOIN usuarios ud ON ud.id = (CASE WHEN e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'despues') = 'number'
+          THEN (e.detalle->>'despues')::bigint END)
         WHERE e.hallazgo_id = ${id} ORDER BY e.ocurrio_en, e.id`
     : [];
 
@@ -726,6 +742,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       quien: (e.quien as string | null) ?? null,
       cuando: e.ocurrio_en as Date,
       fuera: e.fuera === true,
+      personas: e.tipo === "reasignada" && e.de && e.a ? { de: e.de as string, a: e.a as string } : null,
     })),
     turno,
     loQueSigue: await loQueSigue(sql, h, sesion, turno),

@@ -356,6 +356,50 @@ describe("quitar un archivo de corrección y exigirDestinoAbierto por rol", () =
       expect(await tx`SELECT 1 FROM archivos WHERE id = ${f1}`).toHaveLength(1);
     }));
 
+  it("la evidencia de una actividad terminada o cancelada no se quita, tampoco el Admin SGC (PC-05: no se termina sin evidencia)", () =>
+    revertida(sql, async (tx) => {
+      const { b, h, responsable } = await escena(tx);
+      const a = await actividadPorSql(tx, h.id, responsable.usuarioId, { aprobada: true, estado: "en_proceso" });
+      await estado(tx, h.id, "en_ejecucion");
+      const subir = async (nombre: string) =>
+        Number(
+          (
+            await registrarArchivo(
+              {
+                versionId: null, rol: "evidencia", ruta: `mejoramiento/actividades/${a}/${Date.now()}-${nombre}`, nombreOriginal: nombre,
+                extension: "pdf", mime: "application/pdf", tamanoBytes: 10, hashSha256: "f".repeat(64),
+                contexto: "mejora_actividad", contextoId: a,
+              },
+              responsable.usuarioId,
+              { sql: tx },
+            )
+          ).id,
+        );
+      const dueno = { contexto: "mejora_actividad", contextoId: a };
+      // Con la actividad en curso: quien lo subió y el Admin SGC lo quitan.
+      const f1 = await subir("e1.pdf");
+      const f2 = await subir("e2.pdf");
+      const f3 = await subir("e3.pdf");
+      expect(await archivosQuitables(tx, responsable, [{ id: f1 }], dueno)).toEqual([f1]);
+      await quitarArchivoDeMejora(responsable, f1, { sql: tx });
+      await quitarArchivoDeMejora(b.admin, f2, { sql: tx });
+      expect(await tx`SELECT 1 FROM archivos WHERE id IN (${f1}, ${f2})`).toHaveLength(0);
+      for (const e of ["terminada", "cancelada"]) {
+        await tx`UPDATE mejora_actividades SET estado = ${e} WHERE id = ${a}`;
+        for (const quien of [responsable, b.admin]) {
+          await expect(quitarArchivoDeMejora(quien, f3, { sql: tx })).rejects.toThrow(
+            "La evidencia de una actividad terminada o cancelada no se quita",
+          );
+          expect(await archivosQuitables(tx, quien, [{ id: f3 }], dueno)).toEqual([]);
+        }
+      }
+      expect(await tx`SELECT 1 FROM archivos WHERE id = ${f3}`).toHaveLength(1);
+      // Devuelta en la verificación, vuelve a estar en curso: se puede otra vez.
+      await tx`UPDATE mejora_actividades SET estado = 'en_proceso', verificacion = 'devuelta' WHERE id = ${a}`;
+      await quitarArchivoDeMejora(b.admin, f3, { sql: tx });
+      expect(await tx`SELECT 1 FROM archivos WHERE id = ${f3}`).toHaveLength(0);
+    }));
+
   it("exigirDestinoAbierto: corrección y análisis, y el rol es obligatorio donde hay roles", () =>
     revertida(sql, async (tx) => {
       const { b, h } = await escena(tx);
