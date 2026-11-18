@@ -269,7 +269,7 @@ describe("verdades pequeñas (revisión final, m9)", () => {
   /** Un cliente cuya transacción falla con ese código crudo de PostgreSQL, como una carrera real. */
   const conError = (code: string) =>
     ({ begin: () => Promise.reject(Object.assign(new Error(`error crudo ${code}`), { code })) }) as unknown as NonNullable<Parameters<typeof guardarConfigMejora>[2]>["sql"];
-  const ADMIN = { usuarioId: 1, rol: "admin_sgc" as const, verHistorial: false };
+  const ADMIN = { sesionId: "zz-falsa", usuarioId: 1, usuario: "zz_falso", nombre: "Admin falso", rol: "admin_sgc" as const, verHistorial: false };
   const LEGIBLE = "Otra persona guardó lo mismo a la vez: vuelva a cargar la página";
 
   it("las tres escrituras de la configuración traducen un error crudo de PostgreSQL a su frase (`legible`)", async () => {
