@@ -581,3 +581,23 @@ describe("hallazgoEn (utilidad de las pruebas)", () => {
       expect(oportunidad.estado).toBe("en_ejecucion");
     }));
 });
+
+describe("el texto libre de las firmas del plan va solo al evento (revisión final, m1)", () => {
+  it("la nota de los recursos de la revisión y las observaciones de la devolución", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_revision", { criticidad: "alta" });
+      const RECURSOS = "Hay que comprar un registrador de temperatura";
+      const OBSERVACIONES = "Las fechas no alcanzan para socializar el cambio";
+      await firmarRevision(b.admin, { hallazgoId: h.id, requiereRecursos: true, notaRecursos: RECURSOS, credenciales: CLAVE }, c(AHORA, tx));
+      await devolverPlan(b.gerencia, { hallazgoId: h.id, observaciones: OBSERVACIONES }, c(LUEGO, tx));
+      const bitacora = JSON.stringify((await tx`SELECT detalle FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${h.id}`).map((f) => f.detalle));
+      const eventos = JSON.stringify((await tx`SELECT detalle FROM mejora_eventos WHERE hallazgo_id = ${h.id}`).map((f) => f.detalle));
+      for (const t of [RECURSOS, OBSERVACIONES]) {
+        expect(bitacora).not.toContain(t);
+        expect(eventos).toContain(t);
+      }
+      const [revision] = await tx`SELECT detalle FROM auditoria WHERE accion = 'mejora_revisar_plan' AND entidad_id = ${h.id}`;
+      expect(revision.detalle).toMatchObject({ requiereRecursos: true });
+    }));
+});

@@ -433,7 +433,7 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
           sesion,
           h,
           "reclasificar",
-          { rumbo: { quedaEn: aceptadoVaA(v.clase) }, detalle: { justificacion: "El origen pasó a externo al editar el registro" } },
+          { rumbo: { quedaEn: aceptadoVaA(v.clase) }, soloEnElEvento: { justificacion: "El origen pasó a externo al editar el registro" } },
           c,
         );
         await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
@@ -551,7 +551,10 @@ export async function reclasificarHallazgo(
         "reclasificar",
         {
           rumbo: { quedaEn },
-          detalle: {
+          // A la bitácora, solo qué campos cambiaron (como al editar); el antes y el después, la justificación, la decisión que se
+          // borra y la nota llevan texto escrito por una persona: van al evento (spec §6.4).
+          detalle: { campos: Object.keys(cambios.antes) },
+          soloEnElEvento: {
             antes: cambios.antes,
             despues: cambios.despues,
             justificacion: r.justificacion,
@@ -616,7 +619,8 @@ export async function cambiarProceso(
         accion: "mejora_cambiar_proceso",
         entidad: ENTIDAD_HALLAZGO,
         entidadId: h.id,
-        detalle: { codigo: h.codigo, antes: viejo.nombre, despues: nuevo.nombre, justificacion: r.justificacion },
+        // La justificación es texto libre: queda en el evento (spec §6.4).
+        detalle: { codigo: h.codigo, antes: viejo.nombre, despues: nuevo.nombre },
       });
       await avisarAlProcesoNuevo(tx, h, r.procesoId, viejo.titulo as string, sesion.usuarioId);
     }),
@@ -661,7 +665,7 @@ export async function anularHallazgo(
         sesion,
         h,
         "anular",
-        { detalle: { justificacion: r.justificacion, actividadesCanceladas: canceladas.length } },
+        { detalle: { actividadesCanceladas: canceladas.length }, soloEnElEvento: { justificacion: r.justificacion } },
         c,
       );
       // Solo los responsables de un plan aprobado alguna vez: a quien figuraba en un borrador nunca se le entregó nada.

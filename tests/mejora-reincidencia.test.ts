@@ -503,6 +503,47 @@ describe("cambiarProceso (reincidencia, subproceso y avisos)", () => {
   });
 });
 
+describe("el texto libre de reclasificar, cambiar el proceso y anular va solo al evento (revisión final, m1)", () => {
+  /** La bitácora del hallazgo no lleva esos textos; su historial (los eventos), sí. */
+  async function soloEnElEvento(tx: TransactionSql, hallazgoId: number, textos: string[]) {
+    const bitacora = JSON.stringify(
+      (await tx`SELECT detalle FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${hallazgoId}`).map((f) => f.detalle),
+    );
+    const eventos = JSON.stringify((await tx`SELECT detalle FROM mejora_eventos WHERE hallazgo_id = ${hallazgoId}`).map((f) => f.detalle));
+    for (const t of textos) {
+      expect(bitacora).not.toContain(t);
+      expect(eventos).toContain(t);
+    }
+  }
+
+  it("reclasificar: la justificación, la nota y el antes y el después de la identificación; la bitácora dice qué campos", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await nuevo(tx, b);
+      const JUSTIFICACION = "La auditoría lo calificó como incumplimiento mayor";
+      const NOTA = "Se precisa el turno en que se encontró";
+      const TITULO = "Formatos de entrega del turno de noche sin diligenciar";
+      await reclasificar(tx, b.admin, h.id, { criticidad: "alta", titulo: TITULO, nota: NOTA, justificacion: JUSTIFICACION });
+      await soloEnElEvento(tx, h.id, [JUSTIFICACION, NOTA, TITULO]);
+      const [bit] = await tx`SELECT detalle FROM auditoria WHERE accion = 'mejora_reclasificar' AND entidad_id = ${h.id}`;
+      expect(bit.detalle).toMatchObject({ codigo: h.codigo, campos: ["criticidad", "titulo"] });
+    });
+  });
+
+  it("cambiar el proceso y anular: su justificación", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const h = await nuevo(tx, b);
+      const CAMBIO = "El hecho ocurrió en el servicio de al lado";
+      const ANULA = "Se registró dos veces el mismo hecho";
+      await cambiarProceso(b.admin, { hallazgoId: h.id, procesoId: otro.procesoId, justificacion: CAMBIO }, c(DESPUES, tx));
+      await anularHallazgo(b.admin, { hallazgoId: h.id, justificacion: ANULA }, c(DESPUES, tx));
+      await soloEnElEvento(tx, h.id, [CAMBIO, ANULA]);
+    });
+  });
+});
+
 describe("enlacesDelHallazgo", () => {
   it("devuelve lo que el formulario de edición no pinta, para no perderlo al guardar", async () => {
     await revertida(sql, async (tx) => {

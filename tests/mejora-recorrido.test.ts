@@ -767,3 +767,48 @@ describe("«Por aceptar» sin nadie que pueda aceptar (revisión final, m2)", ()
       );
     }));
 });
+
+describe("el texto libre del recorrido va solo al evento (revisión final, m1)", () => {
+  /** La bitácora del hallazgo no lleva esos textos; su historial (los eventos), sí. */
+  async function soloEnElEvento(tx: TransactionSql, hallazgoId: number, textos: string[]) {
+    const bitacora = JSON.stringify(
+      (await tx`SELECT detalle FROM auditoria WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${hallazgoId}`).map((f) => f.detalle),
+    );
+    const eventos = JSON.stringify((await tx`SELECT detalle FROM mejora_eventos WHERE hallazgo_id = ${hallazgoId}`).map((f) => f.detalle));
+    for (const t of textos) {
+      expect(bitacora).not.toContain(t);
+      expect(eventos).toContain(t);
+    }
+  }
+
+  it("rechazo, réplica, nota del arbitraje, la corrección y su responsable, y las dos decisiones", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_aceptar");
+      const CORRECCION = "Se reubicaron los formatos en la estación de enfermería";
+      const QUIEN = "Personal del turno de noche";
+      const NO = "Fue un hecho aislado y la corrección lo contuvo";
+      const SI = "Se repitió en dos auditorías seguidas del servicio";
+      await rechazarHallazgo(b.lider, { hallazgoId: h.id, justificacion: JUSTIFICACION }, c(REGISTRO, tx));
+      await sostenerHallazgo(b.control, { hallazgoId: h.id, replica: REPLICA }, c(REGISTRO, tx));
+      await arbitrarHallazgo(b.admin, { hallazgoId: h.id, confirma: "hallazgo", nota: NOTA }, c(LUEGO, tx));
+      await evidenciaDeCorreccion(tx, h.id, b.lider.usuarioId);
+      await registrarCorreccion(
+        b.lider,
+        { hallazgoId: h.id, requerida: true, descripcion: CORRECCION, responsableNombre: QUIEN, implementadaEn: "2026-11-19" },
+        c(LUEGO, tx),
+      );
+      await decidirAccionCorrectiva(b.admin, { hallazgoId: h.id, requiere: false, justificacion: NO }, c(LUEGO, tx));
+      await decidirAccionCorrectiva(b.gerencia, { hallazgoId: h.id, requiere: true, justificacion: SI }, c(DESPUES, tx));
+      await soloEnElEvento(tx, h.id, [JUSTIFICACION, REPLICA, NOTA, CORRECCION, QUIEN, NO, SI]);
+    }));
+
+  it("la nota de una corrección devuelta", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_validar");
+      const DEVUELTA = "Falta la foto de la estación ya corregida";
+      await devolverCorreccion(b.control, { hallazgoId: h.id, nota: DEVUELTA }, c(DESPUES, tx));
+      await soloEnElEvento(tx, h.id, [DEVUELTA]);
+    }));
+});

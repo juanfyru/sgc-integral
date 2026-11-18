@@ -7,6 +7,10 @@
  * persona dentro, después el estado, la escritura de sus columnas y el cambio de estado por `transicionarHallazgo`. Quien
  * no ve el hallazgo recibe «no existe»; quien lo ve y no puede dar el paso, `ErrorPermiso`. Las columnas que escribe un
  * paso que termina el hallazgo van antes de la transición: un hallazgo terminado ya no admite escrituras.
+ *
+ * Lo que la persona escribe con texto libre (la justificación del rechazo, la réplica, la nota del arbitraje, la descripción
+ * de la corrección y el nombre de su responsable, la justificación de la decisión y la nota de la devolución) va a sus
+ * columnas y al evento, nunca a la bitácora (`soloEnElEvento`, spec §6.4).
  */
 import type { TransactionSql } from "postgres";
 import type { z } from "zod";
@@ -246,7 +250,7 @@ export async function rechazarHallazgo(
     if (!(await puedeRechazar(tx, sesion, h))) await negar(tx, sesion, h.id);
     if (esExterno(h.origen)) throw new ErrorMejora(EXTERNO_NO_SE_RECHAZA);
     exigirEstado(h, "rechazar");
-    await transicionarHallazgo(tx, sesion, h, "rechazar", { detalle: { justificacion: v.justificacion } }, c);
+    await transicionarHallazgo(tx, sesion, h, "rechazar", { soloEnElEvento: { justificacion: v.justificacion } }, c);
   });
 }
 
@@ -279,7 +283,7 @@ export async function sostenerHallazgo(
   await conElHallazgo(v.hallazgoId, opciones, async (tx, h, c) => {
     if (!puedeDecidirTrasElRechazo(sesion, h)) await negar(tx, sesion, h.id);
     exigirEstado(h, "sostener");
-    await transicionarHallazgo(tx, sesion, h, "sostener", { detalle: { replica: v.replica, ...enLugarDe(sesion, h) } }, c);
+    await transicionarHallazgo(tx, sesion, h, "sostener", { detalle: enLugarDe(sesion, h), soloEnElEvento: { replica: v.replica } }, c);
   });
 }
 
@@ -301,7 +305,7 @@ export async function arbitrarHallazgo(
     exigirEstado(h, accion);
     exigirActa(v.acta, c);
     if (accion === "confirmar_hallazgo") await contarDeNuevoElPlazoDeFormular(tx, h, c);
-    const { despues } = await transicionarHallazgo(tx, sesion, h, accion, { detalle: { nota: v.nota }, acta: v.acta }, c);
+    const { despues } = await transicionarHallazgo(tx, sesion, h, accion, { soloEnElEvento: { nota: v.nota }, acta: v.acta }, c);
     await avisarDelArbitraje(tx, h, v.confirma, despues, sesion.usuarioId);
   });
 }
@@ -364,12 +368,11 @@ export async function registrarCorreccion(
       {
         detalle: {
           requerida: v.requerida,
-          descripcion: v.descripcion,
           responsableId: v.responsableId,
-          responsableNombre: v.responsableNombre,
           implementadaEn: v.implementadaEn,
           ...(obligada ? { accionObligada: true } : {}),
         },
+        soloEnElEvento: { descripcion: v.descripcion, responsableNombre: v.responsableNombre },
       },
       c,
     );
@@ -410,7 +413,7 @@ export async function decidirAccionCorrectiva(
       sesion,
       h,
       accion,
-      { detalle: { justificacion: v.justificacion, ...(antes ? { antes } : {}) }, acta: v.acta },
+      { soloEnElEvento: { justificacion: v.justificacion, ...(antes ? { antes } : {}) }, acta: v.acta },
       c,
     );
   });
@@ -465,7 +468,7 @@ export async function devolverCorreccion(
       sesion,
       h,
       "devolver_correccion",
-      { detalle: { nota: v.nota, decision: { antes }, evidenciaDevuelta: devuelta } },
+      { detalle: { evidenciaDevuelta: devuelta }, soloEnElEvento: { nota: v.nota, decision: { antes } } },
       c,
     );
   });

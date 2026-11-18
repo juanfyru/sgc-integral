@@ -320,7 +320,7 @@ describe("frases con el detalle real", () => {
     ).toBe("Registró el hallazgo HZ-2026-001 — Formatos sin diligenciar");
     expect(
       e("mejora_rechazar", { ...base, estado: { antes: "por_aceptar", despues: "rechazo" }, justificacion: "No es de este proceso" }),
-    ).toBe("Rechazó el hallazgo HZ-2026-001: No es de este proceso");
+    ).toBe("Rechazó el hallazgo HZ-2026-001");
     // El `antes` y el `despues` de quien llama (una reclasificación) no se confunden con el cambio de estado.
     expect(
       e("mejora_reclasificar", {
@@ -330,7 +330,14 @@ describe("frases con el detalle real", () => {
         despues: { clase: "no_conformidad" },
         justificacion: "Es un incumplimiento del procedimiento",
       }),
-    ).toBe("Reclasificó el hallazgo HZ-2026-001: Es un incumplimiento del procedimiento");
+    ).toBe("Reclasificó el hallazgo HZ-2026-001");
+    // El texto libre va solo al evento (revisión final, m1): una fila anterior que lo traiga no lo imprime.
+    expect(e("mejora_cambiar_proceso", { codigo: "HZ-2026-001", antes: "Urgencias", despues: "Farmacia", justificacion: "Era de otro servicio" })).toBe(
+      "Cambió el proceso del hallazgo HZ-2026-001 a Farmacia",
+    );
+    expect(e("mejora_anular", { ...base, estado: { antes: "por_aceptar", despues: "anulado" }, justificacion: "Se registró por error" })).toBe(
+      "Anuló el hallazgo HZ-2026-001",
+    );
     expect(e("mejora_corregir", { ...base, estado: { antes: "por_corregir", despues: "por_decidir" } })).toBe(
       "Registró la corrección del hallazgo HZ-2026-001",
     );
@@ -352,7 +359,7 @@ describe("frases con el detalle real", () => {
       e("mejora_revisar_plan", { ...base, requiereRecursos: true, notaRecursos: "Un registrador", estado: { antes: "en_revision", despues: "en_aprobacion" } }),
     ).toBe("Revisó el plan de acción del hallazgo HZ-2026-001: requiere recursos adicionales o tiene impacto institucional");
     expect(e("mejora_devolver_plan", { ...base, observaciones: "Falta decir quién verifica el registro" })).toBe(
-      "Devolvió el plan de acción del hallazgo HZ-2026-001: Falta decir quién verifica el registro",
+      "Devolvió el plan de acción del hallazgo HZ-2026-001",
     );
   });
   it("las del plan en borrador: la etiqueta de la acción, nunca su texto", () => {

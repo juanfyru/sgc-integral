@@ -638,8 +638,9 @@ function queAjuste(d: Record<string, unknown>): string {
 }
 
 /**
- * Lo que las firmas del plan añaden a su frase (spec 15 §8.6, Tarea 13): el envío que pasa directo a aprobación, la revisión
- * que vale como aprobación o que pide recursos, y las observaciones de la devolución. Nunca el texto del plan.
+ * Lo que las firmas del plan añaden a su frase (spec 15 §8.6, Tarea 13): el envío que pasa directo a aprobación y la revisión
+ * que vale como aprobación o que pide recursos. Nunca el texto del plan, las observaciones de la devolución ni la nota de los
+ * recursos: el texto libre va solo al evento.
  */
 function fraseDelPlan(accion: AccionHallazgo, d: Record<string, unknown>, h: HallazgoEnFrase): string | null {
   if (accion === "enviar_plan" && d.sinRevision === true) {
@@ -649,7 +650,6 @@ function fraseDelPlan(accion: AccionHallazgo, d: Record<string, unknown>, h: Hal
   if (accion === "revisar_plan" && d.requiereRecursos === true) {
     return `${FRASES_DE_MEJORA.revisar_plan(h)}: requiere recursos adicionales o tiene impacto institucional`;
   }
-  if (accion === "devolver_plan") return `${FRASES_DE_MEJORA.devolver_plan(h)}${conMotivo(d.observaciones)}`;
   if (accion === "ajustar") return `${FRASES_DE_MEJORA.ajustar(h)}${queAjuste(d)}`;
   return null;
 }
@@ -676,6 +676,11 @@ function fraseDeLaEficacia(accion: AccionHallazgo, d: Record<string, unknown>, h
   return null;
 }
 
+/**
+ * La frase de un paso del motor del hallazgo. No imprime texto escrito por una persona (la justificación, la réplica, la nota, la
+ * descripción de la corrección…): va solo al evento (`soloEnElEvento`, spec §6.4); una fila anterior que lo traiga tampoco lo
+ * muestra. El título, sí: es el nombre del hallazgo.
+ */
 function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): string {
   const codigo = texto(d.codigo);
   const h = codigo ? { el: `el hallazgo ${codigo}`, del: `del hallazgo ${codigo}` } : SIN_CODIGO;
@@ -686,7 +691,7 @@ function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): st
     (accion === "validar_correccion" && d.resultado === "sin_accion" ? `Validó el cierre sin acción ${h.del}` : FRASES_DE_MEJORA[accion](h));
   const titulo = accion === "registrar" || accion === "cargar" ? texto(d.titulo) : null;
   const reporte = accion === "registrar" ? numero(d.reporteId) : null;
-  return `${frase}${titulo ? ` — ${titulo}` : ""}${reporte !== null ? `, desde el reporte n.º ${reporte}` : ""}${conMotivo(d.justificacion)}`;
+  return `${frase}${titulo ? ` — ${titulo}` : ""}${reporte !== null ? `, desde el reporte n.º ${reporte}` : ""}`;
 }
 
 const NOMBRES_DE_MEJORA: Record<string, string> = Object.fromEntries(
@@ -1058,7 +1063,8 @@ export function describirEvento(e: EventoAuditoria): string {
     case "mejora_cambiar_proceso": {
       const codigo = texto(d.codigo);
       const a = texto(d.despues);
-      return `Cambió el proceso ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${a ? ` a ${a}` : ""}${conMotivo(d.justificacion)}`;
+      // La justificación va solo al evento (spec §6.4).
+      return `Cambió el proceso ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${a ? ` a ${a}` : ""}`;
     }
     // ── Mejoramiento (15A): las actividades del plan aprobado (la etiqueta y el avance, nunca lo que se hizo ni el motivo)
     case "mejora_seguimiento":

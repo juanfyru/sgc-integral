@@ -1036,7 +1036,16 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `YA_CAMBIO` si el estado o la ronda no son los que leyó quien llama; pone el plazo del paso nuevo, borra las
   marcas de aviso del anterior, deja el evento y la bitácora (con `detalle.estado = { antes, despues }`: `estado`,
   `codigo`, `ronda` y `acta` son claves reservadas del motor, y `soloEnElEvento` lleva lo que no va a la
-  bitácora, como el plan congelado) y avisa a quien recibe el turno (`avisarDelTurno`). Todo camino que escribe
+  bitácora, como el plan congelado) y avisa a quien recibe el turno (`avisarDelTurno`). **El texto libre del
+  hallazgo va solo al evento** (spec 15 §6.4, Ley 1581: una copia menos del texto que pudo llevar un dato de
+  paciente, en la tabla que se lee con filtros de todos los módulos): la justificación del rechazo, de la decisión,
+  de la reclasificación, del cambio de proceso y de la anulación, la réplica, las notas (del arbitraje, de la
+  devolución de la corrección, de la reclasificación), la descripción de la corrección y el nombre escrito de su
+  responsable, las observaciones de la devolución del plan, la nota de los recursos, el antes y el después de una
+  reclasificación, y lo de la verificación, la evaluación y el cierre quedan en `mejora_eventos` (y sus columnas),
+  que el historial muestra a quien ve el hallazgo; a `auditoria` van ids, etiquetas, fechas y, de una
+  reclasificación, los nombres de los campos que cambiaron (`campos`), y su frase (`describirEvento`) no imprime
+  ese texto aunque una fila anterior lo traiga. El título del hallazgo sí va: es su nombre. Todo camino que escribe
   filas hijas y transiciona toma antes el hallazgo `FOR UPDATE` (`bloquearHallazgo`): el hallazgo es el primer
   candado del módulo y las hijas van después. Los actos firmados siguen F13A-R4: un validador de solo lectura
   antes, `verificarParaFirmar` fuera de la transacción y todo repetido dentro, comparando lo validado con lo que

@@ -34,7 +34,8 @@ export const NO_EXISTE = "El hallazgo no existe";
  * Lo que acompaña a un paso: el rumbo de la tabla, el detalle del evento y, si se hizo en papel, su fecha real. El detalle
  * llega tal cual al evento y a la bitácora; el motor le añade `estado: { antes, despues }`, `acta` y, en la bitácora,
  * `codigo` y `ronda`, y rechaza un detalle que ya traiga alguna de esas claves (`CLAVES_DEL_MOTOR`). `soloEnElEvento` va
- * al detalle del evento y nunca a la bitácora (el plan congelado al enviarlo y al aprobarlo, spec §12.2): sus claves no
+ * al detalle del evento y nunca a la bitácora: el plan congelado al enviarlo y al aprobarlo (spec §12.2) y todo texto escrito por
+ * una persona (justificaciones, réplica, notas, observaciones, la descripción de la corrección; spec §6.4). Sus claves no
  * pueden ser del motor ni repetir las de `detalle`. `sinAvisoDelTurno` no avisa el turno del estado nuevo: lo pasa solo quien
  * avisa por su cuenta a quienes lo reciben (la aprobación del plan, con un aviso por actividad, spec §14.2). `nuevaRonda` abre
  * la ronda siguiente (spec §8.7: la evaluación «no eficaz»): solo hacia «Por formular».

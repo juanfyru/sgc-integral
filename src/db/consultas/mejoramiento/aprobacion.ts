@@ -279,7 +279,8 @@ export async function devolverPlan(
       await tx`UPDATE mejora_rondas
         SET estado_plan = 'borrador', revisado_por = NULL, revisado_en = NULL, requiere_recursos = false, nota_recursos = NULL
         WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
-      await transicionarHallazgo(tx, sesion, h, "devolver_plan", { detalle: { observaciones: v.observaciones } }, await contextoDeMejora(tx, ahora));
+      // Las observaciones son texto libre: van al evento, nunca a la bitácora (spec §6.4).
+      await transicionarHallazgo(tx, sesion, h, "devolver_plan", { soloEnElEvento: { observaciones: v.observaciones } }, await contextoDeMejora(tx, ahora));
     }),
   );
 }
@@ -328,7 +329,12 @@ async function dejarAprobado(
   sesion: SesionFlujo,
   h: HallazgoBase,
   envio: EnvioDelPlan,
-  x: { accion: "revisar_plan" | "aprobar_plan"; rol: "admin_sgc" | "gerencia"; detalle: Record<string, unknown> },
+  x: {
+    accion: "revisar_plan" | "aprobar_plan";
+    rol: "admin_sgc" | "gerencia";
+    detalle: Record<string, unknown>;
+    soloEnElEvento?: Record<string, unknown>;
+  },
   c: ContextoMejora,
 ): Promise<void> {
   const [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
@@ -358,7 +364,7 @@ async function dejarAprobado(
     {
       rumbo: { apruebaGerencia: false },
       detalle: { ...x.detalle, huella: envio.huella, aprobadoRol: x.rol },
-      soloEnElEvento: { plan: envio.plan },
+      soloEnElEvento: { ...x.soloEnElEvento, plan: envio.plan },
       // El aviso por actividad de abajo reemplaza el de turno («Ejecutar las actividades…»): uno por actividad (§14.2).
       sinAvisoDelTurno: true,
     },
@@ -436,11 +442,20 @@ export async function firmarRevision(
         contexto,
         ahora,
       });
-      const detalle = { requiereRecursos: v.requiereRecursos, ...(v.notaRecursos ? { notaRecursos: v.notaRecursos } : {}) };
+      // La nota de los recursos es texto libre: va al evento, nunca a la bitácora (spec §6.4).
+      const detalle = { requiereRecursos: v.requiereRecursos };
+      const soloEnElEvento = v.notaRecursos ? { notaRecursos: v.notaRecursos } : {};
       if (r.apruebaGerencia) {
-        await transicionarHallazgo(tx, sesion, h, "revisar_plan", { rumbo: { apruebaGerencia: true }, detalle: { ...detalle, huella: r.envio.huella } }, c);
+        await transicionarHallazgo(
+          tx,
+          sesion,
+          h,
+          "revisar_plan",
+          { rumbo: { apruebaGerencia: true }, detalle: { ...detalle, huella: r.envio.huella }, soloEnElEvento },
+          c,
+        );
       } else {
-        await dejarAprobado(tx, sesion, h, r.envio, { accion: "revisar_plan", rol: "admin_sgc", detalle }, c);
+        await dejarAprobado(tx, sesion, h, r.envio, { accion: "revisar_plan", rol: "admin_sgc", detalle, soloEnElEvento }, c);
       }
     }),
   );
