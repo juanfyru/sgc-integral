@@ -533,7 +533,11 @@ noviembre de 2026**. En el navegador no hay reloj que adelantar: lo que pide esp
 hallazgos ya sembrados.
 
 0. **La base.** En el worktree, `bash .superpowers/sdd/2026-11-17-fase15a-mejoramiento/con-f15a.sh npm run db:seed`, después
-   `… npm run admin:asegurar` y el servidor en otro puerto (`… npx next dev -p 3015`). Lo que trae la demo, en
+   `… npm run admin:asegurar` y el servidor en otro puerto (`… npx next dev -p 3015`). Si `/ingreso` se recarga sin parar
+   (en la consola, «[HMR] connected» y «[Fast Refresh] rebuilding» una y otra vez), detenga ese `next dev` y vuelva a
+   lanzarlo: le pasó al que arrancó justo después de un `next build` en el worktree, y uno nuevo no lo repitió. La 3002 y la
+   3015 comparten la cookie de sesión de `localhost`: ingresar en una cierra la sesión de la otra; abra la 15A en otra
+   ventana de incógnito o en otro navegador. Lo que trae la demo, en
    **Mejoramiento**: por aceptar, «Capacitaciones del plan institucional sin la evaluación de su eficacia» (HZ-2026-014,
    Talento Humano); en arbitraje, «Hojas de vida del personal asistencial sin la verificación de los títulos» (013);
    rechazado, «Historias de odontología con el consentimiento informado impreso sin la firma del profesional» (012); cerrado
