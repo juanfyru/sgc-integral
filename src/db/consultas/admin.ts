@@ -772,7 +772,8 @@ export async function registrarArchivo(
     contexto?: string; contextoId?: number | null;
   },
   usuarioId: number,
-  opciones?: OpcionesEscritura,
+  /** `ahora`: la hora con que el formato firmado de una carga la confirma (spec §15); sin ella, el reloj. */
+  opciones?: OpcionesEscritura & { ahora?: Date },
 ): Promise<{ id: number; reemplazados: string[] }> {
   try {
     return await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
@@ -784,7 +785,7 @@ export async function registrarArchivo(
         if (datos.contexto === "hallazgo") await exigirHallazgoNoCerrado(tx, datos.contextoId);
         // Lo de mejoramiento (15A): el dueño bloqueado, abierto y la persona comprobada otra vez.
         if (CONTEXTOS_DE_MEJORA.includes(datos.contexto)) {
-          await exigirDestinoAbierto(tx, datos.contexto, datos.contextoId, usuarioId, datos.rol);
+          await exigirDestinoAbierto(tx, datos.contexto, datos.contextoId, usuarioId, datos.rol, opciones?.ahora);
         }
         // El soporte de una medición: el indicador y la medición bloqueados antes de escribir la fila hija.
         if (datos.contexto === "medicion") await bloquearParaSoporte(tx, datos.contextoId);

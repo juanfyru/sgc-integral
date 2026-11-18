@@ -2,8 +2,10 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
-import { alcanceProcesos, filtroAcceso } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, filtroHallazgos, filtroIndicadores } from "@/lib/alcance";
+import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { etiquetasDeUsuarios } from "@/lib/mejoramiento/textos";
+import { zonaHoraria } from "@/lib/zona-horaria";
 
 /** Los procesos activos que la persona alcanza: el líder, solo los suyos; Admin SGC y Control Interno, todos (`alcanceProcesos`). */
 export async function procesosDelAlcance(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Array<{ id: number; nombre: string }>> {
@@ -73,4 +75,54 @@ export async function usuariosActivos(opciones?: { sql?: Cliente }): Promise<Usu
   const usuarios = filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, cargo: (f.cargo as string | null) ?? null, usuario: f.usuario as string }));
   const etiquetas = etiquetasDeUsuarios(usuarios);
   return usuarios.map((u) => ({ id: u.id, nombre: u.nombre, cargo: u.cargo, etiqueta: etiquetas.get(u.id) ?? u.nombre }));
+}
+
+/** Lo que la carga de un hallazgo en curso deja enlazar en su identificación (`opcionesDeLaCarga`). */
+export type OpcionesDeLaCarga = {
+  subprocesos: Array<{ id: number; nombre: string; procesoId: number }>;
+  /** De qué hallazgo cerrado del mismo proceso es reincidencia (spec §7.5). */
+  cerrados: Array<{ id: number; codigo: string; titulo: string; procesoId: number }>;
+  indicadores: Array<{ id: number; codigo: string; nombre: string }>;
+  /** Las mediciones con resultado de cada indicador, de la más reciente a la más antigua (hasta 24 por indicador). */
+  mediciones: Array<{ id: number; indicadorId: number; etiqueta: string }>;
+};
+
+/**
+ * Lo que la identificación de una carga (spec §15) enlaza como la de un registro (§7.1, `revisarIdentificacion` lo vuelve a
+ * comprobar): los subprocesos activos de cada proceso, los cerrados de cada proceso que la persona ve (los 100 más recientes), los
+ * indicadores activos o retirados que ve y las mediciones con resultado de cada uno.
+ */
+export async function opcionesDeLaCarga(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<OpcionesDeLaCarga> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const zona = zonaHoraria();
+  const [subprocesos, cerrados, indicadores] = await Promise.all([
+    sql`SELECT s.id, s.nombre, s.proceso_id FROM subprocesos s JOIN procesos p ON p.id = s.proceso_id AND p.activo
+      WHERE s.activo ORDER BY s.proceso_id, s.orden, s.id`,
+    sql`SELECT id, codigo, titulo, proceso_id FROM (
+        SELECT h.id, h.codigo, h.titulo, h.proceso_id,
+          row_number() OVER (PARTITION BY h.proceso_id ORDER BY h.cerrado_en DESC NULLS LAST, h.id DESC) AS n
+        FROM mejora_hallazgos h WHERE h.estado = 'cerrado' AND ${filtroHallazgos(sql, sesion)}) c
+      WHERE n <= 100 ORDER BY proceso_id, n`,
+    sql`SELECT i.id, i.codigo, coalesce((SELECT iv.nombre FROM indicador_versiones iv
+        WHERE iv.indicador_id = i.id AND iv.estado = 'aprobada' ORDER BY iv.numero DESC LIMIT 1), i.codigo) AS nombre
+      FROM indicadores i WHERE i.estado IN ('activo', 'retirado') AND ${filtroIndicadores(sql, sesion)}
+      ORDER BY i.codigo, i.id`,
+  ]);
+  const ids = indicadores.map((f) => Number(f.id));
+  const mediciones = ids.length
+    ? await sql`SELECT id, indicador_id, periodo FROM (
+          SELECT m.id, m.indicador_id, m.periodo, row_number() OVER (PARTITION BY m.indicador_id ORDER BY m.desde DESC, m.id DESC) AS n
+          FROM mediciones m WHERE m.indicador_id = ANY(${ids}::bigint[]) AND m.resultado IS NOT NULL) x
+        WHERE n <= 24 ORDER BY indicador_id, n`
+    : [];
+  return {
+    subprocesos: subprocesos.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, procesoId: Number(f.proceso_id) })),
+    cerrados: cerrados.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string, procesoId: Number(f.proceso_id) })),
+    indicadores: indicadores.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, nombre: f.nombre as string })),
+    mediciones: mediciones.map((f) => ({
+      id: Number(f.id),
+      indicadorId: Number(f.indicador_id),
+      etiqueta: periodoDe(f.periodo as string, zona)?.etiqueta ?? (f.periodo as string),
+    })),
+  };
 }

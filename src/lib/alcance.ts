@@ -798,17 +798,28 @@ function liderDelProcesoDelHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
 
 const registroElHallazgo = (sql: Cliente, sujeto: SujetoVisibilidad) => sql`h.registrado_por = ${sujeto.usuarioId}`;
 
+/**
+ * Para el SQL sobre el hallazgo `h`: no es cargado o ya tiene su formato firmado (un archivo suyo con rol `carga`, spec §15).
+ * Antes del escaneo el plan de una carga no llega a sus responsables: ni lo ven por su actividad, ni les da tareas, avisos,
+ * vencimientos ni «Mis actividades». Una sola condición: la reexporta `carga-confirmada.ts` para las demás consultas.
+ */
+export function cargaResuelta(sql: Cliente) {
+  return sql`(NOT h.cargado OR EXISTS (SELECT 1 FROM archivos cc
+    WHERE cc.contexto = 'mejora_hallazgo' AND cc.contexto_id = h.id AND cc.rol = 'carga' AND cc.version_id IS NULL))`;
+}
+
 function esResponsableEnElHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
-  // Solo la actividad de un plan aprobado alguna vez (`fin_original`): figurar en un borrador no da alcance (spec §6.3).
-  return sql`(EXISTS (SELECT 1 FROM mejora_actividades hz_a
+  // Solo la actividad de un plan aprobado alguna vez (`fin_original`): figurar en un borrador no da alcance (spec §6.3). La de
+  // una carga sin su formato firmado, tampoco: todavía no le llegó (`cargaResuelta`).
+  return sql`(${cargaResuelta(sql)} AND (EXISTS (SELECT 1 FROM mejora_actividades hz_a
       WHERE hz_a.hallazgo_id = h.id AND hz_a.responsable_id = ${sujeto.usuarioId} AND hz_a.fin_original IS NOT NULL)
-    OR EXISTS (SELECT 1 FROM mejora_seguimientos hz_s WHERE hz_s.hallazgo_id = h.id AND hz_s.registrado_por = ${sujeto.usuarioId}))`;
+    OR EXISTS (SELECT 1 FROM mejora_seguimientos hz_s WHERE hz_s.hallazgo_id = h.id AND hz_s.registrado_por = ${sujeto.usuarioId})))`;
 }
 
 /**
  * Qué hallazgos ve una persona, para un `WHERE` sobre `mejora_hallazgos h`: con `mejora.ver_todo`, todos; si no, los de sus
  * procesos activos (si lidera), los que registró y aquellos donde es responsable de una actividad de un plan aprobado alguna
- * vez o registró un seguimiento.
+ * vez o registró un seguimiento (en una carga, desde su formato firmado).
  */
 export function filtroHallazgos(sql: Cliente, sujeto: SujetoVisibilidad) {
   if (puede(sujeto, "mejora.ver_todo")) return sql`true`;

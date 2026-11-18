@@ -18,7 +18,15 @@
 import type { z } from "zod";
 import { obtenerSql } from "@/db/cliente";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { EsquemaCarga, EsquemaHallazgo, LA_ACCION, LA_ACTIVIDAD, type CargaValidada, type HallazgoValidado } from "@/lib/esquemas/mejoramiento";
+import {
+  EsquemaCarga,
+  EsquemaHallazgo,
+  LA_ACCION,
+  LA_ACTIVIDAD,
+  LA_CAUSA,
+  type CargaValidada,
+  type HallazgoValidado,
+} from "@/lib/esquemas/mejoramiento";
 import { leerContenido } from "@/lib/mejoramiento/analisis";
 import { rolQueAproboEnPapel } from "@/lib/mejoramiento/reglas";
 import { ErrorMejora, type MetodoAnalisis, type TipoAccion } from "@/lib/mejoramiento/tipos";
@@ -40,8 +48,11 @@ export type DatosDeCarga = DatosDeHallazgo & {
   registradoEnPapel: string;
   /** Solo en la no conformidad (§8.4): sin requerirla, `descripcion` es la justificación. */
   correccion: { requerida: boolean; descripcion: string; implementadaEn?: string | null };
-  /** El contenido estructurado del método es opcional. */
-  analisis: { metodo: MetodoAnalisis; causas: string[]; contenido?: unknown };
+  /**
+   * El contenido estructurado del método es opcional. Fuera de la no conformidad el análisis también lo es (§9.5): sin método ni
+   * contenido no hay fila de análisis, y las causas, si las hay, son de la ronda.
+   */
+  analisis: { metodo?: MetodoAnalisis | null; causas: string[]; contenido?: unknown };
   /** `causas`: el número de cada causa del análisis que ataca (de 1 en adelante). Una actividad con `terminadaEn` ya terminó. */
   acciones: Array<{
     tipo: TipoAccion;
@@ -62,9 +73,10 @@ export type DatosDeCarga = DatosDeHallazgo & {
 
 const SOLO_POR_EL_CAMINO_NORMAL = "Un hallazgo ya en curso no nace de un reporte ni de otro hallazgo: regístrelo por el camino normal";
 
-/** El primer mensaje del esquema, con la etiqueta de la acción («A1») o de la actividad («A1.2») de la que habla. */
+/** El primer mensaje del esquema, con la etiqueta de la acción («A1») o de la actividad («A1.2»), o el número de la causa. */
 function mensajeDe(issue: z.core.$ZodIssue): string {
   const [lista, i, sub, j] = issue.path;
+  if (lista === "analisis" && i === "causas" && typeof sub === "number") return issue.message.replaceAll(LA_CAUSA, String(sub + 1));
   if (lista !== "acciones" || typeof i !== "number") return issue.message;
   const conAccion = issue.message.replaceAll(LA_ACCION, etiquetaDeAccion(i + 1));
   return sub === "actividades" && typeof j === "number" ? conAccion.replaceAll(LA_ACTIVIDAD, etiquetaDeActividad(i + 1, j + 1)) : conAccion;
@@ -130,7 +142,8 @@ export async function cargarHallazgo(
 ): Promise<{ id: number; codigo: string }> {
   requerirPermiso(sesion, "mejora.gestionar");
   const { v, carga } = leerCarga(d);
-  const contenido = carga.analisis.contenido === null ? null : leerContenido(carga.analisis.metodo, carga.analisis.contenido);
+  const { metodo } = carga.analisis;
+  const contenido = carga.analisis.contenido === null || metodo === null ? null : leerContenido(metodo, carga.analisis.contenido);
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
@@ -170,6 +183,8 @@ export async function cargarHallazgo(
         },
         c,
       );
+      // Sin el formato firmado nadie puede verificar: el plazo de «Por verificar» lo pone el escaneo (`confirmarCarga`).
+      if (h.estado === "por_verificar") await tx`UPDATE mejora_hallazgos SET vence_en = NULL WHERE id = ${h.id}`;
 
       // La corrección (solo de la no conformidad): la registraron en papel, no quien carga.
       const diaDeLaCorreccion = carga.correccion?.implementadaEn ?? carga.registradoEnPapel;
@@ -183,8 +198,12 @@ export async function cargarHallazgo(
       // La ronda 1: el análisis, las causas, las acciones con sus actividades y el criterio de eficacia.
       const [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = 1`;
       const rondaId = Number(r.id);
-      await tx`INSERT INTO mejora_analisis (hallazgo_id, ronda_id, orden, metodo, contenido)
-        VALUES (${h.id}, ${rondaId}, 1, ${carga.analisis.metodo}, ${contenido === null ? null : tx.json(contenido as never)})`;
+      // El análisis, como lo admite la formulación (§9.5): obligatorio en la no conformidad (su contenido estructurado no, spec §15);
+      // en las demás clases, solo con su contenido. Sin él no queda una fila vacía.
+      if (metodo !== null && (v.clase === "no_conformidad" || contenido !== null)) {
+        await tx`INSERT INTO mejora_analisis (hallazgo_id, ronda_id, orden, metodo, contenido)
+          VALUES (${h.id}, ${rondaId}, 1, ${metodo}, ${contenido === null ? null : tx.json(contenido as never)})`;
+      }
       const causaIds: number[] = [];
       for (const [i, texto] of carga.analisis.causas.entries()) {
         const [x] = await tx`INSERT INTO mejora_causas (hallazgo_id, ronda_id, orden, texto)

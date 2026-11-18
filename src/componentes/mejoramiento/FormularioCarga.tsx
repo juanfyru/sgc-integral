@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
+import type { OpcionesDeLaCarga } from "@/db/consultas/mejoramiento/opciones";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
@@ -21,15 +22,33 @@ type Props = {
   usuarios: readonly Usuario[];
   /** Los indicadores que se pueden enlazar al criterio de eficacia. */
   indicadores: ReadonlyArray<{ id: number; codigo: string; nombre: string }>;
+  /** Lo que la identificación enlaza, como en el registro: subproceso, reincidencia, indicador y medición (`opcionesDeLaCarga`). */
+  enlaces: OpcionesDeLaCarga;
   /** Hoy en la zona de la instalación (`yyyy-mm-dd`): el tope de toda fecha del papel. */
   hoy: string;
 };
 
 type Actividad = { descripcion: string; responsableId: string; inicio: string; fin: string; avance: string; terminada: boolean; terminadaEn: string };
-type Accion = { tipo: TipoAccion; descripcion: string; causas: number[]; actividades: Actividad[] };
+type Accion = {
+  tipo: TipoAccion;
+  descripcion: string;
+  causas: number[];
+  recursos: string;
+  indicadorCumplimiento: string;
+  meta: string;
+  actividades: Actividad[];
+};
 
 const actividadVacia = (): Actividad => ({ descripcion: "", responsableId: "", inicio: "", fin: "", avance: "0", terminada: false, terminadaEn: "" });
-const accionVacia = (tipo: TipoAccion): Accion => ({ tipo, descripcion: "", causas: [], actividades: [actividadVacia()] });
+const accionVacia = (tipo: TipoAccion): Accion => ({
+  tipo,
+  descripcion: "",
+  causas: [],
+  recursos: "",
+  indicadorCumplimiento: "",
+  meta: "",
+  actividades: [actividadVacia()],
+});
 
 const METODOS: ReadonlyArray<readonly [string, string]> = [
   ["cinco_porques", "5 porqués"],
@@ -47,11 +66,14 @@ const TITULO = "font-display text-base font-semibold";
  * filas y viajan como JSON (`causas`, `acciones`); lo demás, con los nombres de `EsquemaHallazgo` y `CAMPOS_DE_LA_CARGA`. Guardado,
  * lleva a la página del hallazgo, que pide el formato firmado.
  */
-export function FormularioCarga({ accion, procesos, normas, documentos, usuarios, indicadores, hoy }: Props) {
+export function FormularioCarga({ accion, procesos, normas, documentos, usuarios, indicadores, enlaces, hoy }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const [clase, setClase] = useState<string>("");
   const [origen, setOrigen] = useState<string>("");
   const [criticidad, setCriticidad] = useState<string>("");
+  const [procesoId, setProcesoId] = useState<string>("");
+  const [indicadorId, setIndicadorId] = useState<string>("");
+  const [medicionId, setMedicionId] = useState<string>("");
   const [requerida, setRequerida] = useState<string>("si");
   const [causas, setCausas] = useState<string[]>([""]);
   const [acciones, setAcciones] = useState<Accion[]>([accionVacia("correctiva")]);
@@ -60,6 +82,9 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
   const externo = origen !== "" && esExterno(origen as Origen);
   const conReferencia = origen !== "" && pideReferenciaDelCaso(origen as Origen);
   const apruebaGerencia = externo || (esNc && criticidad === "alta");
+  const subprocesos = enlaces.subprocesos.filter((s) => String(s.procesoId) === procesoId);
+  const cerrados = enlaces.cerrados.filter((x) => String(x.procesoId) === procesoId);
+  const mediciones = enlaces.mediciones.filter((m) => String(m.indicadorId) === indicadorId);
 
   const cambiarAccion = (i: number, cambio: Partial<Accion>) => setAcciones((l) => l.map((a, j) => (j === i ? { ...a, ...cambio } : a)));
   const cambiarActividad = (i: number, k: number, cambio: Partial<Actividad>) =>
@@ -71,12 +96,16 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
     document.getElementById("carga-anadir-causa")?.focus();
   };
 
-  const causasEnJson = JSON.stringify(causas.map((c) => c.trim()).filter((c) => c !== ""));
+  // Todas las filas, también una vacía: las acciones citan las causas por su número, y el servidor rechaza la vacía con el suyo.
+  const causasEnJson = JSON.stringify(causas);
   const accionesEnJson = JSON.stringify(
     acciones.map((a) => ({
       tipo: a.tipo,
       descripcion: a.descripcion,
       causas: a.causas,
+      recursos: a.recursos,
+      indicadorCumplimiento: a.indicadorCumplimiento,
+      meta: a.meta,
       actividades: a.actividades.map((x) => ({
         descripcion: x.descripcion,
         responsableId: x.responsableId === "" ? null : Number(x.responsableId),
@@ -140,7 +169,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
             <input type="date" required max={hoy} className={claseControl} />
           </Campo>
           <Campo etiqueta="Proceso" nombre="procesoId">
-            <select required defaultValue="" className={claseControl}>
+            <select required value={procesoId} onChange={(e) => setProcesoId(e.target.value)} className={claseControl}>
               <option value="">Elija el proceso</option>
               {procesos.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -149,6 +178,30 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
               ))}
             </select>
           </Campo>
+          {subprocesos.length > 0 ? (
+            <Campo etiqueta="Subproceso (opcional)" nombre="subprocesoId">
+              <select key={`subproceso-${procesoId}`} defaultValue="" className={claseControl}>
+                <option value="">Ninguno</option>
+                {subprocesos.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nombre}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          ) : null}
+          {cerrados.length > 0 ? (
+            <Campo etiqueta="Reincidencia de (opcional)" nombre="reincidenteDe" ayuda="Un hallazgo cerrado del mismo proceso que volvió a ocurrir.">
+              <select key={`reincidente-${procesoId}`} defaultValue="" className={claseControl}>
+                <option value="">No es reincidencia</option>
+                {cerrados.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.codigo} · {x.titulo}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          ) : null}
           {esNc ? (
             <Campo etiqueta="Criticidad" nombre="criticidad">
               <select required value={criticidad} onChange={(e) => setCriticidad(e.target.value)} className={claseControl}>
@@ -176,7 +229,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
           ) : null}
         </div>
         <Campo etiqueta="Fuente: qué auditoría, visita o caso" nombre="fuente">
-          <input type="text" required maxLength={200} autoComplete="off" className={claseControl} />
+          <input type="text" required={!(origen === "indicador" && medicionId !== "")} maxLength={200} autoComplete="off" className={claseControl} />
         </Campo>
         <Campo etiqueta="Título" nombre="titulo">
           <input type="text" required maxLength={150} autoComplete="off" className={claseControl} />
@@ -214,6 +267,39 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
         <Campo etiqueta="Riesgo asociado (opcional)" nombre="riesgo">
           <input type="text" maxLength={200} autoComplete="off" className={claseControl} />
         </Campo>
+        {enlaces.indicadores.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Campo etiqueta="Indicador al que se refiere (opcional)" nombre="indicadorId">
+              <select
+                value={indicadorId}
+                onChange={(e) => {
+                  setIndicadorId(e.target.value);
+                  setMedicionId("");
+                }}
+                className={claseControl}
+              >
+                <option value="">Ninguno</option>
+                {enlaces.indicadores.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.codigo} · {x.nombre}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+            {mediciones.length > 0 ? (
+              <Campo etiqueta="Medición (opcional)" nombre="medicionId">
+                <select value={medicionId} onChange={(e) => setMedicionId(e.target.value)} className={claseControl}>
+                  <option value="">Ninguna</option>
+                  {mediciones.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.etiqueta}
+                    </option>
+                  ))}
+                </select>
+              </Campo>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {esNc ? (
@@ -250,17 +336,19 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
 
       <section aria-labelledby="carga-analisis" className={BLOQUE}>
         <h2 id="carga-analisis" className={TITULO}>
-          {esNc ? "3. Análisis de causa raíz" : "3. Análisis de causa raíz (opcional)"}
+          {esNc ? "3. Análisis de causa raíz" : "3. Causas raíz (opcional)"}
         </h2>
-        <Campo etiqueta="Método" nombre="analisisMetodo">
-          <select required defaultValue="cinco_porques" className={claseControl}>
-            {METODOS.map(([valor, texto]) => (
-              <option key={valor} value={valor}>
-                {texto}
-              </option>
-            ))}
-          </select>
-        </Campo>
+        {esNc ? (
+          <Campo etiqueta="Método" nombre="analisisMetodo">
+            <select required defaultValue="cinco_porques" className={claseControl}>
+              {METODOS.map(([valor, texto]) => (
+                <option key={valor} value={valor}>
+                  {texto}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        ) : null}
         <fieldset className="flex min-w-0 flex-col gap-2">
           <legend className="text-sm font-medium">Causas raíz</legend>
           <ol className="flex list-none flex-col gap-2">
@@ -347,6 +435,31 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
                   aria-describedby="carga-aviso"
                   className={claseControl}
                 />
+              </div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+                {(
+                  [
+                    ["recursos", "Recursos necesarios", 1000],
+                    ["indicadorCumplimiento", "Indicador de cumplimiento", 500],
+                    ["meta", "Meta", 500],
+                  ] as const
+                ).map(([campo, rotulo, maximo]) => (
+                  <div key={campo} className="flex min-w-0 flex-col gap-1">
+                    <label htmlFor={`${clave}-${campo}`} className="text-sm font-medium">
+                      {rotulo}
+                      <span className="sr-only">{` de la acción ${etiqueta}`}</span>
+                    </label>
+                    <input
+                      id={`${clave}-${campo}`}
+                      type="text"
+                      maxLength={maximo}
+                      value={a[campo]}
+                      onChange={(e) => cambiarAccion(i, { [campo]: e.target.value })}
+                      aria-describedby="carga-aviso"
+                      className={claseControl}
+                    />
+                  </div>
+                ))}
               </div>
               <ol className="flex list-none flex-col gap-3">
                 {a.actividades.map((x, k) => {

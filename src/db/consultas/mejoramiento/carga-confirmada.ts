@@ -15,9 +15,11 @@ import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisar";
+import { cargaResuelta } from "@/lib/alcance";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
 import { ACTIVIDAD_ASIGNADA, cuerpoDeActividadAsignada } from "@/lib/mejoramiento/textos";
+import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { avisarDelTurno, ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO } from "./avisos";
 import { contextoDeMejora } from "./config";
 import { aBase, dejarEvento } from "./flujo";
@@ -35,19 +37,29 @@ export async function cargaConfirmada(sql: Cliente, hallazgoId: number): Promise
   return f !== undefined;
 }
 
+// La condición en SQL sobre el hallazgo `h` vive en `src/lib/alcance.ts`, que decide también quién lo ve por su actividad.
+export { cargaResuelta };
+
+/** Si es un hallazgo cargado que todavía espera su formato firmado: su plan no llegó a nadie (spec §15). */
+export async function cargaPendiente(sql: Cliente, hallazgoId: number): Promise<boolean> {
+  const [f] = await sql`SELECT cargado FROM mejora_hallazgos WHERE id = ${hallazgoId}`;
+  return f?.cargado === true && !(await cargaConfirmada(sql, hallazgoId));
+}
+
 /**
- * Para el SQL sobre el hallazgo `h`: no es cargado o ya tiene su formato firmado (`cargaConfirmada`). Lo que exige que el plan se
- * haya entregado a sus responsables va con esta condición.
+ * Lo que solo se hace con el plan entregado: verificar y lo de sus actividades (seguimientos, terminar, pedir y decidir un ajuste,
+ * escalar a Gerencia). Lanza `FALTA_EL_ESCANEO` en una carga sin su formato firmado. Va después de la regla de persona del acto:
+ * a quien no puede darlo, el acto le responde lo de siempre.
  */
-export function cargaResuelta(sql: Cliente) {
-  return sql`(NOT h.cargado OR EXISTS (SELECT 1 FROM archivos cc
-    WHERE cc.contexto = 'mejora_hallazgo' AND cc.contexto_id = h.id AND cc.rol = 'carga' AND cc.version_id IS NULL))`;
+export async function exigirCargaConfirmada(sql: Cliente, hallazgoId: number): Promise<void> {
+  if (await cargaPendiente(sql, hallazgoId)) throw new ErrorMejora(FALTA_EL_ESCANEO);
 }
 
 /**
  * Confirma la carga con el primer formato firmado (lo llama `exigirDestinoAbierto`, dentro de la transacción de
  * `registrarArchivo`, con el hallazgo ya `FOR UPDATE`): dos escaneos a la vez se ordenan y el segundo ve el evento del primero.
- * Una sola vez: con el evento ya puesto no hace nada. No avisa a quien sube el escaneo.
+ * Una sola vez: con el evento ya puesto no hace nada. No avisa a quien sube el escaneo. `ahora` es la hora del evento y desde la
+ * que se cuenta el plazo de verificar (la de la subida; una semilla la inyecta).
  */
 export async function confirmarCarga(tx: TransactionSql, hallazgoId: number, usuarioId: number, ahora: Date): Promise<void> {
   const [ya] = await tx`SELECT 1 FROM mejora_eventos WHERE hallazgo_id = ${hallazgoId} AND tipo = 'carga_confirmada' LIMIT 1`;

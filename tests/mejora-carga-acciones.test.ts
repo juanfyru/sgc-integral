@@ -55,7 +55,10 @@ const destino = (p: Promise<unknown>) => p.then((r) => r, (err: Error) => err.me
 type Actividad = { descripcion: string; responsableId: number; inicio: string; fin: string; avance: number; terminadaEn: string | null };
 
 /** Lo que manda `FormularioCarga` de una no conformidad media (las fechas del papel, de 2025: el reloj de la acción es el real). */
-function formulario(b: BaseDeMejora, x?: { actividades?: Actividad[]; extra?: Record<string, string> }): FormData {
+function formulario(
+  b: BaseDeMejora,
+  x?: { actividades?: Actividad[]; causas?: string[]; causasDeLaAccion?: number[]; extra?: Record<string, string> },
+): FormData {
   const datos = new FormData();
   const planos: Record<string, string> = {
     clase: "no_conformidad",
@@ -72,12 +75,12 @@ function formulario(b: BaseDeMejora, x?: { actividades?: Actividad[]; extra?: Re
     correccionDescripcion: "Se diligenciaron los formatos pendientes con el turno",
     correccionImplementadaEn: "2025-10-15",
     analisisMetodo: "cinco_porques",
-    causas: JSON.stringify(["El procedimiento no asigna el registro al turno de noche"]),
+    causas: JSON.stringify(x?.causas ?? ["El procedimiento no asigna el registro al turno de noche"]),
     acciones: JSON.stringify([
       {
         tipo: "correctiva",
         descripcion: "Actualizar el procedimiento de entrega de turno",
-        causas: [1],
+        causas: x?.causasDeLaAccion ?? [1],
         actividades: x?.actividades ?? [
           { descripcion: "Redactar la versión nueva", responsableId: b.lider.usuarioId, inicio: "2025-11-05", fin: "2026-01-30", avance: 100, terminadaEn: "2026-01-28" },
           { descripcion: "Capacitar a los turnos de noche", responsableId: b.lider.usuarioId, inicio: "2026-02-01", fin: "2026-12-15", avance: 40, terminadaEn: null },
@@ -136,5 +139,21 @@ describe("cargarHallazgoAccion", () => {
         error: expect.stringContaining("nota"),
       });
       expect(await tx`SELECT id FROM mejora_hallazgos WHERE proceso_id = ${b.procesoId}`).toHaveLength(0);
+    }));
+
+  it("una causa intermedia vacía se rechaza con su número y no corre las demás", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      // La acción ataca la causa 3: si el formulario quitara la vacía, la 3 pasaría a ser la 2 sin que nadie lo viera.
+      const conHueco = formulario(b, {
+        causas: ["El procedimiento no asigna el registro al turno de noche", "", "No hay formato de entrega en la sala de urgencias"],
+        causasDeLaAccion: [1, 3],
+      });
+      expect(await como(tx, b.admin, () => destino(cargarHallazgoAccion(null, conHueco)))).toMatchObject({
+        ok: false,
+        error: "La causa 2 debe tener al menos 3 caracteres",
+      });
+      expect(await tx`SELECT id FROM mejora_hallazgos WHERE proceso_id = ${b.procesoId}`).toHaveLength(0);
+      expect(await tx`SELECT c.id FROM mejora_causas c JOIN mejora_hallazgos h ON h.id = c.hallazgo_id WHERE h.proceso_id = ${b.procesoId}`).toHaveLength(0);
     }));
 });

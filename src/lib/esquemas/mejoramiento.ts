@@ -692,6 +692,9 @@ export const EsquemaCriterio = z
 /** La marca que el dominio cambia por la etiqueta de la acción («A1») en los mensajes de una acción de la carga. */
 export const LA_ACCION = "‹acción›";
 
+/** La que cambia por el número de la causa («2») en los mensajes de una causa de la carga. */
+export const LA_CAUSA = "‹causa›";
+
 /**
  * Una actividad de un plan aprobado en papel: la de `actividadDelPlan` más su avance de hoy y, si ya terminó, el día en que
  * terminó. Una al 100 % es una terminada y pide ese día; una con ese día queda terminada, al 100 %.
@@ -716,6 +719,9 @@ const actividadDeLaCarga = z
     if (a.inicio > a.fin) ctx.addIssue({ code: "custom", path: ["inicio"], message: inicioDespuesDelFin(LA_ACTIVIDAD) });
     if (a.avance === 100 && a.terminadaEn === null) {
       ctx.addIssue({ code: "custom", path: ["terminadaEn"], message: `Escriba la fecha en que terminó la actividad ${LA_ACTIVIDAD}` });
+    }
+    if (a.terminadaEn !== null && a.terminadaEn < a.inicio) {
+      ctx.addIssue({ code: "custom", path: ["terminadaEn"], message: `La actividad ${LA_ACTIVIDAD} no puede terminar antes de su inicio` });
     }
   })
   .transform((a) => ({ ...a, avance: a.terminadaEn === null ? a.avance : 100 }));
@@ -766,8 +772,13 @@ export const EsquemaCarga = z
       .strict(),
     analisis: z
       .object({
-        metodo: z.enum(METODOS_ANALISIS, { error: "Elija el método del análisis" }),
-        causas: z.array(textoAcotado("La causa", 3, 500), { error: "Las causas no son válidas" }).max(20, "Son veinte causas como máximo"),
+        metodo: z
+          .enum(METODOS_ANALISIS, { error: "Elija el método del análisis" })
+          .nullish()
+          .transform((v) => v ?? null),
+        causas: z
+          .array(textoAcotado(`La causa ${LA_CAUSA}`, 3, 500), { error: "Las causas no son válidas" })
+          .max(20, "Son veinte causas como máximo"),
         contenido: z.unknown().optional(),
       })
       .strict(),
@@ -807,10 +818,18 @@ export const EsquemaCarga = z
         falta(["correccion", "implementadaEn"], "La fecha de la corrección no puede ser anterior a la de detección");
       }
       if (d.analisis.causas.length === 0) falta(["analisis", "causas"], "Escriba al menos una causa raíz");
+      if (d.analisis.metodo === null) falta(["analisis", "metodo"], "Elija el método del análisis");
       if (!d.acciones.some((a) => a.tipo === "correctiva")) falta(["acciones"], "El plan de una no conformidad lleva al menos una acción correctiva");
     }
     if (d.analisis.metodo === "pareto") falta(["analisis", "metodo"], "El análisis de Pareto todavía no está disponible");
+    // Fuera de la no conformidad el análisis es opcional (§9.5); con su contenido, lleva su método.
+    if (!esNc && d.analisis.metodo === null && d.analisis.contenido != null) falta(["analisis", "metodo"], "Elija el método del análisis");
     d.acciones.forEach((a, i) => {
+      a.actividades.forEach((x, j) => {
+        if (x.inicio < d.detectadoEn) {
+          falta(["acciones", i, "actividades", j, "inicio"], `La actividad ${LA_ACTIVIDAD} no puede iniciar antes de la detección del hallazgo`);
+        }
+      });
       if (a.tipo === "correctiva" && a.causas.length === 0) falta(["acciones", i, "causas"], `La acción ${LA_ACCION} no dice qué causa ataca`);
       if (a.causas.some((n) => n > d.analisis.causas.length)) {
         falta(["acciones", i, "causas"], `La acción ${LA_ACCION} ataca una causa que no está en el análisis`);

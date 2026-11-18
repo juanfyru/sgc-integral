@@ -31,6 +31,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { activosDeRol, avisarDeMejora, avisarDelTurno, ENTIDAD_HALLAZGO, lideresOAdmins, verificadoresActivos } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
+import { cargaPendiente } from "./carga-confirmada";
 import { bloquearReporteRecibido, dejarClasificado } from "./reportes-base";
 
 /** Los campos de la identificación (spec §7.1). Los ids y las fechas también llegan como texto del formulario. */
@@ -639,6 +640,8 @@ export async function anularHallazgo(
       if (TERMINALES.includes(h.estado)) throw new ErrorMejora(YA_CAMBIO);
       const c = await contextoDeMejora(tx, ahora);
       const [{ titulo }] = await tx`SELECT titulo FROM mejora_hallazgos WHERE id = ${h.id}`;
+      // Una carga sin su formato firmado no le entregó nada a sus responsables (spec §15): no se les avisa que se anuló.
+      const sinEntregar = await cargaPendiente(tx, h.id);
       const canceladas = await tx`UPDATE mejora_actividades SET estado = 'cancelada', cancelada_en = ${c.ahora}
         WHERE hallazgo_id = ${h.id} AND estado IN ('abierta', 'en_proceso') RETURNING responsable_id, fin_original`;
       await tx`UPDATE mejora_hallazgos SET anulado_motivo = ${r.justificacion} WHERE id = ${h.id}`;
@@ -656,7 +659,7 @@ export async function anularHallazgo(
         c,
       );
       // Solo los responsables de un plan aprobado alguna vez: a quien figuraba en un borrador nunca se le entregó nada.
-      const entregadas = canceladas.filter((a) => a.fin_original !== null);
+      const entregadas = sinEntregar ? [] : canceladas.filter((a) => a.fin_original !== null);
       const responsables = entregadas.length
         ? (
             await tx`SELECT id FROM usuarios WHERE activo AND id = ANY(${entregadas.map((a) => Number(a.responsable_id))}::bigint[])`

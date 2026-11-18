@@ -47,7 +47,7 @@ import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura"
 
 export type { AjusteDeDetalle } from "./ajustes-lectura";
 import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
-import { cargaConfirmada } from "./carga-confirmada";
+import { cargaConfirmada, cargaResuelta } from "./carga-confirmada";
 import { indicadoresDeEficacia } from "./indicador-de-eficacia";
 import { tareasConSuHallazgo } from "./tareas";
 import { venceLaActividad } from "./vence-actividad";
@@ -202,12 +202,13 @@ export async function turnoEnTexto(tx: Cliente, h: HallazgoBase, x?: { yaSePuede
 
 /**
  * Una actividad vencida: con el plan aprobado (`fin_original`), sin terminar ni cancelar y con su fecha ya pasada en la zona (la
- * de corregir si la verificación la devolvió, si no su fin: `venceLaActividad`, la de las tareas y la pasada de vencimientos).
+ * de corregir si la verificación la devolvió, si no su fin: `venceLaActividad`, la de las tareas y la pasada de vencimientos). La
+ * de una carga sin su formato firmado no vence todavía: no le ha llegado a nadie (`cargaResuelta`, spec §15).
  */
-const ACTIVIDAD_VENCIDA = (sql: Cliente, hoy: string) => sql`EXISTS (
+const ACTIVIDAD_VENCIDA = (sql: Cliente, hoy: string) => sql`(${cargaResuelta(sql)} AND EXISTS (
   SELECT 1 FROM mejora_actividades va
   WHERE va.hallazgo_id = h.id AND va.fin_original IS NOT NULL AND va.estado NOT IN ('terminada', 'cancelada')
-    AND ${venceLaActividad(sql, "va")} < ${hoy}::date)`;
+    AND ${venceLaActividad(sql, "va")} < ${hoy}::date))`;
 
 /**
  * El avance (spec §10.3): el promedio de los avances de las acciones de la ronda en curso, y el de cada acción, el de sus
@@ -1201,8 +1202,9 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     reincidenteDe: reincidente,
     marcas: marcasDeHallazgo(h, {
       cargado: f.cargado === true,
-      // La misma regla de la lista y de la pasada (`venceLaActividad`): devuelta, la fecha para corregir.
-      algunaActividadVencida: actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.vence as string) < fechaEnZona(ahora, zonaHoraria())),
+      // La misma regla de la lista y de la pasada (`venceLaActividad`): devuelta, la fecha para corregir; sin el formato de una
+      // carga, nada vence todavía.
+      algunaActividadVencida: confirmada && actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.vence as string) < fechaEnZona(ahora, zonaHoraria())),
     }),
     fechaLimiteEnte: (f.limite_ente as string | null) ?? null,
     respuestaAlEnte: f.respuesta_ente ? { enviadaEn: f.respuesta_ente as string, por: (f.respondio as string | null) ?? "" } : null,

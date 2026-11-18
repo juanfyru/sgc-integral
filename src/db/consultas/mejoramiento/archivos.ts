@@ -218,6 +218,7 @@ export async function exigirDestinoAbierto(
   contextoId: number,
   usuarioId: number,
   rol?: string,
+  ahora: Date = new Date(),
 ): Promise<void> {
   if (contexto in ROLES_POR_DESTINO && rol === undefined) {
     throw new Error(`exigirDestinoAbierto: el destino ${contexto} exige el rol del archivo`);
@@ -233,7 +234,7 @@ export async function exigirDestinoAbierto(
   const destino = { contexto, id: contextoId, ...(roles.length > 0 ? { rol } : {}) } as DestinoDeMejora;
   const r = await evaluar(tx, { usuarioId, rol: u.rol }, destino, f);
   if (r && !r.ok) throw new ErrorMejora(r.error);
-  if (escaneo) await confirmarCarga(tx, contextoId, usuarioId, new Date());
+  if (escaneo) await confirmarCarga(tx, contextoId, usuarioId, ahora);
 }
 
 /** El archivo, si es de mejoramiento y la persona lo abre; `null` en cualquier otro caso (404, siempre como descarga). */

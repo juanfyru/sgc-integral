@@ -455,8 +455,11 @@ export function datosDeCarga(procesoId: number, responsableId: number, cambios?:
   };
 }
 
-/** El formato firmado de un hallazgo cargado (rol `carga`), subido como `usuarioId` por el camino del dominio (`registrarArchivo`). */
-export async function escaneoDeLaCarga(tx: TransactionSql, hallazgoId: number, usuarioId: number): Promise<number> {
+/**
+ * El formato firmado de un hallazgo cargado (rol `carga`), subido como `usuarioId` por el camino del dominio (`registrarArchivo`);
+ * con `ahora`, a esa hora (la de su evento `carga_confirmada` y la del plazo que pone).
+ */
+export async function escaneoDeLaCarga(tx: TransactionSql, hallazgoId: number, usuarioId: number, ahora?: string): Promise<number> {
   archivos += 1;
   const { id } = await registrarArchivo(
     {
@@ -472,7 +475,7 @@ export async function escaneoDeLaCarga(tx: TransactionSql, hallazgoId: number, u
       contextoId: hallazgoId,
     },
     usuarioId,
-    { sql: tx },
+    { sql: tx, ...(ahora ? { ahora: new Date(ahora) } : {}) },
   );
   return Number(id);
 }

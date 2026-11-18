@@ -2549,13 +2549,28 @@ describe("la respuesta al ente (Tarea 19, spec §13.4)", () => {
 describe("un hallazgo ya en curso (spec §15)", () => {
   it("el formulario de la carga va por bloques y dice que lo de papel queda marcado, sin firma del sistema", () => {
     const html = renderToStaticMarkup(
-      <FormularioCarga accion={vi.fn(async () => null)} procesos={[{ id: 3, nombre: "Farmacia" }]} normas={[]} documentos={[]} usuarios={[]} indicadores={[]} hoy="2026-11-18" />,
+      <FormularioCarga accion={vi.fn(async () => null)} procesos={[{ id: 3, nombre: "Farmacia" }]} normas={[]} documentos={[]} usuarios={[]}
+        indicadores={[]}
+        enlaces={{
+          subprocesos: [{ id: 7, nombre: "Dispensación", procesoId: 3 }],
+          cerrados: [],
+          indicadores: [{ id: 9, codigo: "FAR-ID-001", nombre: "Oportunidad de dispensación" }],
+          mediciones: [],
+        }}
+        hoy="2026-11-18"
+      />,
     );
     expect(html).toContain("Lo que se hizo en papel quedará marcado como hecho fuera de la plataforma, sin firma del sistema.");
     expect(html).toContain(AVISO_SIN_PACIENTES);
-    for (const bloque of ["1. Identificación", "3. Análisis de causa raíz", "4. Plan de acción", "5. Aprobación en papel"]) expect(html).toContain(bloque);
+    // Sin clase elegida, el análisis es el opcional de las demás clases (§9.5).
+    for (const bloque of ["1. Identificación", "3. Causas raíz (opcional)", "4. Plan de acción", "5. Aprobación en papel"]) expect(html).toContain(bloque);
     expect(html).toContain('name="registradoEnPapel"');
     expect(html).toContain('name="aprobacionRol"');
+    // La identificación enlaza lo mismo que el registro: el indicador (la medición y el subproceso aparecen al elegir).
+    expect(html).toContain('name="indicadorId"');
+    expect(html).toContain("FAR-ID-001 · Oportunidad de dispensación");
+    // Cada acción lleva sus recursos, su indicador de cumplimiento y su meta (columnas del SGC-FO-28).
+    for (const rotulo of ["Recursos necesarios", "Indicador de cumplimiento", "Meta"]) expect(html).toContain(rotulo);
   });
 
   it("el historial marca lo hecho en papel con su día y sin el nombre de quien lo cargó", () => {

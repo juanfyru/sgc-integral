@@ -9,12 +9,20 @@ import { afterAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { misActividades } from "@/db/consultas/mejoramiento/actividades";
-import { quienDecideAjustes } from "@/db/consultas/mejoramiento/ajustes";
+import {
+  contarMisActividades,
+  leerActividad,
+  misActividades,
+  reasignarActividad,
+  registrarSeguimiento,
+  terminarActividad,
+} from "@/db/consultas/mejoramiento/actividades";
+import { decidirAjuste, escalarAGerencia, pedirAjuste, quienDecideAjustes } from "@/db/consultas/mejoramiento/ajustes";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { cargaConfirmada, cargarHallazgo, FALTA_EL_ESCANEO, type DatosDeCarga } from "@/db/consultas/mejoramiento/carga";
-import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
-import { envioAntesDeAprobar, oficiosPosibles, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
+import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
+import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { anularHallazgo, envioAntesDeAprobar, oficiosPosibles, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
 import { tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
 import { revisarVencimientosDeMejoramiento } from "@/db/consultas/mejoramiento/vencimientos";
 import {
@@ -26,7 +34,10 @@ import {
   verificarImplementacion,
 } from "@/db/consultas/mejoramiento/verificacion";
 import { puedeVerificar, quienesVerifican } from "@/lib/alcance";
+import { cierrePrevisto } from "@/lib/mejoramiento/eficacia";
+import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { huellaDeEvaluacion, huellaDePlan, type PlanFirmado } from "@/lib/mejoramiento/huellas";
+import { venceEn } from "@/lib/mejoramiento/plazos";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -383,5 +394,202 @@ describe("la pasada de vencimientos de un hallazgo cargado", () => {
       expect((await pasada()).avisados).toBeGreaterThan(0);
       expect((await marcas()).aviso_vencido_en).not.toBeNull();
       expect((await avisosA(tx, responsable.usuarioId)).map((a) => a.tipo)).toContain("mejora.actividad_vencida");
+    }));
+});
+
+describe("antes del escaneo, nada llega a los responsables (ronda 1)", () => {
+  it("el responsable declarado no ve el hallazgo ni abre su actividad; con el escaneo, sí", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { id } = await cargar(tx, b, responsable.usuarioId);
+      const [, abierta] = await actividadesDe(tx, id);
+      const o = { sql: tx, ahora: new Date(AHORA) };
+      const enLaLista = async () => (await listarHallazgos(responsable, {}, o)).filas.map((f) => f.id);
+      expect(await enLaLista()).not.toContain(id);
+      expect(await leerHallazgo(responsable, id, o)).toBeNull();
+      expect(await leerActividad(responsable, Number(abierta.id), o)).toBeNull();
+      expect(await contarMisActividades(responsable, o)).toBe(0);
+
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId);
+      expect(await enLaLista()).toContain(id);
+      expect((await leerHallazgo(responsable, id, o))?.ve).toBe("actividad");
+      expect((await leerActividad(responsable, Number(abierta.id), o))?.puedeSeguir).toBe(true);
+      // Las dos de su plan, también la que terminó en papel (como «Mis actividades»).
+      expect(await contarMisActividades(responsable, o)).toBe(2);
+    }));
+
+  it("cada escritura de una actividad se rechaza con su mensaje, y la página no la ofrece", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const acciones = datosDeCarga(b.procesoId, responsable.usuarioId).acciones;
+      // La abierta, vencida: escalarla también se rechaza por la carga, no por la fecha.
+      acciones[0].actividades[1] = { ...acciones[0].actividades[1], fin: "2026-11-10", avance: 99 };
+      const { id } = await cargar(tx, b, responsable.usuarioId, { acciones });
+      const [, abierta] = await actividadesDe(tx, id);
+      const actividadId = Number(abierta.id);
+      const o = c(AHORA, tx);
+      const falta = new ErrorMejora(FALTA_EL_ESCANEO);
+      await expect(registrarSeguimiento(responsable, { actividadId, fecha: "2026-11-18", realizado: "Se capacitó a dos turnos", avance: 99 }, o)).rejects.toThrow(falta);
+      await expect(terminarActividad(responsable, { actividadId }, o)).rejects.toThrow(falta);
+      await expect(
+        pedirAjuste(b.admin, { hallazgoId: id, tipo: "reprogramar", actividadId, finNuevo: "2026-12-30", causa: "El proveedor no entrega antes" }, o),
+      ).rejects.toThrow(falta);
+      await expect(escalarAGerencia(b.admin, { actividadId, nota: "Sigue sin capacitar al turno de noche" }, o)).rejects.toThrow(falta);
+      // Un ajuste pendiente no puede nacer antes del escaneo; si lo hubiera, tampoco se decide.
+      const [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${id} AND numero = 1`;
+      const [aj] = await tx`INSERT INTO mejora_ajustes (hallazgo_id, ronda_id, tipo, actividad_id, datos, causa, pedido_por, pedido_en, estado, vence_en)
+        VALUES (${id}, ${r.id}, 'reprogramar', ${actividadId}, ${tx.json({ finAntes: "2026-11-10", finNuevo: "2026-12-30" } as never)},
+          'El proveedor no entrega antes', ${b.lider.usuarioId}, ${new Date(AHORA)}, 'pendiente', ${new Date(AHORA)})
+        RETURNING id`;
+      await expect(decidirAjuste(b.admin, { ajusteId: Number(aj.id), aprueba: true }, o)).rejects.toThrow(falta);
+
+      // Lo que la página de la actividad ofrece al Admin SGC: ni ajustes ni «Vencida».
+      const leida = await leerActividad(b.admin, actividadId, { sql: tx, ahora: new Date(AHORA) });
+      expect(leida).toMatchObject({ puedePedirAjuste: false, puedeSeguir: false, vencida: false });
+    }));
+
+  it("reasignar y anular se permiten sin avisar a los responsables; el escaneo avisa a quien la tenga entonces", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const primero = await usuarioDePrueba(tx, { rol: "consulta" });
+      const segundo = await usuarioDePrueba(tx, { rol: "consulta" });
+      const o = c(AHORA, tx);
+      const { id } = await cargar(tx, b, primero.usuarioId);
+      const [, abierta] = await actividadesDe(tx, id);
+      await reasignarActividad(b.admin, { actividadId: Number(abierta.id), responsableId: segundo.usuarioId, motivo: "Se cargó con el responsable equivocado" }, o);
+      expect(await avisosA(tx, primero.usuarioId)).toEqual([]);
+      expect(await avisosA(tx, segundo.usuarioId)).toEqual([]);
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId);
+      expect(await avisosA(tx, primero.usuarioId)).toEqual([]);
+      expect((await avisosA(tx, segundo.usuarioId)).map((a) => [a.tipo, a.entidad_id])).toEqual([["mejora.actividad_asignada", Number(abierta.id)]]);
+
+      // Una carga equivocada se anula antes del escaneo sin avisar a quienes nunca recibieron su actividad.
+      const otra = await cargar(tx, b, primero.usuarioId);
+      await anularHallazgo(b.admin, { hallazgoId: otra.id, justificacion: "Se cargó un hallazgo que no correspondía" }, o);
+      expect((await tx`SELECT estado FROM mejora_hallazgos WHERE id = ${otra.id}`)[0].estado).toBe("anulado");
+      expect(await avisosA(tx, primero.usuarioId)).toEqual([]);
+    }));
+});
+
+describe("lo que pone la carga sin escaneo y lo que pone el escaneo (ronda 1)", () => {
+  it("sin plazo ni «Con algo vencido» antes del escaneo; con él, sí", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const porVerificar = await cargar(tx, b, b.lider.usuarioId, { acciones: terminadas(b.lider.usuarioId) });
+      expect((await tx`SELECT vence_en FROM mejora_hallazgos WHERE id = ${porVerificar.id}`)[0].vence_en).toBeNull();
+      const acciones = datosDeCarga(b.procesoId, b.lider.usuarioId).acciones;
+      acciones[0].actividades[1] = { ...acciones[0].actividades[1], fin: "2026-11-10" };
+      const { id } = await cargar(tx, b, b.lider.usuarioId, { acciones });
+      const o = { sql: tx, ahora: new Date(AHORA) };
+      const marcas = async () => (await listarHallazgos(b.admin, {}, o)).filas.find((f) => f.id === id)?.marcas ?? [];
+      expect(await marcas()).not.toContain("Con algo vencido");
+      expect((await leerHallazgo(b.admin, id, o))?.marcas).not.toContain("Con algo vencido");
+      expect((await listarHallazgos(b.admin, { soloVencidos: true }, o)).filas.map((f) => f.id)).not.toContain(id);
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId);
+      expect(await marcas()).toContain("Con algo vencido");
+      expect((await leerHallazgo(b.admin, id, o))?.marcas).toContain("Con algo vencido");
+    }));
+
+  it("la pasada no ve un «Por verificar» sin escaneo; el escaneo, a su hora, le pone el plazo y desde ahí vence", () =>
+    revertida(sql, async (tx) => {
+      await silenciarTodo(tx);
+      const b = await baseDeMejora(tx);
+      // Cargado el 5 de octubre de 2026 y escaneado el 6, con las horas inyectadas.
+      const { id, codigo } = await cargarHallazgo(
+        b.admin,
+        datosDeCarga(b.procesoId, b.lider.usuarioId, { acciones: terminadas(b.lider.usuarioId) }),
+        c("2026-10-05T15:00:00Z", tx),
+      );
+      const pasada = async () =>
+        revisarVencimientosDeMejoramiento({ sql: tx, ahora: new Date(AHORA), config: await obtenerConfigDocumental({ sql: tx }) });
+      // La compuerta de la pasada, aunque el paso tuviera un plazo ya pasado (la carga no le pone ninguno).
+      await tx`UPDATE mejora_hallazgos SET vence_en = '2026-10-01T05:00:00Z' WHERE id = ${id}`;
+      expect(await pasada()).toEqual({ avisados: 0, escalados: 0 });
+      expect((await tx`SELECT aviso_vencido_en FROM mejora_hallazgos WHERE id = ${id}`)[0].aviso_vencido_en).toBeNull();
+
+      const escaneo = "2026-10-06T15:00:00Z";
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId, escaneo);
+      const [evento] = await tx`SELECT ocurrio_en FROM mejora_eventos WHERE hallazgo_id = ${id} AND tipo = 'carga_confirmada'`;
+      expect((evento.ocurrio_en as Date).toISOString()).toBe(new Date(escaneo).toISOString());
+      const ctx = await contextoDeMejora(tx, new Date(escaneo));
+      const [h] = await tx`SELECT vence_en FROM mejora_hallazgos WHERE id = ${id}`;
+      expect((h.vence_en as Date).getTime()).toBe(venceEn("verificar", new Date(escaneo), ctx).getTime());
+      // Ya venció (el 18 de noviembre): avisa a quien verifica y lo marca.
+      expect((await pasada()).avisados).toBeGreaterThan(0);
+      expect((await tx`SELECT aviso_vencido_en FROM mejora_hallazgos WHERE id = ${id}`)[0].aviso_vencido_en).not.toBeNull();
+      expect((await avisosA(tx, b.control.usuarioId)).filter((a) => a.entidad_id === id).map((a) => a.titulo)).toContain(
+        `Venció el plazo para verificar la implementación de ${codigo}`,
+      );
+    }));
+
+  it("el aviso del escaneo dice la actividad y su fin, y el cierre previsto sale de las fechas del plan", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { id } = await cargar(tx, b, responsable.usuarioId);
+      const [r] = await tx`SELECT cierre_previsto FROM mejora_rondas WHERE hallazgo_id = ${id} AND numero = 1`;
+      const esperado = cierrePrevisto(
+        { clase: "no_conformidad", finPlaneado: "2026-12-15", fechaEvaluacion: null, periodicidad: null, plazoReporteDias: null },
+        await contextoDeMejora(tx, new Date(AHORA)),
+      );
+      expect((r.cierre_previsto as Date).getTime()).toBe(esperado.getTime());
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId);
+      const [aviso] = await tx`SELECT cuerpo, enlace FROM notificaciones WHERE usuario_id = ${responsable.usuarioId} AND tipo = 'mejora.actividad_asignada'`;
+      expect(aviso.cuerpo).toBe(`Capacitar a los turnos de noche. Fecha de fin: ${fechaLargaDeDia("2026-12-15")}.`);
+    }));
+});
+
+describe("las fechas y el análisis de la carga (ronda 1)", () => {
+  it("las fechas imposibles se rechazan con el nombre de la actividad", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const r = b.lider.usuarioId;
+      const conActividad = (j: number, cambio: Partial<DatosDeCarga["acciones"][number]["actividades"][number]>) => {
+        const acciones = datosDeCarga(b.procesoId, r).acciones;
+        acciones[0].actividades[j] = { ...acciones[0].actividades[j], ...cambio };
+        return { acciones };
+      };
+      await expect(cargar(tx, b, r, conActividad(0, { terminadaEn: "2025-11-04" }))).rejects.toThrow(
+        new ErrorMejora("La actividad A1.1 no puede terminar antes de su inicio"),
+      );
+      await expect(cargar(tx, b, r, conActividad(1, { inicio: "2025-10-01" }))).rejects.toThrow(
+        new ErrorMejora("La actividad A1.2 no puede iniciar antes de la detección del hallazgo"),
+      );
+      const correccion = (implementadaEn: string) => ({
+        correccion: { requerida: true, descripcion: "Se diligenciaron los formatos pendientes con el turno", implementadaEn },
+      });
+      await expect(cargar(tx, b, r, correccion("2025-10-01"))).rejects.toThrow(new ErrorMejora("La fecha de la corrección no puede ser anterior a la de detección"));
+      await expect(cargar(tx, b, r, correccion("2026-11-19"))).rejects.toThrow(new ErrorMejora("La fecha en que se implementó la corrección no puede ser futura"));
+    }));
+
+  it("sin análisis en una observación no queda una fila vacía; en la no conformidad, sí la hay", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const acciones: DatosDeCarga["acciones"] = [
+        {
+          tipo: "preventiva",
+          descripcion: "Revisar los formatos de entrega de turno cada semana",
+          causas: [],
+          recursos: "Una hora del jefe de enfermería",
+          indicadorCumplimiento: "Revisiones hechas / programadas",
+          meta: "100 %",
+          actividades: [{ descripcion: "Programar las revisiones semanales", responsableId: b.lider.usuarioId, inicio: "2025-11-05", fin: "2026-12-15", avance: 20 }],
+        },
+      ];
+      const { id } = await cargar(tx, b, b.lider.usuarioId, {
+        clase: "observacion",
+        criticidad: null,
+        analisis: { causas: [] },
+        acciones,
+        fechaEvaluacion: "2027-01-15",
+      });
+      expect(await tx`SELECT id FROM mejora_analisis WHERE hallazgo_id = ${id}`).toHaveLength(0);
+      expect(await tx`SELECT id FROM mejora_eventos WHERE hallazgo_id = ${id} AND tipo = 'corregir'`).toHaveLength(0);
+      const [accion] = await tx`SELECT recursos, indicador_cumplimiento, meta FROM mejora_acciones WHERE hallazgo_id = ${id}`;
+      expect(accion).toEqual({ recursos: "Una hora del jefe de enfermería", indicador_cumplimiento: "Revisiones hechas / programadas", meta: "100 %" });
+      const nc = await cargar(tx, b, b.lider.usuarioId);
+      expect(await tx`SELECT metodo, contenido FROM mejora_analisis WHERE hallazgo_id = ${nc.id}`).toEqual([{ metodo: "cinco_porques", contenido: null }]);
     }));
 });

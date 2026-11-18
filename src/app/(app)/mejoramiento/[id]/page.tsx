@@ -364,7 +364,8 @@ export default async function PaginaHallazgo({
   // Los ajustes al plan aprobado (spec §10.6): desde aquí, añadir o cancelar, un líder del proceso o el Admin SGC (el
   // responsable pide reprogramar la suya desde su actividad); quien decide lo hace en «Lo que sigue». El servidor lo repite.
   const etiquetasDeAccion: Record<number, string> = Object.fromEntries(h.rondas.flatMap((r) => r.acciones.map((a) => [a.id, `A${a.orden}`] as const)));
-  const ajustable = completo && SE_AJUSTA_EN.includes(h.estado) && rondaEnCurso?.estadoPlan === "aprobado";
+  // En una carga sin su formato firmado el plan no se ajusta ni se escala (spec §15): sus formularios no aparecen.
+  const ajustable = completo && h.cargaConfirmada && SE_AJUSTA_EN.includes(h.estado) && rondaEnCurso?.estadoPlan === "aprobado";
   const pideAjustes = ajustable && (await pideAjustesDelPlan(sqlPlan, sesion, { procesoId: h.procesoId }));
   const ajustesEnCurso = rondaEnCurso?.ajustes ?? [];
   const conAjustePendiente = new Set(ajustesEnCurso.flatMap((x) => (x.estado === "pendiente" && x.actividadId !== null ? [x.actividadId] : [])));
@@ -376,7 +377,7 @@ export default async function PaginaHallazgo({
   const usuariosParaAjustes = pideAjustes ? await usuariosActivos() : [];
   const numerosDeCausa = (r: RondaDeDetalle): Record<number, number> => Object.fromEntries(r.causas.map((c) => [c.id, c.orden]));
   const decidirAjustes = ajustesEnCurso
-    .filter((x) => x.puedeDecidir)
+    .filter((x) => x.puedeDecidir && h.cargaConfirmada)
     .map((x) => (
       <PasoDecidirAjuste
         key={`decidir-${x.id}`}
@@ -409,7 +410,7 @@ export default async function PaginaHallazgo({
         e.detalle !== null &&
         (e.detalle as Record<string, unknown>).actividadId === actividadId,
     )?.tipo ?? null;
-  const escala = gestiona && h.estado === "en_ejecucion";
+  const escala = gestiona && h.cargaConfirmada && h.estado === "en_ejecucion";
   const responde = completo && !terminado && puede(sesion, "mejora.aprobar");
   const deActividad = (x: ActividadDeDetalle) => {
     // La regla de la pasada (`venceLaActividad`, que la lectura trae en `vence`): devuelta, la fecha para corregir.

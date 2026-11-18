@@ -40,7 +40,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { leer } from "./analisis";
 import { verificarFirma } from "./aprobacion";
 import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD } from "./avisos";
-import { cargaConfirmada, FALTA_EL_ESCANEO } from "./carga-confirmada";
+import { exigirCargaConfirmada } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, hallazgoBase, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 import { evaluableDesde, evaluablesDesde, fechaMinimaDe, fechasMinimasDe, type FechaMinima, type IndicadorDeLaEspera } from "./espera";
@@ -182,8 +182,7 @@ export async function verificarImplementacion(
       await exigirVerificador(tx, sesion, h.id);
       if (h.estado !== "por_verificar") throw new ErrorMejora(YA_CAMBIO);
       // Un hallazgo cargado no se verifica sin la evidencia de lo hecho en papel (spec §15).
-      const [{ cargado }] = await tx`SELECT cargado FROM mejora_hallazgos WHERE id = ${h.id}`;
-      if (cargado === true && !(await cargaConfirmada(tx, h.id))) throw new ErrorMejora(FALTA_EL_ESCANEO);
+      await exigirCargaConfirmada(tx, h.id);
       const ronda = await rondaEnCurso(tx, h, true);
       const [pendiente] = await tx`SELECT 1 FROM mejora_ajustes WHERE ronda_id = ${ronda.id} AND estado = 'pendiente' LIMIT 1`;
       if (pendiente) throw new ErrorMejora(AJUSTE_POR_DECIDIR);

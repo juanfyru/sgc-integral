@@ -8,7 +8,13 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadoresElegibles } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
-import { documentosVigentesVisibles, normasQueRigen, procesosDelAlcance, usuariosActivos } from "@/db/consultas/mejoramiento/opciones";
+import {
+  documentosVigentesVisibles,
+  normasQueRigen,
+  opcionesDeLaCarga,
+  procesosDelAlcance,
+  usuariosActivos,
+} from "@/db/consultas/mejoramiento/opciones";
 import { hallazgoDeOrigen } from "@/db/consultas/mejoramiento/registro";
 import { leerReporte } from "@/db/consultas/mejoramiento/reportes";
 import { exigirSesion } from "@/lib/paginas";
@@ -60,12 +66,13 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
   if (parametros.modo === "en-curso") {
     if (!carga) notFound();
     const sql = obtenerSql();
-    const [procesos, normas, documentos, usuarios, indicadores, contexto] = await Promise.all([
+    const [procesos, normas, documentos, usuarios, indicadores, enlaces, contexto] = await Promise.all([
       procesosDelAlcance(sesion),
       normasQueRigen(),
       documentosVigentesVisibles(sesion),
       usuariosActivos(),
       indicadoresElegibles(sql, sesion),
+      opcionesDeLaCarga(sesion, { sql }),
       contextoDeMejora(sql, ahora),
     ]);
     return (
@@ -83,6 +90,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
           documentos={documentos}
           usuarios={usuarios}
           indicadores={indicadores}
+          enlaces={enlaces}
           hoy={fechaEnZona(ahora, contexto.zona)}
         />
       </div>

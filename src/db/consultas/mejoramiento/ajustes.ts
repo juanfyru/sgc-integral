@@ -38,7 +38,7 @@ import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import { FECHA_DEL_AJUSTE_PASADA, fechaDelAjustePasada } from "@/lib/mejoramiento/reglas";
 import { rutaDeActividad, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
-import { fraseDelAjuste } from "@/lib/mejoramiento/textos";
+import { ACTIVIDAD_ASIGNADA, cuerpoDeActividadAsignada, fraseDelAjuste } from "@/lib/mejoramiento/textos";
 import {
   ACTIVIDAD_ABIERTA,
   ErrorMejora,
@@ -56,8 +56,8 @@ import type { Rol } from "@/lib/roles";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { ACTIVIDAD_CERRADA, ACTIVIDAD_NO_EXISTE, pideAjustesDelPlan } from "./actividades";
 import { leer } from "./analisis";
-import { ACTIVIDAD_ASIGNADA } from "./aprobacion";
 import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO } from "./avisos";
+import { exigirCargaConfirmada } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 import { ACCION_AJENA, CAUSA_AJENA, DEMASIADAS_ACCIONES, etiquetaDeAccion, etiquetaDeActividad, RESPONSABLE_INACTIVO } from "./plan";
@@ -300,6 +300,7 @@ export async function pedirAjuste(
       const porElPlan = await pideAjustesDelPlan(tx, sesion, h);
       const esSuya = a !== null && a.responsableId === sesion.usuarioId && a.finOriginal !== null;
       if (!porElPlan && !(v.tipo === "reprogramar" && esSuya)) await negar(tx, sesion, h.id);
+      await exigirCargaConfirmada(tx, h.id);
       if (!SE_AJUSTA_EN.includes(h.estado)) throw new ErrorMejora(YA_CAMBIO);
       if (v.actividadId !== null && a === null) throw new ErrorMejora(ACTIVIDAD_NO_EXISTE);
 
@@ -499,6 +500,7 @@ export async function decidirAjuste(
       if (!(await quienDecideAjustes(tx, h.id, ajuste.pedidoPor)).usuarios.includes(sesion.usuarioId)) {
         await negar(tx, sesion, h.id, AJUSTE_NO_EXISTE);
       }
+      await exigirCargaConfirmada(tx, h.id);
       if (ajuste.estado !== "pendiente") throw new ErrorMejora(YA_SE_DECIDIO);
       if (!SE_AJUSTA_EN.includes(h.estado) || ajuste.rondaNumero !== h.ronda) throw new ErrorMejora(YA_CAMBIO);
       const c = await contextoDeMejora(tx, ahora);
@@ -567,11 +569,10 @@ export async function decidirAjuste(
       );
       await avisarAQuienPidio(tx, sesion, h, ajuste, true, frase);
       if (nueva && nueva.responsableId !== sesion.usuarioId) {
-        const descripcion = nueva.descripcion.trim().replace(/[.\s]+$/, "");
         await avisarA(
           tx,
           { tipo: "mejora.actividad_asignada", titulo: ACTIVIDAD_ASIGNADA, enlace: rutaDeActividad(nueva.id), entidad: ENTIDAD_ACTIVIDAD, entidadId: nueva.id },
-          [{ usuarioId: nueva.responsableId, cuerpo: `${descripcion}. Fecha de fin: ${fechaLargaDeDia(nueva.fin)}.` }],
+          [{ usuarioId: nueva.responsableId, cuerpo: cuerpoDeActividadAsignada(nueva.descripcion, nueva.fin) }],
         );
       }
     }),
@@ -604,6 +605,7 @@ export async function escalarAGerencia(sesion: SesionFlujo, d: { actividadId: nu
   requerirPermiso(sesion, "mejora.gestionar");
   const v = leer(EsquemaEscalar, d);
   await conLaActividad(v.actividadId, opciones, async (tx, h, a, c) => {
+    await exigirCargaConfirmada(tx, h.id);
     if (!sigueAbierta(h, a) || a.vence >= fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(SOLO_VENCIDA);
     if (h.estado !== "en_ejecucion") throw new ErrorMejora(YA_CAMBIO);
     if (a.gerenciaEn !== null) throw new ErrorMejora(YA_ESCALADA);

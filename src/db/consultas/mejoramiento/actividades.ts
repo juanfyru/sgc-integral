@@ -40,7 +40,7 @@ import { leer } from "./analisis";
 import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura";
 import { archivosDe, type ArchivoDeMejora } from "./archivos";
 import { ENTIDAD_ACTIVIDAD } from "./avisos";
-import { cargaResuelta } from "./carga-confirmada";
+import { cargaPendiente, cargaResuelta, exigirCargaConfirmada } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { evaluableDesde } from "./espera";
 import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "./flujo";
@@ -228,6 +228,7 @@ export async function registrarSeguimiento(
   const v = leer(EsquemaSeguimiento, d);
   return conLaActividad(v.actividadId, opciones, async (tx, h, a, c) => {
     if (!esSuya(sesion, a)) await negar(tx, sesion, h.id);
+    await exigirCargaConfirmada(tx, h.id);
     exigirAbierta(h, a, ACTIVIDAD_CERRADA);
     if (v.fecha > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(SEGUIMIENTO_FUTURO);
     const [anterior] = await tx`SELECT avance FROM mejora_seguimientos WHERE actividad_id = ${a.id} ORDER BY id DESC LIMIT 1`;
@@ -286,6 +287,7 @@ export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: n
   const v = leer(EsquemaActividad, d);
   await conLaActividad(v.actividadId, opciones, async (tx, h, a, c) => {
     if (!esSuya(sesion, a)) await negar(tx, sesion, h.id);
+    await exigirCargaConfirmada(tx, h.id);
     exigirAbierta(h, a, ACTIVIDAD_CERRADA);
     if (a.avance !== 100) throw new ErrorMejora(AVANCE_INCOMPLETO);
     const [{ n }] = await tx`SELECT count(*)::int AS n FROM archivos
@@ -339,7 +341,8 @@ export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: n
  * vez, de inmediato, al jefe de la persona nueva (spec §14.3). Deja el evento `reasignada` con la forma
  * `{ actividadId, antes, despues, motivo }` (la Tarea 16 lee de ahí quién **fue** responsable), su bitácora sin el motivo y un
  * aviso a cada uno de los dos (salvo a quien reasigna y a un anterior inactivo): al nuevo, con el enlace a la actividad; al
- * anterior, sin enlace (puede haber perdido el hallazgo).
+ * anterior, sin enlace (puede haber perdido el hallazgo). En una carga sin su formato firmado se reasigna sin avisos: así se
+ * corrige un responsable mal cargado, y el escaneo avisa después a quien la tenga (spec §15).
  */
 export async function reasignarActividad(
   sesion: SesionFlujo,
@@ -368,6 +371,9 @@ export async function reasignarActividad(
       ocurrioEn: c.ahora,
     });
     await auditarActividad(tx, sesion, h, a, "mejora_actividad_reasignada", { antes: a.responsableId, despues: v.responsableId });
+    // En una carga sin su formato firmado la actividad no le ha llegado a nadie: el aviso lo da el escaneo, a quien la tenga
+    // entonces (spec §15).
+    if (await cargaPendiente(tx, h.id)) return;
     const cuerpo = cuerpoDeActividad(a);
     const tipo = "mejora.actividad_reasignada";
     if (v.responsableId !== sesion.usuarioId) {
@@ -484,7 +490,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
       to_char(a.fin, 'YYYY-MM-DD') AS fin, to_char(a.corregir_antes_de, 'YYYY-MM-DD') AS corregir_antes_de,
       to_char(${venceLaActividad(sql)}, 'YYYY-MM-DD') AS vence, ac.id AS accion_id, ac.orden AS accion_orden, ac.tipo AS accion_tipo, ac.descripcion AS accion_descripcion,
       r.numero AS ronda_numero, h.id AS hallazgo_id, h.codigo, h.titulo, h.estado AS hallazgo_estado, h.ronda,
-      h.proceso_id, h.resultado_cierre, h.correccion_requerida, p.nombre AS proceso
+      h.proceso_id, h.resultado_cierre, h.correccion_requerida, p.nombre AS proceso, ${cargaResuelta(sql)} AS entregada
     FROM mejora_actividades a
     JOIN mejora_acciones ac ON ac.id = a.accion_id
     JOIN mejora_rondas r ON r.id = ac.ronda_id
@@ -508,6 +514,8 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
   const estadoHallazgo = f.hallazgo_estado as EstadoHallazgo;
   const ronda = Number(f.ronda);
   const deLaRonda = sigueAbierta({ ronda }, { rondaNumero: Number(f.ronda_numero), estado });
+  // En una carga sin su formato firmado la actividad no se sigue, no se termina, no se ajusta ni vence (spec §15).
+  const entregada = f.entregada === true;
   const abierta = estadoHallazgo === "en_ejecucion" && deLaRonda;
   const esResponsable = Number(f.responsable_id) === sesion.usuarioId;
   const devuelta = f.verificacion === "devuelta";
@@ -516,7 +524,8 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
   const fin = f.fin as string;
   const [ajuste] = ajustes;
   // La regla de `pedirAjuste` para reprogramar, con lo ya leído (el dominio la vuelve a comprobar dentro de su transacción).
-  const ajustable = SE_AJUSTA_EN.includes(estadoHallazgo) && deLaRonda && f.fin_original !== null && !ajuste && puede(sesion, "mejora.ejecutar");
+  const ajustable =
+    entregada && SE_AJUSTA_EN.includes(estadoHallazgo) && deLaRonda && f.fin_original !== null && !ajuste && puede(sesion, "mejora.ejecutar");
   const puedePedirAjuste =
     ajustable && (esResponsable || (await pideAjustesDelPlan(sql, sesion, { procesoId: Number(f.proceso_id) })));
   return {
@@ -539,7 +548,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     corregirAntesDe: (f.corregir_antes_de as string | null) ?? null,
     vence: f.vence as string,
     // La regla de la pasada y de las tareas (`venceLaActividad`): devuelta, la fecha para corregir.
-    vencida: ACTIVIDAD_ABIERTA.includes(estado) && (f.vence as string) < fechaHoy(ahora),
+    vencida: entregada && ACTIVIDAD_ABIERTA.includes(estado) && (f.vence as string) < fechaHoy(ahora),
     accion: {
       id: Number(f.accion_id),
       etiqueta: etiquetaDeAccion(Number(f.accion_orden)),
@@ -575,7 +584,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     })),
     archivos,
     esResponsable,
-    puedeSeguir: esResponsable && abierta,
+    puedeSeguir: esResponsable && abierta && entregada,
     puedeReasignar: abierta && (await puedeReasignar(sql, sesion, { procesoId: Number(f.proceso_id) })),
     avanceMinimo: ultimo && !devuelta ? Number(ultimo.avance) : 0,
     ajustePendiente: ajuste
@@ -590,8 +599,8 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
 /** Cuántas actividades de planes aprobados tiene hoy a su cargo la persona (las de `misActividades`), sin leerlas. */
 export async function contarMisActividades(sesion: Pick<SesionFlujo, "usuarioId">, opciones?: Opciones): Promise<number> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [f] = await sql`SELECT count(*)::int AS n FROM mejora_actividades
-    WHERE responsable_id = ${sesion.usuarioId} AND fin_original IS NOT NULL`;
+  const [f] = await sql`SELECT count(*)::int AS n FROM mejora_actividades a JOIN mejora_hallazgos h ON h.id = a.hallazgo_id
+    WHERE a.responsable_id = ${sesion.usuarioId} AND a.fin_original IS NOT NULL AND ${cargaResuelta(sql)}`;
   return Number(f.n);
 }
 
