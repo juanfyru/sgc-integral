@@ -48,6 +48,9 @@ export const ETIQUETA_ESTADO_AJUSTE: Record<EstadoAjuste, string> = {
   negado: "Negado",
 };
 
+/** La nota con que se niegan los ajustes pendientes de un hallazgo que se anula (spec §7.6 y §10.6). */
+export const AJUSTE_POR_ANULACION = "Se anuló el hallazgo";
+
 /** La nota de los formularios que piden un ajuste (spec §10.6 y maqueta 6). */
 export const MIENTRAS_SE_DECIDE = "Lo decide quien aprobó el plan. Mientras se decide, la actividad sigue contando como vencida.";
 

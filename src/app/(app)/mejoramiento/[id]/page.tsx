@@ -29,7 +29,7 @@ import {
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
-import { AjustesDelPlan, fraseDeAjusteDeDetalle } from "@/componentes/mejoramiento/ajustes/AjustesDelPlan";
+import { AjustesDelPlan, fraseDeAjusteDeDetalle, lineasDeLoQueSeAnade } from "@/componentes/mejoramiento/ajustes/AjustesDelPlan";
 import { DialogoAjusteDelPlan } from "@/componentes/mejoramiento/ajustes/DialogoPedirAjuste";
 import { DialogoEscalar, DialogoResponderEscalada } from "@/componentes/mejoramiento/ajustes/DialogoEscalar";
 import { PasoDecidirAjuste } from "@/componentes/mejoramiento/ajustes/PasoDecidirAjuste";
@@ -80,7 +80,7 @@ import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/
 import { puedeVerIndicador } from "@/lib/alcance";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
-import { razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
+import { fechaDelAjustePasada, razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { estaAbierta, SE_AJUSTA_EN, TERMINALES } from "@/lib/mejoramiento/tipos";
@@ -270,13 +270,17 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       .map((x) => ({ id: x.id, etiqueta: etiquetas[x.id] ?? "", descripcion: x.descripcion })),
   );
   const usuariosParaAjustes = pideAjustes ? await usuariosActivos() : [];
+  const numerosDeCausa = (r: RondaDeDetalle): Record<number, number> => Object.fromEntries(r.causas.map((c) => [c.id, c.orden]));
   const decidirAjustes = ajustesEnCurso
     .filter((x) => x.puedeDecidir)
     .map((x) => (
       <PasoDecidirAjuste
         key={`decidir-${x.id}`}
         ajusteId={x.id}
+        cual={x.tipo === "agregar" || x.actividadId === null ? "una actividad nueva" : `la actividad ${etiquetas[x.actividadId] ?? ""}`}
         frase={fraseDeAjusteDeDetalle(x, etiquetas, etiquetasDeAccion)}
+        detalle={rondaEnCurso ? lineasDeLoQueSeAnade(x, numerosDeCausa(rondaEnCurso)) : []}
+        fechaPasada={fechaDelAjustePasada(x.cambio, hoy)}
         causa={x.causa}
         pedidoPor={x.pedidoPor}
         pedidoEn={fechaDeDia(fechaEnZona(x.pedidoEn, zona))}
@@ -503,6 +507,7 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
                       ajustes={r.ajustes}
                       etiquetas={etiquetas}
                       acciones={etiquetasDeAccion}
+                      causas={numerosDeCausa(r)}
                       zona={zona}
                       titulo={enCurso ? "Ajustes del plan" : `Ajustes del plan (ronda ${r.numero})`}
                     >

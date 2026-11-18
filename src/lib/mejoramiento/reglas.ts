@@ -1,5 +1,25 @@
+import type { CambioDeAjuste } from "@/lib/esquemas/mejoramiento";
 import { esExterno } from "./origenes";
 import type { Clase, HallazgoBase, TipoAccion } from "./tipos";
+
+/** Al aprobar un ajuste cuya fecha quedó atrás (spec §10.6): no se aprueba; se niega y se pide otro. */
+export const FECHA_DEL_AJUSTE_PASADA = "La fecha nueva ya pasó: niegue el ajuste para que se pida otro";
+
+/** La fecha de fin que da un ajuste al aprobarse: la nueva de una reprogramación o el fin de la actividad que se añade. */
+export function finQueDaElAjuste(c: CambioDeAjuste | null): string | null {
+  if (c?.tipo === "reprogramar") return c.finNuevo;
+  if (c?.tipo === "agregar") return c.fin;
+  return null;
+}
+
+/**
+ * Si esa fecha ya pasó el día `hoy` (el de la zona de la instalación): el ajuste ya no se aprueba. Una sola regla para el acto
+ * y para el aviso de «Lo que sigue».
+ */
+export function fechaDelAjustePasada(c: CambioDeAjuste | null, hoy: string): boolean {
+  const fin = finQueDaElAjuste(c);
+  return fin !== null && fin < hoy;
+}
 
 /** Acción correctiva obligada (spec §8.5): no conformidad reincidente, de criticidad alta o de origen externo. */
 export function accionObligada(h: Pick<HallazgoBase, "clase" | "criticidad" | "origen" | "reincidenteDe">): boolean {

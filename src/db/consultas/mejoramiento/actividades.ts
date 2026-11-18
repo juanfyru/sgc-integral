@@ -37,6 +37,7 @@ import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { leer } from "./analisis";
+import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura";
 import { archivosDe, type ArchivoDeMejora } from "./archivos";
 import { ENTIDAD_ACTIVIDAD } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
@@ -193,11 +194,12 @@ export async function puedeReasignar(tx: Cliente, p: Persona, h: Pick<HallazgoBa
 }
 
 /**
- * Pide cualquiera de los tres ajustes del plan (spec §6.1 y §10.6): el Admin SGC o un líder activo del proceso del hallazgo. El
- * responsable de una actividad, que no es ninguno de los dos, solo pide reprogramar la suya (`ajustes.ts`).
+ * Pide cualquiera de los tres ajustes del plan (spec §6.1 y §10.6): el Admin SGC o un líder activo del proceso del hallazgo, con
+ * `mejora.formular` (spec §6.2: «pedir ajustes»). El responsable de una actividad, que no es ninguno de los dos, solo pide
+ * reprogramar la suya con `mejora.ejecutar` (`ajustes.ts`).
  */
 export async function pideAjustesDelPlan(tx: Cliente, p: Persona, h: Pick<HallazgoBase, "procesoId">): Promise<boolean> {
-  if (!puede(p, "mejora.ejecutar")) return false;
+  if (!puede(p, "mejora.formular")) return false;
   if (p.rol === "admin_sgc") return true;
   return p.rol === "lider_proceso" && (await lideresDeProceso(h.procesoId, { sql: tx })).includes(p.usuarioId);
 }
@@ -421,6 +423,8 @@ export type DetalleDeActividad = {
   puedePedirAjuste: boolean;
   /** Cuándo se escaló a Gerencia (spec §10.7), o nulo. */
   gerenciaEn: Date | null;
+  /** Los ajustes de esta actividad (spec §10.6), con su causa y su decisión: la página del hallazgo no se los da a su responsable. */
+  ajustes: AjusteDeDetalle[];
 };
 
 const fechaHoy = (ahora: Date) => fechaEnZona(ahora, zonaHoraria());
@@ -453,13 +457,14 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     WHERE a.id = ${id}`;
   if (!f) return null;
   const hallazgoId = Number(f.hallazgo_id);
-  const [seguimientos, archivos, ajustes] = await Promise.all([
+  const [seguimientos, archivos, ajustes, deLaActividad] = await Promise.all([
     sql`SELECT s.id, to_char(s.fecha, 'YYYY-MM-DD') AS fecha, s.realizado, s.avance, s.barreras, s.creado_en, u.nombre AS quien
       FROM mejora_seguimientos s JOIN usuarios u ON u.id = s.registrado_por
       WHERE s.actividad_id = ${id} ORDER BY s.fecha DESC, s.id DESC`,
     archivosDe(sql, sesion, { contexto: "mejora_actividad", contextoId: id }),
     sql`SELECT id, tipo, pedido_en, datos->>'finNuevo' AS fin_nuevo
       FROM mejora_ajustes WHERE actividad_id = ${id} AND estado = 'pendiente' ORDER BY id DESC LIMIT 1`,
+    leerAjustes(sql, { actividadId: id }),
   ]);
   const estado = f.estado as EstadoActividad;
   const estadoHallazgo = f.hallazgo_estado as EstadoHallazgo;
@@ -534,6 +539,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
       : null,
     puedePedirAjuste,
     gerenciaEn: (f.gerencia_en as Date | null) ?? null,
+    ajustes: deLaActividad.map(sinLaFila),
   };
 }
 

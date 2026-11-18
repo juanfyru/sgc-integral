@@ -19,6 +19,7 @@
  * («A1.2») y las fechas, nunca la causa, la nota de la decisión ni el texto de la actividad nueva: quedan en su fila.
  */
 import type { TransactionSql } from "postgres";
+import type { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
@@ -26,6 +27,7 @@ import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consul
 import { participacionEnActividad, puedeVerHallazgo, type SujetoVisibilidad } from "@/lib/alcance";
 import {
   cambioDeAjuste,
+  DEMASIADAS_ACTIVIDADES,
   EsquemaDecidirAjuste,
   EsquemaEscalar,
   EsquemaPedirAjuste,
@@ -34,12 +36,14 @@ import {
 } from "@/lib/esquemas/mejoramiento";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { venceEn } from "@/lib/mejoramiento/plazos";
+import { FECHA_DEL_AJUSTE_PASADA, fechaDelAjustePasada } from "@/lib/mejoramiento/reglas";
 import { rutaDeActividad, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { fraseDelAjuste } from "@/lib/mejoramiento/textos";
 import {
   ACTIVIDAD_ABIERTA,
   ErrorMejora,
   MAXIMO_DE_ACCIONES,
+  MAXIMO_DE_ACTIVIDADES,
   SE_AJUSTA_EN,
   type EstadoActividad,
   type EstadoAjuste,
@@ -75,10 +79,12 @@ export const SOLO_VENCIDA = "Solo se escala una actividad vencida";
 export const YA_ESCALADA = "La actividad ya está escalada a Gerencia";
 export const NO_ESCALADA = "Esa actividad no está escalada a Gerencia";
 export const YA_RESPONDIDA = "Esa escalada ya tiene respuesta";
+export const SIN_GERENCIA_ACTIVA = "No hay ningún usuario de Gerencia activo a quien escalar";
 
 /** Los avisos de un ajuste decidido, a quien lo pidió (spec §14.2), y de una escalada, a Gerencia (§10.7). */
 export const AJUSTE_APROBADO = "Se aprobó el ajuste que pidió";
 export const AJUSTE_NEGADO = "Se negó el ajuste que pidió";
+export const ESCALADA_RESPONDIDA = "Gerencia respondió una escalada";
 
 /** El índice único parcial de un ajuste pendiente por actividad (migración 0018). */
 const INDICE_UN_PENDIENTE = "mejora_ajustes_un_pendiente_idx";
@@ -188,7 +194,8 @@ async function accionDeLaRonda(tx: TransactionSql, h: Pick<HallazgoBase, "id">, 
 
 /**
  * Lo que se revisa de una actividad que se añade, como al guardar una acción del plan (`guardarAccion`): la acción, de la ronda
- * en curso; una acción nueva, con cupo en la ronda y, si es correctiva, con al menos una causa, todas de la ronda; y el
+ * en curso y con cupo (treinta actividades); una acción nueva, con cupo en la ronda y, si es correctiva, con al menos una causa,
+ * todas de la ronda; y el
  * responsable, activo (`FOR SHARE` al aprobar, después de las actividades: nadie lo desactiva hasta que el acto termine).
  * Devuelve la acción existente, o nula si va en una nueva.
  */
@@ -200,6 +207,10 @@ async function revisarLaNueva(
   bloquear: boolean,
 ): Promise<{ id: number; orden: number } | null> {
   const accion = nueva.accionId !== null ? await accionDeLaRonda(tx, h, rondaId, nueva.accionId) : null;
+  if (accion) {
+    const [{ cuantas }] = await tx`SELECT count(*)::int AS cuantas FROM mejora_actividades WHERE accion_id = ${accion.id}`;
+    if (Number(cuantas) >= MAXIMO_DE_ACTIVIDADES) throw new ErrorMejora(DEMASIADAS_ACTIVIDADES);
+  }
   if (nueva.accion) {
     const [{ cuantas }] = await tx`SELECT count(*)::int AS cuantas FROM mejora_acciones WHERE ronda_id = ${rondaId}`;
     if (Number(cuantas) >= MAXIMO_DE_ACCIONES) throw new ErrorMejora(DEMASIADAS_ACCIONES);
@@ -265,21 +276,7 @@ export async function quienDecideAjustes(
  */
 export async function pedirAjuste(
   sesion: SesionFlujo,
-  d: {
-    hallazgoId: number;
-    tipo: TipoAjuste;
-    actividadId?: number;
-    finNuevo?: string;
-    nueva?: {
-      accionId?: number;
-      accion?: { tipo: "correctiva" | "preventiva" | "mejora"; descripcion: string; causaIds: number[] };
-      descripcion: string;
-      responsableId: number;
-      inicio: string;
-      fin: string;
-    };
-    causa: string;
-  },
+  d: z.input<typeof EsquemaPedirAjuste>,
   opciones?: OpcionesFlujo,
 ): Promise<{ id: number }> {
   requerirPermiso(sesion, "mejora.ejecutar");
@@ -540,6 +537,8 @@ export async function decidirAjuste(
         return;
       }
 
+      // La fecha que da el ajuste se mira otra vez al aprobarlo, en el día de la zona: si ya pasó, se niega y se pide otro.
+      if (fechaDelAjustePasada(leido, fechaEnZona(c.ahora, c.zona))) throw new ErrorMejora(FECHA_DEL_AJUSTE_PASADA);
       const { detalle, nueva } = await aplicar(tx, h, ajuste, a, c);
       const abiertas = (await bloquearLasDeLaRonda(tx, h)).filter((x) => ACTIVIDAD_ABIERTA.includes(x.estado));
       await tx`UPDATE mejora_ajustes
@@ -577,19 +576,23 @@ export async function decidirAjuste(
 // Escalar a Gerencia (spec §10.7)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** El último paso de la escalada de una actividad: `escalada` o `escalada_respondida`, o nada. */
-async function ultimoDeLaEscalada(tx: TransactionSql, h: Pick<HallazgoBase, "id">, actividadId: number): Promise<string | null> {
-  const [e] = await tx`SELECT tipo FROM mejora_eventos
+/** El último paso de la escalada de una actividad (`escalada` o `escalada_respondida`) y quién lo dio, o nada. */
+async function ultimoDeLaEscalada(
+  tx: TransactionSql,
+  h: Pick<HallazgoBase, "id">,
+  actividadId: number,
+): Promise<{ tipo: string; usuarioId: number | null } | null> {
+  const [e] = await tx`SELECT tipo, usuario_id FROM mejora_eventos
     WHERE hallazgo_id = ${h.id} AND tipo IN ('escalada', 'escalada_respondida') AND detalle->>'actividadId' = ${String(actividadId)}
     ORDER BY id DESC LIMIT 1`;
-  return (e?.tipo as string | undefined) ?? null;
+  return e ? { tipo: e.tipo as string, usuarioId: e.usuario_id === null ? null : Number(e.usuario_id) } : null;
 }
 
 /**
  * El Admin SGC escala a Gerencia una actividad vencida (sin terminar, de un plan aprobado y con el fin vigente ya pasado en la
  * zona), con una nota. No cambia ningún estado: deja `gerencia_en`, el evento `escalada` (con la nota, que no tiene otra
- * columna), su bitácora sin la nota y un aviso a cada usuario activo de Gerencia. Una escalada vigente no se repite: la borra una
- * reprogramación aprobada.
+ * columna), su bitácora sin la nota y un aviso a cada usuario activo de Gerencia; sin ninguno, no se escala. Una escalada vigente
+ * no se repite: la borra una reprogramación aprobada.
  */
 export async function escalarAGerencia(sesion: SesionFlujo, d: { actividadId: number; nota: string }, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.gestionar");
@@ -598,6 +601,8 @@ export async function escalarAGerencia(sesion: SesionFlujo, d: { actividadId: nu
     if (!sigueAbierta(h, a) || a.fin >= fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(SOLO_VENCIDA);
     if (h.estado !== "en_ejecucion") throw new ErrorMejora(YA_CAMBIO);
     if (a.gerenciaEn !== null) throw new ErrorMejora(YA_ESCALADA);
+    const gerencia = (await activosDeRol(tx, ["gerencia"])).filter((u) => u !== sesion.usuarioId);
+    if (gerencia.length === 0) throw new ErrorMejora(SIN_GERENCIA_ACTIVA);
     await tx`UPDATE mejora_actividades SET gerencia_en = ${c.ahora} WHERE id = ${a.id}`;
     await dejarEvento(tx, {
       hallazgoId: h.id,
@@ -614,21 +619,19 @@ export async function escalarAGerencia(sesion: SesionFlujo, d: { actividadId: nu
       entidadId: a.id,
       detalle: { codigo: h.codigo, ronda: h.ronda, hallazgoId: h.id, actividad: a.etiqueta, fin: a.fin },
     });
-    const gerencia = (await activosDeRol(tx, ["gerencia"])).filter((u) => u !== sesion.usuarioId);
     const cuerpo = `La actividad ${a.etiqueta} venció el ${fechaLargaDeDia(a.fin)}.`;
-    if (gerencia.length > 0) {
-      await avisarA(
-        tx,
-        { tipo: "mejora.escalada", titulo: `Escalada a Gerencia: una actividad de ${h.codigo}`, enlace: rutaDeActividad(a.id), entidad: ENTIDAD_ACTIVIDAD, entidadId: a.id },
-        gerencia.map((usuarioId) => ({ usuarioId, cuerpo })),
-      );
-    }
+    await avisarA(
+      tx,
+      { tipo: "mejora.escalada", titulo: `Escalada a Gerencia: una actividad de ${h.codigo}`, enlace: rutaDeActividad(a.id), entidad: ENTIDAD_ACTIVIDAD, entidadId: a.id },
+      gerencia.map((usuarioId) => ({ usuarioId, cuerpo })),
+    );
   });
 }
 
 /**
  * Gerencia responde una escalada (spec §10.7) con su nota y, si quiere, el acta del Comité: una vez por escalada. No cambia
- * ningún estado: deja el evento `escalada_respondida` (con la nota y el acta) y su bitácora, sin la nota.
+ * ningún estado: deja el evento `escalada_respondida` (con la nota y el acta), su bitácora sin la nota y un aviso a quien la
+ * escaló.
  */
 export async function responderEscalada(
   sesion: SesionFlujo,
@@ -639,7 +642,8 @@ export async function responderEscalada(
   const v = leer(EsquemaResponderEscalada, d);
   await conLaActividad(v.actividadId, opciones, async (tx, h, a, c) => {
     if (a.gerenciaEn === null) throw new ErrorMejora(NO_ESCALADA);
-    if ((await ultimoDeLaEscalada(tx, h, a.id)) !== "escalada") throw new ErrorMejora(YA_RESPONDIDA);
+    const escalada = await ultimoDeLaEscalada(tx, h, a.id);
+    if (escalada?.tipo !== "escalada") throw new ErrorMejora(YA_RESPONDIDA);
     exigirActa(v.acta, c);
     await dejarEvento(tx, {
       hallazgoId: h.id,
@@ -656,5 +660,17 @@ export async function responderEscalada(
       entidadId: a.id,
       detalle: { codigo: h.codigo, ronda: h.ronda, hallazgoId: h.id, actividad: a.etiqueta, ...conActa(v.acta) },
     });
+    // A quien escaló, si sigue activo: sin el contenido del hallazgo ni la nota (la lee en el historial).
+    const [quienEscalo] =
+      escalada.usuarioId !== null && escalada.usuarioId !== sesion.usuarioId
+        ? await tx`SELECT id FROM usuarios WHERE id = ${escalada.usuarioId} AND activo`
+        : [];
+    if (quienEscalo) {
+      await avisarA(
+        tx,
+        { tipo: "mejora.escalada_respondida", titulo: ESCALADA_RESPONDIDA, enlace: rutaDeActividad(a.id), entidad: ENTIDAD_ACTIVIDAD, entidadId: a.id },
+        [{ usuarioId: Number(quienEscalo.id), cuerpo: `Respondió la escalada de la actividad ${a.etiqueta} de ${h.codigo}.` }],
+      );
+    }
   });
 }

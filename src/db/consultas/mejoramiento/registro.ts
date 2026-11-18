@@ -20,6 +20,7 @@ import { esExterno } from "@/lib/mejoramiento/origenes";
 import { formularAntesDe } from "@/lib/mejoramiento/plazos";
 import { destinoDeReclasificacion, type Perfil } from "@/lib/mejoramiento/reclasificar";
 import { aceptadoVaA } from "@/lib/mejoramiento/reglas";
+import { AJUSTE_POR_ANULACION } from "@/lib/mejoramiento/textos";
 import { ErrorMejora, TERMINALES, type Clase, type Criticidad, type HallazgoBase, type Origen } from "@/lib/mejoramiento/tipos";
 import { DESDE, YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, requerirPermiso } from "@/lib/permisos";
@@ -577,7 +578,8 @@ export async function cambiarProceso(
 
 /**
  * Anula un hallazgo no terminado, con justificación (spec §7.6): queda «Anulado» con su código y su historia. Sus
- * actividades sin terminar pasan a canceladas, y el motivo y esas cancelaciones se escriben **antes** del cambio de estado:
+ * actividades sin terminar pasan a canceladas y sus ajustes por decidir, a negados (spec §10.6); el motivo, esas cancelaciones y
+ * esos ajustes se escriben **antes** del cambio de estado:
  * un hallazgo anulado ya no admite escrituras (trigger `sgc_impedir_si_hallazgo_terminado`). Avisa a los líderes, a los
  * responsables de las actividades que se cancelaron y a Gerencia si el plan lo había aprobado ella.
  */
@@ -600,6 +602,11 @@ export async function anularHallazgo(
       const canceladas = await tx`UPDATE mejora_actividades SET estado = 'cancelada', cancelada_en = ${c.ahora}
         WHERE hallazgo_id = ${h.id} AND estado IN ('abierta', 'en_proceso') RETURNING responsable_id, fin_original`;
       await tx`UPDATE mejora_hallazgos SET anulado_motivo = ${r.justificacion} WHERE id = ${h.id}`;
+      // Los ajustes que quedaban por decidir se niegan a nombre de quien anula, antes de la transición: un hallazgo anulado ya
+      // no admite cambios en sus hijas (spec §10.6; trigger `sgc_impedir_si_hallazgo_terminado`).
+      await tx`UPDATE mejora_ajustes SET estado = 'negado', decidido_por = ${sesion.usuarioId}, decidido_en = ${c.ahora},
+          nota = ${AJUSTE_POR_ANULACION}
+        WHERE hallazgo_id = ${h.id} AND estado = 'pendiente'`;
       await transicionarHallazgo(
         tx,
         sesion,

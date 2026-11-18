@@ -465,9 +465,8 @@ export async function reasignarActividadAccion(_previo: EstadoAccion, formData: 
 /** Pide un ajuste: el responsable, reprogramar la suya; un líder del proceso o el Admin SGC, también añadir y cancelar. */
 export async function pedirAjusteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
-    const d = parsearFormulario(datos, EsquemaFormularioAjuste);
-    // Los campos llegan como texto: `pedirAjuste` los lee con `EsquemaPedirAjuste` antes de escribir.
-    await pedirAjuste(sesion, d as unknown as Parameters<typeof pedirAjuste>[1]);
+    // Los campos llegan como texto, en la forma de entrada de `EsquemaPedirAjuste`, con el que `pedirAjuste` los valida.
+    await pedirAjuste(sesion, parsearFormulario(datos, EsquemaFormularioAjuste));
   });
 }
 

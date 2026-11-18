@@ -20,6 +20,7 @@ import {
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, NO_EXISTE } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { anularHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { participacionEnHallazgo } from "@/lib/alcance";
 import {
   EsquemaDecidirAjuste,
@@ -44,6 +45,14 @@ const AHORA = "2026-12-16T15:00:00Z";
 const HOY = "2026-12-16";
 // Miércoles 18 de noviembre: todavía nada está vencido.
 const ANTES = "2026-11-18T15:00:00Z";
+// Jueves 17 de diciembre, 10:00 en Bogotá.
+const LUEGO = "2026-12-17T15:00:00Z";
+// Las 22:00 del jueves 17 en Bogotá: en UTC ya es el 18, en la zona todavía el 17.
+const NOCHE_DEL_17 = "2026-12-18T03:00:00Z";
+// Las 00:30 del viernes 18 en Bogotá: el 17 ya pasó.
+const MADRUGADA_DEL_18 = "2026-12-18T05:30:00Z";
+const FECHA_PASADA = "La fecha nueva ya pasó: niegue el ajuste para que se pida otro";
+const TREINTA = "Una acción lleva treinta actividades como máximo";
 
 const CAUSA = "El proveedor no tiene existencias del equipo hasta fin de mes";
 const NOTA = "El Comité revisó la causa y no la encuentra suficiente";
@@ -609,9 +618,105 @@ describe("decidirAjuste", () => {
         puedeDecidir: true,
       });
       expect(n).toMatchObject({ id: negado.id, tipo: "cancelar", estado: "negado", nota: NOTA, decididoPor: b.admin.nombre, puedeDecidir: false });
-      const delResponsable = await leerHallazgo(responsable, h.id, { sql: tx, ahora: new Date(AHORA) });
-      expect(delResponsable?.rondas[0].ajustes.map((x) => x.puedeDecidir)).toEqual([false, false]);
       expect((await leerHallazgo(b.gerencia, h.id, { sql: tx, ahora: new Date(AHORA) }))?.rondas[0].ajustes[0].puedeDecidir).toBe(false);
+    }));
+
+  it("el contenido de los ajustes, solo a quien ve el hallazgo completo; el responsable lee los de su actividad en la página de ella", () =>
+    revertida(sql, async (tx) => {
+      const { b, responsable, h, ids } = await enEjecucion(tx, 2);
+      const [suya, ajena] = ids;
+      const otro = await usuarioDePrueba(tx, { rol: "consulta" });
+      await tx`UPDATE mejora_actividades SET responsable_id = ${otro.usuarioId} WHERE id = ${ajena}`;
+      const o = c(AHORA, tx);
+      const propio = await pedirAjuste(responsable, reprogramar(h.id, suya), o);
+      const deOtro = await pedirAjuste(b.lider, cancelar(h.id, ajena), o);
+      const comoActividad = await leerHallazgo(responsable, h.id, { sql: tx, ahora: new Date(AHORA) });
+      expect(comoActividad?.ve).toBe("actividad");
+      expect(comoActividad?.rondas[0].ajustes).toEqual([]);
+      expect((await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(AHORA) }))?.rondas[0].ajustes.map((x) => x.id)).toEqual([
+        propio.id,
+        deOtro.id,
+      ]);
+      const leida = await leerActividad(responsable, suya, o);
+      expect(leida?.ajustes.map((x) => x.id)).toEqual([propio.id]);
+      expect(leida?.ajustes[0]).toMatchObject({ causa: CAUSA, pedidoPor: responsable.nombre, estado: "pendiente", puedeDecidir: false });
+      expect((await leerActividad(otro, ajena, o))?.ajustes.map((x) => x.id)).toEqual([deOtro.id]);
+    }));
+
+  it("aprobar vuelve a mirar las fechas: una fecha que ya pasó en la zona no se aprueba y nada se escribe; negar, sí", () =>
+    revertida(sql, async (tx) => {
+      const { b, responsable, h, ids, accionId } = await enEjecucion(tx, 2);
+      const [a1, a2] = ids;
+      const o = c(AHORA, tx);
+      const reprogramacion = await pedirAjuste(responsable, reprogramar(h.id, a1, "2026-12-17"), o);
+      const nueva = await pedirAjuste(b.lider, agregar(h.id, nuevaEn(accionId, responsable.usuarioId, { fin: "2026-12-17" })), o);
+      const otra = await pedirAjuste(responsable, reprogramar(h.id, a2, "2026-12-17"), o);
+      const pasado = c(MADRUGADA_DEL_18, tx);
+      await expect(decidirAjuste(b.admin, { ajusteId: reprogramacion.id, aprueba: true }, pasado)).rejects.toThrow(FECHA_PASADA);
+      await expect(decidirAjuste(b.admin, { ajusteId: nueva.id, aprueba: true }, pasado)).rejects.toThrow(FECHA_PASADA);
+      expect((await ajusteDe(tx, reprogramacion.id)).estado).toBe("pendiente");
+      expect((await ajusteDe(tx, nueva.id)).estado).toBe("pendiente");
+      expect((await filaDe(tx, a1)).fin).toBe("2026-12-15");
+      expect((await tx`SELECT count(*)::int AS n FROM mejora_actividades WHERE hallazgo_id = ${h.id}`)[0].n).toBe(2);
+      expect(await eventosDe(tx, h.id, "ajustar")).toHaveLength(0);
+      await decidirAjuste(b.admin, { ajusteId: otra.id, aprueba: false, nota: NOTA }, pasado);
+      // A las 22:00 del 17 en la zona (ya el 18 en UTC) la fecha todavía no pasó: se aprueban.
+      const aTiempo = c(NOCHE_DEL_17, tx);
+      await decidirAjuste(b.admin, { ajusteId: reprogramacion.id, aprueba: true }, aTiempo);
+      await decidirAjuste(b.admin, { ajusteId: nueva.id, aprueba: true }, aTiempo);
+      expect((await filaDe(tx, a1)).fin).toBe("2026-12-17");
+      expect(await eventosDe(tx, h.id, "ajustar")).toHaveLength(2);
+    }));
+
+  it("una acción lleva treinta actividades como máximo, también al añadir una por un ajuste (al pedirlo y al aprobarlo)", () =>
+    revertida(sql, async (tx) => {
+      const { b, responsable, h, ids, accionId } = await enEjecucion(tx);
+      for (let i = 0; i < 28; i++) await actividadPorSql(tx, h.id, responsable.usuarioId, { accionDe: ids[0] });
+      const o = c(AHORA, tx);
+      const { id } = await pedirAjuste(b.lider, agregar(h.id, nuevaEn(accionId, responsable.usuarioId)), o);
+      await actividadPorSql(tx, h.id, responsable.usuarioId, { accionDe: ids[0] });
+      await expect(pedirAjuste(b.lider, agregar(h.id, nuevaEn(accionId, responsable.usuarioId)), o)).rejects.toThrow(TREINTA);
+      await expect(decidirAjuste(b.admin, { ajusteId: id, aprueba: true }, o)).rejects.toThrow(TREINTA);
+      expect((await ajusteDe(tx, id)).estado).toBe("pendiente");
+    }));
+
+  it("anular el hallazgo deja negados sus ajustes pendientes, a nombre de quien anula; los decididos no cambian", () =>
+    revertida(sql, async (tx) => {
+      const { b, responsable, h, ids } = await enEjecucion(tx, 3);
+      const o = c(AHORA, tx);
+      const p1 = await pedirAjuste(responsable, reprogramar(h.id, ids[0]), o);
+      const p2 = await pedirAjuste(b.lider, cancelar(h.id, ids[1]), o);
+      const decidido = await pedirAjuste(responsable, reprogramar(h.id, ids[2]), o);
+      await decidirAjuste(b.admin, { ajusteId: decidido.id, aprueba: false, nota: NOTA }, o);
+      await anularHallazgo(b.admin, { hallazgoId: h.id, justificacion: "Era un duplicado de otro hallazgo del proceso" }, c(LUEGO, tx));
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("anulado");
+      for (const id of [p1.id, p2.id]) {
+        expect(await ajusteDe(tx, id)).toMatchObject({
+          estado: "negado",
+          decidido_por: b.admin.usuarioId,
+          decidido_en: new Date(LUEGO),
+          nota: "Se anuló el hallazgo",
+        });
+      }
+      expect(await ajusteDe(tx, decidido.id)).toMatchObject({ estado: "negado", nota: NOTA, decidido_en: new Date(AHORA) });
+    }));
+});
+
+describe("quién decide si falta una segunda persona", () => {
+  it("plan aprobado por Gerencia y lo pidió el único usuario de Gerencia activo (responsable de la actividad): decide el Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_ejecucion", { criticidad: "alta" }, { responsableId: b.gerencia.usuarioId });
+      const [a] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id}`;
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'gerencia' AND id <> ${b.gerencia.usuarioId}`;
+      const o = c(AHORA, tx);
+      const { id } = await pedirAjuste(b.gerencia, reprogramar(h.id, Number(a.id)), o);
+      const deciden = await quienDecideAjustes(tx, h.id, b.gerencia.usuarioId);
+      expect(deciden.rol).toBe("admin_sgc");
+      expect(deciden.usuarios).toContain(b.admin.usuarioId);
+      await expect(decidirAjuste(b.gerencia, { ajusteId: id, aprueba: true }, o)).rejects.toBeInstanceOf(ErrorPermiso);
+      await decidirAjuste(b.admin, { ajusteId: id, aprueba: true }, o);
+      expect((await ajusteDe(tx, id)).decidido_por).toBe(b.admin.usuarioId);
     }));
 });
 
@@ -672,5 +777,22 @@ describe("escalar a Gerencia", () => {
       expect(JSON.stringify(bit.detalle)).not.toContain("proveedor");
       await expect(responderEscalada(b.gerencia, respuesta, o)).rejects.toThrow("Esa escalada ya tiene respuesta");
       expect((await bloquearHallazgo(tx, h.id)).estado).toBe("en_ejecucion");
+      // Quien escaló recibe la respuesta, con el enlace a la actividad y sin el contenido del hallazgo ni la nota.
+      const avisos = await avisosDe(tx, b.admin.usuarioId, "mejora.escalada_respondida");
+      expect(avisos).toHaveLength(1);
+      expect(avisos[0]).toMatchObject({ enlace: `/mejoramiento/actividades/${a}`, entidad: "mejora_actividad", entidad_id: a });
+      expect(JSON.stringify(avisos[0])).not.toMatch(/Formatos de entrega|rubro de dotación/);
+    }));
+
+  it("sin ningún usuario de Gerencia activo no se escala, y nada se escribe", () =>
+    revertida(sql, async (tx) => {
+      const { b, h, ids } = await enEjecucion(tx);
+      const [a] = ids;
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'gerencia'`;
+      await expect(escalarAGerencia(b.admin, { actividadId: a, nota: NOTA_ESCALADA }, c(AHORA, tx))).rejects.toThrow(
+        "No hay ningún usuario de Gerencia activo a quien escalar",
+      );
+      expect((await filaDe(tx, a)).gerencia_en).toBeNull();
+      expect(await eventosDe(tx, h.id, "escalada")).toHaveLength(0);
     }));
 });

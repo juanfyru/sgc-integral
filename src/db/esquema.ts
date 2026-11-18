@@ -2576,7 +2576,7 @@ export const mejoraAjustes = pgTable(
     hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
     rondaId: ref("ronda_id", () => mejoraRondas.id).notNull(),
     tipo: text("tipo").notNull(),
-    // Nula en un «añadir»: la actividad todavía no existe.
+    // En un «añadir», nula hasta aprobarse; después, la actividad que creó.
     actividadId: ref("actividad_id", () => mejoraActividades.id),
     datos: jsonb("datos"),
     causa: text("causa").notNull(),

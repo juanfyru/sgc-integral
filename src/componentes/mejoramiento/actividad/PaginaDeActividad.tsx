@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
+import { AjustesDelPlan } from "@/componentes/mejoramiento/ajustes/AjustesDelPlan";
 import { DialogoPedirAjuste } from "@/componentes/mejoramiento/ajustes/DialogoPedirAjuste";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
@@ -197,12 +198,24 @@ export function PaginaDeActividad({
         ) : null}
       </div>
 
-      <section aria-labelledby={`seguimientos-${a.id}`} className={`${CAJA} self-start`}>
-        <h2 id={`seguimientos-${a.id}`} className="font-display text-base font-semibold">
-          Seguimientos
-        </h2>
-        <ListaDeSeguimientos seguimientos={a.seguimientos} />
-      </section>
+      <div className="flex min-w-0 flex-col gap-4 self-start">
+        <section aria-labelledby={`seguimientos-${a.id}`} className={CAJA}>
+          <h2 id={`seguimientos-${a.id}`} className="font-display text-base font-semibold">
+            Seguimientos
+          </h2>
+          <ListaDeSeguimientos seguimientos={a.seguimientos} />
+        </section>
+        {/* Los ajustes de esta actividad (spec §10.6): su responsable no los lee en la página del hallazgo (§6.3). */}
+        {a.ajustes.length > 0 ? (
+          <AjustesDelPlan
+            ajustes={a.ajustes}
+            etiquetas={{ [a.id]: a.etiqueta }}
+            acciones={{ [a.accion.id]: a.accion.etiqueta }}
+            zona={zona}
+            titulo="Ajustes de la actividad"
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   CRITERIOS_EFICACIA,
   CRITICIDADES,
   ESTADOS_ACTIVIDAD,
+  MAXIMO_DE_ACTIVIDADES,
   METODOS_ANALISIS,
   ORIGENES_HALLAZGO,
   TIPOS_ACCION,
@@ -597,6 +598,9 @@ const actividadDelPlan = z
     if (a.inicio > a.fin) ctx.addIssue({ code: "custom", path: ["inicio"], message: inicioDespuesDelFin(LA_ACTIVIDAD) });
   });
 
+/** Una sola frase para el tope de actividades de una acción: al guardar el plan y al añadir una por un ajuste. */
+export const DEMASIADAS_ACTIVIDADES = "Una acción lleva treinta actividades como máximo";
+
 /** Dónde va una acción (el hallazgo y, si ya existe, la acción), para leerlo aunque el resto no pase. */
 export const EsquemaLugarDeLaAccion = z.object({ hallazgoId: idDeHallazgo, accionId: idOpcional("La acción no es válida") });
 
@@ -612,7 +616,7 @@ export const EsquemaAccion = z
     actividades: z
       .array(actividadDelPlan, { error: "Las actividades no son válidas" })
       .min(1, "Toda acción lleva al menos una actividad")
-      .max(30, "Una acción lleva treinta actividades como máximo"),
+      .max(MAXIMO_DE_ACTIVIDADES, DEMASIADAS_ACTIVIDADES),
   })
   .strict()
   .superRefine((d, ctx) => {
@@ -748,7 +752,8 @@ export const EsquemaActividadQueSeAnade = z
     accionId: idOpcional("La acción no es válida"),
     accion: z
       .object({
-        tipo: z.enum(TIPOS_ACCION, { error: "Elija el tipo de la acción nueva" }),
+        // Un texto que debe ser uno de los tipos: así el formulario (texto) y el dominio entran por la misma forma.
+        tipo: z.string({ error: "Elija el tipo de la acción nueva" }).pipe(z.enum(TIPOS_ACCION, { error: "Elija el tipo de la acción nueva" })),
         descripcion: textoAcotado("La descripción de la acción nueva", 3, 2000),
         causaIds: causasQueAtaca.optional().transform((v) => v ?? []),
       })
@@ -824,7 +829,8 @@ export const EsquemaFormularioAjuste = z
     causa: z.string().optional(),
   })
   .strict()
-  .transform((d) => {
+  // Un campo que falta llega vacío: el dominio lo rechaza con la misma frase que si no llegara.
+  .transform((d): z.input<typeof EsquemaPedirAjuste> => {
     const accionNueva = d.accionId === "nueva";
     return {
       hallazgoId: d.hallazgoId,
@@ -835,14 +841,14 @@ export const EsquemaFormularioAjuste = z
         d.tipo === "agregar"
           ? {
               accionId: accionNueva ? undefined : d.accionId,
-              accion: accionNueva ? { tipo: d.accionTipo, descripcion: d.accionDescripcion, causaIds: d.causaIds } : undefined,
-              descripcion: d.descripcion,
-              responsableId: d.responsableId,
-              inicio: d.inicio,
-              fin: d.fin,
+              accion: accionNueva ? { tipo: d.accionTipo ?? "", descripcion: d.accionDescripcion ?? "", causaIds: d.causaIds } : undefined,
+              descripcion: d.descripcion ?? "",
+              responsableId: d.responsableId ?? "",
+              inicio: d.inicio ?? "",
+              fin: d.fin ?? "",
             }
           : undefined,
-      causa: d.causa,
+      causa: d.causa ?? "",
     };
   });
 

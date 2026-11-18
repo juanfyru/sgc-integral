@@ -43,6 +43,9 @@ export type TipoAccion = (typeof TIPOS_ACCION)[number];
 /** Las acciones de un plan, por ronda (spec §10.1). */
 export const MAXIMO_DE_ACCIONES = 20;
 
+/** Las actividades de una acción (spec §10.2), también las que entran por un ajuste. */
+export const MAXIMO_DE_ACTIVIDADES = 30;
+
 export const CRITERIOS_EFICACIA = ["no_recurrencia", "mejora_indicador", "reduccion_pqrs", "otro"] as const;
 export type CriterioEficacia = (typeof CRITERIOS_EFICACIA)[number];
 
