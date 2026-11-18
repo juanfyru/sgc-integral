@@ -258,8 +258,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   prefijos de tarea `hallazgo:` y `validar:`, las acciones de bitácora `hallazgo_*` y el aviso
   `hallazgo.por_validar` son los hallazgos de verificación de un punto de uso; en pantalla se llaman
   «hallazgo de verificación». El error de dominio es `ErrorMejora` (extiende `ErrorTramite`,
-  `src/lib/mejoramiento/tipos.ts`), y `legible()` (`flujo.ts`) traduce a una frase los `23503`,
-  `23505`, `42501` y `40P01` crudos antes de que salgan del dominio. La
+  `src/lib/mejoramiento/tipos.ts`), y `legible()` (`legible.ts`, módulo hoja que `flujo.ts` reexporta) traduce a una
+  frase los `23503`, `23505`, `42501` y `40P01` crudos antes de que salgan del dominio: lo envuelven todas las
+  escrituras del módulo, también quitar un archivo y las tres de la configuración. La
   lectura de la vigencia de la persona, sus tareas y «¿es responsable técnico?» se comparten por
   petición entre el cascarón y la página con `React.cache` (`lecturaDeVigencia` de
   `src/db/consultas/vigencia/fragmentos.ts`, `tareasDePeticion` de `src/lib/tareas-peticion.ts` y
@@ -1035,7 +1036,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `destinoDe`, `src/lib/mejoramiento/transiciones.ts`). El motor relee la fila `FOR UPDATE` y rechaza con
   `YA_CAMBIO` si el estado o la ronda no son los que leyó quien llama; pone el plazo del paso nuevo, borra las
   marcas de aviso del anterior, deja el evento y la bitácora (con `detalle.estado = { antes, despues }`: `estado`,
-  `codigo`, `ronda` y `acta` son claves reservadas del motor, y `soloEnElEvento` lleva lo que no va a la
+  `codigo`, `ronda`, `acta` y `rondaNueva` (la ronda que abre una evaluación «no eficaz») son claves reservadas del motor, y `soloEnElEvento` lleva lo que no va a la
   bitácora, como el plan congelado) y avisa a quien recibe el turno (`avisarDelTurno`). **El texto libre del
   hallazgo va solo al evento** (spec 15 §6.4, Ley 1581: una copia menos del texto que pudo llevar un dato de
   paciente, en la tabla que se lee con filtros de todos los módulos): la justificación del rechazo, de la decisión,

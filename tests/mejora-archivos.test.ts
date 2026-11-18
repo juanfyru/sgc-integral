@@ -556,3 +556,11 @@ describe("la evidencia de la verificación (Tarea 17, ronda 1)", () => {
       await expect(quitarArchivoDeMejora(b.admin, espera, { sql: tx })).rejects.toThrow("La evaluación de la eficacia ya se registró: su evidencia no se quita");
     }));
 });
+
+describe("quitar un archivo traduce un error crudo de PostgreSQL (revisión final, m9)", () => {
+  it("un 40P01 llega como la frase de `legible`", async () => {
+    const conError = { begin: () => Promise.reject(Object.assign(new Error("deadlock detected"), { code: "40P01" })) } as unknown as TransactionSql;
+    const admin = { usuarioId: 1, rol: "admin_sgc" as const, verHistorial: false };
+    await expect(quitarArchivoDeMejora(admin, 1, { sql: conError })).rejects.toThrow("Otra persona cambió el hallazgo a la vez: vuelva a intentarlo");
+  });
+});

@@ -264,3 +264,26 @@ describe("plazos en días hábiles", () => {
     });
   });
 });
+
+describe("verdades pequeñas (revisión final, m9)", () => {
+  /** Un cliente cuya transacción falla con ese código crudo de PostgreSQL, como una carrera real. */
+  const conError = (code: string) =>
+    ({ begin: () => Promise.reject(Object.assign(new Error(`error crudo ${code}`), { code })) }) as unknown as NonNullable<Parameters<typeof guardarConfigMejora>[2]>["sql"];
+  const ADMIN = { usuarioId: 1, rol: "admin_sgc" as const, verHistorial: false };
+  const LEGIBLE = "Otra persona guardó lo mismo a la vez: vuelva a cargar la página";
+
+  it("las tres escrituras de la configuración traducen un error crudo de PostgreSQL a su frase (`legible`)", async () => {
+    await expect(guardarConfigMejora(ADMIN, CONFIG_MEJORA_DEFECTO, { sql: conError("23505") })).rejects.toThrow(LEGIBLE);
+    await expect(
+      agregarDiaDeCalendario(ADMIN, { fecha: "2026-12-24", tipo: "no_habil", motivo: "Novena de aguinaldos" }, { sql: conError("23505") }),
+    ).rejects.toThrow(LEGIBLE);
+    await expect(quitarDiaDeCalendario(ADMIN, 1, { sql: conError("23505") })).rejects.toThrow(LEGIBLE);
+  });
+
+  it("los documentos ya elegidos se comparan como `bigint`, el tipo de la columna", async () => {
+    await revertida(sql, async (tx) => {
+      // Un id que no cabe en `int`: con `int[]` la consulta fallaba («integer out of range»).
+      expect(Array.isArray(await documentosParaFormato({ sql: tx, incluir: [2147483648] }))).toBe(true);
+    });
+  });
+});

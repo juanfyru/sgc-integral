@@ -10,6 +10,7 @@ import { EsquemaConfigMejora, EsquemaDiaDeCalendario } from "@/lib/esquemas/mejo
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso, puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { legible } from "./legible";
 
 export type ConfigMejora = {
   plazos: {
@@ -101,7 +102,7 @@ export async function guardarConfigMejora(sesion: SesionFlujo, datos: ConfigMejo
   const leido = EsquemaConfigMejora.safeParse(datos);
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
   const nuevos = leido.data as ConfigMejora;
-  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+  await legible(enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const actuales = await obtenerConfigMejora({ sql: tx });
     const cambios: Record<string, { antes: string; despues: string }> = {};
     const guardar = async (clave: string, antes: string, despues: string) => {
@@ -125,7 +126,7 @@ export async function guardarConfigMejora(sesion: SesionFlujo, datos: ConfigMejo
       entidadId: null,
       detalle: { cambios },
     });
-  });
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,7 +161,7 @@ export async function documentosParaFormato(opciones?: Opciones & { incluir?: nu
   const filas = await sql`SELECT d.id, d.codigo, d.titulo,
       NOT EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente') AS sin_vigente
     FROM documentos d
-    WHERE d.id = ANY(${incluir}::int[])
+    WHERE d.id = ANY(${incluir}::bigint[])
       OR EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
     ORDER BY d.codigo`;
   return filas.map((f) => ({
@@ -182,7 +183,7 @@ export async function agregarDiaDeCalendario(
   if (dia.tipo === "habil" && !festivosDeColombia(Number(dia.fecha.slice(0, 4))).includes(dia.fecha)) {
     throw new ErrorMejora("Ese día no es un festivo: no hay nada que anular");
   }
-  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+  await legible(enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     // `ON CONFLICT DO NOTHING`: una carrera por la misma fecha no aborta la transacción con un `23505` crudo.
     const [fila] = await tx`INSERT INTO dias_no_habiles (fecha, tipo, motivo, creado_por)
       VALUES (${dia.fecha}, ${dia.tipo}, ${dia.motivo}, ${sesion.usuarioId})
@@ -195,12 +196,12 @@ export async function agregarDiaDeCalendario(
       entidadId: Number(fila.id),
       detalle: { fecha: dia.fecha, tipo: dia.tipo, motivo: dia.motivo },
     });
-  });
+  }));
 }
 
 export async function quitarDiaDeCalendario(sesion: SesionFlujo, id: number, opciones?: OpcionesFlujo): Promise<void> {
   exigirGestionar(sesion);
-  await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+  await legible(enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     const [fila] = await tx`DELETE FROM dias_no_habiles WHERE id = ${id}
       RETURNING to_char(fecha, 'YYYY-MM-DD') AS fecha, tipo, motivo`;
     if (!fila) throw new ErrorMejora("Ese día ya no está en la lista");
@@ -211,7 +212,7 @@ export async function quitarDiaDeCalendario(sesion: SesionFlujo, id: number, opc
       entidadId: id,
       detalle: { fecha: fila.fecha, tipo: fila.tipo, motivo: fila.motivo },
     });
-  });
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

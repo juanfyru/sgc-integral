@@ -18,6 +18,7 @@ import { MAXIMO_POR_REPORTE } from "@/lib/mejoramiento/reportes";
 import { ErrorMejora, TERMINALES } from "@/lib/mejoramiento/tipos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
 import { confirmarCarga } from "./carga-confirmada";
+import { legible } from "./legible";
 import { actuaPorElProceso } from "./proceso";
 
 export type DestinoDeMejora =
@@ -349,7 +350,7 @@ export async function quitarArchivoDeMejora(
   opciones?: { sql?: Cliente },
 ): Promise<void> {
   if (!esId(archivoId)) throw new ErrorMejora(NO_EXISTE);
-  const ruta = await enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+  const ruta = await legible(enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
     // Orden de candados: el dueño (el hallazgo, o el reporte) primero y la fila de `archivos` después, como al subir.
     const [a] = await tx`SELECT id, ruta, nombre_original, contexto, contexto_id, rol FROM archivos
       WHERE id = ${archivoId} AND version_id IS NULL AND contexto = ANY(${CONTEXTOS_DE_MEJORA})`;
@@ -370,7 +371,7 @@ export async function quitarArchivoDeMejora(
       detalle: { contexto: a.contexto, contextoId, rol: a.rol, nombre: a.nombre_original },
     });
     return a.ruta as string;
-  });
+  }));
   const absoluta = resolverRutaAlmacen(ruta);
   if (absoluta) await unlink(absoluta).catch(() => {});
 }
