@@ -30,7 +30,7 @@ import { ErrorMejora, type AccionHallazgo, type EstadoHallazgo, type HallazgoBas
 import { DESDE, YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { actuaPorElProceso, arbitrosDe } from "./avisos";
+import { actuaPorElProceso, arbitrosDe, avisarDelArbitraje, avisarDelCierre, avisarDelRetiro } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 
@@ -250,7 +250,10 @@ export async function rechazarHallazgo(
   });
 }
 
-/** Quien lo registró lo retira tras el rechazo: queda «Rechazado», con las dos razones a la vista en su historial. */
+/**
+ * Quien lo registró lo retira tras el rechazo: queda «Rechazado», con la justificación del rechazo a la vista en su historial
+ * (retirar no pide una razón propia). Los líderes del proceso reciben el aviso del retiro.
+ */
 export async function retirarHallazgo(sesion: SesionFlujo, d: { hallazgoId: number }, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.registrar");
   const v = leer(EsquemaPasoDelHallazgo, d);
@@ -258,6 +261,7 @@ export async function retirarHallazgo(sesion: SesionFlujo, d: { hallazgoId: numb
     if (!puedeDecidirTrasElRechazo(sesion, h)) await negar(tx, sesion, h.id);
     exigirEstado(h, "retirar");
     await transicionarHallazgo(tx, sesion, h, "retirar", { detalle: enLugarDe(sesion, h) }, c);
+    await avisarDelRetiro(tx, h, sesion.usuarioId);
   });
 }
 
@@ -281,7 +285,8 @@ export async function sostenerHallazgo(
 
 /**
  * El arbitraje de un rechazo sostenido (spec §8.3): confirma el hallazgo, que sigue como aceptado y con el plazo de formular
- * contado desde ahora, o confirma el rechazo. Es definitivo. Puede citar el acta del Comité.
+ * contado desde ahora, o confirma el rechazo. Es definitivo. Puede citar el acta del Comité. Su resultado se avisa a quien lo
+ * registró y, si confirma el rechazo, a los líderes (`avisarDelArbitraje`); si sigue, los líderes reciben su turno.
  */
 export async function arbitrarHallazgo(
   sesion: SesionFlujo,
@@ -296,7 +301,8 @@ export async function arbitrarHallazgo(
     exigirEstado(h, accion);
     exigirActa(v.acta, c);
     if (accion === "confirmar_hallazgo") await contarDeNuevoElPlazoDeFormular(tx, h, c);
-    await transicionarHallazgo(tx, sesion, h, accion, { detalle: { nota: v.nota }, acta: v.acta }, c);
+    const { despues } = await transicionarHallazgo(tx, sesion, h, accion, { detalle: { nota: v.nota }, acta: v.acta }, c);
+    await avisarDelArbitraje(tx, h, v.confirma, despues, sesion.usuarioId);
   });
 }
 
@@ -412,7 +418,8 @@ export async function decidirAccionCorrectiva(
 
 /**
  * Valida la corrección (queda «Cerrado con corrección») o, si no hubo corrección, el cierre sin acción (queda «Cerrado sin
- * acción»). Quién valida lo dice `puedeValidarCorreccion`. Lo que escribe va antes de la transición al cierre.
+ * acción»). Quién valida lo dice `puedeValidarCorreccion`. Lo que escribe va antes de la transición al cierre. El cierre se avisa
+ * como el eficaz (`avisarDelCierre`), con su desenlace en el título.
  */
 export async function validarCorreccion(sesion: SesionFlujo, d: { hallazgoId: number }, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.verificar");
@@ -429,6 +436,7 @@ export async function validarCorreccion(sesion: SesionFlujo, d: { hallazgoId: nu
         resultado_cierre = ${resultado}, cerrado_en = ${c.ahora}, cerrado_por = ${sesion.usuarioId}
       WHERE id = ${h.id}`;
     await transicionarHallazgo(tx, sesion, h, "validar_correccion", { detalle: { resultado } }, c);
+    await avisarDelCierre(tx, h, resultado, sesion.usuarioId);
   });
 }
 

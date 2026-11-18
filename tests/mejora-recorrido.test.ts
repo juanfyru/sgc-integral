@@ -31,7 +31,8 @@ import {
   validarCorreccion,
 } from "@/db/consultas/mejoramiento/recorrido";
 import { cambiarProceso, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
-import { puedeValidarCorreccion } from "@/lib/alcance";
+import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
+import { participacionEnHallazgo, puedeValidarCorreccion } from "@/lib/alcance";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
@@ -594,5 +595,115 @@ describe("lo que sigue", () => {
 
       const v = await hallazgoEn(tx, b, "por_validar");
       expect((await leerHallazgo(b.gerencia, v.id, { sql: tx }))?.loQueSigue).toMatchObject({ paso: "validar", puede: false });
+    }));
+});
+
+describe("los desenlaces avisan a quien tomó parte (revisión final, I3)", () => {
+  const DECISION = "Fue un hecho aislado y la corrección lo contuvo";
+  const TITULO = "Formatos de entrega de turno sin diligenciar";
+
+  /** Los avisos de ese tipo sobre el hallazgo, por destinatario. */
+  const avisos = async (tx: TransactionSql, hallazgoId: number, tipo: string) =>
+    (
+      await tx`SELECT usuario_id, titulo, cuerpo, enlace FROM notificaciones
+        WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${hallazgoId} AND tipo = ${tipo} ORDER BY usuario_id, id`
+    ).map((f) => ({ usuarioId: Number(f.usuario_id), titulo: f.titulo as string, cuerpo: f.cuerpo as string, enlace: f.enlace as string }));
+  const ordenados = (ids: number[]) => [...new Set(ids)].sort((a, b) => a - b);
+
+  /** Cada destinatario recibe ese título y el del hallazgo, con su enlace, y lo ve completo. */
+  async function soloA(tx: TransactionSql, hallazgoId: number, tipo: string, titulo: string, destinos: number[]) {
+    const recibidos = await avisos(tx, hallazgoId, tipo);
+    expect(recibidos.map((a) => a.usuarioId)).toEqual(ordenados(destinos));
+    for (const a of recibidos) {
+      expect(a).toMatchObject({ titulo, cuerpo: TITULO, enlace: `/mejoramiento/${hallazgoId}` });
+      const [u] = await tx`SELECT id, rol, ver_historial FROM usuarios WHERE id = ${a.usuarioId}`;
+      const sujeto = { usuarioId: Number(u.id), rol: u.rol, verHistorial: u.ver_historial === true };
+      expect(await participacionEnHallazgo(hallazgoId, sujeto, { sql: tx })).toBe("completo");
+    }
+  }
+
+  it("cerrado con corrección: a los líderes, a quien lo registró y a Gerencia, sin quien valida", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_validar");
+      await validarCorreccion(b.admin, { hallazgoId: h.id }, c(DESPUES, tx));
+      await soloA(tx, h.id, "mejora.cerrado", `Se cerró ${h.codigo}: cerrado con corrección`, [
+        b.lider.usuarioId,
+        b.control.usuarioId,
+        ...(await activos(tx, ["gerencia"])),
+      ]);
+    }));
+
+  it("cerrado sin acción: los mismos destinatarios, con su desenlace en el título", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const valida = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const h = await hallazgoEn(tx, b, "por_corregir");
+      await registrarCorreccion(b.lider, { hallazgoId: h.id, requerida: false, descripcion: "No hubo nada que contener: el formato ya estaba al día" }, c(LUEGO, tx));
+      await decidirAccionCorrectiva(b.admin, { hallazgoId: h.id, requiere: false, justificacion: DECISION }, c(LUEGO, tx));
+      await validarCorreccion(valida, { hallazgoId: h.id }, c(DESPUES, tx));
+      await soloA(tx, h.id, "mejora.cerrado", `Se cerró ${h.codigo}: cerrado sin acción`, [
+        b.lider.usuarioId,
+        b.control.usuarioId,
+        ...(await activos(tx, ["gerencia"])),
+      ]);
+    }));
+
+  it("el arbitraje que confirma el rechazo avisa a quien lo registró y a los líderes, sin la nota y sin quien arbitra", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "arbitraje");
+      await arbitrarHallazgo(b.admin, { hallazgoId: h.id, confirma: "rechazo", nota: NOTA }, c(DESPUES, tx));
+      await soloA(tx, h.id, "mejora.arbitrado", `Se arbitró ${h.codigo}: se confirmó el rechazo`, [b.control.usuarioId, b.lider.usuarioId]);
+      expect(JSON.stringify(await avisos(tx, h.id, "mejora.arbitrado"))).not.toContain(NOTA);
+    }));
+
+  it("el arbitraje que confirma el hallazgo avisa a quien lo registró; los líderes reciben solo su turno", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "arbitraje");
+      const turnosAntes = (await avisos(tx, h.id, "mejora.turno")).filter((a) => a.usuarioId === b.lider.usuarioId).length;
+      await arbitrarHallazgo(b.admin, { hallazgoId: h.id, confirma: "hallazgo", nota: NOTA }, c(DESPUES, tx));
+      await soloA(tx, h.id, "mejora.arbitrado", `Se arbitró ${h.codigo}: el hallazgo sigue`, [b.control.usuarioId]);
+      const turnos = (await avisos(tx, h.id, "mejora.turno")).filter((a) => a.usuarioId === b.lider.usuarioId);
+      expect(turnos).toHaveLength(turnosAntes + 1);
+      expect(turnos[turnos.length - 1].titulo).toBe(`Registrar la corrección de ${h.codigo}`);
+    }));
+
+  it("retirarlo avisa a los líderes del proceso, sin quien lo retira", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "rechazo");
+      await retirarHallazgo(b.control, { hallazgoId: h.id }, c(LUEGO, tx));
+      await soloA(tx, h.id, "mejora.retirado", `Se retiró ${h.codigo}`, [b.lider.usuarioId]);
+    }));
+
+  it("quien reportó lo que se convirtió en el hallazgo recibe solo el aviso neutro, aunque lidere el proceso", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const { id: reporteId } = await enviarReporte(
+        b.lider,
+        { descripcion: "Vi los formatos de entrega de turno sin diligenciar en la estación", vistoEn: "2026-11-09", procesoId: b.procesoId },
+        c(REGISTRO, tx),
+      );
+      const { id } = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId, { reporteId }), c(REGISTRO, tx));
+      const otroLider = await usuarioDePrueba(tx, { rol: "lider_proceso", procesos: [b.procesoId] });
+      await aceptarHallazgo(otroLider, { hallazgoId: id }, c(REGISTRO, tx));
+      await evidenciaDeCorreccion(tx, id, otroLider.usuarioId);
+      await registrarCorreccion(
+        otroLider,
+        { hallazgoId: id, requerida: true, descripcion: "Se diligenciaron los formatos con el turno", responsableId: otroLider.usuarioId, implementadaEn: "2026-11-17" },
+        c(REGISTRO, tx),
+      );
+      await decidirAccionCorrectiva(b.admin, { hallazgoId: id, requiere: false, justificacion: DECISION }, c(LUEGO, tx));
+      await validarCorreccion(b.control, { hallazgoId: id }, c(DESPUES, tx));
+      const { codigo } = await bloquearHallazgo(tx, id);
+      await soloA(tx, id, "mejora.cerrado", `Se cerró ${codigo}: cerrado con corrección`, [
+        otroLider.usuarioId,
+        b.admin.usuarioId,
+        ...(await activos(tx, ["gerencia"])),
+      ]);
+      const neutros = await tx`SELECT usuario_id FROM notificaciones WHERE tipo = 'mejora.reporte_atendido' AND entidad_id = ${reporteId}`;
+      expect(neutros.map((n) => Number(n.usuario_id))).toEqual([b.lider.usuarioId]);
     }));
 });

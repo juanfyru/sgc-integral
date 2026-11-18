@@ -10,13 +10,11 @@
  *
  * Orden de candados: el hallazgo `FOR UPDATE` (`bloquearHallazgo`), después la ronda en curso y, al verificar, sus actividades.
  */
-import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { avisarA } from "@/db/consultas/avisos-vencimiento";
 import { registrarFirma } from "@/db/consultas/firmas";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { basesDe, leerPeriodos } from "@/db/consultas/indicadores/lectura";
-import { lideresDeProceso } from "@/db/consultas/tramites";
 import { puedeVerHallazgo, puedeVerificar, puedeVerIndicador, quienesVerifican } from "@/lib/alcance";
 import {
   EsquemaCierre,
@@ -39,7 +37,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { leer } from "./analisis";
 import { verificarFirma } from "./aprobacion";
-import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD } from "./avisos";
+import { avisarDelCierre, ENTIDAD_ACTIVIDAD } from "./avisos";
 import { exigirCargaConfirmada } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, hallazgoBase, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
@@ -130,23 +128,6 @@ function pideCambios(cambios: unknown): boolean {
 function exigirLoDelCierre(lecciones: string | null, cambiosAtendidos: string | null, cambios: unknown): void {
   if (!lecciones) throw new ErrorMejora(SIN_LECCIONES);
   if (pideCambios(cambios) && !cambiosAtendidos) throw new ErrorMejora(CAMBIOS_SIN_ATENDER);
-}
-
-/**
- * Los avisos del cierre (spec §11.5 y §14.2): a los líderes activos del proceso, a quien lo registró y a cada usuario activo de
- * Gerencia, que no firma; nunca a quien cierra.
- */
-async function avisarDelCierre(tx: TransactionSql, sesion: Persona, h: HallazgoBase): Promise<void> {
-  const lideres = await lideresDeProceso(h.procesoId, { sql: tx });
-  const [registro] = await tx`SELECT id FROM usuarios WHERE id = ${h.registradoPor} AND activo`;
-  const gerencia = await activosDeRol(tx, ["gerencia"]);
-  const destinos = [...new Set([...lideres, ...(registro ? [Number(registro.id)] : []), ...gerencia])].filter((u) => u !== sesion.usuarioId);
-  const [{ titulo }] = await tx`SELECT titulo FROM mejora_hallazgos WHERE id = ${h.id}`;
-  await avisarDeMejora(
-    tx,
-    { tipo: "mejora.cerrado", titulo: `Se cerró ${h.codigo}: el plan fue eficaz`, hallazgoId: h.id },
-    destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo as string })),
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -587,7 +568,7 @@ export async function evaluarEficacia(
         },
         c,
       );
-      if (e.cierre) await avisarDelCierre(tx, sesion, h);
+      if (e.cierre) await avisarDelCierre(tx, h, "eficaz", sesion.usuarioId);
     }),
   );
 }
@@ -673,7 +654,7 @@ export async function cerrarHallazgo(
         { detalle: { huella: k.huella }, soloEnElEvento: { lecciones: v.lecciones, cambiosAtendidos: k.cambiosAtendidos } },
         c,
       );
-      await avisarDelCierre(tx, sesion, h);
+      await avisarDelCierre(tx, h, "eficaz", sesion.usuarioId);
     }),
   );
 }

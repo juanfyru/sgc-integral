@@ -9,9 +9,10 @@ import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
 import { turnoDe, type Turno } from "@/lib/mejoramiento/estados";
 import { esExterno } from "@/lib/mejoramiento/origenes";
-import type { EstadoHallazgo, HallazgoBase } from "@/lib/mejoramiento/tipos";
+import type { EstadoHallazgo, HallazgoBase, ResultadoCierre } from "@/lib/mejoramiento/tipos";
 import type { Rol } from "@/lib/roles";
 import { lideresOAdmins } from "./proceso";
+import { quienesReportaron } from "./reportes-base";
 
 /** La entidad de los avisos y de la bitácora de un hallazgo. */
 export const ENTIDAD_HALLAZGO = "mejora_hallazgo";
@@ -173,4 +174,86 @@ export async function avisarDelTurno(
   const destinos = (await quienTieneElTurno(tx, h)).filter((u) => u !== actorId);
   await avisarDeMejora(tx, { tipo: "mejora.turno", titulo: texto, hallazgoId: h.id }, destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo })));
   return destinos;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los desenlaces (spec §11.5 y §14.2): el cierre, el arbitraje y el retiro
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Cómo terminó un hallazgo cerrado, en el título de su aviso («Se cerró HZ-…: …»). */
+const COMO_SE_CERRO: Record<ResultadoCierre, string> = {
+  eficaz: "el plan fue eficaz",
+  con_correccion: "cerrado con corrección",
+  sin_accion: "cerrado sin acción",
+};
+
+/**
+ * El aviso de un desenlace del hallazgo: el título con el código y el cuerpo con el título del hallazgo, que todos sus
+ * destinatarios ven completo (los líderes del proceso, quien lo registró y Gerencia). Nunca a quien actuó, ni a quien reportó lo
+ * que dio origen al hallazgo o se le sumó: su aviso de un final es el neutro de «Mis reportes» (`avisarAQuienesReportaron`, que
+ * manda el motor), aunque lo reciba también por otra regla. Ningún texto escrito por una persona (ni la nota del arbitraje).
+ */
+async function avisarDelDesenlace(
+  tx: TransactionSql,
+  h: Pick<HallazgoBase, "id">,
+  aviso: { tipo: string; titulo: string },
+  destinos: number[],
+  actorId: number | null,
+): Promise<void> {
+  const fuera = new Set<number | null>([actorId, ...(await quienesReportaron(tx, h.id))]);
+  const [{ titulo }] = await tx`SELECT titulo FROM mejora_hallazgos WHERE id = ${h.id}`;
+  await avisarDeMejora(
+    tx,
+    { ...aviso, hallazgoId: h.id },
+    [...new Set(destinos)].filter((u) => !fuera.has(u)).map((usuarioId) => ({ usuarioId, cuerpo: titulo as string })),
+  );
+}
+
+/** Quien registró el hallazgo, si sigue activo. */
+async function registradorActivo(tx: Cliente, h: Pick<HallazgoBase, "registradoPor">): Promise<number[]> {
+  const [u] = await tx`SELECT id FROM usuarios WHERE id = ${h.registradoPor} AND activo`;
+  return u ? [Number(u.id)] : [];
+}
+
+/**
+ * Los avisos del cierre, con su desenlace en el título (`mejora.cerrado`): a los líderes activos del proceso, a quien lo registró
+ * y a cada usuario activo de Gerencia; nunca a quien cierra. Lo llaman el cierre eficaz (al evaluar o al cerrar,
+ * `verificacion.ts`) y la validación de la corrección o del cierre sin acción (`validarCorreccion`).
+ */
+export async function avisarDelCierre(tx: TransactionSql, h: HallazgoBase, resultado: ResultadoCierre, actorId: number): Promise<void> {
+  const destinos = [
+    ...(await lideresDeProceso(h.procesoId, { sql: tx })),
+    ...(await registradorActivo(tx, h)),
+    ...(await activosDeRol(tx, ["gerencia"])),
+  ];
+  await avisarDelDesenlace(tx, h, { tipo: "mejora.cerrado", titulo: `Se cerró ${h.codigo}: ${COMO_SE_CERRO[resultado]}` }, destinos, actorId);
+}
+
+/**
+ * El resultado de un arbitraje (`mejora.arbitrado`, spec §8.3), sin quien arbitra. Si confirma el rechazo, a quien lo registró y a
+ * los líderes del proceso. Si confirma el hallazgo, solo a quien lo registró: quienes reciben el turno del estado nuevo ya tienen
+ * su aviso (`avisarDelTurno`) y no les llega otro por el mismo hecho. `despues` es el estado que dejó el arbitraje.
+ */
+export async function avisarDelArbitraje(
+  tx: TransactionSql,
+  h: HallazgoBase,
+  confirma: "hallazgo" | "rechazo",
+  despues: EstadoHallazgo,
+  actorId: number,
+): Promise<void> {
+  const registro = await registradorActivo(tx, h);
+  if (confirma === "rechazo") {
+    const destinos = [...registro, ...(await lideresDeProceso(h.procesoId, { sql: tx }))];
+    await avisarDelDesenlace(tx, h, { tipo: "mejora.arbitrado", titulo: `Se arbitró ${h.codigo}: se confirmó el rechazo` }, destinos, actorId);
+    return;
+  }
+  const conTurno = await quienTieneElTurno(tx, { ...h, estado: despues });
+  const destinos = registro.filter((u) => !conTurno.includes(u));
+  await avisarDelDesenlace(tx, h, { tipo: "mejora.arbitrado", titulo: `Se arbitró ${h.codigo}: el hallazgo sigue` }, destinos, actorId);
+}
+
+/** El retiro tras el rechazo (`mejora.retirado`, spec §8.3): a los líderes activos del proceso, sin quien lo retira. */
+export async function avisarDelRetiro(tx: TransactionSql, h: HallazgoBase, actorId: number): Promise<void> {
+  const destinos = await lideresDeProceso(h.procesoId, { sql: tx });
+  await avisarDelDesenlace(tx, h, { tipo: "mejora.retirado", titulo: `Se retiró ${h.codigo}` }, destinos, actorId);
 }

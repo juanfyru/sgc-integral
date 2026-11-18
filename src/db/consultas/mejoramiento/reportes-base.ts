@@ -6,6 +6,7 @@
  * Módulo liviano: lo importan `flujo.ts` y `registro.ts`, así que no importa ninguno de los dos.
  */
 import type { TransactionSql } from "postgres";
+import type { Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { avisarA } from "@/db/consultas/avisar";
 import {
@@ -142,9 +143,7 @@ export async function dejarClasificado(
  * hallazgo terminado no la toca.
  */
 export async function avisarAQuienesReportaron(tx: TransactionSql, hallazgoId: number, actorId: number | null): Promise<void> {
-  const reportes = await tx`SELECT id, reportado_por, to_char(visto_en, 'YYYY-MM-DD') AS visto FROM mejora_reportes
-    WHERE hallazgo_id = ${hallazgoId} AND estado IN ('convertido', 'sumado') ORDER BY id`;
-  for (const r of reportes) {
+  for (const r of await reportesDelHallazgo(tx, hallazgoId)) {
     await avisarAQuienReporto(
       tx,
       { id: Number(r.id), reportadoPor: Number(r.reportado_por) },
@@ -152,4 +151,18 @@ export async function avisarAQuienesReportaron(tx: TransactionSql, hallazgoId: n
       actorId,
     );
   }
+}
+
+/** Los reportes que se convirtieron en el hallazgo o se le sumaron (spec §7.3): los de quienes reciben el aviso neutro de su final. */
+function reportesDelHallazgo(tx: Cliente, hallazgoId: number) {
+  return tx`SELECT id, reportado_por, to_char(visto_en, 'YYYY-MM-DD') AS visto FROM mejora_reportes
+    WHERE hallazgo_id = ${hallazgoId} AND estado IN ('convertido', 'sumado') ORDER BY id`;
+}
+
+/**
+ * Quienes reportaron lo que dio origen al hallazgo o se le sumó (los mismos de `avisarAQuienesReportaron`): de un desenlace reciben
+ * solo el aviso neutro de «Mis reportes», aunque también lo reciban por otra regla (`avisarDelDesenlace`).
+ */
+export async function quienesReportaron(tx: Cliente, hallazgoId: number): Promise<number[]> {
+  return [...new Set((await reportesDelHallazgo(tx, hallazgoId)).map((r) => Number(r.reportado_por)))];
 }
