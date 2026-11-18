@@ -15,6 +15,7 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import {
+  bloquearPlanDelRegistro,
   cambiarDePlan,
   clasificacionDe,
   clasificarAlNacer,
@@ -512,6 +513,44 @@ describe("la clasificación al nacer", () => {
       await expect(
         enTransaccion(tx, (sp) => clasificarAlNacer(sp, b.lider, w.id, { planId: null, objetivoId: inactivo.id }, ahora)),
       ).rejects.toThrow(OBJETIVO_INACTIVO);
+    });
+  });
+
+  it("bloquearPlanDelRegistro, el primer candado del registro: solo con mejora.planes y un plan que existe y no está anulado", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      // Los dos planes, por SQL y sin historial: el `INSERT` de un evento toma `FOR KEY SHARE` sobre su plan (la llave foránea)
+      // y marcaría la fila. Así, `xmax` de la fila es `0` mientras nadie la bloquea, y deja de serlo con el candado de fila.
+      const planPorSql = async (consecutivo: number, anuladoEn: Date | null) => {
+        const [f] = await tx`INSERT INTO mejora_planes (codigo, vigencia, consecutivo, nombre, origen, fecha_evento, creado_por,
+            anulado_en, anulado_por, anulado_motivo)
+          VALUES (${`PM-2090-0${consecutivo}`}, 2090, ${consecutivo}, 'Plan por SQL de la prueba', 'auditoria_interna', '2026-11-10',
+            ${b.control.usuarioId}, ${anuladoEn}, ${anuladoEn ? b.control.usuarioId : null}, ${anuladoEn ? MOTIVO : null})
+          RETURNING id, codigo`;
+        return { id: Number(f.id), codigo: f.codigo as string };
+      };
+      const p = await planPorSql(1, null);
+      const anulado = await planPorSql(2, new Date(AHORA));
+      const bloqueado = async (id: number) => (await tx`SELECT xmax::text <> '0' AS si FROM mejora_planes WHERE id = ${id}`)[0].si as boolean;
+      expect(await bloqueado(p.id)).toBe(false);
+      expect(await bloqueado(anulado.id)).toBe(false);
+
+      expect(await bloquearPlanDelRegistro(tx, b.lider, p.id)).toBeNull();
+      expect(await bloquearPlanDelRegistro(tx, b.gerencia, p.id)).toBeNull();
+      expect(await bloquearPlanDelRegistro(tx, b.control, null)).toBeNull();
+      expect(await bloquearPlanDelRegistro(tx, b.control, 2_000_000_000)).toBeNull();
+      expect(await bloquearPlanDelRegistro(tx, b.control, 0)).toBeNull();
+      expect(await bloquearPlanDelRegistro(tx, b.control, anulado.id)).toBeNull();
+      expect(await bloqueado(p.id)).toBe(false);
+      expect(await bloqueado(anulado.id)).toBe(false);
+
+      expect(await bloquearPlanDelRegistro(tx, b.admin, p.id)).toMatchObject({ id: p.id, codigo: p.codigo, anulado: false });
+      expect(await bloqueado(p.id)).toBe(true);
+
+      // Con el candado ya tomado, clasificarAlNacer lo vuelve a pedir sin esperar y el hallazgo entra al mismo plan.
+      const h = await hallazgoNuevo(tx, b);
+      await clasificarAlNacer(tx, b.admin, h.id, { planId: p.id, objetivoId: null }, new Date(AHORA));
+      expect(await clasificacion(tx, h.id)).toEqual({ plan: p.id, objetivo: null });
     });
   });
 });

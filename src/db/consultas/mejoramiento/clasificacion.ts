@@ -9,10 +9,10 @@
  *
  * Orden de candados: el plan `FOR UPDATE` (o los dos de un cambio, por id ascendente), después cada hallazgo `FOR UPDATE` por id
  * ascendente (`bloquearHallazgo`: su fila no se escribe; el candado pone en fila a quienes clasifican el mismo hallazgo) y al
- * final su fila de clasificación (también `ponerObjetivo`, con el plan que tenga el hallazgo). Los caminos de este módulo no toman
- * un plan después de un hallazgo, salvo `clasificarAlNacer`: su hallazgo acaba de nacer y ninguna otra transacción lo ve, pero el
- * registro que la llama puede tener ya `FOR KEY SHARE` sobre otro hallazgo (el de origen o el anterior de una reincidencia) y
- * cruzarse con quien pone ese otro en el mismo plan; el `40P01` llega legible. No importa `lectura.ts`.
+ * final su fila de clasificación (también `ponerObjetivo`, con el plan que tenga el hallazgo). Ningún camino toma un plan después
+ * de un hallazgo. El registro y la carga de un hallazgo dentro de un plan tampoco: su transacción empieza por
+ * `bloquearPlanDelRegistro`, antes que el hallazgo de origen, el anterior de una reincidencia, el reporte o el consecutivo, y el
+ * candado del plan que toma después `clasificarAlNacer` es el mismo, ya suyo. No importa `lectura.ts`.
  */
 import type { TransactionSql } from "postgres";
 import { obtenerSql, type Cliente } from "@/db/cliente";
@@ -38,7 +38,7 @@ import { puede, requerirPermiso } from "@/lib/permisos";
 import { ENTIDAD_HALLAZGO } from "./avisos";
 import { bloquearHallazgo } from "./flujo";
 import { legible } from "./legible";
-import { bloquearPlan, bloquearPlanSiExiste, dejarEventoDePlan, objetivoActivo, type PlanBase } from "./planes";
+import { bloquearPlan, bloquearPlanAbierto, dejarEventoDePlan, objetivoActivo, type PlanBase } from "./planes";
 
 type Fila = { planId: number | null; objetivoId: number | null };
 
@@ -303,11 +303,29 @@ export async function ponerObjetivo(
 }
 
 /**
+ * El plan en que nacerá un hallazgo que se registra o se carga dentro de él (anexo §3.4, camino 1): si `planId` no es nulo, quien
+ * registra tiene `mejora.planes` y el plan existe y no está anulado, lo toma `FOR UPDATE` y lo devuelve; si no, devuelve nulo, sin
+ * tomar ningún candado y sin lanzar (el hallazgo nace sin plan y nadie dice por qué: el patrón de `?revision=`).
+ *
+ * **Es el primer candado de la transacción del registro y de la carga**, antes que cualquier otro (el `FOR KEY SHARE` del hallazgo
+ * de origen y del anterior de una reincidencia, el reporte, el consecutivo): así el plan va antes que todo hallazgo, como en cada
+ * camino que clasifica (§3.4), y el registro no se cruza con quien pone esos hallazgos en el mismo plan. Es la misma regla con que
+ * `clasificarAlNacer` decide el plan: lo que este devuelve es el plan en que entrará el hallazgo.
+ */
+export async function bloquearPlanDelRegistro(tx: TransactionSql, sesion: SesionFlujo, planId: number | null): Promise<PlanBase | null> {
+  if (planId === null || !puede(sesion, "mejora.planes")) return null;
+  return bloquearPlanAbierto(tx, planId);
+}
+
+/**
  * La clasificación de un hallazgo que acaba de nacer (anexo §3.4, camino 1, y §10.4), dentro de la transacción de su registro
- * y después de `nacerHallazgo`. El objetivo lo elige quien registra, si quiere: debe estar activo (`OBJETIVO_INACTIVO`). El plan
- * se vuelve a validar aquí (que exista, que no esté anulado y que quien registra tenga `mejora.planes`); si no pasa, el hallazgo
- * nace sin plan y nadie dice por qué (el patrón de `?revision=`). Es el único camino que toma el plan después de un hallazgo: el
- * suyo, recién insertado, que ninguna otra transacción ve (los que el registro ya tiene `FOR KEY SHARE`, ver la cabecera).
+ * o de su carga y después de `nacerHallazgo`. El objetivo lo elige quien registra, si quiere: debe estar activo
+ * (`OBJETIVO_INACTIVO`). El plan es el de `bloquearPlanDelRegistro`, con la misma regla; si no pasa, el hallazgo nace sin plan y
+ * nadie dice por qué.
+ *
+ * Quien la llama con un `planId` debe haber llamado antes `bloquearPlanDelRegistro` con ese mismo plan, como primer candado de su
+ * transacción: aquí se vuelve a pedir y la transacción ya lo tiene, así que no espera a nadie. Sin esa llamada previa, el plan se
+ * tomaría después de los hallazgos que el registro ya bloqueó, al revés del orden de §3.4.
  */
 export async function clasificarAlNacer(
   tx: TransactionSql,
@@ -317,8 +335,7 @@ export async function clasificarAlNacer(
   ahora: Date,
 ): Promise<void> {
   if (d.objetivoId !== null) await objetivoActivo(tx, d.objetivoId);
-  const candidato = d.planId !== null && puede(sesion, "mejora.planes") ? await bloquearPlanSiExiste(tx, d.planId) : null;
-  const plan = candidato && !candidato.anulado ? candidato : null;
+  const plan = await bloquearPlanDelRegistro(tx, sesion, d.planId);
   if (!plan && d.objetivoId === null) return;
   const [f] = await tx`SELECT codigo FROM mejora_hallazgos WHERE id = ${hallazgoId}`;
   const h = { id: hallazgoId, codigo: f.codigo as string };

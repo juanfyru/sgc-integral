@@ -79,6 +79,18 @@ export async function bloquearPlanSiExiste(tx: TransactionSql, id: number): Prom
 }
 
 /**
+ * El plan `FOR UPDATE` si existe y no está anulado; si no, nulo y sin candado: uno anulado ni se bloquea. Si otro lo está
+ * anulando, espera su candado y, anulado ya, no lo devuelve (PostgreSQL vuelve a mirar el `WHERE` en la fila nueva).
+ */
+export async function bloquearPlanAbierto(tx: TransactionSql, id: number): Promise<PlanBase | null> {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const [f] = await tx`SELECT id, codigo, nombre, origen, vigencia, to_char(fecha_evento, 'YYYY-MM-DD') AS fecha_evento,
+      objetivo_texto, objetivo_id, to_char(fecha_limite_ente, 'YYYY-MM-DD') AS fecha_limite_ente, anulado_en IS NOT NULL AS anulado
+    FROM mejora_planes WHERE id = ${id} AND anulado_en IS NULL FOR UPDATE`;
+  return f ? aPlan(f) : null;
+}
+
+/**
  * El primer candado de todo camino que escribe en un plan o en la clasificación de sus hallazgos: el plan `FOR UPDATE`. Anular
  * un plan y añadirle un hallazgo a la vez van en fila. Lanza `PLAN_NO_EXISTE`.
  */
