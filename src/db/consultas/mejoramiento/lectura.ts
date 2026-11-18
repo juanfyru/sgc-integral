@@ -7,7 +7,7 @@ import { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
-import { lideresDeProceso } from "@/db/consultas/tramites";
+import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import {
   componentesVisibles,
   filtroAcceso,
@@ -132,6 +132,8 @@ const QUIEN_VERIFICA = "Quien puede verificar";
 /** El turno de un paso que nadie puede dar hoy (la lista lo dice así; «Lo que sigue», con su porqué). */
 const NADIE_VERIFICA_TURNO = "Nadie puede verificarlo";
 const NADIE_ARBITRA_TURNO = "Nadie puede arbitrarlo";
+/** El turno de un hallazgo cargado sin su formato firmado (spec §15): es del Admin SGC, que lo adjunta (la tarea `mej-escaneo`). */
+const TURNO_SIN_EL_FORMATO = "El Administrador del SGC: falta el formato firmado";
 
 /** Lo que le toca a quien elaboró el plan en revisión cuando no queda ningún Admin SGC que lo revise (F15-DC15). */
 const SIN_REVISOR = "devolverlo y reenviarlo: no hay otro Administrador del SGC activo que lo revise";
@@ -145,14 +147,18 @@ const recordar = <T>(m: Memoria, clave: string, f: () => Promise<T>): Promise<T>
 
 /**
  * Quién tiene el turno y cómo se dice. En la espera de eficacia nadie lo tiene hasta la fecha mínima; desde ella, quien puede
- * verificar (spec §8.1; `yaSePuedeEvaluar`, R4).
+ * verificar (spec §8.1; `yaSePuedeEvaluar`, R4). Un hallazgo cargado sin su formato firmado (`faltaElFormato`) no avanza hasta
+ * que el Admin SGC lo adjunta: el turno es suyo, sea cual sea el paso (spec §15).
  */
 async function resolverTurno(
   tx: Cliente,
   h: HallazgoBase,
   m: Memoria,
-  x?: { yaSePuedeEvaluar?: boolean },
+  x?: { yaSePuedeEvaluar?: boolean; faltaElFormato?: boolean },
 ): Promise<{ ids: number[]; texto: string }> {
+  if (x?.faltaElFormato && !esTerminal(h.estado)) {
+    return { ids: await recordar(m, "admins", () => adminsActivos({ sql: tx })), texto: TURNO_SIN_EL_FORMATO };
+  }
   if (h.estado === "en_espera" && x?.yaSePuedeEvaluar) {
     const ids = await recordar(m, `verificadores:${h.id}`, () => quienesVerifican(tx, h.id));
     return { ids, texto: ids.length > 0 ? QUIEN_VERIFICA : NADIE_VERIFICA_TURNO };
@@ -317,7 +323,8 @@ export async function listarHallazgos(
   ];
   const filas = await sql`
     SELECT ${COLUMNAS_BASE(sql)}, h.titulo, h.vence_en, h.cargado, p.nombre AS proceso,
-      ${ACTIVIDAD_VENCIDA(sql, hoy)} AS actividad_vencida, ${algoVencido} AS algo_vencido, ${AVANCE(sql)} AS avance
+      ${ACTIVIDAD_VENCIDA(sql, hoy)} AS actividad_vencida, ${algoVencido} AS algo_vencido, ${AVANCE(sql)} AS avance,
+      ${cargaResuelta(sql)} AS carga_resuelta
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
     WHERE ${visible} AND ${condiciones.reduce((a, b) => sql`${a} AND ${b}`)}`;
@@ -338,7 +345,7 @@ export async function listarHallazgos(
       estado: h.estado,
       etiqueta: etiquetaDeEstado(h, yaSePuede(h)),
       marcas: marcasDeHallazgo(h, { cargado: f.cargado === true, algunaActividadVencida: f.actividad_vencida === true }),
-      turno: (await resolverTurno(sql, h, memoria, yaSePuede(h))).texto,
+      turno: (await resolverTurno(sql, h, memoria, { ...yaSePuede(h), faltaElFormato: f.carga_resuelta === false })).texto,
       avance: idONulo(f.avance),
       vence,
       prioridadAlta: abierta && esExterno(h.origen),

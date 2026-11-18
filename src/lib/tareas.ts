@@ -72,8 +72,8 @@ const femenino = (fecha: string, vencida: boolean) => (vencida ? `La más atrasa
 
 /**
  * Un paso de los hallazgos de mejoramiento (`mej-<paso>:`): lleva a la lista filtrada por «Esperan su decisión», que con R2 son
- * justamente los hallazgos de estas tareas, y por el estado del paso (sin estado, el ajuste y la respuesta al ente, que no
- * tienen uno propio).
+ * justamente los hallazgos de estas tareas, y por el estado del paso (sin estado, el ajuste, la respuesta al ente y el formato
+ * firmado de una carga, que no tienen uno propio).
  */
 const pasoDeMejora = (paso: string, que: string, estado: string | null, detalle = masculino): Grupo => ({
   prefijo: `mej-${paso}:`,
@@ -218,6 +218,7 @@ const GRUPOS: readonly Grupo[] = [
   pasoDeMejora("evaluar", "hallazgos por evaluar la eficacia", "por_evaluar"),
   pasoDeMejora("cerrar", "hallazgos por cerrar", "por_cerrar"),
   pasoDeMejora("ente", "respuestas al ente por registrar", null, femenino),
+  pasoDeMejora("escaneo", "cargas sin su formato firmado", null, femenino),
 ];
 
 function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {

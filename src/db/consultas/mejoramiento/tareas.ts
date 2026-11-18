@@ -224,9 +224,11 @@ async function deLosAjustes(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora
 }
 
 /**
- * Lo del Admin SGC que no es un paso del hallazgo: clasificar cada reporte recibido y registrar la respuesta al ente de cada
+ * Lo del Admin SGC que no es un paso del hallazgo: clasificar cada reporte recibido, registrar la respuesta al ente de cada
  * hallazgo externo con fecha del ente, con el plan de la ronda en vigor aprobado y sin respuesta (spec §13.4: vence al final de
- * la fecha del ente; la misma condición que `registrarRespuestaAlEnte`).
+ * la fecha del ente; la misma condición que `registrarRespuestaAlEnte`), y adjuntar el formato firmado de cada hallazgo cargado
+ * sin terminar que todavía no lo tiene (spec §15: hasta entonces su plan no llega a nadie; `cargaResuelta`). Esta última no
+ * vence: ninguna norma le fija plazo, y la pasada de vencimientos no la mira.
  */
 async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> {
   if (!puede(s, "mejora.gestionar")) return [];
@@ -238,8 +240,23 @@ async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> 
       AND h.fecha_limite_ente IS NOT NULL AND h.respuesta_ente_en IS NULL
       AND EXISTS (SELECT 1 FROM mejora_rondas r WHERE r.hallazgo_id = h.id AND r.numero = h.ronda AND r.estado_plan = 'aprobado')
     ORDER BY h.id`;
+  const sinEscaneo = await sql`
+    SELECT h.id, h.codigo, h.titulo FROM mejora_hallazgos h
+    WHERE h.cargado AND h.estado NOT IN ${sql([...TERMINALES])} AND NOT ${cargaResuelta(sql)}
+    ORDER BY h.id`;
   const zona = zonaHoraria();
   return [
+    ...sinEscaneo.map((f) => ({
+      tarea: {
+        id: `mej-escaneo:${f.id}`,
+        modulo: "planes" as const,
+        titulo: `Adjuntar el formato firmado de ${f.codigo as string}`,
+        detalle: f.titulo as string,
+        vence: null,
+        enlace: rutaDeHallazgo(Number(f.id)),
+      },
+      hallazgoId: Number(f.id),
+    })),
     ...reportes.map((f) => ({
       tarea: {
         id: `mej-clasificar:${f.id}`,

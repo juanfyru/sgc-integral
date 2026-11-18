@@ -25,7 +25,7 @@ import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { decidirAccionCorrectiva, rechazarHallazgo, registrarCorreccion, sostenerHallazgo } from "@/db/consultas/mejoramiento/recorrido";
-import { registrarHallazgo, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
+import { anularHallazgo, registrarHallazgo, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { tareasConSuHallazgo, tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
 import { datosDeEvaluacion, evaluarEficacia, fechaMinimaDe, huellaDeLoVisto, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
@@ -368,6 +368,44 @@ describe("las tareas de mejoramiento, una por fila de la tabla", () => {
     }));
 });
 
+describe("la carga sin su formato firmado se le pide al Admin SGC (revisión final, I2)", () => {
+  it("mej-escaneo: la reciben los Admin SGC, sin fecha, hasta el escaneo; ni el líder ni el responsable ni Control Interno", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otroAdmin = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const { id, codigo } = await cargarHallazgo(b.admin, datosDeCarga(b.procesoId, responsable.usuarioId), c(AHORA, tx));
+      const esperada: Tarea = {
+        id: `mej-escaneo:${id}`,
+        modulo: "planes",
+        titulo: `Adjuntar el formato firmado de ${codigo}`,
+        detalle: TITULO,
+        vence: null,
+        enlace: rutaDeHallazgo(id),
+      };
+      expect(await laDe(b.admin, tx, esperada.id)).toEqual(esperada);
+      expect(await laDe(otroAdmin, tx, esperada.id)).toEqual(esperada);
+      for (const otro of [b.lider, responsable, b.control, b.gerencia]) expect(await laDe(otro, tx, esperada.id)).toBeUndefined();
+      // Cuenta para «Esperan su decisión»: es de su hallazgo.
+      const suyas = await tareasConSuHallazgo(b.admin, { sql: tx, ahora: new Date(AHORA) });
+      expect(suyas.find((t) => t.tarea.id === esperada.id)?.hallazgoId).toBe(id);
+      // En la lista, el turno es del Administrador del SGC, no de los responsables.
+      const turno = async () => (await listarHallazgos(b.admin, {}, { sql: tx, ahora: new Date(AHORA) })).filas.find((f) => f.id === id)?.turno;
+      expect(await turno()).toBe("El Administrador del SGC: falta el formato firmado");
+      await escaneoDeLaCarga(tx, id, b.admin.usuarioId);
+      expect(await laDe(b.admin, tx, esperada.id)).toBeUndefined();
+      expect(await turno()).toBe("Los responsables de las actividades");
+    }));
+
+  it("un hallazgo cargado y anulado sin su formato no la da", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const { id } = await cargarHallazgo(b.admin, datosDeCarga(b.procesoId, b.lider.usuarioId), c(AHORA, tx));
+      await anularHallazgo(b.admin, { hallazgoId: id, justificacion: "Se cargó por error: el hallazgo ya existía" }, c(AHORA, tx));
+      expect(await laDe(b.admin, tx, `mej-escaneo:${id}`)).toBeUndefined();
+    }));
+});
+
 describe("«Mis tareas» y «Esperan su decisión»", () => {
   it("misTareas las trae junto a las demás, en el módulo «planes»", () =>
     revertida(sql, async (tx) => {
@@ -572,5 +610,13 @@ describe("«Mis tareas» agrupa las de mejoramiento por fuente", () => {
   it("con cinco de cada fuente no agrupa nada", () => {
     const tareas = ["aceptar", "actividad", "clasificar", "ente"].flatMap((p) => [1, 2, 3, 4, 5].map((n) => de(p, n)));
     expect(agruparTareas(tareas, 5, AHORA_G)).toEqual(tareas);
+  });
+
+  it("las cargas sin su formato firmado van a la lista de «Esperan su decisión»", () => {
+    expect(agruparTareas(seis("escaneo"), 5, AHORA_G)[0]).toMatchObject({
+      id: "mejora-escaneo",
+      titulo: "6 cargas sin su formato firmado",
+      enlace: "/mejoramiento?decision=1",
+    });
   });
 });
