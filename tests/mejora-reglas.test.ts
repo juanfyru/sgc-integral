@@ -81,8 +81,8 @@ describe("reglas", () => {
     const nada = { requiereRecursos: false, elaboroAdmin: false };
     const hz = { clase: "no_conformidad", criticidad: "media", origen: "pamec" } as const;
     const todas = { requiereRecursos: true, elaboroAdmin: true };
-    it("criticidad alta antes que todo", () => expect(razonDeGerencia({ ...hz, criticidad: "alta", origen: "ente_control" }, todas)).toBe("criticidad alta"));
-    it("origen externo antes que los recursos", () => expect(razonDeGerencia({ ...hz, origen: "auditoria_externa" }, todas)).toBe("origen externo"));
+    it("criticidad alta antes que todo", () => expect(razonDeGerencia({ ...hz, criticidad: "alta", origen: "ente_control" }, todas)).toBe("la criticidad es alta"));
+    it("origen externo antes que los recursos", () => expect(razonDeGerencia({ ...hz, origen: "auditoria_externa" }, todas)).toBe("el origen es externo"));
     it("los recursos antes que quien elaboró", () =>
       expect(razonDeGerencia(hz, todas)).toBe("requiere recursos adicionales o tiene impacto institucional"));
     it("quien elaboró es un Admin SGC", () => expect(razonDeGerencia(hz, { ...nada, elaboroAdmin: true })).toBe("lo elaboró el Administrador del SGC"));
