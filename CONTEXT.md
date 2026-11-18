@@ -1,9 +1,10 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-18**, al terminar de construir la **Fase 15A —
-> Planes de mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree
-> `F:\sgc-integral-f15a` y contra la base aparte `sgc_f15a`; **sin fusionar**: faltan la verificación de cierre y el recorrido
-> del usuario; ver su sección, arriba de la del complemento de la 14C). El 2026-11-17 el usuario aprobó el **diseño de la
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-18**, al cerrar la **Fase 15A — Planes de
+> mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree `F:\sgc-integral-f15a` y contra
+> la base aparte `sgc_f15a`; **fusionada en `main` el 2026-11-18 por decisión del usuario, por avance rápido, y `main`
+> publicado en `origin` ese mismo día** (`a218f4d`, CI en verde), con la `0018` aplicada a la base `sgc`; ver su sección,
+> arriba de la del complemento de la 14C). **Lo siguiente es la Fase 15B** (punto 1 del punto de reanudación). El 2026-11-17 el usuario aprobó el **diseño de la
 > Fase 15** (`docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`; tres entregas, 15A, 15B y 15C) y
 > el plan de la 15A. Ese mismo día, antes, se fusionó el
 > **complemento de la
@@ -39,8 +40,9 @@
    proyecto**.
 1. **Dónde quedamos:** la **Fase 15A está construida** (2026-11-18): las 22 tareas de su plan (las 21 primeras, cada una
    con su revisión), en la rama `fase-15a-mejoramiento` del worktree `F:\sgc-integral-f15a`, contra la base `sgc_f15a`, y
-   **fusionada en `main` el 2026-11-18** por decisión del usuario («fusionemos en main»), por avance rápido y sin publicar en
-   `origin`, con la `0018` aplicada a la base `sgc` (después de un respaldo). Con ella, el hallazgo de mejoramiento va de punta a punta: reporte de cualquier funcionario, registro con
+   **fusionada en `main` el 2026-11-18** por decisión del usuario («fusionemos en main»), por avance rápido, con la `0018`
+   aplicada a la base `sgc` (después de un respaldo), y **`main` publicado en `origin`** ese mismo día (`a218f4d`, el CI de
+   lint y build en verde; la rama no se publicó y, con el worktree y la base `sgc_f15a`, se conserva). Con ella, el hallazgo de mejoramiento va de punta a punta: reporte de cualquier funcionario, registro con
    parecidos y reincidencia, aceptación, corrección y camino corto, causa raíz, plan con sus firmas, ejecución con
    seguimientos y ajustes, verificación, eficacia con su espera, cierre y rondas, plazos en días hábiles, tareas, avisos,
    vencimientos, la carga de lo que está en curso en papel, impresos, Excel y búsqueda. **Sin dependencias npm nuevas.** Una
@@ -48,8 +50,17 @@
    15A)»; las decisiones, en «Decisiones adicionales (Fase 15A)»; el manual, en el capítulo 9. **La verificación de cierre
    y la revisión de toda la rama están hechas** (2026-11-18, «Verificación de cierre (Fase 15A)»), con su ola de
    corrección. **Falta:** el visto bueno del usuario a las 46 decisiones de la ejecución y de la revisión final, y su
-   recorrido sobre la demo («Qué probar y cómo (Fase 15A)»). La 15B y la 15C esperan su anexo (la 15B, además, la
-   plantilla del ente).
+   recorrido sobre la demo («Qué probar y cómo (Fase 15A)»).
+   **Lo siguiente: la Fase 15B — Planes y enganches** (spec §17; en la tabla de entregas, «15B»). Se empieza como la 15A:
+   primero las preguntas de diseño y el **anexo de la 15B** (§17 está escrito «al nivel de lo ya decidido» y su anexo se
+   escribe al empezar), que el usuario aprueba; después el plan, que también aprueba, y la ejecución en un worktree y una
+   base aparte (`fase-15b-…`, `sgc_f15b`, con su guarda como `con-f15a.sh`). Lo que trae: el plan de mejoramiento que agrupa
+   hallazgos (`PM-AAAA-NN`) con su SGC-FO-14 por proceso; el formato del ente; los objetivos; «abrir hallazgo» desde un
+   documento, un proceso, un indicador con «Requiere acción de mejora», una verificación de un punto de uso y un impacto de
+   norma; y el cambio documental desde una actividad. **Necesita del usuario la plantilla del ente de control y de qué ente
+   es** (spec §28): sin ella, el formato del ente queda fuera del anexo. Arrastra los menores de la 15A que se dejaron para
+   ella («Deuda técnica (Fase 15A)», el primer punto). Los tres hallazgos abiertos en papel se cargan en la 15A y se
+   agrupan en su plan en la 15B. La 15C (el SGC-FO-28, el Pareto y cuatro cálculos automáticos) espera a la 15B.
    **Antes:** la **Fase 15 — Planes de mejoramiento** tuvo su **diseño aprobado por el usuario el 2026-11-17**
    («aprobado el spec, continuemos con el plan de la 15A»). El spec es uno solo para las
    tres entregas: `docs/superpowers/specs/2026-11-17-fase15-planes-de-mejoramiento-design.md`. **15A**, el hallazgo de
