@@ -8,6 +8,9 @@ const TEXTOS_DEL_DETALLE: ReadonlyArray<readonly [clave: string, rotulo: string]
   ["replica", "Réplica"],
   ["nota", "Nota"],
   ["motivo", "Motivo"],
+  // Las firmas del plan: lo que dijo quien lo devolvió y la nota de la revisión que pidió recursos (spec §8.6).
+  ["observaciones", "Observaciones"],
+  ["notaRecursos", "Recursos o impacto institucional"],
 ];
 
 const comoObjeto = (detalle: unknown): Record<string, unknown> =>

@@ -5,7 +5,9 @@
 // Las de la configuración viven en `src/app/admin/acciones-mejoramiento.ts`.
 
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
+import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
+import { aprobarPlan, devolverPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { guardarAccion, guardarCriterio, quitarAccion } from "@/db/consultas/mejoramiento/plan";
 import {
@@ -29,18 +31,22 @@ import {
   registrarHallazgo,
   registrarOcurrencia,
 } from "@/db/consultas/mejoramiento/registro";
+import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
   EsquemaAnulacion,
   EsquemaCambioDeProceso,
   EsquemaCorreccion,
   EsquemaCriterio,
   EsquemaDevolucion,
+  EsquemaDevolverPlan,
   EsquemaFormularioAccion,
   EsquemaFormularioAnalisis,
   EsquemaFormularioArbitraje,
   EsquemaFormularioCausas,
   EsquemaFormularioDecision,
+  EsquemaFormularioFirmaDelPlan,
   EsquemaFormularioPreguntas,
+  EsquemaFormularioRevisarPlan,
   EsquemaHallazgo,
   EsquemaOcurrencia,
   EsquemaPasoDelHallazgo,
@@ -315,5 +321,98 @@ export async function guardarCriterioAccion(_previo: EstadoAccion, formData: For
   return mutacion(formData, "mejora.formular", async (_usuarioId, datos, sesion) => {
     const d = parsearFormulario(datos, EsquemaCriterio);
     await guardarCriterio(sesion, d);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Las firmas del plan (spec 15 §8.6 y §12.1): enviar, devolver, revisar y aprobar. Quién da cada paso lo comprueba la
+// función del dominio dentro de su transacción; devolver lo dan dos roles con permisos distintos de la matriz, con una acción
+// por permiso que llaman la misma función.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Saca la clave y el código del formulario y los deja en una copia: `mutacion` le devuelve al navegador lo enviado cuando
+ * algo falla, y una clave no vuelve por ahí (como en `acciones-indicadores.ts`).
+ */
+function separarFirma(formData: FormData): FormData {
+  const firma = new FormData();
+  for (const [campo, valor] of formData) firma.append(campo, valor);
+  formData.delete("clave");
+  formData.delete("codigo");
+  return firma;
+}
+
+/** Una firma que cerró la sesión termina en el ingreso; cualquier otro error vuelve al formulario. */
+function destinoDeFirma(err: unknown): string {
+  if (err instanceof ErrorFirma && err.sesionCerrada) return err.bloqueada ? "/ingreso?motivo=bloqueo" : "/ingreso";
+  throw err;
+}
+
+/** Envía la causa raíz y el plan con la firma «Elaboró» y lleva a la página del hallazgo (la de formular ya no existe para él). */
+export async function enviarPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "mejora.formular", async (_usuarioId, _datos, sesion) => {
+    const d = parsearFormulario(firma, EsquemaFormularioFirmaDelPlan);
+    try {
+      await enviarPlan(sesion, { hallazgoId: d.hallazgoId, credenciales: { clave: d.clave, codigo: d.codigo } }, { contexto: await contextoDePeticion() });
+      return rutaDeHallazgo(d.hallazgoId);
+    } catch (err) {
+      return destinoDeFirma(err);
+    }
+  });
+}
+
+/** El Admin SGC devuelve el plan en revisión, con observaciones. */
+export async function devolverPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaDevolverPlan);
+    await devolverPlan(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** Gerencia devuelve el plan en aprobación, con observaciones. */
+export async function devolverPlanGerenciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.aprobar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaDevolverPlan);
+    await devolverPlan(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/** El Admin SGC firma «Revisó», con la marca de recursos o impacto institucional y su nota. */
+export async function firmarRevisionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, _datos, sesion) => {
+    const d = parsearFormulario(firma, EsquemaFormularioRevisarPlan);
+    try {
+      await firmarRevision(
+        sesion,
+        {
+          hallazgoId: d.hallazgoId,
+          requiereRecursos: d.requiereRecursos,
+          notaRecursos: d.notaRecursos,
+          credenciales: { clave: d.clave, codigo: d.codigo },
+        },
+        { contexto: await contextoDePeticion() },
+      );
+      return rutaDeHallazgo(d.hallazgoId);
+    } catch (err) {
+      return destinoDeFirma(err);
+    }
+  });
+}
+
+/** Gerencia firma «Aprobó»: el plan pasa a ejecución. */
+export async function aprobarPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "mejora.aprobar", async (_usuarioId, _datos, sesion) => {
+    const d = parsearFormulario(firma, EsquemaFormularioFirmaDelPlan);
+    try {
+      await aprobarPlan(sesion, { hallazgoId: d.hallazgoId, credenciales: { clave: d.clave, codigo: d.codigo } }, { contexto: await contextoDePeticion() });
+      return rutaDeHallazgo(d.hallazgoId);
+    } catch (err) {
+      return destinoDeFirma(err);
+    }
   });
 }

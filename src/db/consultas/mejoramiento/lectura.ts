@@ -99,8 +99,10 @@ async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<
   const clave =
     turno === "lideres" ? `lideres:${h.procesoId}`
     : turno === "registrador" ? `registrador:${h.registradoPor}`
-    // El árbitro depende también de quién lo sostuvo; los validadores, de quién registró la corrección y decidió.
+    // El árbitro depende también de quién lo sostuvo; los validadores, de quién registró la corrección y decidió; quienes
+    // revisan el plan, de quién lo elaboró (`revisoresDe`).
     : turno === "responsables" || turno === "arbitro" || turno === "validadores" ? `${turno}:${h.id}`
+    : turno === "admin" && h.estado === "en_revision" ? `revisores:${h.id}`
     : turno;
   const ids = await recordar(m, clave, () => quienTieneElTurno(tx, h));
   switch (turno) {
@@ -299,6 +301,11 @@ export type RondaDeDetalle = {
   enviadoEn: Date | null;
   aprobadoEn: Date | null;
   aprobadoRol: string | null;
+  /** Lo marcó la revisión (spec §8.6): «requiere recursos adicionales o tiene impacto institucional», con su nota. */
+  requiereRecursos: boolean;
+  notaRecursos: string | null;
+  /** El envío vigente lo elaboró un Admin SGC (lo guarda el evento `enviar_plan`): una de las condiciones de Gerencia. */
+  elaboroAdmin: boolean;
   fechaEvaluacion: string | null;
   cierrePrevisto: Date | null;
   /** El criterio de eficacia tal como se guardó (`criterios`, jsonb): quien lo pinta lo lee sin confiar en su forma. */
@@ -444,6 +451,17 @@ async function loQueSigue(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, tur
 }
 
 /**
+ * El detalle de un evento sin el plan congelado (`detalle.plan` del envío y de la aprobación, spec §12.2): no se pinta en el
+ * historial ni viaja a la página; quien lo necesite (los impresos) lo lee con su propia regla de lo que nombra (§6.3).
+ */
+function sinPlanCongelado(detalle: unknown): unknown {
+  if (typeof detalle !== "object" || detalle === null || !Object.hasOwn(detalle, "plan")) return detalle;
+  const resto = { ...(detalle as Record<string, unknown>) };
+  delete resto.plan;
+  return resto;
+}
+
+/**
  * El hallazgo completo para quien lo ve; nulo si no existe **o** si no lo ve (la misma respuesta). Quien lo ve solo por
  * ser responsable de una actividad lo recibe en texto, sin eventos ni ocurrencias, y sin listas de archivos (los
  * archivos llegan en la Tarea 9, con su propia regla: solo los de sus actividades).
@@ -474,10 +492,13 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   })();
 
   const [rondas, analisis, causas, acciones, vinculos, actividades, ajustes] = await Promise.all([
-    sql`SELECT id, numero, estado_plan, formular_antes_de, enviado_en, aprobado_en, aprobado_rol, resultado, cierre_previsto,
-        similares, similares_detalle, cambios, criterios, criterio_otro, indicador_eficacia_id,
-        to_char(fecha_evaluacion, 'YYYY-MM-DD') AS fecha_evaluacion
-      FROM mejora_rondas WHERE hallazgo_id = ${id} ORDER BY numero`,
+    sql`SELECT r.id, r.numero, r.estado_plan, r.formular_antes_de, r.enviado_en, r.aprobado_en, r.aprobado_rol, r.resultado,
+        r.cierre_previsto, r.requiere_recursos, r.nota_recursos, r.similares, r.similares_detalle, r.cambios, r.criterios,
+        r.criterio_otro, r.indicador_eficacia_id, to_char(r.fecha_evaluacion, 'YYYY-MM-DD') AS fecha_evaluacion,
+        coalesce((SELECT (e.detalle->>'elaboroAdmin')::boolean FROM mejora_eventos e
+          WHERE e.hallazgo_id = r.hallazgo_id AND e.ronda = r.numero AND e.tipo = 'enviar_plan' ORDER BY e.id DESC LIMIT 1), false)
+          AS elaboro_admin
+      FROM mejora_rondas r WHERE r.hallazgo_id = ${id} ORDER BY r.numero`,
     sql`SELECT id, ronda_id, orden, metodo, equipo, observaciones, contenido FROM mejora_analisis WHERE hallazgo_id = ${id} ORDER BY orden, id`,
     sql`SELECT id, ronda_id, orden, texto, sin_accion_porque FROM mejora_causas WHERE hallazgo_id = ${id} ORDER BY orden, id`,
     sql`SELECT id, ronda_id, orden, tipo, descripcion, recursos, indicador_cumplimiento, meta
@@ -501,6 +522,9 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     enviadoEn: (r.enviado_en as Date | null) ?? null,
     aprobadoEn: (r.aprobado_en as Date | null) ?? null,
     aprobadoRol: (r.aprobado_rol as string | null) ?? null,
+    requiereRecursos: r.requiere_recursos === true,
+    notaRecursos: (r.nota_recursos as string | null) ?? null,
+    elaboroAdmin: r.elaboro_admin === true,
     fechaEvaluacion: (r.fecha_evaluacion as string | null) ?? null,
     cierrePrevisto: (r.cierre_previsto as Date | null) ?? null,
     criterios: r.criterios ?? null,
@@ -647,7 +671,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       id: Number(e.id),
       tipo: e.tipo as string,
       ronda: Number(e.ronda),
-      detalle: e.detalle,
+      detalle: sinPlanCongelado(e.detalle),
       quien: (e.quien as string | null) ?? null,
       cuando: e.ocurrio_en as Date,
       fuera: e.fuera === true,

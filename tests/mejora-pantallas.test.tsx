@@ -17,7 +17,7 @@ import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
 import { PestanasDeMetodo } from "@/componentes/mejoramiento/analisis/PestanasDeMetodo";
 import { PreguntasDeCierre } from "@/componentes/mejoramiento/analisis/PreguntasDeCierre";
 import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazgo";
-import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
+import { ListaDeHallazgos, textoDeVence } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
 import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
 import { PasoAceptar } from "@/componentes/mejoramiento/pasos/PasoAceptar";
@@ -26,6 +26,13 @@ import { PasoCorregir } from "@/componentes/mejoramiento/pasos/PasoCorregir";
 import { PasoDecidir } from "@/componentes/mejoramiento/pasos/PasoDecidir";
 import { PasoTrasRechazo } from "@/componentes/mejoramiento/pasos/PasoTrasRechazo";
 import { PasoValidar } from "@/componentes/mejoramiento/pasos/PasoValidar";
+import { PanelDeFirmas, firmasDelEnvio } from "@/componentes/mejoramiento/plan/PanelDeFirmas";
+import { ParecidosDeOtrosProcesos } from "@/componentes/mejoramiento/plan/ParecidosDeOtrosProcesos";
+import { PasoAprobar } from "@/componentes/mejoramiento/plan/PasoAprobar";
+import { PasoEnviar } from "@/componentes/mejoramiento/plan/PasoEnviar";
+import { PasoRevisar } from "@/componentes/mejoramiento/plan/PasoRevisar";
+import { razonDeGerencia } from "@/lib/mejoramiento/reglas";
+import { fechaYHora } from "@/lib/mejoramiento/formato";
 import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
 import { Recorrido } from "@/componentes/mejoramiento/Recorrido";
 import type { FilaDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
@@ -740,5 +747,220 @@ describe("el plan de acción (maqueta 5)", () => {
     expect(historial).toContain("Guardó la acción A1 del plan");
     expect(historial).toContain("Quitó la acción A2 del plan");
     expect(historial).toContain("Guardó el criterio de eficacia");
+  });
+});
+
+describe("las firmas del plan (maqueta 5)", () => {
+  const accion = vi.fn(async () => null);
+  const aviso = (html: string) => html.split(AVISO_SIN_PACIENTES).length - 1;
+  const HUELLA = "ab12" + "0".repeat(56) + "cd34";
+  const firmada = (nombre: string, cuando: string) => ({ nombre, cargo: "Regente de farmacia", cuando: new Date(cuando) });
+  const deLaBase = (firma: "elaboro" | "reviso" | "aprobo", cuando: string, ronda = 1) => ({
+    firma,
+    ronda,
+    nombre: `Quien firmó ${firma}`,
+    cargo: null,
+    cuando: new Date(cuando),
+    huella: HUELLA,
+  });
+
+  it("firmasDelEnvio: las del último envío de la ronda; con el plan otra vez en borrador, ninguna", () => {
+    const firmas = [
+      deLaBase("elaboro", "2026-11-10T15:00:00Z"),
+      deLaBase("reviso", "2026-11-11T15:00:00Z"),
+      deLaBase("elaboro", "2026-11-13T15:00:00Z"),
+      deLaBase("elaboro", "2026-11-14T15:00:00Z", 2),
+    ];
+    const vigente = firmasDelEnvio(firmas, 1, "enviado");
+    expect(vigente.elaboro?.cuando.toISOString()).toBe("2026-11-13T15:00:00.000Z");
+    // La «Revisó» de antes de la devolución no es de este envío.
+    expect(vigente.reviso).toBeNull();
+    expect(firmasDelEnvio(firmas, 1, "borrador")).toEqual({ elaboro: null, reviso: null, aprobo: null });
+    expect(firmasDelEnvio(firmas, 3, "enviado")).toEqual({ elaboro: null, reviso: null, aprobo: null });
+  });
+
+  it("razonDeGerencia dice la primera de las cuatro condiciones, o nada si la revisión vale como aprobación", () => {
+    const nc = { clase: "no_conformidad" as const, criticidad: "media" as const, origen: "auditoria_interna" as const };
+    expect(razonDeGerencia(nc, { requiereRecursos: false, elaboroAdmin: false })).toBeNull();
+    expect(razonDeGerencia({ ...nc, criticidad: "alta" }, { requiereRecursos: false, elaboroAdmin: false })).toBe("criticidad alta");
+    expect(razonDeGerencia({ ...nc, origen: "ente_control" }, { requiereRecursos: false, elaboroAdmin: false })).toBe("origen externo");
+    expect(razonDeGerencia(nc, { requiereRecursos: true, elaboroAdmin: false })).toBe("requiere recursos adicionales o tiene impacto institucional");
+    expect(razonDeGerencia(nc, { requiereRecursos: false, elaboroAdmin: true })).toBe("lo elaboró el Administrador del SGC");
+  });
+
+  it("el panel: cada firma con su estado en texto y su plazo; Gerencia dice por qué aplica", () => {
+    const vence = new Date("2026-11-24T04:59:59Z");
+    const html = renderToStaticMarkup(
+      <PanelDeFirmas
+        firmas={{ elaboro: null, reviso: null, aprobo: null }}
+        elabora="Usted, con su clave, al enviar"
+        sinRevision={false}
+        gerencia="criticidad alta"
+        enCurso="elaboro"
+        vence={vence}
+        plazos={{ revisar: 3, aprobar: 3 }}
+        contexto={CONTEXTO}
+      />,
+    );
+    for (const t of ["Elaboró", "Revisó", "Aprobó"]) expect(html).toContain(t);
+    expect(html).toContain("Usted, con su clave, al enviar");
+    expect(html).toContain("Administrador del SGC · 3 días hábiles");
+    expect(html).toContain("Gerencia · aplica: criticidad alta · 3 días hábiles");
+    expect(html.split(">Pendiente<").length - 1).toBe(3);
+    const t = textoDeVence(vence, CONTEXTO)!;
+    expect(html).toContain(`Vence el ${t.fecha} · ${t.plazo}`);
+    // Sin ninguna condición fija, Gerencia depende de la revisión.
+    const depende = renderToStaticMarkup(
+      <PanelDeFirmas
+        firmas={{ elaboro: null, reviso: null, aprobo: null }}
+        elabora="Usted, con su clave, al enviar"
+        sinRevision={false}
+        gerencia={null}
+        enCurso="elaboro"
+        vence={null}
+        plazos={{ revisar: 3, aprobar: 3 }}
+        contexto={CONTEXTO}
+      />,
+    );
+    expect(depende).toContain("Gerencia · solo si la revisión marca recursos adicionales o impacto institucional");
+  });
+
+  it("las firmadas dicen quién y cuándo; sin revisión, o sin Gerencia tras la revisión, «No aplica» con su porqué", () => {
+    const elaboro = firmada("L. Rojas", "2026-11-18T15:00:00Z");
+    const reviso = firmada("M. Díaz", "2026-11-19T15:00:00Z");
+    const aprobada = renderToStaticMarkup(
+      <PanelDeFirmas
+        firmas={{ elaboro, reviso, aprobo: null }}
+        elabora="La líder del proceso"
+        sinRevision={false}
+        gerencia={null}
+        enCurso={null}
+        vence={null}
+        plazos={{ revisar: 3, aprobar: 3 }}
+        contexto={CONTEXTO}
+      />,
+    );
+    expect(aprobada.split(">Firmada<").length - 1).toBe(2);
+    expect(aprobada).toContain("L. Rojas · Regente de farmacia");
+    expect(aprobada).toContain(fechaYHora(elaboro.cuando, "America/Bogota"));
+    expect(aprobada).toContain(">No aplica<");
+    expect(aprobada).toContain("La revisión valió como aprobación");
+    const sinRevision = renderToStaticMarkup(
+      <PanelDeFirmas
+        firmas={{ elaboro, reviso: null, aprobo: null }}
+        elabora="La líder del proceso"
+        sinRevision
+        gerencia="lo elaboró el Administrador del SGC"
+        enCurso="aprobo"
+        vence={new Date("2026-11-24T04:59:59Z")}
+        plazos={{ revisar: 3, aprobar: 3 }}
+        contexto={CONTEXTO}
+      />,
+    );
+    expect(sinRevision).toContain("No hay otro Administrador del SGC activo: nadie firma «Revisó» sobre lo que elaboró");
+    expect(sinRevision).toContain("Gerencia · aplica: lo elaboró el Administrador del SGC");
+  });
+
+  it("enviar: con faltas no ofrece la firma; sin ellas, «Enviar a revisión» (o a aprobación) y las observaciones de la devolución", () => {
+    const comun = { hallazgoId: 7, huella: HUELLA, pideCodigo: false, accion };
+    const con = renderToStaticMarkup(<PasoEnviar {...comun} faltas={2} saltaRevision={false} devuelto={null} />);
+    expect(con).not.toContain("Enviar a revisión");
+    expect(con).toContain("Complete lo que falta para enviar el análisis y el plan.");
+    const sin = renderToStaticMarkup(<PasoEnviar {...comun} faltas={0} saltaRevision={false} devuelto="Falta decir quién verifica el registro" />);
+    expect(sin).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Enviar a revisión<\/button>/);
+    expect(sin).toContain("Falta decir quién verifica el registro");
+    const directo = renderToStaticMarkup(<PasoEnviar {...comun} faltas={0} saltaRevision devuelto={null} />);
+    expect(directo).toContain(">Enviar a aprobación<");
+  });
+
+  it("revisar: las causas sin acción, la casilla de recursos con su nota, devolver con observaciones y firmar la revisión", () => {
+    const html = renderToStaticMarkup(
+      <PasoRevisar
+        hallazgoId={7}
+        causasSinAccion={[{ orden: 2, texto: "No hay registrador en el turno de noche", porque: "Se compró uno el mes pasado" }]}
+        gerencia={null}
+        huella={HUELLA}
+        pideCodigo={false}
+        firmar={accion}
+        devolver={accion}
+      >
+        <p>Los parecidos</p>
+      </PasoRevisar>,
+    );
+    expect(html).toContain("Causas sin acción");
+    expect(html).toContain("No hay registrador en el turno de noche");
+    expect(html).toContain("Se compró uno el mes pasado");
+    expect(html).toContain("<p>Los parecidos</p>");
+    expect(html).toMatch(/<input[^>]*type="checkbox"/);
+    expect(html).toContain("Requiere recursos adicionales o tiene impacto institucional");
+    // La nota de los recursos y las observaciones de la devolución: dos textos libres.
+    expect(aviso(html)).toBe(2);
+    expect(html).toContain("Devolver con observaciones");
+    expect(html).toMatch(/<textarea(?=[^>]*name="observaciones")(?=[^>]*minLength="10")/);
+    expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Firmar la revisión<\/button>/);
+    expect(html).toContain("su revisión vale como aprobación");
+    const aGerencia = renderToStaticMarkup(
+      <PasoRevisar hallazgoId={7} causasSinAccion={[]} gerencia="criticidad alta" huella={HUELLA} pideCodigo={false} firmar={accion} devolver={accion} />,
+    );
+    expect(aGerencia).toContain("el plan pasa a Gerencia para su aprobación (criticidad alta)");
+    expect(aGerencia).toContain("Todas las causas tienen al menos una acción.");
+  });
+
+  it("aprobar: la firma «Aprobó», devolver con observaciones, por qué le toca a Gerencia y la nota del revisor", () => {
+    const html = renderToStaticMarkup(
+      <PasoAprobar
+        hallazgoId={7}
+        gerencia="requiere recursos adicionales o tiene impacto institucional"
+        notaRecursos="Hay que comprar un registrador de temperatura"
+        huella={HUELLA}
+        pideCodigo={false}
+        aprobar={accion}
+        devolver={accion}
+      />,
+    );
+    expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>Aprobar el plan<\/button>/);
+    expect(html).toContain("Devolver con observaciones");
+    expect(html).toContain("Le toca a Gerencia porque requiere recursos adicionales o tiene impacto institucional.");
+    expect(html).toContain("Hay que comprar un registrador de temperatura");
+    expect(aviso(html)).toBe(1);
+  });
+
+  it("el historial muestra lo que dijo quien devolvió el plan y la nota de recursos de la revisión", () => {
+    const cuando = new Date("2026-11-18T15:00:00Z");
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        eventos={[
+          { id: 1, tipo: "devolver_plan", ronda: 1, quien: "M. Díaz", cuando, detalle: { observaciones: "Falta decir quién verifica el registro" } },
+          { id: 2, tipo: "revisar_plan", ronda: 1, quien: "M. Díaz", cuando, detalle: { requiereRecursos: true, notaRecursos: "Un registrador nuevo" } },
+        ]}
+      />,
+    );
+    expect(html).toContain("Devolvió el plan");
+    expect(html).toContain("Observaciones: Falta decir quién verifica el registro");
+    expect(html).toContain("Recursos o impacto institucional: Un registrador nuevo");
+  });
+
+  it("los parecidos de otros procesos: el código enlaza al hallazgo, con su estado en texto y su proceso; sin ellos, lo dice", () => {
+    const html = renderToStaticMarkup(
+      <ParecidosDeOtrosProcesos
+        parecidos={[
+          {
+            id: 31,
+            codigo: "HZ-2026-031",
+            titulo: "Neveras de urgencias sin registro de temperatura",
+            etiqueta: "En ejecución",
+            abierto: true,
+            cuando: new Date("2026-10-02T15:00:00Z"),
+            proceso: "Urgencias",
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain('href="/mejoramiento/31"');
+    expect(html).toContain("HZ-2026-031");
+    expect(html).toContain("En ejecución");
+    expect(html).toContain("Urgencias");
+    expect(renderToStaticMarkup(<ParecidosDeOtrosProcesos parecidos={[]} />)).toContain("No hay hallazgos parecidos en otros procesos.");
   });
 });

@@ -57,6 +57,16 @@ export async function arbitrosDe(tx: Cliente, h: Pick<HallazgoBase, "id" | "regi
   return admins.filter((u) => !tomaronParte.includes(u));
 }
 
+/**
+ * Quienes revisan el plan enviado de la ronda en curso (spec §8.6, F15-DC15): los Admin SGC activos, salvo quien lo elaboró
+ * (`mejora_rondas.elaborado_por`): nadie firma «Revisó» sobre lo que elaboró. Una sola regla: la usan el turno y la revisión.
+ */
+export async function revisoresDe(tx: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<number[]> {
+  const [r] = await tx`SELECT elaborado_por FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
+  const elaboro = r?.elaborado_por === null || r?.elaborado_por === undefined ? null : Number(r.elaborado_por);
+  return (await adminsActivos({ sql: tx })).filter((u) => u !== elaboro);
+}
+
 /** Cómo se resuelve cada turno a usuarios activos. Un solo lugar: las tareas 10, 13 y 16 lo refinan aquí. */
 const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>> = {
   lideres: (tx, h) => lideresOAdmins(tx, h.procesoId),
@@ -65,7 +75,7 @@ const QUIENES: Record<Turno, (tx: Cliente, h: HallazgoBase) => Promise<number[]>
     return u ? [Number(u.id)] : adminsActivos({ sql: tx });
   },
   arbitro: (tx, h) => arbitrosDe(tx, h),
-  admin: (tx) => adminsActivos({ sql: tx }),
+  admin: (tx, h) => (h.estado === "en_revision" ? revisoresDe(tx, h) : adminsActivos({ sql: tx })),
   gerencia: (tx) => activosDeRol(tx, ["gerencia"]),
   // Los responsables activos de las actividades sin terminar de la ronda en curso (acción → ronda).
   responsables: async (tx, h) => {

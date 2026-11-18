@@ -25,6 +25,8 @@ type Props = {
    * el texto visible (WCAG 2.5.3) y dice sobre qué se firma.
    */
   etiquetaAccesible?: string;
+  /** El texto del botón que firma, si `textoDeFirmar(etiquetaBoton)` no se lee bien («Firmar la revisión»). */
+  textoAlFirmar?: string;
 };
 
 /** «Firmar y publicar»; con una etiqueta que ya lleva «y», «Firmar, aprobar y publicar». */
@@ -43,6 +45,7 @@ export function FormularioFirma({
   pideCodigo,
   alCancelar,
   children,
+  textoAlFirmar,
 }: Props & { alCancelar: () => void }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const clave = useRef<HTMLInputElement>(null);
@@ -116,7 +119,7 @@ export function FormularioFirma({
           Cancelar
         </Boton>
         <Boton type="submit" pendiente={pendiente}>
-          {pendiente ? "Firmando…" : textoDeFirmar(etiquetaBoton)}
+          {pendiente ? "Firmando…" : (textoAlFirmar ?? textoDeFirmar(etiquetaBoton))}
         </Boton>
       </div>
     </form>

@@ -648,3 +648,45 @@ export const EsquemaCriterio = z
       fechaEvaluacion: d.fechaEvaluacion,
     };
   });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Las firmas del plan: enviar, devolver, revisar y aprobar (spec 15 §8.6 y §12.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** La clave y el código del segundo factor de una firma, como en los indicadores: la clave no se recorta. */
+const firma = {
+  clave: z.string({ error: "Escriba su clave" }).min(1, "Escriba su clave").max(128, "La clave no puede pasar de 128 caracteres"),
+  codigo: textoAcotado("El código", 6, 20).optional(),
+};
+
+/** Enviar o aprobar el plan: el hallazgo y la firma. */
+export const EsquemaFormularioFirmaDelPlan = z.object({ hallazgoId: idDeHallazgo, ...firma }).strict();
+
+/** Devolver el plan con observaciones (desde «En revisión» o «En aprobación»): al menos diez caracteres. */
+export const EsquemaDevolverPlan = z
+  .object({ hallazgoId: idDeHallazgo, observaciones: textoAcotado("Las observaciones", 10, 2000) })
+  .strict();
+
+export const NOTA_DE_RECURSOS = "Escriba la nota de los recursos o del impacto institucional";
+
+/**
+ * Lo que decide la revisión (spec §8.6): si requiere recursos adicionales o tiene impacto institucional, con su nota (que solo
+ * vale con la marca).
+ */
+export const EsquemaRevisarPlan = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    requiereRecursos: siONo("Diga si requiere recursos adicionales o tiene impacto institucional"),
+    notaRecursos: textoOpcional("La nota de los recursos", 1000),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    if (d.requiereRecursos && d.notaRecursos === null) ctx.addIssue({ code: "custom", path: ["notaRecursos"], message: NOTA_DE_RECURSOS });
+  })
+  .transform((d) => ({ ...d, notaRecursos: d.requiereRecursos ? d.notaRecursos : null }));
+
+/** El formulario de la revisión: la casilla (`si` o nada), su nota y la firma. */
+export const EsquemaFormularioRevisarPlan = z
+  .object({ hallazgoId: idDeHallazgo, requiereRecursos: marca, notaRecursos: textoOpcional("La nota de los recursos", 1000), ...firma })
+  .strict()
+  .transform((d) => ({ ...d, requiereRecursos: d.requiereRecursos === "si" }));

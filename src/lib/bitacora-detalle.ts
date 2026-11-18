@@ -579,12 +579,29 @@ const FRASES_DE_MEJORA: Record<AccionHallazgo, (h: HallazgoEnFrase) => string> =
   ajustar: (h) => `Aplicó un ajuste aprobado al plan ${h.del}`,
 };
 
+/**
+ * Lo que las firmas del plan añaden a su frase (spec 15 §8.6, Tarea 13): el envío que pasa directo a aprobación, la revisión
+ * que vale como aprobación o que pide recursos, y las observaciones de la devolución. Nunca el texto del plan.
+ */
+function fraseDelPlan(accion: AccionHallazgo, d: Record<string, unknown>, h: HallazgoEnFrase): string | null {
+  if (accion === "enviar_plan" && d.sinRevision === true) {
+    return `${FRASES_DE_MEJORA.enviar_plan(h)} directo a aprobación: no hay otro Administrador del SGC que lo revise`;
+  }
+  if (accion === "revisar_plan" && d.aprobadoRol === "admin_sgc") return `Revisó y aprobó el plan de acción ${h.del}`;
+  if (accion === "revisar_plan" && d.requiereRecursos === true) {
+    return `${FRASES_DE_MEJORA.revisar_plan(h)}: requiere recursos adicionales o tiene impacto institucional`;
+  }
+  if (accion === "devolver_plan") return `${FRASES_DE_MEJORA.devolver_plan(h)}${conMotivo(d.observaciones)}`;
+  return null;
+}
+
 function describirMejora(accion: AccionHallazgo, d: Record<string, unknown>): string {
   const codigo = texto(d.codigo);
   const h = codigo ? { el: `el hallazgo ${codigo}`, del: `del hallazgo ${codigo}` } : SIN_CODIGO;
   // Sin corrección y sin acción correctiva se validan las dos justificaciones, no una corrección (spec 15 §8.5).
   const frase =
-    accion === "validar_correccion" && d.resultado === "sin_accion" ? `Validó el cierre sin acción ${h.del}` : FRASES_DE_MEJORA[accion](h);
+    fraseDelPlan(accion, d, h) ??
+    (accion === "validar_correccion" && d.resultado === "sin_accion" ? `Validó el cierre sin acción ${h.del}` : FRASES_DE_MEJORA[accion](h));
   const titulo = accion === "registrar" || accion === "cargar" ? texto(d.titulo) : null;
   return `${frase}${titulo ? ` — ${titulo}` : ""}${conMotivo(d.justificacion)}`;
 }

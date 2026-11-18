@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  enviarPlanAccion,
   guardarAccionAccion,
   guardarAnalisisAccion,
   guardarCausasAccion,
@@ -17,20 +18,23 @@ import { PestanasDeMetodo } from "@/componentes/mejoramiento/analisis/PestanasDe
 import { PreguntasDeCierre } from "@/componentes/mejoramiento/analisis/PreguntasDeCierre";
 import { CriterioDeEficacia } from "@/componentes/mejoramiento/plan/CriterioDeEficacia";
 import { FormularioPlan } from "@/componentes/mejoramiento/plan/FormularioPlan";
+import { PanelDeFirmas } from "@/componentes/mejoramiento/plan/PanelDeFirmas";
+import { PasoEnviar } from "@/componentes/mejoramiento/plan/PasoEnviar";
 import { FaltasDelPlan } from "@/componentes/mejoramiento/plan/PlanEnLectura";
 import type { AccionDelFormulario } from "@/componentes/mejoramiento/plan/TarjetaDeAccion";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
+import { saltaLaRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadoresElegibles } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
-import type { RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
+import type { DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { examinarPlan, usuariosAsignables } from "@/db/consultas/mejoramiento/plan";
 import { leerCambios } from "@/lib/mejoramiento/analisis";
 import { leerCriterios } from "@/lib/mejoramiento/eficacia";
-import { tipoPropuesto } from "@/lib/mejoramiento/reglas";
-import type { Clase, TipoAccion } from "@/lib/mejoramiento/tipos";
+import { razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
+import type { TipoAccion } from "@/lib/mejoramiento/tipos";
 import { exigirSesion } from "@/lib/paginas";
 import { exigirHallazgo, rutaDeFormular, rutaDeHallazgo } from "../../_comun";
 
@@ -54,20 +58,26 @@ function accionDelFormulario(a: RondaDeDetalle["acciones"][number]): AccionDelFo
   };
 }
 
+/** Las observaciones de la devolución si el plan de la ronda volvió a borrador por ella: su último acto fue `devolver_plan`. */
+function observacionesDeLaDevolucion(h: DetalleDeHallazgo): string | null {
+  const ultimo = h.eventos.findLast((e) => e.ronda === h.ronda && (e.tipo === "enviar_plan" || e.tipo === "devolver_plan"));
+  if (ultimo?.tipo !== "devolver_plan" || typeof ultimo.detalle !== "object" || ultimo.detalle === null) return null;
+  const texto = (ultimo.detalle as Record<string, unknown>).observaciones;
+  return typeof texto === "string" && texto !== "" ? texto : null;
+}
+
 /**
  * La pestaña «Plan de acción» (spec 15 §10 y §11.2, maqueta 5): una tarjeta por acción con sus actividades; debajo, el
- * criterio de eficacia con la fecha que resulta y lo que le falta al plan para enviarse (de `examinarPlan`, con lo guardado).
+ * criterio de eficacia con la fecha que resulta, lo que le falta al plan para enviarse (de `examinarPlan`, con lo guardado)
+ * y las firmas, con el envío (la firma «Elaboró»).
  */
-async function pestanaDelPlan(
-  sesion: Awaited<ReturnType<typeof exigirSesion>>,
-  h: { id: number; clase: Clase },
-  ronda: RondaDeDetalle,
-) {
+async function pestanaDelPlan(sesion: Awaited<ReturnType<typeof exigirSesion>>, h: DetalleDeHallazgo, ronda: RondaDeDetalle) {
   const sql = obtenerSql();
-  const [usuarios, indicadores, contexto] = await Promise.all([
+  const [usuarios, indicadores, contexto, saltaRevision] = await Promise.all([
     usuariosAsignables(sql),
     indicadoresElegibles(sql, sesion),
     contextoDeMejora(sql, new Date()),
+    saltaLaRevision(sql, sesion),
   ]);
   const examen = await examinarPlan(sql, h.id, contexto);
   const inactivos = ronda.acciones.flatMap((a) =>
@@ -106,7 +116,29 @@ async function pestanaDelPlan(
           evaluableDesde={examen.evaluableDesde}
           guardar={guardarCriterioAccion}
         />
-        <FaltasDelPlan faltas={examen.faltas} />
+        <div className="flex min-w-0 flex-col gap-4">
+          <FaltasDelPlan faltas={examen.faltas} />
+          <PanelDeFirmas
+            firmas={{ elaboro: null, reviso: null, aprobo: null }}
+            elabora="Usted, con su clave, al enviar"
+            sinRevision={saltaRevision}
+            gerencia={razonDeGerencia(h, { requiereRecursos: false, elaboroAdmin: sesion.rol === "admin_sgc" })}
+            enCurso="elaboro"
+            vence={h.vence}
+            plazos={{ revisar: contexto.config.plazos.revisar, aprobar: contexto.config.plazos.aprobar }}
+            contexto={contexto}
+          >
+            <PasoEnviar
+              hallazgoId={h.id}
+              faltas={examen.faltas.length}
+              saltaRevision={saltaRevision}
+              huella={examen.huella}
+              pideCodigo={sesion.totpActivo}
+              devuelto={observacionesDeLaDevolucion(h)}
+              accion={enviarPlanAccion}
+            />
+          </PanelDeFirmas>
+        </div>
       </div>
     </div>
   );
@@ -172,7 +204,7 @@ export default async function PaginaFormular({
         </ul>
       </nav>
       {verPlan ? (
-        await pestanaDelPlan(sesion, { id: h.id, clase: h.clase }, ronda)
+        await pestanaDelPlan(sesion, h, ronda)
       ) : (
         <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <section aria-labelledby="analisis-titulo" className="flex min-w-0 flex-col gap-3">

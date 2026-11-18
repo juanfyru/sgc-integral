@@ -337,6 +337,24 @@ describe("frases con el detalle real", () => {
     expect(e("mejora_completar", {})).toBe("Se terminaron las actividades de un hallazgo: queda por verificar");
     expect(nombreDeAccion("mejora_aprobar_plan")).toBe("Aprobó el plan de acción de un hallazgo");
   });
+  it("las firmas del plan: directo a aprobación, la revisión que aprueba o que pide recursos y las observaciones", () => {
+    const base = { codigo: "HZ-2026-001", ronda: 1, huella: "a".repeat(64) };
+    expect(e("mejora_enviar_plan", { ...base, estado: { antes: "por_formular", despues: "en_revision" } })).toBe(
+      "Envió el plan de acción del hallazgo HZ-2026-001",
+    );
+    expect(
+      e("mejora_enviar_plan", { ...base, elaboroAdmin: true, sinRevision: true, estado: { antes: "por_formular", despues: "en_aprobacion" } }),
+    ).toBe("Envió el plan de acción del hallazgo HZ-2026-001 directo a aprobación: no hay otro Administrador del SGC que lo revise");
+    expect(
+      e("mejora_revisar_plan", { ...base, requiereRecursos: false, aprobadoRol: "admin_sgc", estado: { antes: "en_revision", despues: "en_ejecucion" } }),
+    ).toBe("Revisó y aprobó el plan de acción del hallazgo HZ-2026-001");
+    expect(
+      e("mejora_revisar_plan", { ...base, requiereRecursos: true, notaRecursos: "Un registrador", estado: { antes: "en_revision", despues: "en_aprobacion" } }),
+    ).toBe("Revisó el plan de acción del hallazgo HZ-2026-001: requiere recursos adicionales o tiene impacto institucional");
+    expect(e("mejora_devolver_plan", { ...base, observaciones: "Falta decir quién verifica el registro" })).toBe(
+      "Devolvió el plan de acción del hallazgo HZ-2026-001: Falta decir quién verifica el registro",
+    );
+  });
   it("las del plan en borrador: la etiqueta de la acción, nunca su texto", () => {
     const base = { codigo: "HZ-2026-001", ronda: 1 };
     expect(e("mejora_accion_guardada", { ...base, accion: "A1", accionId: 4, actividades: 2 })).toBe("Guardó la acción A1 del plan del hallazgo HZ-2026-001");

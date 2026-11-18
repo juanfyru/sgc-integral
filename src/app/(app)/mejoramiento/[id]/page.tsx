@@ -3,12 +3,16 @@ import Link from "next/link";
 import {
   aceptarHallazgoAccion,
   anularHallazgoAccion,
+  aprobarPlanAccion,
   arbitrarHallazgoAccion,
   arbitrarHallazgoGerenciaAccion,
   cambiarProcesoAccion,
   decidirAccionCorrectivaAccion,
   decidirAccionCorrectivaGerenciaAccion,
   devolverCorreccionAccion,
+  devolverPlanAccion,
+  devolverPlanGerenciaAccion,
+  firmarRevisionAccion,
   rechazarHallazgoAccion,
   reclasificarHallazgoAccion,
   registrarCorreccionAccion,
@@ -19,6 +23,11 @@ import {
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
+import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
+import { PanelDeFirmas, firmasDelEnvio } from "@/componentes/mejoramiento/plan/PanelDeFirmas";
+import { ParecidosDeOtrosProcesos } from "@/componentes/mejoramiento/plan/ParecidosDeOtrosProcesos";
+import { PasoAprobar } from "@/componentes/mejoramiento/plan/PasoAprobar";
+import { PasoRevisar } from "@/componentes/mejoramiento/plan/PasoRevisar";
 import { PlanEnLectura, type IndicadorEnLectura } from "@/componentes/mejoramiento/plan/PlanEnLectura";
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
@@ -40,7 +49,8 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerSql } from "@/db/cliente";
-import { puedeFormular } from "@/db/consultas/mejoramiento/analisis";
+import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
+import { firmasDeHallazgo, puedeAprobar, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
@@ -52,11 +62,13 @@ import {
   procesosDelAlcance,
   usuariosActivos,
 } from "@/db/consultas/mejoramiento/opciones";
+import { parecidosDeOtrosProcesos } from "@/db/consultas/mejoramiento/parecidos";
 import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { puedeVerIndicador } from "@/lib/alcance";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto } from "@/lib/mejoramiento/formato";
+import { razonDeGerencia } from "@/lib/mejoramiento/reglas";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { TERMINALES } from "@/lib/mejoramiento/tipos";
@@ -195,10 +207,57 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
     (await ofreceRechazo(obtenerSql(), sesion, { registradoPor: h.registradoPorId, procesoId: h.procesoId, origen: h.origen }));
   // «Por formular» no tiene formulario aquí: la causa raíz y el plan se formulan en su propia página.
   const formulaAqui = completo && h.estado === "por_formular" && (await puedeFormular(obtenerSql(), sesion, { procesoId: h.procesoId }));
+
+  // Las firmas del plan de la ronda en curso (spec §8.6): desde que se envía, con lo que firmó cada uno; revisar y aprobar,
+  // a quien puede (la regla del acto la repite el servidor).
+  const sqlPlan = obtenerSql();
+  const rondaEnCurso = h.rondas.find((r) => r.numero === h.ronda) ?? null;
+  const enviado = rondaEnCurso !== null && rondaEnCurso.estadoPlan !== "borrador";
+  const firmas = enviado ? await firmasDeHallazgo(sqlPlan, h.id) : [];
+  const envio = rondaEnCurso && enviado ? firmasDelEnvio(firmas, h.ronda, rondaEnCurso.estadoPlan) : null;
+  const huellaDelEnvio = firmas.findLast((f) => f.ronda === h.ronda && f.firma === "elaboro")?.huella ?? null;
+  const contextoDelPlan = envio?.elaboro ? await contextoDeMejora(sqlPlan, new Date()) : null;
+  const elaboroAdmin = rondaEnCurso?.elaboroAdmin ?? false;
+  const revisa = completo && h.estado === "en_revision" && huellaDelEnvio !== null && (await puedeRevisar(sqlPlan, sesion, h));
+  const aprueba = completo && h.estado === "en_aprobacion" && huellaDelEnvio !== null && puedeAprobar(sesion);
+  // Los parecidos de otros procesos, solo al Administrador del SGC que revisa (spec §8.6): la consulta no recibe sesión.
+  const parecidosDeOtros = revisa ? await parecidosDeOtrosProcesos(sqlPlan, h.id) : [];
+  const anteriorAlRevisar = revisa && h.reincidenteDe && "id" in h.reincidenteDe ? await laVezPasada(sqlPlan, h.id) : null;
+  const causasSinAccion = rondaEnCurso
+    ? rondaEnCurso.causas
+        .filter((c) => !rondaEnCurso.acciones.some((a) => a.causaIds.includes(c.id)))
+        .map((c) => ({ orden: c.orden, texto: c.texto, porque: c.sinAccionPorque }))
+    : [];
+
   const formulario = formulaAqui ? (
     <Link href={rutaDeFormular(h.id)} className={claseBoton("primario")}>
       Formular el análisis y el plan
     </Link>
+  ) : revisa && huellaDelEnvio ? (
+    <PasoRevisar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      causasSinAccion={causasSinAccion}
+      gerencia={razonDeGerencia(h, { requiereRecursos: false, elaboroAdmin })}
+      huella={huellaDelEnvio}
+      pideCodigo={sesion.totpActivo}
+      firmar={firmarRevisionAccion}
+      devolver={devolverPlanAccion}
+    >
+      <ParecidosDeOtrosProcesos parecidos={parecidosDeOtros} />
+      {anteriorAlRevisar ? <LaVezPasada codigo={anteriorAlRevisar.codigo} causas={anteriorAlRevisar.causas} acciones={anteriorAlRevisar.acciones} /> : null}
+    </PasoRevisar>
+  ) : aprueba && huellaDelEnvio && rondaEnCurso ? (
+    <PasoAprobar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      gerencia={razonDeGerencia(h, { requiereRecursos: rondaEnCurso.requiereRecursos, elaboroAdmin })}
+      notaRecursos={rondaEnCurso.notaRecursos}
+      huella={huellaDelEnvio}
+      pideCodigo={sesion.totpActivo}
+      aprobar={aprobarPlanAccion}
+      devolver={devolverPlanGerenciaAccion}
+    />
   ) : !conFormulario ? null : sigue.paso === "aceptar" ? (
     <PasoAceptar
       key={`paso-${clave}`}
@@ -393,6 +452,18 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
         </div>
         <div className="flex min-w-0 flex-col gap-4">
           <LoQueSigue texto={sigue.turno}>{formulario}</LoQueSigue>
+          {envio?.elaboro && rondaEnCurso && contextoDelPlan ? (
+            <PanelDeFirmas
+              firmas={envio}
+              elabora="Quien formula, con su clave, al enviar"
+              sinRevision={envio.reviso === null && h.estado !== "en_revision"}
+              gerencia={razonDeGerencia(h, { requiereRecursos: rondaEnCurso.requiereRecursos, elaboroAdmin })}
+              enCurso={h.estado === "en_revision" ? "reviso" : h.estado === "en_aprobacion" ? "aprobo" : null}
+              vence={h.vence}
+              plazos={{ revisar: contextoDelPlan.config.plazos.revisar, aprobar: contextoDelPlan.config.plazos.aprobar }}
+              contexto={contextoDelPlan}
+            />
+          ) : null}
           {completo ? <HistorialDelHallazgo eventos={h.eventos} zona={zona} /> : null}
         </div>
       </div>

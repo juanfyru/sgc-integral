@@ -5,7 +5,10 @@
 import type { TransactionSql } from "postgres";
 import { registrarArchivo } from "@/db/consultas/admin";
 import type { OpcionesFlujo, SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { guardarAnalisis, guardarCausas, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
+import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
+import { guardarAccion, guardarCriterio } from "@/db/consultas/mejoramiento/plan";
 import {
   aceptarHallazgo,
   decidirAccionCorrectiva,
@@ -15,6 +18,7 @@ import {
 } from "@/db/consultas/mejoramiento/recorrido";
 import { registrarHallazgo, type DatosDeHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { lideresDeProceso } from "@/db/consultas/tramites";
+import { tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { procesoNuevo } from "./mixto";
 import { usuarioDePrueba } from "./tramites";
@@ -94,17 +98,92 @@ export async function evidenciaDeCorreccion(tx: TransactionSql, hallazgoId: numb
 }
 
 /** Los estados a los que `hallazgoEn` sabe llevar un hallazgo. */
-export type EstadoDeEscena = "por_aceptar" | "rechazo" | "arbitraje" | "por_corregir" | "por_decidir" | "por_validar" | "por_formular";
+export type EstadoDeEscena =
+  | "por_aceptar"
+  | "rechazo"
+  | "arbitraje"
+  | "por_corregir"
+  | "por_decidir"
+  | "por_validar"
+  | "por_formular"
+  | "en_revision"
+  | "en_aprobacion"
+  | "en_ejecucion";
+
+/** Los estados que pasan por el plan: para llegar a ellos, la decisión es «sí». */
+const CON_PLAN: readonly EstadoDeEscena[] = ["por_formular", "en_revision", "en_aprobacion", "en_ejecucion"];
 
 /** La hora de todos los pasos de `hallazgoEn` (martes 17 de noviembre de 2026, 10:00 en Bogotá). */
 export const HORA_DE_ESCENA = "2026-11-17T15:00:00Z";
+
+/** Quien formula el plan de un hallazgo de la base: el líder si lidera su proceso; si el proceso no tiene líder, el Admin SGC. */
+async function formuladorDe(tx: TransactionSql, b: BaseDeMejora, procesoId: number): Promise<SesionFlujo> {
+  return (await lideresDeProceso(procesoId, { sql: tx })).includes(b.lider.usuarioId) ? b.lider : b.admin;
+}
+
+/**
+ * Un plan completo por el dominio, a `HORA_DE_ESCENA`, que formula quien actúa por el proceso (`formuladorDe`): en la no
+ * conformidad, un análisis de 5 porqués, una causa y las dos preguntas; una acción (correctiva en la no conformidad, que
+ * ataca la causa) con `actividades` actividades (una por omisión) de `responsableId` (la líder por omisión), del 17 de
+ * noviembre a `fin` (el 15 de diciembre de 2026 por omisión); y el criterio de eficacia: «mejora del indicador» con
+ * `indicadorId` o, si no, «no recurrencia», con la fecha de evaluación fuera de la no conformidad.
+ */
+export async function planDePrueba(
+  tx: TransactionSql,
+  b: BaseDeMejora,
+  hallazgoId: number,
+  x?: { actividades?: number; responsableId?: number; fin?: string; indicadorId?: number },
+): Promise<{ accionId: number; formulador: SesionFlujo }> {
+  const o = c(HORA_DE_ESCENA, tx);
+  const h = await bloquearHallazgo(tx, hallazgoId);
+  const quien = await formuladorDe(tx, b, h.procesoId);
+  const esNc = h.clase === "no_conformidad";
+  let causaIds: number[] = [];
+  if (esNc) {
+    await guardarAnalisis(quien, { hallazgoId, metodo: "cinco_porques", contenido: { niveles: [{ respuesta: "Nadie asignó el registro al turno de noche" }] } }, o);
+    await guardarCausas(quien, { hallazgoId, causas: [{ texto: "El procedimiento no asigna el registro al turno de noche" }] }, o);
+    await responderPreguntas(quien, { hallazgoId, similares: false, cambios: { documentos: false, riesgos: false, controles: false } }, o);
+    causaIds = (await tx`SELECT id FROM mejora_causas WHERE hallazgo_id = ${hallazgoId} ORDER BY orden, id`).map((f) => Number(f.id));
+  }
+  const fin = x?.fin ?? "2026-12-15";
+  const inicio = fin < "2026-11-17" ? fin : "2026-11-17";
+  const { id: accionId } = await guardarAccion(
+    quien,
+    {
+      hallazgoId,
+      tipo: tipoPropuesto(h.clase),
+      descripcion: "Actualizar el procedimiento de cadena de frío para incluir el turno de noche",
+      causaIds,
+      actividades: Array.from({ length: x?.actividades ?? 1 }, (_, i) => ({
+        descripcion: `Actividad ${i + 1} del plan de prueba`,
+        responsableId: x?.responsableId ?? b.lider.usuarioId,
+        inicio,
+        fin,
+      })),
+    },
+    o,
+  );
+  await guardarCriterio(
+    quien,
+    {
+      hallazgoId,
+      criterios: x?.indicadorId ? ["mejora_indicador"] : ["no_recurrencia"],
+      indicadorEficaciaId: x?.indicadorId ?? null,
+      fechaEvaluacion: esNc ? null : fin > "2027-01-15" ? fin : "2027-01-15",
+    },
+    o,
+  );
+  return { accionId, formulador: quien };
+}
 
 /**
  * Un hallazgo que registra Control Interno (con `datosDeHallazgo` y `cambios`), llevado hasta `estado` por el dominio, nunca
  * por SQL: el líder lo acepta (o lo rechaza, y Control Interno lo sostiene), quien actúa por el proceso (el líder, o el
  * Admin SGC si el proceso no tiene) registra la corrección con su evidencia y el Admin SGC decide la acción correctiva
- * («no», salvo para llegar a «Por formular»). Lanza si el camino no lleva a `estado` (p. ej. una oportunidad no pasa por
- * «Por corregir»). Todo a `HORA_DE_ESCENA`.
+ * («no», salvo para llegar a «Por formular» o más allá). Del plan en adelante: quien formula arma `planDePrueba` (si la
+ * ronda no tiene acciones) y lo envía; el Admin SGC lo revisa (otro Admin SGC, si elaboró el de la base), con «requiere
+ * recursos» solo para llegar a «En aprobación»; y Gerencia lo aprueba. Lanza si el camino no lleva a `estado` (p. ej. una
+ * oportunidad no pasa por «Por corregir»). Todo a `HORA_DE_ESCENA`.
  */
 export async function hallazgoEn(
   tx: TransactionSql,
@@ -114,7 +193,7 @@ export async function hallazgoEn(
 ): Promise<HallazgoBase> {
   const o = c(HORA_DE_ESCENA, tx);
   const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, cambios), o);
-  for (let paso = 0; paso < 8; paso++) {
+  for (let paso = 0; paso < 12; paso++) {
     const h = await bloquearHallazgo(tx, id);
     if (h.estado === estado) return h;
     switch (h.estado) {
@@ -129,7 +208,7 @@ export async function hallazgoEn(
         await sostenerHallazgo(b.control, { hallazgoId: id, replica: "La evidencia muestra que sí corresponde al proceso" }, o);
         break;
       case "por_corregir": {
-        const quien = (await lideresDeProceso(h.procesoId, { sql: tx })).includes(b.lider.usuarioId) ? b.lider : b.admin;
+        const quien = await formuladorDe(tx, b, h.procesoId);
         await evidenciaDeCorreccion(tx, id, quien.usuarioId);
         await registrarCorreccion(
           quien,
@@ -144,16 +223,45 @@ export async function hallazgoEn(
         );
         break;
       }
-      case "por_decidir":
+      case "por_decidir": {
+        const requiere = CON_PLAN.includes(estado);
         await decidirAccionCorrectiva(
           b.admin,
           {
             hallazgoId: id,
-            requiere: estado === "por_formular",
-            justificacion: estado === "por_formular" ? "Hay que analizar la causa raíz" : "Fue un hecho aislado y quedó corregido",
+            requiere,
+            justificacion: requiere ? "Hay que analizar la causa raíz" : "Fue un hecho aislado y quedó corregido",
           },
           o,
         );
+        break;
+      }
+      case "por_formular": {
+        if (!CON_PLAN.includes(estado)) throw new Error(`hallazgoEn: el hallazgo quedó en ${h.estado} y no lleva a ${estado}`);
+        const [{ acciones }] = await tx`SELECT count(*)::int AS acciones FROM mejora_acciones a
+          JOIN mejora_rondas r ON r.id = a.ronda_id WHERE a.hallazgo_id = ${id} AND r.numero = ${h.ronda}`;
+        const formulador = Number(acciones) === 0 ? (await planDePrueba(tx, b, id)).formulador : await formuladorDe(tx, b, h.procesoId);
+        await enviarPlan(formulador, { hallazgoId: id, credenciales: { clave: "ok" } }, o);
+        break;
+      }
+      case "en_revision": {
+        const [r] = await tx`SELECT elaborado_por FROM mejora_rondas WHERE hallazgo_id = ${id} AND numero = ${h.ronda}`;
+        const revisor = Number(r.elaborado_por) === b.admin.usuarioId ? await usuarioDePrueba(tx, { rol: "admin_sgc" }) : b.admin;
+        const aGerencia = estado === "en_aprobacion";
+        await firmarRevision(
+          revisor,
+          {
+            hallazgoId: id,
+            requiereRecursos: aGerencia,
+            notaRecursos: aGerencia ? "Hace falta comprar un registrador de temperatura" : null,
+            credenciales: { clave: "ok" },
+          },
+          o,
+        );
+        break;
+      }
+      case "en_aprobacion":
+        await aprobarPlan(b.gerencia, { hallazgoId: id, credenciales: { clave: "ok" } }, o);
         break;
       default:
         throw new Error(`hallazgoEn: el hallazgo quedó en ${h.estado} y no lleva a ${estado}`);

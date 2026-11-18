@@ -8,6 +8,7 @@
  * primero (`bloquearHallazgo`) y sus hijas después.
  */
 import type { Row, TransactionSql } from "postgres";
+import type { Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { formularAntesDe, venceEn, type Paso } from "@/lib/mejoramiento/plazos";
@@ -30,11 +31,14 @@ export const NO_EXISTE = "El hallazgo no existe";
 /**
  * Lo que acompaña a un paso: el rumbo de la tabla, el detalle del evento y, si se hizo en papel, su fecha real. El detalle
  * llega tal cual al evento y a la bitácora; el motor le añade `estado: { antes, despues }`, `acta` y, en la bitácora,
- * `codigo` y `ronda`, y rechaza un detalle que ya traiga alguna de esas claves (`CLAVES_DEL_MOTOR`).
+ * `codigo` y `ronda`, y rechaza un detalle que ya traiga alguna de esas claves (`CLAVES_DEL_MOTOR`). `soloEnElEvento` va
+ * al detalle del evento y nunca a la bitácora (el plan congelado al enviarlo y al aprobarlo, spec §12.2): sus claves no
+ * pueden ser del motor ni repetir las de `detalle`.
  */
 export type Paso_x = {
   rumbo?: Rumbo;
   detalle?: Record<string, unknown>;
+  soloEnElEvento?: Record<string, unknown>;
   fuera?: boolean;
   ocurrioEn?: Date;
   acta?: { numero: string; fecha: string } | null;
@@ -84,6 +88,14 @@ function aBase(f: Row): HallazgoBase {
     resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
     registradoPor: Number(f.registrado_por),
   };
+}
+
+/** El hallazgo sin candado: para el validador de solo lectura de un acto con firma (F13A-R4), antes de abrir la transacción. */
+export async function hallazgoBase(sql: Cliente, id: number): Promise<HallazgoBase | null> {
+  const [f] = await sql`SELECT id, codigo, clase, criticidad, origen, estado, ronda, proceso_id, reincidente_de,
+      correccion_requerida, accion_requerida, resultado_cierre, registrado_por
+    FROM mejora_hallazgos WHERE id = ${id}`;
+  return f ? aBase(f) : null;
 }
 
 /** El hallazgo `FOR UPDATE`, con su título (el cuerpo de los avisos). */
@@ -138,14 +150,20 @@ const conActa = (x: Paso_x) => (x.acta ? { acta: x.acta } : {});
 /** Las claves del detalle que pone el motor: el cambio de estado va en `estado: { antes, despues }`, aparte del de quien llama. */
 const CLAVES_DEL_MOTOR = ["estado", "codigo", "ronda", "acta"] as const;
 
-/** El detalle de quien llama, tal cual; si trae una clave del motor es un error de programación, no de la persona. */
-function detalleDeQuienLlama(x: Paso_x): Record<string, unknown> {
+/**
+ * El detalle de quien llama, tal cual, y lo que va solo al evento; si alguno trae una clave del motor, o lo del evento repite
+ * una del detalle, es un error de programación, no de la persona.
+ */
+function detalleDeQuienLlama(x: Paso_x): { detalle: Record<string, unknown>; soloEvento: Record<string, unknown> } {
   const detalle = x.detalle ?? {};
-  const chocan = CLAVES_DEL_MOTOR.filter((k) => Object.hasOwn(detalle, k));
+  const soloEvento = x.soloEnElEvento ?? {};
+  const chocan = CLAVES_DEL_MOTOR.filter((k) => Object.hasOwn(detalle, k) || Object.hasOwn(soloEvento, k));
   if (chocan.length > 0) {
     throw new Error(`El detalle de un paso del hallazgo no puede traer ${chocan.join(", ")}: las pone el motor`);
   }
-  return detalle;
+  const repetidas = Object.keys(soloEvento).filter((k) => Object.hasOwn(detalle, k));
+  if (repetidas.length > 0) throw new Error(`Lo que va solo al evento repite ${repetidas.join(", ")} del detalle`);
+  return { detalle, soloEvento };
 }
 
 export async function dejarEvento(
@@ -178,7 +196,7 @@ export async function nacerHallazgo(
   x: Paso_x,
   c: ContextoMejora,
 ): Promise<HallazgoBase> {
-  const detalle = detalleDeQuienLlama(x);
+  const { detalle, soloEvento } = detalleDeQuienLlama(x);
   // Un hallazgo nuevo no tiene estado: para `registrar` y `cargar`, `DESDE` es «nuevo» y no lo mira.
   const estado = destinoDe(accion, { ...fila, estado: "por_aceptar", correccionRequerida: null }, x.rumbo ?? {});
   const formularAntes = formularAntesDe({ registradoEn: c.ahora, fechaLimiteEnte: fila.fechaLimiteEnte }, c);
@@ -201,7 +219,7 @@ export async function nacerHallazgo(
     hallazgoId: id,
     ronda: 1,
     tipo: accion,
-    detalle: { ...detalle, ...conActa(x), estado: { antes: null, despues: estado } },
+    detalle: { ...detalle, ...soloEvento, ...conActa(x), estado: { antes: null, despues: estado } },
     usuarioId: sesion.usuarioId,
     fuera: x.fuera,
     ocurrioEn: x.ocurrioEn ?? c.ahora,
@@ -253,7 +271,7 @@ export async function transicionarHallazgo(
   x: Paso_x,
   c: ContextoMejora,
 ): Promise<{ antes: EstadoHallazgo; despues: EstadoHallazgo; ronda: number }> {
-  const detalle = detalleDeQuienLlama(x);
+  const { detalle, soloEvento } = detalleDeQuienLlama(x);
   const { h: actual, titulo } = await releer(tx, h.id);
   if (actual.estado !== h.estado || actual.ronda !== h.ronda) throw new ErrorMejora(YA_CAMBIO);
   const antes = actual.estado;
@@ -265,7 +283,7 @@ export async function transicionarHallazgo(
     hallazgoId: actual.id,
     ronda,
     tipo: accion,
-    detalle: { ...detalle, ...conActa(x), estado: { antes, despues } },
+    detalle: { ...detalle, ...soloEvento, ...conActa(x), estado: { antes, despues } },
     usuarioId,
     fuera: x.fuera,
     ocurrioEn: x.ocurrioEn ?? c.ahora,

@@ -25,6 +25,21 @@ export function apruebaGerencia(
   );
 }
 
+/**
+ * Por qué aprueba Gerencia, en palabras: la primera de las cuatro condiciones de `apruebaGerencia` que se cumple, o `null`
+ * si no se cumple ninguna (la revisión vale como aprobación). La usan las pantallas de las firmas.
+ */
+export function razonDeGerencia(
+  h: Pick<HallazgoBase, "clase" | "criticidad" | "origen">,
+  x: { requiereRecursos: boolean; elaboroAdmin: boolean },
+): string | null {
+  if (h.clase === "no_conformidad" && h.criticidad === "alta") return "criticidad alta";
+  if (esExterno(h.origen)) return "origen externo";
+  if (x.elaboroAdmin) return "lo elaboró el Administrador del SGC";
+  if (x.requiereRecursos) return "requiere recursos adicionales o tiene impacto institucional";
+  return null;
+}
+
 export function tipoPropuesto(clase: Clase): TipoAccion {
   return clase === "no_conformidad" ? "correctiva" : clase === "observacion" ? "preventiva" : "mejora";
 }
