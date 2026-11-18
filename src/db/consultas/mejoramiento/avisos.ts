@@ -144,6 +144,19 @@ const LO_QUE_SIGUE: Partial<Record<EstadoHallazgo, (codigo: string, h: HallazgoB
   por_cerrar: (c) => `Cerrar ${c}`,
 };
 
+/**
+ * Lo que le toca a quien tiene el turno, con el código («Aceptar o rechazar HZ-2026-004»), o nulo si el estado no tiene turno.
+ * Sin líder, lo acepta el Admin SGC, que no rechaza (un rechazo solo existe con líder, `puedeRechazar`); un externo no se
+ * rechaza, se responde (spec §7.4): «Aceptar». Una sola frase para el aviso del turno, la tarea y el aviso de vencido.
+ */
+export async function queLeToca(tx: Cliente, h: HallazgoBase): Promise<string | null> {
+  const texto = LO_QUE_SIGUE[h.estado];
+  if (!texto) return null;
+  const sinRechazo =
+    h.estado === "por_aceptar" && (esExterno(h.origen) || (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0);
+  return sinRechazo ? `Aceptar ${h.codigo}` : texto(h.codigo, h);
+}
+
 /** Envuelve `avisarA` con la entidad y el enlace del hallazgo. Sin destinatarios no inserta nada. */
 export async function avisarDeMejora(
   tx: TransactionSql,
@@ -168,17 +181,9 @@ export async function avisarDelTurno(
   titulo: string,
   actorId: number | null,
 ): Promise<number[]> {
-  const texto = LO_QUE_SIGUE[h.estado];
+  const texto = await queLeToca(tx, h);
   if (!texto) return [];
   const destinos = (await quienTieneElTurno(tx, h)).filter((u) => u !== actorId);
-  // Sin líder, lo acepta el Admin SGC, que no rechaza (un rechazo solo existe con líder, `puedeRechazar`); un externo no se
-  // rechaza, se responde (spec §7.4): «Aceptar».
-  const sinRechazo =
-    h.estado === "por_aceptar" && (esExterno(h.origen) || (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0);
-  await avisarDeMejora(
-    tx,
-    { tipo: "mejora.turno", titulo: sinRechazo ? `Aceptar ${h.codigo}` : texto(h.codigo, h), hallazgoId: h.id },
-    destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo })),
-  );
+  await avisarDeMejora(tx, { tipo: "mejora.turno", titulo: texto, hallazgoId: h.id }, destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo })));
   return destinos;
 }

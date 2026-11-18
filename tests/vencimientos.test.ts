@@ -1,7 +1,7 @@
 /**
  * Avisos de vencimiento y escalamiento al jefe. Cada caso silencia los demás trámites abiertos, la
- * distribución, la vigencia de los documentos y los indicadores: `revisarVencimientos` los recorre todos, y una demo
- * puede traer vencidos.
+ * distribución, la vigencia de los documentos, los indicadores y mejoramiento: `revisarVencimientos` los recorre todos, y
+ * una demo (o la base de trabajo) puede traer vencidos.
  */
 import { existsSync } from "node:fs";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -28,6 +28,7 @@ import { silenciarDistribucion } from "./utiles/distribucion";
 import { opc, sesionAdmin, sesionDe, tramiteEn, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 import { silenciarIndicadores } from "./utiles/indicadores";
+import { silenciarMejoramiento } from "./utiles/mejoramiento";
 import { silenciarImpactos } from "./utiles/normograma";
 import { silenciarRevisionAnual, silenciarVigencia } from "./utiles/vigencia";
 
@@ -45,6 +46,7 @@ const silenciarOtros = async (tx: TransactionSql, tramiteId: number) => {
   await silenciarImpactos(tx);
   await silenciarRevisionAnual(tx);
   await silenciarIndicadores(tx);
+  await silenciarMejoramiento(tx);
 };
 
 const correrEn = (tx: TransactionSql) => (ahora: string) => revisarVencimientos({ sql: tx, ahora: new Date(ahora) });
@@ -266,6 +268,7 @@ describe("revisarVencimientos", () => {
     await silenciarImpactos(tx);
     await silenciarRevisionAnual(tx);
     await silenciarIndicadores(tx);
+    await silenciarMejoramiento(tx);
     const registro = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(supervisoresDe).mockRejectedValueOnce(new Error("sin conexión"));
     try {

@@ -1,13 +1,14 @@
 /**
  * La vigencia de «Mis tareas» y de la insignia se calcula del estado: si su lectura falla, se registra el error y las
  * demás tareas siguen, sin insignia; ninguna página cae por ella (ronda de corrección 1 de la Tarea 7, R6). Lo mismo
- * las de los indicadores y su insignia (Fase 14A, Tarea 13).
+ * las de los indicadores y su insignia (Fase 14A, Tarea 13) y las de mejoramiento, que no tienen insignia (Fase 15A, Tarea 19).
  */
 import { describe, expect, it, vi } from "vitest";
 
-const { vigenciaDePersona, tareasDeImpactos, tareasDeIndicadores, tareasDeRevision } = vi.hoisted(() => ({
+const { vigenciaDePersona, tareasDeImpactos, tareasDeIndicadores, tareasDeMejoramiento, tareasDeRevision } = vi.hoisted(() => ({
   vigenciaDePersona: vi.fn(),
   tareasDeIndicadores: vi.fn<(...argumentos: unknown[]) => Promise<{ tareas: unknown[]; vencidas: number }>>(async () => ({ tareas: [], vencidas: 0 })),
+  tareasDeMejoramiento: vi.fn<(...argumentos: unknown[]) => Promise<{ tareas: unknown[] }>>(async () => ({ tareas: [] })),
   tareasDeImpactos: vi.fn<(...argumentos: unknown[]) => Promise<unknown[]>>(async () => []),
   tareasDeRevision: vi.fn<(...argumentos: unknown[]) => Promise<unknown[]>>(async () => []),
 }));
@@ -33,6 +34,7 @@ vi.mock("@/db/consultas/vigencia/externos", () => ({ esResponsableTecnico: async
 vi.mock("@/db/consultas/normograma/impactos", () => ({ tareasDeImpactos }));
 vi.mock("@/db/consultas/vigencia/revision-anual/tareas", () => ({ tareasDeRevision }));
 vi.mock("@/db/consultas/indicadores/tareas", () => ({ tareasDeIndicadores }));
+vi.mock("@/db/consultas/mejoramiento/tareas", () => ({ tareasDeMejoramiento }));
 
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { misTareas } from "@/lib/tareas";
@@ -90,5 +92,31 @@ describe("misTareas sin los indicadores", () => {
     expect(r.tareas.map((t) => t.id)).toEqual(["copia:1", "medir:7"]);
     expect(r.vencidasIndicadores).toBe(3);
     expect(tareasDeIndicadores.mock.lastCall?.[0]).toBe(lider);
+  });
+});
+
+describe("misTareas sin mejoramiento", () => {
+  it("si las tareas de mejoramiento fallan, lo registra y devuelve las demás", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vigenciaDePersona.mockResolvedValueOnce({ tareas: [], vencidos: 1 });
+      tareasDeMejoramiento.mockRejectedValueOnce(new Error("sin conexión"));
+      const r = await misTareas(lider, { responsableTecnico: false });
+      expect(r).toEqual({ tareas: [expect.objectContaining({ id: "copia:1" })], total: 1, vencidos: 1, vencidasIndicadores: 0 });
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("mejoramiento"), expect.any(Error));
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("con mejoramiento, suma sus tareas al final, después de las de indicadores", async () => {
+    const medir = { id: "medir:7", modulo: "indicadores" as const, titulo: "Reportar", detalle: null, vence: null, enlace: "/indicadores/x/reportar/2026-T3" };
+    const corregir = { id: "mej-corregir:4", modulo: "planes" as const, titulo: "Registrar la corrección de HZ-2026-004", detalle: null, vence: null, enlace: "/mejoramiento/4" };
+    vigenciaDePersona.mockResolvedValueOnce({ tareas: [], vencidos: 0 });
+    tareasDeIndicadores.mockResolvedValueOnce({ tareas: [medir], vencidas: 0 });
+    tareasDeMejoramiento.mockResolvedValueOnce({ tareas: [corregir] });
+    const r = await misTareas(lider, { responsableTecnico: false });
+    expect(r.tareas.map((t) => t.id)).toEqual(["copia:1", "medir:7", "mej-corregir:4"]);
+    expect(tareasDeMejoramiento.mock.lastCall?.[0]).toBe(lider);
   });
 });

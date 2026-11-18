@@ -48,6 +48,7 @@ import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura"
 export type { AjusteDeDetalle } from "./ajustes-lectura";
 import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
 import { indicadoresDeEficacia } from "./indicador-de-eficacia";
+import { tareasConSuHallazgo, venceLaActividad } from "./tareas";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 import { evaluablesDesde, NADIE_PUEDE_VERIFICAR, type FilaDelIndicador } from "./verificacion";
 
@@ -62,7 +63,7 @@ export type FiltroDeLista = {
   /** Además de los estados guardados: `por_evaluar`, los «En espera de eficacia» que ya llegaron a su fecha mínima (R4). */
   estado?: EstadoHallazgo | "abiertos" | "reabiertos" | "sin_accion" | "por_evaluar";
   soloVencidos?: boolean;
-  /** Los que esperan la decisión de quien mira (R2: está en `quienTieneElTurno`). */
+  /** Los que esperan la decisión de quien mira (R2): los hallazgos de sus tareas de mejoramiento (`tareasConSuHallazgo`). */
   esperanSuDecision?: boolean;
 };
 
@@ -195,11 +196,14 @@ export async function turnoEnTexto(tx: Cliente, h: HallazgoBase, x?: { yaSePuede
   return (await resolverTurno(tx, h, new Map(), x)).texto;
 }
 
-/** Una actividad vencida: con el plan aprobado (`fin_original`), sin terminar ni cancelar y con el fin ya pasado en la zona. */
+/**
+ * Una actividad vencida: con el plan aprobado (`fin_original`), sin terminar ni cancelar y con su fecha ya pasada en la zona (la
+ * de corregir si la verificación la devolvió, si no su fin: `venceLaActividad`, la de las tareas y la pasada de vencimientos).
+ */
 const ACTIVIDAD_VENCIDA = (sql: Cliente, hoy: string) => sql`EXISTS (
   SELECT 1 FROM mejora_actividades va
   WHERE va.hallazgo_id = h.id AND va.fin_original IS NOT NULL AND va.estado NOT IN ('terminada', 'cancelada')
-    AND va.fin < ${hoy}::date)`;
+    AND ${venceLaActividad(sql, "va")} < ${hoy}::date)`;
 
 /**
  * El avance (spec §10.3): el promedio de los avances de las acciones de la ronda en curso, y el de cada acción, el de sus
@@ -225,7 +229,8 @@ const COLUMNAS_BASE = (sql: Cliente) => sql`h.id, h.codigo, h.clase, h.criticida
 /**
  * La lista de hallazgos que la persona ve, con las cifras de lo que ve (no de lo filtrado). Orden por omisión: los
  * de prioridad alta (externos) primero, luego los que tienen algo vencido, luego por vencimiento ascendente con los nulos
- * al final. Los filtros van al `WHERE`; solo `esperanSuDecision` se resuelve por hallazgo, con el turno memorizado.
+ * al final. Los filtros van al `WHERE`; `esperanSuDecision` sale de las tareas de mejoramiento de quien mira, en una sola
+ * llamada para toda la lista.
  */
 export async function listarHallazgos(
   sesion: SesionFlujo,
@@ -246,15 +251,17 @@ export async function listarHallazgos(
   const porEvaluar = [...evaluables].flatMap(([id, e]) => (e.yaSePuede ? [id] : []));
   const yaSePuede = (h: HallazgoBase) => ({ yaSePuedeEvaluar: evaluables.get(h.id)?.yaSePuede === true });
 
-  // Quienes esperan la decisión de quien mira (R2): los abiertos que tienen turno y donde está en `quienTieneElTurno`; de los
-  // de la espera, los que ya se pueden evaluar (su turno es de quien puede verificar).
-  const conTurno = await sql`SELECT ${COLUMNAS_BASE(sql)} FROM mejora_hallazgos h
-    WHERE ${visible} AND ${abierto} AND (h.estado <> 'en_espera' OR h.id = ANY(${sql.array(porEvaluar)}::bigint[]))`;
-  const suyos: number[] = [];
-  for (const f of conTurno) {
-    const h = aBase(f);
-    if ((await resolverTurno(sql, h, memoria, yaSePuede(h))).ids.includes(sesion.usuarioId)) suyos.push(h.id);
-  }
+  // Los que esperan la decisión de quien mira (R2): los hallazgos distintos entre sus tareas de mejoramiento, las mismas de
+  // «Mis tareas», en una sola llamada para toda la lista (nunca una por fila); de esos, solo los que ve.
+  const deSusTareas = [
+    ...new Set((await tareasConSuHallazgo(sesion, { sql, ahora })).flatMap((t) => (t.hallazgoId === null ? [] : [t.hallazgoId]))),
+  ];
+  const suyos =
+    deSusTareas.length === 0
+      ? []
+      : (await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${visible} AND h.id = ANY(${sql.array(deSusTareas)}::bigint[])`).map((f) =>
+          Number(f.id),
+        );
 
   const [c] = await sql`SELECT
       count(*) FILTER (WHERE ${abierto}) AS abiertos,
@@ -512,6 +519,8 @@ export type DetalleDeHallazgo = {
   reincidenteDe: { id: number; codigo: string; titulo: string } | { visible: false } | null;
   marcas: string[];
   fechaLimiteEnte: string | null;
+  /** La respuesta al ente de un hallazgo externo (spec §13.4): el día en que se envió y quién la registró; nula sin registrar. */
+  respuestaAlEnte: { enviadaEn: string; por: string } | null;
   vence: Date | null;
   correccion: {
     requerida: boolean | null;
@@ -874,7 +883,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   if (ve === null) return null;
   const [f] = await sql`
     SELECT h.*, p.nombre AS proceso, ur.nombre AS registrador, uc.nombre AS correccion_responsable, uv.nombre AS validador,
-      uz.nombre AS cerrador,
+      uz.nombre AS cerrador, ue.nombre AS respondio, to_char(h.respuesta_ente_en, 'YYYY-MM-DD') AS respuesta_ente,
       to_char(h.detectado_en, 'YYYY-MM-DD') AS detectado, to_char(h.fecha_limite_ente, 'YYYY-MM-DD') AS limite_ente,
       to_char(h.correccion_implementada_en, 'YYYY-MM-DD') AS implementada,
       rep.id AS reporte_id, urep.nombre AS reportero
@@ -884,6 +893,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     LEFT JOIN usuarios uc ON uc.id = h.correccion_responsable_id
     LEFT JOIN usuarios uv ON uv.id = h.validada_por
     LEFT JOIN usuarios uz ON uz.id = h.cerrado_por
+    LEFT JOIN usuarios ue ON ue.id = h.respuesta_ente_por
     LEFT JOIN LATERAL (SELECT r.id, r.reportado_por FROM mejora_reportes r
       WHERE r.hallazgo_id = h.id AND r.estado = 'convertido' ORDER BY r.id LIMIT 1) rep ON true
     LEFT JOIN usuarios urep ON urep.id = rep.reportado_por
@@ -930,7 +940,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
         to_char(a.corregir_antes_de, 'YYYY-MM-DD') AS corregir_antes_de,
         (SELECT count(*) FROM archivos f WHERE f.contexto = 'mejora_actividad' AND f.contexto_id = a.id AND f.version_id IS NULL) AS evidencias,
         a.reprogramaciones, to_char(a.inicio, 'YYYY-MM-DD') AS inicio, to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original,
-        to_char(a.fin, 'YYYY-MM-DD') AS fin,
+        to_char(a.fin, 'YYYY-MM-DD') AS fin, to_char(${venceLaActividad(sql)}, 'YYYY-MM-DD') AS vence,
         EXISTS (SELECT 1 FROM mejora_seguimientos s WHERE s.actividad_id = a.id AND s.registrado_por = ${sesion.usuarioId}) AS siguio
       FROM mejora_actividades a JOIN usuarios u ON u.id = a.responsable_id
       WHERE a.hallazgo_id = ${id} ORDER BY a.orden, a.id`,
@@ -1161,9 +1171,11 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     reincidenteDe: reincidente,
     marcas: marcasDeHallazgo(h, {
       cargado: f.cargado === true,
-      algunaActividadVencida: actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.fin as string) < fechaEnZona(ahora, zonaHoraria())),
+      // La misma regla de la lista y de la pasada (`venceLaActividad`): devuelta, la fecha para corregir.
+      algunaActividadVencida: actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.vence as string) < fechaEnZona(ahora, zonaHoraria())),
     }),
     fechaLimiteEnte: (f.limite_ente as string | null) ?? null,
+    respuestaAlEnte: f.respuesta_ente ? { enviadaEn: f.respuesta_ente as string, por: (f.respondio as string | null) ?? "" } : null,
     vence: esTerminal(h.estado) ? null : ((f.vence_en as Date | null) ?? null),
     correccion: {
       requerida: h.correccionRequerida,

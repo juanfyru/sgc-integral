@@ -24,6 +24,7 @@ import {
   reclasificarHallazgoAccion,
   registrarCorreccionAccion,
   registrarOcurrenciaAccion,
+  registrarRespuestaAlEnteAccion,
   responderEscaladaAccion,
   retirarHallazgoAccion,
   sostenerHallazgoAccion,
@@ -59,6 +60,7 @@ import { PasoVerificar } from "@/componentes/mejoramiento/pasos/PasoVerificar";
 import { PasoAceptar } from "@/componentes/mejoramiento/pasos/PasoAceptar";
 import { PasoArbitrar } from "@/componentes/mejoramiento/pasos/PasoArbitrar";
 import { PasoCorregir } from "@/componentes/mejoramiento/pasos/PasoCorregir";
+import { PasoResponderAlEnte } from "@/componentes/mejoramiento/pasos/PasoResponderAlEnte";
 import { PasoDecidir } from "@/componentes/mejoramiento/pasos/PasoDecidir";
 import { PasoTrasRechazo } from "@/componentes/mejoramiento/pasos/PasoTrasRechazo";
 import { PasoValidar } from "@/componentes/mejoramiento/pasos/PasoValidar";
@@ -67,6 +69,7 @@ import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHal
 import { InsigniasDelHallazgo } from "@/componentes/mejoramiento/InsigniasDelHallazgo";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
 import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
+import { SeccionRespuestaAlEnte } from "@/componentes/mejoramiento/SeccionRespuestaAlEnte";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
@@ -90,11 +93,13 @@ import {
 import { parecidosDeOtrosProcesos } from "@/db/consultas/mejoramiento/parecidos";
 import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
+import { oficiosPosibles } from "@/db/consultas/mejoramiento/registro";
 import { datosDeEvaluacion, huellaDeLoVisto } from "@/db/consultas/mejoramiento/verificacion";
 import { puedeVerIndicador } from "@/lib/alcance";
 import { leerCambios } from "@/lib/mejoramiento/analisis";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
+import { esExterno } from "@/lib/mejoramiento/origenes";
 import { fechaDelAjustePasada, razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
@@ -199,7 +204,8 @@ const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((
  * actividad (`ve: "actividad"`) no recibe el historial ni los archivos. Cada actividad enlaza a su página para quien la abre.
  * Con el plan aprobado, «Ajustes del plan» lista los ajustes de cada ronda (spec §10.6) y ofrece «Pedir un ajuste» (añadir o
  * cancelar) a un líder del proceso o al Admin SGC; quien decide un ajuste lo hace en «Lo que sigue»; el Admin SGC escala a
- * Gerencia una actividad vencida y Gerencia responde la escalada (§10.7).
+ * Gerencia una actividad vencida y Gerencia responde la escalada (§10.7). En un hallazgo externo con el plan aprobado, «Respuesta al
+ * ente» (§13.4): el Admin SGC sube el oficio y registra la fecha de envío; registrada, la fecha, quién y el oficio.
  */
 export default async function PaginaHallazgo({
   params,
@@ -390,6 +396,36 @@ export default async function PaginaHallazgo({
     ].filter((c) => c !== null);
     return controles.length > 0 ? <div className="flex flex-wrap justify-end gap-2">{controles}</div> : null;
   };
+
+  // La respuesta al ente de un hallazgo externo (spec §13.4), desde que su plan se aprobó, a quien lo ve completo: la registra el
+  // Admin SGC con la fecha de envío y el oficio, un archivo del hallazgo subido después de aprobado el plan (`oficiosPosibles`, la
+  // regla del acto, que el servidor repite). Registrada, el oficio es el del evento.
+  const conRespuestaAlEnte = completo && esExterno(h.origen) && h.rondas.some((r) => r.estadoPlan === "aprobado");
+  const registraRespuesta = conRespuestaAlEnte && gestiona && h.respuestaAlEnte === null;
+  const delOficio = (() => {
+    const registrado = h.eventos.findLast((e) => e.tipo === "respuesta_ente")?.detalle;
+    const ids = typeof registrado === "object" && registrado !== null ? (registrado as Record<string, unknown>).archivos : null;
+    return Array.isArray(ids) ? new Set(ids.map(Number)) : null;
+  })();
+  const posibles = registraRespuesta ? new Set(await oficiosPosibles(sqlArchivos, h.id)) : null;
+  const oficio = evidencias.filter((a) => (h.respuestaAlEnte ? delOficio?.has(a.id) : posibles?.has(a.id)) === true);
+  const seccionRespuesta = conRespuestaAlEnte ? (
+    <SeccionRespuestaAlEnte
+      fechaLimite={h.fechaLimiteEnte}
+      respuesta={h.respuestaAlEnte}
+      oficio={
+        <ArchivosDe
+          archivos={oficio}
+          quitables={registraRespuesta ? quitables.filter((id) => oficio.some((a) => a.id === id)) : []}
+          direccionDeSubida={registraRespuesta && puedeSubirEvidencia ? `/api/mejoramiento/hallazgos/${h.id}/archivos` : null}
+          nombre="Zona de carga del oficio de respuesta al ente"
+          vacio={h.respuestaAlEnte ? "Sin el oficio adjunto." : "Aún no hay un archivo subido después de aprobar el plan."}
+        />
+      }
+    >
+      {registraRespuesta ? <PasoResponderAlEnte key={`ente-${clave}`} hallazgoId={h.id} hoy={hoy} accion={registrarRespuestaAlEnteAccion} /> : null}
+    </SeccionRespuestaAlEnte>
+  ) : null;
 
   // Verificar, evaluar y cerrar (spec §11.4 y §11.5): el formulario a quien puede dar el paso (`loQueSigue`, con `puedeVerificar`);
   // los archivos de la verificación y de la evaluación son de la ronda (rol `verificacion`).
@@ -756,6 +792,7 @@ export default async function PaginaHallazgo({
                 );
               })(rondaEnCurso)
             : null}
+          {seccionRespuesta}
           {CON_CIERRE.has(h.estado) ? (
             <SeccionCierre
               id="cerrar"

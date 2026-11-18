@@ -382,6 +382,49 @@ export async function actividadPorSql(
   return Number(a.id);
 }
 
+/** Un archivo de evidencia del hallazgo (el oficio de la respuesta al ente, entre otros), subido como `usuarioId` por el dominio. */
+export async function evidenciaDelHallazgo(tx: TransactionSql, hallazgoId: number, usuarioId: number): Promise<number> {
+  archivos += 1;
+  const { id } = await registrarArchivo(
+    {
+      versionId: null,
+      rol: "evidencia",
+      ruta: `mejoramiento/hallazgos/${hallazgoId}/${Date.now()}-${archivos}-evidencia.pdf`,
+      nombreOriginal: `oficio-${archivos}.pdf`,
+      extension: "pdf",
+      mime: "application/pdf",
+      tamanoBytes: 10,
+      hashSha256: "f".repeat(64),
+      contexto: "mejora_hallazgo",
+      contextoId: hallazgoId,
+    },
+    usuarioId,
+    { sql: tx },
+  );
+  return Number(id);
+}
+
+/**
+ * Deja sin nada que avisar lo que ya hay de mejoramiento en la base (la de trabajo trae hallazgos de las comprobaciones en el
+ * navegador, algunos con pasos vencidos): `revisarVencimientos` los recorre todos y un test cuenta solo lo suyo. Pone las marcas
+ * de aviso que falten en los hallazgos abiertos, sus actividades y sus ajustes, y en los reportes por clasificar; el
+ * recordatorio, en una fecha lejana, para que tampoco se cumpla con un `ahora` de años después. Lo terminado no se toca (el
+ * trigger del hallazgo terminado lo rechaza, y nada de lo terminado avisa). Se llama antes de crear los datos del test.
+ */
+export async function silenciarMejoramiento(tx: TransactionSql): Promise<void> {
+  const abiertos = tx`SELECT id FROM mejora_hallazgos WHERE estado NOT IN ('cerrado', 'rechazado', 'anulado')`;
+  await tx`UPDATE mejora_hallazgos SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now()),
+      aviso_evaluar_en = coalesce(aviso_evaluar_en, now())
+    WHERE id IN (${abiertos}) AND (aviso_vencido_en IS NULL OR escalado_en IS NULL OR aviso_evaluar_en IS NULL)`;
+  await tx`UPDATE mejora_actividades SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now()),
+      recordatorio_en = '2999-12-31T00:00:00Z'
+    WHERE hallazgo_id IN (${abiertos}) AND estado IN ('abierta', 'en_proceso')`;
+  await tx`UPDATE mejora_ajustes SET aviso_vencido_en = coalesce(aviso_vencido_en, now())
+    WHERE hallazgo_id IN (${abiertos}) AND estado = 'pendiente' AND aviso_vencido_en IS NULL`;
+  await tx`UPDATE mejora_reportes SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())
+    WHERE estado = 'recibido' AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+}
+
 /** Un archivo de evidencia de una actividad, subido como `usuarioId` por el camino del dominio (`registrarArchivo`). */
 export async function evidenciaDeActividad(tx: TransactionSql, actividadId: number, usuarioId: number, nombre?: string): Promise<number> {
   archivos += 1;

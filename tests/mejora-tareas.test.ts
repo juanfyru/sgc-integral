@@ -1,0 +1,491 @@
+/**
+ * Las tareas de mejoramiento (spec 15 §14.1, Tarea 19): una por fila de la tabla, con su identificador, su título, su `vence` y
+ * el módulo «planes»; quien tiene el turno la recibe (la misma regla que `quienTieneElTurno`) y otra persona del mismo rol, sin
+ * la condición, no. También el proceso sin líder, el responsable inactivo, la eficacia desde su fecha mínima, la tolerancia de
+ * «Mis tareas» y la respuesta al ente. Contra la BD de trabajo, dentro de una transacción que se revierte: la base trae hallazgos
+ * de las comprobaciones en el navegador, así que cada prueba busca las tareas de sus propios hallazgos por su id.
+ */
+import type { TransactionSql } from "postgres";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+// Real salvo en el caso de la tolerancia, que la hace fallar una vez.
+vi.mock("@/db/consultas/mejoramiento/tareas", async (original) => {
+  const real = await original<typeof import("@/db/consultas/mejoramiento/tareas")>();
+  return { ...real, tareasDeMejoramiento: vi.fn(real.tareasDeMejoramiento) };
+});
+
+import { obtenerSql } from "@/db/cliente";
+import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
+import { aprobarPlan } from "@/db/consultas/mejoramiento/aprobacion";
+import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
+import { quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
+import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
+import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
+import { listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { decidirAccionCorrectiva, rechazarHallazgo, registrarCorreccion, sostenerHallazgo } from "@/db/consultas/mejoramiento/recorrido";
+import { registrarHallazgo, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
+import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
+import { tareasConSuHallazgo, tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
+import { fechaMinimaDe, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
+import { venceLaEvaluacion } from "@/lib/mejoramiento/eficacia";
+import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
+import { rutaDeActividad, rutaDeFormular, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
+import { ErrorPermiso } from "@/lib/permisos";
+import { agruparTareas, misTareas, type Tarea } from "@/lib/tareas";
+import { finDeFecha } from "@/lib/tramites/plazos";
+import { zonaHoraria } from "@/lib/zona-horaria";
+import {
+  baseDeMejora,
+  c,
+  datosDeHallazgo,
+  evidenciaDelHallazgo,
+  HORA_DE_ESCENA,
+  hallazgoEn,
+  otroProcesoConLider,
+  terminarTodas,
+  type BaseDeMejora,
+} from "./utiles/mejoramiento";
+import { procesoNuevo } from "./utiles/mixto";
+import { revertida } from "./utiles/transaccion";
+import { usuarioDePrueba } from "./utiles/tramites";
+
+const sql = obtenerSql();
+afterAll(() => sql.end());
+
+// Miércoles 18 de noviembre de 2026, 10:00 en Bogotá: el día siguiente a `HORA_DE_ESCENA`.
+const AHORA = "2026-11-18T15:00:00Z";
+const TITULO = "Formatos de entrega de turno sin diligenciar";
+const zona = zonaHoraria();
+
+async function tareasDe(s: SesionFlujo, tx: TransactionSql, ahora = AHORA): Promise<Tarea[]> {
+  return (await tareasDeMejoramiento(s, { sql: tx, ahora: new Date(ahora) })).tareas;
+}
+
+const laDe = async (s: SesionFlujo, tx: TransactionSql, id: string, ahora = AHORA) => (await tareasDe(s, tx, ahora)).find((t) => t.id === id);
+
+const venceDe = async (tx: TransactionSql, id: number) => ((await tx`SELECT vence_en FROM mejora_hallazgos WHERE id = ${id}`)[0].vence_en as Date);
+
+/** La tarea de un paso del hallazgo, tal como la recibe quien tiene el turno. */
+async function deHallazgo(tx: TransactionSql, h: HallazgoBase, paso: string, titulo: string, enlace = rutaDeHallazgo(h.id)): Promise<Tarea> {
+  return { id: `mej-${paso}:${h.id}`, modulo: "planes", titulo, detalle: TITULO, vence: await venceDe(tx, h.id), enlace };
+}
+
+/** La tarea la recibe `quien`, que está en el turno, y no `otro`, que no lo está (la misma regla de los avisos). */
+async function soloDe(tx: TransactionSql, h: HallazgoBase, esperada: Tarea, quien: SesionFlujo, otro: SesionFlujo, ahora = AHORA) {
+  expect(await laDe(quien, tx, esperada.id, ahora)).toEqual(esperada);
+  expect(await laDe(otro, tx, esperada.id, ahora)).toBeUndefined();
+  const turno = await quienTieneElTurno(tx, await bloquearHallazgo(tx, h.id));
+  expect(turno).toContain(quien.usuarioId);
+  expect(turno).not.toContain(otro.usuarioId);
+}
+
+/** Un proceso sin líder: lo que le toca al líder lo hace el Admin SGC (spec §6.1, F15-DC3). */
+const sinLider = (tx: TransactionSql) => procesoNuevo(tx);
+
+/** Un hallazgo externo de un ente de control, con su fecha límite de respuesta, llevado hasta `estado`. */
+const externo = (tx: TransactionSql, b: BaseDeMejora, estado: "en_aprobacion" | "en_ejecucion") =>
+  hallazgoEn(tx, b, estado, { origen: "ente_control", fuente: "Superintendencia Nacional de Salud", fechaLimiteEnte: "2026-12-30" });
+
+describe("las tareas de mejoramiento, una por fila de la tabla", () => {
+  it("mej-clasificar: el Admin SGC clasifica cada reporte recibido; Control Interno no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const { id } = await enviarReporte(
+        b.consulta,
+        { descripcion: "Vi la nevera de vacunas abierta durante el cambio de turno", vistoEn: "2026-11-16" },
+        c(HORA_DE_ESCENA, tx),
+      );
+      const [r] = await tx`SELECT vence_en FROM mejora_reportes WHERE id = ${id}`;
+      expect(await laDe(b.admin, tx, `mej-clasificar:${id}`)).toEqual({
+        id: `mej-clasificar:${id}`,
+        modulo: "planes",
+        titulo: "Clasificar un reporte de mejoramiento",
+        detalle: `Reporte n.º ${id}`,
+        vence: r.vence_en,
+        enlace: RUTA_REPORTES_RECIBIDOS,
+      });
+      expect(await laDe(b.control, tx, `mej-clasificar:${id}`)).toBeUndefined();
+    }));
+
+  it("mej-aceptar: los líderes del proceso; el líder de otro proceso no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const h = await hallazgoEn(tx, b, "por_aceptar");
+      await soloDe(tx, h, await deHallazgo(tx, h, "aceptar", `Aceptar o rechazar ${h.codigo}`), b.lider, otro.lider);
+    }));
+
+  it("mej-rechazo: quien lo registró; otra persona de Control Interno no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const h = await hallazgoEn(tx, b, "rechazo");
+      await soloDe(tx, h, await deHallazgo(tx, h, "rechazo", `Decidir sobre el rechazo de ${h.codigo}`), b.control, otro);
+    }));
+
+  it("mej-arbitrar: el Admin SGC si no lo registró ni lo sostuvo un Admin SGC; si sí, Gerencia y no ese Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "arbitraje");
+      await soloDe(tx, h, await deHallazgo(tx, h, "arbitrar", `Arbitrar el rechazo de ${h.codigo}`), b.admin, b.gerencia);
+
+      const o = c(HORA_DE_ESCENA, tx);
+      const { id } = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId), o);
+      await rechazarHallazgo(b.lider, { hallazgoId: id, justificacion: "El hecho no corresponde a este proceso" }, o);
+      await sostenerHallazgo(b.admin, { hallazgoId: id, replica: "La evidencia muestra que sí corresponde al proceso" }, o);
+      const delAdmin = await bloquearHallazgo(tx, id);
+      await soloDe(tx, delAdmin, await deHallazgo(tx, delAdmin, "arbitrar", `Arbitrar el rechazo de ${delAdmin.codigo}`), b.gerencia, b.admin);
+    }));
+
+  it("mej-corregir: los líderes del proceso; el líder de otro proceso no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const h = await hallazgoEn(tx, b, "por_corregir");
+      await soloDe(tx, h, await deHallazgo(tx, h, "corregir", `Registrar la corrección de ${h.codigo}`), b.lider, otro.lider);
+    }));
+
+  it("mej-decidir: el Admin SGC; Control Interno no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_decidir");
+      await soloDe(tx, h, await deHallazgo(tx, h, "decidir", `Decidir si ${h.codigo} requiere acción correctiva`), b.admin, b.control);
+    }));
+
+  it("mej-validar: quien puede validarla, no el Admin SGC que registró la corrección; sin corrección, «el cierre sin acción»", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_validar", { procesoId: await sinLider(tx) });
+      await soloDe(tx, h, await deHallazgo(tx, h, "validar", `Validar la corrección de ${h.codigo}`), b.control, b.admin);
+
+      const o = c(HORA_DE_ESCENA, tx);
+      const sin = await hallazgoEn(tx, b, "por_corregir");
+      await registrarCorreccion(
+        b.lider,
+        { hallazgoId: sin.id, requerida: false, descripcion: "El formato se diligencia en el siguiente turno, no hace falta más" },
+        o,
+      );
+      await decidirAccionCorrectiva(b.admin, { hallazgoId: sin.id, requiere: false, justificacion: "Fue un hecho aislado del turno" }, o);
+      const porValidar = await bloquearHallazgo(tx, sin.id);
+      expect(porValidar.estado).toBe("por_validar");
+      // Quien decidió el «no» tampoco valida el cierre sin acción.
+      await soloDe(tx, porValidar, await deHallazgo(tx, porValidar, "validar", `Validar el cierre sin acción de ${sin.codigo}`), b.control, b.admin);
+    }));
+
+  it("mej-formular: los líderes del proceso, a la página de formular; el Admin SGC no, si el proceso tiene líder", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      const esperada = await deHallazgo(tx, h, "formular", `Formular la causa raíz y el plan de ${h.codigo}`, rutaDeFormular(h.id));
+      await soloDe(tx, h, esperada, b.lider, b.admin);
+    }));
+
+  it("el proceso sin líder: la tarea mej-formular es de los Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { procesoId: await sinLider(tx) });
+      const esperada = await deHallazgo(tx, h, "formular", `Formular la causa raíz y el plan de ${h.codigo}`, rutaDeFormular(h.id));
+      const otroAdmin = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      expect(await laDe(b.admin, tx, esperada.id)).toEqual(esperada);
+      expect(await laDe(otroAdmin, tx, esperada.id)).toEqual(esperada);
+      expect(await laDe(b.lider, tx, esperada.id)).toBeUndefined();
+    }));
+
+  it("mej-revisar: un Admin SGC que no lo elaboró; sin otro que lo revise, quien lo elaboró recibe «Devolver el plan»", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otroAdmin = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      // Sin líder, lo elabora el Admin SGC de la base.
+      const h = await hallazgoEn(tx, b, "en_revision", { procesoId: await sinLider(tx) });
+      await soloDe(tx, h, await deHallazgo(tx, h, "revisar", `Revisar el plan de ${h.codigo}`), otroAdmin, b.admin);
+
+      await tx`UPDATE usuarios SET activo = false WHERE rol = 'admin_sgc' AND activo AND id <> ${b.admin.usuarioId}`;
+      expect(await laDe(b.admin, tx, `mej-revisar:${h.id}`)).toEqual(await deHallazgo(tx, h, "revisar", `Devolver el plan de ${h.codigo}`));
+    }));
+
+  it("mej-aprobar: Gerencia; el Admin SGC no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_aprobacion");
+      await soloDe(tx, h, await deHallazgo(tx, h, "aprobar", `Aprobar el plan de ${h.codigo}`), b.gerencia, b.admin);
+    }));
+
+  it("mej-actividad: su responsable, con la descripción y el código del hallazgo; devuelta, vence en su fecha para corregir", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const otro = await usuarioDePrueba(tx, { rol: "consulta" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId });
+      const [a] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id}`;
+      const actividadId = Number(a.id);
+      const esperada: Tarea = {
+        id: `mej-actividad:${actividadId}`,
+        modulo: "planes",
+        titulo: "Actividad 1 del plan de prueba",
+        detalle: h.codigo,
+        vence: finDeFecha("2026-12-15", zona),
+        enlace: rutaDeActividad(actividadId),
+      };
+      expect(await laDe(responsable, tx, esperada.id)).toEqual(esperada);
+      expect(await laDe(otro, tx, esperada.id)).toBeUndefined();
+      expect(await quienTieneElTurno(tx, await bloquearHallazgo(tx, h.id))).toEqual([responsable.usuarioId]);
+
+      // Terminada no es tarea; devuelta por la verificación, vuelve con la fecha para corregir.
+      await terminarTodas(tx, b, h.id, HORA_DE_ESCENA);
+      expect(await laDe(responsable, tx, esperada.id)).toBeUndefined();
+      await verificarImplementacion(
+        b.control,
+        {
+          hallazgoId: h.id,
+          actividades: [{ id: actividadId, conforme: false, nota: "Falta la firma del jefe de enfermería", corregirAntesDe: "2026-11-27" }],
+          metodos: ["evidencias"],
+        },
+        c(AHORA, tx),
+      );
+      expect(await laDe(responsable, tx, esperada.id)).toEqual({ ...esperada, vence: finDeFecha("2026-11-27", zona) });
+    }));
+
+  it("el responsable inactivo: su actividad es tarea de los líderes del proceso, «Reasignar: …»", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId });
+      const [a] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id}`;
+      expect(await laDe(b.lider, tx, `mej-actividad:${a.id}`)).toBeUndefined();
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${responsable.usuarioId}`;
+      expect(await laDe(b.lider, tx, `mej-actividad:${a.id}`)).toEqual({
+        id: `mej-actividad:${a.id}`,
+        modulo: "planes",
+        titulo: "Reasignar: Actividad 1 del plan de prueba",
+        detalle: h.codigo,
+        vence: finDeFecha("2026-12-15", zona),
+        enlace: rutaDeHallazgo(h.id),
+      });
+      expect(await laDe(otro.lider, tx, `mej-actividad:${a.id}`)).toBeUndefined();
+      // El proceso tiene líder: no es del Admin SGC.
+      expect(await laDe(b.admin, tx, `mej-actividad:${a.id}`)).toBeUndefined();
+    }));
+
+  it("mej-ajuste: quien lo decide; el Admin SGC que lo pidió no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otroAdmin = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion");
+      const [a] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id}`;
+      const { id } = await pedirAjuste(
+        b.admin,
+        { hallazgoId: h.id, tipo: "reprogramar", actividadId: Number(a.id), finNuevo: "2026-12-30", causa: "El proveedor no entrega antes" },
+        c(AHORA, tx),
+      );
+      const [aj] = await tx`SELECT vence_en FROM mejora_ajustes WHERE id = ${id}`;
+      const esperada: Tarea = {
+        id: `mej-ajuste:${id}`,
+        modulo: "planes",
+        titulo: `Decidir un ajuste de ${h.codigo}`,
+        detalle: TITULO,
+        vence: aj.vence_en,
+        enlace: rutaDeHallazgo(h.id),
+      };
+      expect(await laDe(otroAdmin, tx, esperada.id)).toEqual(esperada);
+      expect(await laDe(b.admin, tx, esperada.id)).toBeUndefined();
+      expect(await laDe(b.gerencia, tx, esperada.id)).toBeUndefined();
+    }));
+
+  it("mej-verificar: quien puede verificar; el Admin SGC que registró la corrección no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_verificar", { procesoId: await sinLider(tx) });
+      await soloDe(tx, h, await deHallazgo(tx, h, "verificar", `Verificar la implementación de ${h.codigo}`), b.control, b.admin);
+    }));
+
+  it("mej-evaluar no existe antes de la fecha mínima y sí desde ella, de quien puede verificar", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_espera", { procesoId: await sinLider(tx) });
+      const fm = await fechaMinimaDe(tx, h.id, zona);
+      expect(fm?.minima).toBe("2027-01-17");
+      const id = `mej-evaluar:${h.id}`;
+      expect(await laDe(b.control, tx, id, "2027-01-17T04:59:59Z")).toBeUndefined();
+      const desde = "2027-01-17T05:00:00Z";
+      const ctx = await contextoDeMejora(tx, new Date(desde));
+      expect(await laDe(b.control, tx, id, desde)).toEqual({
+        id,
+        modulo: "planes",
+        titulo: `Evaluar la eficacia de ${h.codigo}`,
+        detalle: TITULO,
+        vence: venceLaEvaluacion("2027-01-17", null, ctx),
+        enlace: rutaDeHallazgo(h.id),
+      });
+      // Registró la corrección: ejecutó, no verifica.
+      expect(await laDe(b.admin, tx, id, desde)).toBeUndefined();
+    }));
+
+  it("mej-cerrar: el Admin SGC; Control Interno no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_cerrar");
+      await soloDe(tx, h, await deHallazgo(tx, h, "cerrar", `Cerrar ${h.codigo}`), b.admin, b.control);
+    }));
+
+  it("mej-ente: el Admin SGC, con el plan aprobado y sin respuesta, hasta el fin de la fecha del ente; Control Interno no", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const antes = await externo(tx, b, "en_aprobacion");
+      expect(await laDe(b.admin, tx, `mej-ente:${antes.id}`)).toBeUndefined();
+      await aprobarPlan(b.gerencia, { hallazgoId: antes.id, credenciales: { clave: "ok" } }, c(HORA_DE_ESCENA, tx));
+      const esperada: Tarea = {
+        id: `mej-ente:${antes.id}`,
+        modulo: "planes",
+        titulo: `Registrar la respuesta al ente de ${antes.codigo}`,
+        detalle: TITULO,
+        vence: finDeFecha("2026-12-30", zona),
+        enlace: rutaDeHallazgo(antes.id),
+      };
+      expect(await laDe(b.admin, tx, esperada.id)).toEqual(esperada);
+      expect(await laDe(b.control, tx, esperada.id)).toBeUndefined();
+      await evidenciaDelHallazgo(tx, antes.id, b.admin.usuarioId);
+      await registrarRespuestaAlEnte(b.admin, { hallazgoId: antes.id, enviadaEn: "2026-11-18" }, c(AHORA, tx));
+      expect(await laDe(b.admin, tx, esperada.id)).toBeUndefined();
+    }));
+
+  it.todo("un hallazgo cargado sin su escaneo no da tareas de actividad");
+});
+
+describe("«Mis tareas» y «Esperan su decisión»", () => {
+  it("misTareas las trae junto a las demás, en el módulo «planes»", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_corregir");
+      const { tareas } = await misTareas(b.lider, { sql: tx, ahora: new Date(AHORA) });
+      expect(tareas.find((t) => t.id === `mej-corregir:${h.id}`)).toMatchObject({ modulo: "planes", titulo: `Registrar la corrección de ${h.codigo}` });
+    }));
+
+  it("si tareasDeMejoramiento lanza, misTareas lo registra y devuelve las demás", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      await hallazgoEn(tx, b, "por_decidir");
+      const o = { sql: tx, ahora: new Date(AHORA) };
+      const con = await misTareas(b.admin, o);
+      expect(con.tareas.some((t) => t.modulo === "planes")).toBe(true);
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        vi.mocked(tareasDeMejoramiento).mockRejectedValueOnce(new Error("sin conexión"));
+        const sin = await misTareas(b.admin, o);
+        expect(sin.tareas.map((t) => t.id)).toEqual(con.tareas.filter((t) => t.modulo !== "planes").map((t) => t.id));
+        expect(error).toHaveBeenCalledWith(expect.stringContaining("mejoramiento"), expect.any(Error));
+      } finally {
+        error.mockRestore();
+      }
+    }));
+
+  it("esperanSuDecision cuenta los hallazgos distintos entre sus tareas de mejoramiento (R2)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const corregir = await hallazgoEn(tx, b, "por_corregir");
+      // Dos actividades del mismo hallazgo, de la misma persona: un solo hallazgo.
+      const ejecucion = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: b.lider.usuarioId, actividades: 2 });
+      const ajeno = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId });
+      const o = { sql: tx, ahora: new Date(AHORA) };
+      const suyas = await tareasConSuHallazgo(b.lider, o);
+      const delProceso = new Set(suyas.flatMap((t) => (t.hallazgoId !== null && [corregir.id, ejecucion.id, ajeno.id].includes(t.hallazgoId) ? [t.hallazgoId] : [])));
+      expect([...delProceso].sort((x, y) => x - y)).toEqual([corregir.id, ejecucion.id].sort((x, y) => x - y));
+      const lista = await listarHallazgos(b.lider, { procesoId: b.procesoId, esperanSuDecision: true }, o);
+      expect(lista.filas.map((f) => f.id).sort((x, y) => x - y)).toEqual([corregir.id, ejecucion.id].sort((x, y) => x - y));
+      const todos = await listarHallazgos(b.lider, {}, o);
+      expect(todos.cifras.esperanSuDecision).toBe(new Set(suyas.flatMap((t) => (t.hallazgoId === null ? [] : [t.hallazgoId]))).size);
+    }));
+});
+
+describe("la respuesta al ente", () => {
+  const ENVIADA = "2026-11-18";
+
+  it("exige un archivo del hallazgo subido después de aprobado el plan; deja la fecha, el evento y la bitácora", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await externo(tx, b, "en_aprobacion");
+      // Subido antes de aprobar el plan: no es el oficio de la respuesta.
+      await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      await aprobarPlan(b.gerencia, { hallazgoId: h.id, credenciales: { clave: "ok" } }, c(HORA_DE_ESCENA, tx));
+      const o = c(AHORA, tx);
+      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: ENVIADA }, o)).rejects.toThrow("Adjunte el oficio de respuesta");
+      const oficio = await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: "2026-11-19" }, o)).rejects.toThrow(
+        "La fecha de envío no puede ser futura",
+      );
+      await registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: ENVIADA }, o);
+
+      const [f] = await tx`SELECT to_char(respuesta_ente_en, 'YYYY-MM-DD') AS en, respuesta_ente_por FROM mejora_hallazgos WHERE id = ${h.id}`;
+      expect(f).toEqual({ en: ENVIADA, respuesta_ente_por: b.admin.usuarioId });
+      const [e] = await tx`SELECT detalle, usuario_id, ocurrio_en FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'respuesta_ente'`;
+      expect(e).toEqual({ detalle: { enviadaEn: ENVIADA, archivos: [oficio] }, usuario_id: b.admin.usuarioId, ocurrio_en: new Date(AHORA) });
+      const [bit] = await tx`SELECT detalle FROM auditoria
+        WHERE accion = 'mejora_respuesta_ente' AND entidad = 'mejora_hallazgo' AND entidad_id = ${h.id}`;
+      expect(bit.detalle).toEqual({ codigo: h.codigo, enviadaEn: ENVIADA, archivos: [oficio] });
+
+      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(
+        "Ya se registró la respuesta al ente",
+      );
+      // El oficio registrado queda: ya no se quita.
+      await expect(quitarArchivoDeMejora(b.admin, oficio, { sql: tx })).rejects.toThrow("El oficio de la respuesta al ente ya se registró: no se quita");
+    }));
+
+  it("solo el Admin SGC, solo en un hallazgo externo y solo con el plan aprobado", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const o = c(AHORA, tx);
+      const enAprobacion = await externo(tx, b, "en_aprobacion");
+      await evidenciaDelHallazgo(tx, enAprobacion.id, b.admin.usuarioId);
+      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: enAprobacion.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(
+        "El plan todavía no está aprobado",
+      );
+      await expect(registrarRespuestaAlEnte(b.control, { hallazgoId: enAprobacion.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(ErrorPermiso);
+      const interno = await hallazgoEn(tx, b, "en_ejecucion");
+      await evidenciaDelHallazgo(tx, interno.id, b.admin.usuarioId);
+      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: interno.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(
+        "Solo un hallazgo de origen externo lleva respuesta al ente",
+      );
+    }));
+});
+
+describe("«Mis tareas» agrupa las de mejoramiento por fuente", () => {
+  const de = (paso: string, n: number, titulo = `Tarea ${n}`): Tarea => ({
+    id: `mej-${paso}:${n}`,
+    modulo: "planes",
+    titulo,
+    detalle: null,
+    vence: n === 3 ? new Date("2026-11-21T04:59:59Z") : new Date("2026-12-01T17:00:00Z"),
+    enlace: `/mejoramiento/${n}`,
+  });
+  const seis = (paso: string, titulo?: (n: number) => string) => [1, 2, 3, 4, 5, 6].map((n) => de(paso, n, titulo?.(n)));
+  const AHORA_G = new Date("2026-11-18T15:00:00Z");
+
+  it("más de cinco de un paso van a la lista filtrada por «Esperan su decisión» y su estado", () => {
+    const [g] = agruparTareas(seis("corregir"), 5, AHORA_G);
+    expect(g).toEqual({
+      id: "mejora-corregir",
+      modulo: "planes",
+      titulo: "6 correcciones de hallazgos por registrar",
+      detalle: "La más próxima vence el 20 de noviembre de 2026",
+      vence: new Date("2026-11-21T04:59:59Z"),
+      enlace: "/mejoramiento?decision=1&estado=por_corregir",
+    });
+    expect(agruparTareas(seis("evaluar"), 5, AHORA_G)[0]).toMatchObject({ titulo: "6 hallazgos por evaluar la eficacia", enlace: "/mejoramiento?decision=1&estado=por_evaluar" });
+    expect(agruparTareas(seis("ajuste"), 5, AHORA_G)[0]).toMatchObject({ enlace: "/mejoramiento?decision=1" });
+    expect(agruparTareas(seis("clasificar"), 5, AHORA_G)[0]).toMatchObject({ titulo: "6 reportes de mejoramiento por clasificar", enlace: RUTA_REPORTES_RECIBIDOS });
+  });
+
+  it("las actividades van a «Mis actividades»; con una por reasignar, a la lista", () => {
+    expect(agruparTareas(seis("actividad"), 5, AHORA_G)[0]).toMatchObject({ id: "mejora-actividades", enlace: "/mejoramiento/actividades" });
+    const conReasignar = seis("actividad", (n) => (n === 2 ? "Reasignar: Actividad 2" : `Actividad ${n}`));
+    expect(agruparTareas(conReasignar, 5, AHORA_G)[0]).toMatchObject({ enlace: "/mejoramiento?decision=1" });
+  });
+
+  it("con cinco de cada fuente no agrupa nada", () => {
+    const tareas = ["aceptar", "actividad", "clasificar", "ente"].flatMap((p) => [1, 2, 3, 4, 5].map((n) => de(p, n)));
+    expect(agruparTareas(tareas, 5, AHORA_G)).toEqual(tareas);
+  });
+});

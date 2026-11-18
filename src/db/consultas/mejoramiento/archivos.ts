@@ -173,6 +173,8 @@ const EVIDENCIA_VERIFICADA = "La evidencia de la verificación ya se usó al ver
 
 const EVIDENCIA_EVALUADA = "La evaluación de la eficacia ya se registró: su evidencia no se quita";
 
+const OFICIO_REGISTRADO = "El oficio de la respuesta al ente ya se registró: no se quita";
+
 const SIN_PERMISO = "Sin permiso para adjuntar este archivo";
 
 /** El paso de la persona y del estado, sin saber si el dueño se ve (eso lo decide `autorizarSubida`). */
@@ -279,6 +281,12 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   }
   // Lo mismo con la de la verificación (PC-08): la que había al verificar quedó en el evento de la verificación y ya no se
   // quita; la que se sube durante la espera (la de la eficacia), solo hasta que se registra la evaluación. Tampoco el Admin SGC.
+  // El oficio de la respuesta al ente (spec §13.4) quedó en el evento de la respuesta: ya no se quita, tampoco el Admin SGC.
+  if (a.contexto === "mejora_hallazgo" && a.rol === "evidencia" && f.hallazgoId !== null) {
+    const [registrado] = await sql`SELECT 1 FROM mejora_eventos
+      WHERE hallazgo_id = ${f.hallazgoId} AND tipo = 'respuesta_ente' AND detalle->'archivos' @> jsonb_build_array(${a.id}::bigint) LIMIT 1`;
+    if (registrado) return OFICIO_REGISTRADO;
+  }
   if (a.contexto === "mejora_ronda" && a.rol === "verificacion" && f.hallazgoId !== null) {
     const [usada] = await sql`SELECT 1 FROM mejora_eventos
       WHERE hallazgo_id = ${f.hallazgoId} AND tipo = 'verificar_implementacion'
@@ -316,7 +324,8 @@ export async function archivosQuitables(
  * Quita un archivo: quien lo subió, mientras su paso sigue abierto, o el Admin SGC mientras el hallazgo no termine (un
  * reporte, mientras esté recibido); en un hallazgo terminado, nadie. La evidencia de la corrección, solo mientras está «Por
  * corregir», la de una actividad, solo mientras está abierta o en proceso, y la de la verificación, solo hasta verificar (la que se
- * sube en la espera, hasta registrar la evaluación): después, tampoco el Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
+ * sube en la espera, hasta registrar la evaluación), y el oficio de una respuesta al ente ya registrada, nunca: después, tampoco el
+ * Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
  * fila y deja `eliminar_archivo` en la bitácora; el archivo del almacén se borra después de confirmar y uno ya ausente no
  * es un error.
  */

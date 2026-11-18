@@ -10,11 +10,14 @@ import {
 } from "@/db/consultas/distribucion/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { tareasDeIndicadores } from "@/db/consultas/indicadores/tareas";
+import { tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
 import { tareasDeImpactos } from "@/db/consultas/normograma/impactos";
 import { listarTramites, type ResumenTramite } from "@/db/consultas/tramites";
 import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
 import { tareasDeRevision } from "@/db/consultas/vigencia/revision-anual/tareas";
 import { vigenciaDePersona, type VigenciaDePersona } from "@/db/consultas/vigencia/tareas";
+import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
+import { PREFIJO_REASIGNAR } from "@/lib/mejoramiento/textos";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
 import { modoDeVigencia } from "@/lib/vigencia/modo";
@@ -65,6 +68,21 @@ type Grupo = {
 };
 
 const masculino = (fecha: string, vencida: boolean) => (vencida ? `El más atrasado venció el ${fecha}` : `El más próximo vence el ${fecha}`);
+const femenino = (fecha: string, vencida: boolean) => (vencida ? `La más atrasada venció el ${fecha}` : `La más próxima vence el ${fecha}`);
+
+/**
+ * Un paso de los hallazgos de mejoramiento (`mej-<paso>:`): lleva a la lista filtrada por «Esperan su decisión», que con R2 son
+ * justamente los hallazgos de estas tareas, y por el estado del paso (sin estado, el ajuste y la respuesta al ente, que no
+ * tienen uno propio).
+ */
+const pasoDeMejora = (paso: string, que: string, estado: string | null, detalle = masculino): Grupo => ({
+  prefijo: `mej-${paso}:`,
+  id: `mejora-${paso}`,
+  modulo: "planes",
+  titulo: (m) => `${m.length} ${que}`,
+  detalle,
+  enlace: () => `/mejoramiento?decision=1${estado ? `&estado=${estado}` : ""}`,
+});
 
 /** Un documento por revisar está vencido si su próxima revisión ya pasó; sin fecha, o antes de ella, está en atención. */
 const vencidas = (miembros: Tarea[], ahora: Date) => miembros.filter((t) => t.vence !== null && t.vence.getTime() < ahora.getTime()).length;
@@ -98,7 +116,10 @@ const indicadoresPor = (que: string) => (miembros: Tarea[], ahora: Date) => {
  * por reportar (anexo 14C, §4.4: `dato:`), que llevan a «Datos compartidos», las revisiones por cambio de norma
  * (anexo 14B, §9: `impacto-indicador:`, que no empieza por el `impacto:` de la 13C), que llevan a la lista filtrada por la
  * revisión pendiente, y las fichas por aprobar; no las observaciones ni las fichas devueltas (`ficha-devuelta:` no empieza
- * por `ficha:`).
+ * por `ficha:`). De mejoramiento (spec 15 §14.1) se agrupa cada fuente `mej-…:`: los reportes por clasificar, que llevan a
+ * «Reportes recibidos»; las actividades, que llevan a «Mis actividades» si todas son de quien mira y, con alguna por reasignar
+ * (de un responsable inactivo, que «Mis actividades» no muestra), a la lista de los hallazgos que esperan su decisión; y cada
+ * paso de los hallazgos (`pasoDeMejora`).
  */
 const GRUPOS: readonly Grupo[] = [
   // Una lectura vence siempre después de pedirse: el detalle de la 13B no cambia.
@@ -167,6 +188,36 @@ const GRUPOS: readonly Grupo[] = [
     detalle: masculino,
     enlace: () => "/indicadores/por-aprobar",
   },
+  {
+    prefijo: "mej-clasificar:",
+    id: "mejora-reportes",
+    modulo: "planes",
+    titulo: (m) => `${m.length} reportes de mejoramiento por clasificar`,
+    detalle: masculino,
+    enlace: () => RUTA_REPORTES_RECIBIDOS,
+  },
+  {
+    prefijo: "mej-actividad:",
+    id: "mejora-actividades",
+    modulo: "planes",
+    titulo: (m) => `${m.length} actividades de planes de mejoramiento`,
+    detalle: femenino,
+    enlace: (m) => (m.some((t) => t.titulo.startsWith(PREFIJO_REASIGNAR)) ? "/mejoramiento?decision=1" : "/mejoramiento/actividades"),
+  },
+  pasoDeMejora("aceptar", "hallazgos por aceptar o rechazar", "por_aceptar"),
+  pasoDeMejora("rechazo", "rechazos de hallazgos por decidir", "rechazo"),
+  pasoDeMejora("arbitrar", "rechazos de hallazgos por arbitrar", "arbitraje"),
+  pasoDeMejora("corregir", "correcciones de hallazgos por registrar", "por_corregir", femenino),
+  pasoDeMejora("decidir", "hallazgos por decidir si requieren acción correctiva", "por_decidir"),
+  pasoDeMejora("validar", "correcciones de hallazgos por validar", "por_validar", femenino),
+  pasoDeMejora("formular", "planes de mejoramiento por formular", "por_formular"),
+  pasoDeMejora("revisar", "planes de mejoramiento por revisar", "en_revision"),
+  pasoDeMejora("aprobar", "planes de mejoramiento por aprobar", "en_aprobacion"),
+  pasoDeMejora("ajuste", "ajustes de planes de mejoramiento por decidir", null),
+  pasoDeMejora("verificar", "hallazgos por verificar", "por_verificar"),
+  pasoDeMejora("evaluar", "hallazgos por evaluar la eficacia", "por_evaluar"),
+  pasoDeMejora("cerrar", "hallazgos por cerrar", "por_cerrar"),
+  pasoDeMejora("ente", "respuestas al ente por registrar", null, femenino),
 ];
 
 function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {
@@ -208,13 +259,15 @@ export function agruparTareas(tareas: Tarea[], umbral = 5, ahora = new Date()): 
 
 const SIN_VIGENCIA: VigenciaDePersona = { tareas: [], vencidos: 0 };
 const SIN_INDICADORES = { tareas: [] as Tarea[], vencidas: 0 };
+const SIN_MEJORAMIENTO = { tareas: [] as Tarea[] };
 
 /**
  * Los pasos que le tocan a la persona: los trámites (la pestaña «Por hacer» de la bandeja, spec 13A §14.1), las
  * copias, las lecturas por confirmar, las socializaciones por registrar, las verificaciones, los hallazgos (y su validación), de la
  * vigencia, la adopción de las ediciones nuevas, la verificación de sus externos y la revisión de sus documentos, la de
  * cada proceso suyo en la revisión anual abierta y los impactos normativos de sus procesos (estas dos, una consulta
- * acotada cada una, nada para quien no lidera ni es Admin SGC) y, al final, las de los indicadores. Con ellas,
+ * acotada cada una, nada para quien no lidera ni es Admin SGC), las de los indicadores y, al final, las de mejoramiento (spec
+ * 15 §14.1, sin insignia en la barra). Con ellas,
  * `vencidos`: la insignia de «Vigencia», y `vencidasIndicadores`: la de «Indicadores» (spec 14 §10.1). La configuración
  * documental se lee una sola vez, y solo si alguna fuente la usa. `responsableTecnico`, si quien llama ya lo sabe (el
  * cascarón).
@@ -230,7 +283,7 @@ export async function misTareas(
   const config = usaConfig ? obtenerConfigDocumental({ sql: opciones?.sql }) : undefined;
   // Quien la espera recibe su rechazo; este `catch` solo evita uno sin atender si ninguna fuente llega a esperarla.
   config?.catch(() => {});
-  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, validacion, vigencia, revision, impactos, indicadores] = await Promise.all([
+  const [tramites, copias, acuses, socializacion, verificacion, hallazgos, validacion, vigencia, revision, impactos, indicadores, mejoramiento] = await Promise.all([
     listarTramites(sesion, "por_hacer", fuentes),
     tareasDeCopias(sesion, fuentes),
     tareasDeAcuses(sesion, fuentes),
@@ -249,6 +302,11 @@ export async function misTareas(
     tareasDeIndicadores(sesion, fuentes).catch((err: unknown) => {
       console.error("No se pudieron calcular las tareas de indicadores de «Mis tareas» y de la insignia:", err);
       return SIN_INDICADORES;
+    }),
+    // También calculadas del estado: si fallan se registra, y las demás tareas y la página siguen sin ellas.
+    tareasDeMejoramiento(sesion, fuentes).catch((err: unknown) => {
+      console.error("No se pudieron calcular las tareas de mejoramiento de «Mis tareas»:", err);
+      return SIN_MEJORAMIENTO;
     }),
   ]);
   const tareas: Tarea[] = [
@@ -270,6 +328,7 @@ export async function misTareas(
     ...revision,
     ...impactos,
     ...indicadores.tareas,
+    ...mejoramiento.tareas,
   ];
   return {
     tareas: agruparTareas(tareas, 5, opciones?.ahora),

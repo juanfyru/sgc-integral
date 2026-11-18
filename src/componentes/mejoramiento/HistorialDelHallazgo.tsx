@@ -82,6 +82,7 @@ const FRASE: Record<string, string> = {
   seguimiento: "Registró un seguimiento de una actividad",
   actividad_terminada: "Terminó una actividad",
   reasignada: "Reasignó una actividad",
+  respuesta_ente: "Registró la respuesta al ente",
 };
 
 /** La etiqueta de una actividad («A1.2») tal como la trae un evento, o nada si no tiene esa forma. */
@@ -132,6 +133,10 @@ function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string
     // En uno que añade, la actividad que se pidió todavía no existe: el pedido y la negativa nombran la acción, no la actividad.
     const que = queSeAjusta(d, e.tipo === "ajustar" || d.tipo !== "agregar" ? etiqueta : null);
     return que ? `${VERBO_DEL_AJUSTE[e.tipo]} ${que}` : FRASE[e.tipo];
+  }
+  // La respuesta al ente dice cuándo se envió (spec §13.4); el oficio son sus archivos.
+  if (e.tipo === "respuesta_ente" && typeof d.enviadaEn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d.enviadaEn)) {
+    return `${FRASE.respuesta_ente}, enviada el ${fechaDeDia(d.enviadaEn)}`;
   }
   if (e.tipo === "validar_correccion" && d.resultado === "sin_accion") return "Validó el cierre sin acción";
   if (e.tipo === "corregir" && d.requerida === false) return "Registró que no requiere corrección inmediata";

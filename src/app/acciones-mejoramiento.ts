@@ -32,6 +32,7 @@ import {
   reclasificarHallazgo,
   registrarHallazgo,
   registrarOcurrencia,
+  registrarRespuestaAlEnte,
 } from "@/db/consultas/mejoramiento/registro";
 import { descartarReporte, enviarReporte, hallazgoPorCodigo, sumarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { cerrarHallazgo, evaluarEficacia, LO_VISTO_CAMBIO, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
@@ -70,6 +71,7 @@ import {
   EsquemaRechazo,
   EsquemaReclasificacion,
   EsquemaReporte,
+  EsquemaRespuestaAlEnte,
   EsquemaSeguimiento,
   EsquemaSostener,
   RELACION_DE_REGISTRO,
@@ -210,6 +212,18 @@ export async function cambiarProcesoAccion(_previo: EstadoAccion, formData: Form
 export async function quitarArchivoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
     await quitarArchivoDeMejora(sesion, idNumerico(datos, "archivoId"));
+  });
+}
+
+/**
+ * El Admin SGC registra la respuesta al ente de un hallazgo externo con el plan aprobado (spec 15 §13.4): la fecha en que se
+ * envió; el oficio es un archivo del hallazgo subido después de aprobado el plan, que `registrarRespuestaAlEnte` exige.
+ */
+export async function registrarRespuestaAlEnteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaRespuestaAlEnte);
+    await registrarRespuestaAlEnte(sesion, d);
+    return rutaDeHallazgo(d.hallazgoId);
   });
 }
 

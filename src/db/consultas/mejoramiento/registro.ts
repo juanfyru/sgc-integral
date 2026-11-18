@@ -14,6 +14,7 @@ import {
   EsquemaHallazgo,
   EsquemaOcurrencia,
   EsquemaReclasificacion,
+  EsquemaRespuestaAlEnte,
   HALLAZGO_DE_ORIGEN,
   type HallazgoValidado,
 } from "@/lib/esquemas/mejoramiento";
@@ -669,6 +670,89 @@ export async function anularHallazgo(
         { tipo: "mejora.anulado", titulo: `Se anuló ${h.codigo}`, hallazgoId: h.id },
         destinos.map((usuarioId) => ({ usuarioId, cuerpo: titulo as string })),
       );
+    }),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La respuesta al ente (spec §13.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const SIN_OFICIO = "Adjunte el oficio de respuesta";
+export const SOLO_EXTERNO = "Solo un hallazgo de origen externo lleva respuesta al ente";
+export const PLAN_SIN_APROBAR = "El plan todavía no está aprobado: la respuesta al ente se registra después de aprobarlo";
+export const YA_RESPONDIDO = "Ya se registró la respuesta al ente";
+export const ENVIO_FUTURO = "La fecha de envío no puede ser futura";
+
+/**
+ * Los archivos del hallazgo (rol `evidencia`) subidos después de aprobado su plan: los que pueden ser el oficio de la respuesta
+ * al ente. «Después» lo dice el orden de la bitácora, la subida (`subir_archivo`) contra la transición que aprobó el plan (la
+ * primera que llevó el hallazgo a «En ejecución»), y no la hora: `archivos.creado_en` es la de la base al subir y la
+ * aprobación guarda la de `ahora`. Sin plan aprobado, ninguno. Una sola regla para el acto y para la página.
+ */
+export async function oficiosPosibles(sql: Cliente, hallazgoId: number): Promise<number[]> {
+  const filas = await sql`
+    WITH aprobado AS (
+      SELECT min(id) AS id FROM auditoria
+      WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${hallazgoId}
+        AND accion IN ('mejora_aprobar_plan', 'mejora_revisar_plan') AND detalle->'estado'->>'despues' = 'en_ejecucion')
+    SELECT a.id FROM archivos a CROSS JOIN aprobado
+    WHERE a.contexto = 'mejora_hallazgo' AND a.contexto_id = ${hallazgoId} AND a.rol = 'evidencia' AND a.version_id IS NULL
+      AND aprobado.id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM auditoria s
+        WHERE s.accion = 'subir_archivo' AND s.entidad = 'archivo' AND s.entidad_id = a.id AND s.id > aprobado.id)
+    ORDER BY a.id`;
+  return filas.map((f) => Number(f.id));
+}
+
+/**
+ * El Admin SGC registra la respuesta al ente de un hallazgo externo con el plan aprobado (spec §13.4): la fecha en que se envió
+ * (no futura, en la zona de la instalación) y el oficio, que es al menos un archivo del hallazgo subido después de aprobado el
+ * plan (`oficiosPosibles`). Una sola vez. Deja la fecha y quién en el hallazgo, el evento `respuesta_ente` y su bitácora, con
+ * la fecha y los ids de los archivos, sin texto libre. Cumple la tarea «Registrar la respuesta al ente». No avisa: no le pasa
+ * el turno a nadie.
+ */
+export async function registrarRespuestaAlEnte(
+  sesion: SesionFlujo,
+  d: { hallazgoId: number; enviadaEn: string },
+  opciones?: OpcionesFlujo,
+): Promise<void> {
+  requerirPermiso(sesion, "mejora.gestionar");
+  const leido = EsquemaRespuestaAlEnte.safeParse(d);
+  if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
+  const r = leido.data;
+  const ahora = opciones?.ahora ?? new Date();
+  return legible(
+    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      // El hallazgo `FOR UPDATE` primero: una subida o una quitada de sus archivos lo toma `FOR SHARE` y espera.
+      const h = await bloquearHallazgo(tx, r.hallazgoId);
+      if (!(await puedeVerHallazgo(h.id, sesion, { sql: tx }))) throw new ErrorMejora(NO_EXISTE);
+      if (TERMINALES.includes(h.estado)) throw new ErrorMejora("El hallazgo ya terminó y no admite cambios");
+      if (!esExterno(h.origen)) throw new ErrorMejora(SOLO_EXTERNO);
+      const [f] = await tx`SELECT respuesta_ente_en FROM mejora_hallazgos WHERE id = ${h.id}`;
+      if (f.respuesta_ente_en !== null) throw new ErrorMejora(YA_RESPONDIDO);
+      const [aprobado] = await tx`SELECT 1 FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND estado_plan = 'aprobado' LIMIT 1`;
+      if (!aprobado) throw new ErrorMejora(PLAN_SIN_APROBAR);
+      const c = await contextoDeMejora(tx, ahora);
+      if (r.enviadaEn > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(ENVIO_FUTURO);
+      const archivos = await oficiosPosibles(tx, h.id);
+      if (archivos.length === 0) throw new ErrorMejora(SIN_OFICIO);
+      await tx`UPDATE mejora_hallazgos SET respuesta_ente_en = ${r.enviadaEn}, respuesta_ente_por = ${sesion.usuarioId} WHERE id = ${h.id}`;
+      await dejarEvento(tx, {
+        hallazgoId: h.id,
+        ronda: h.ronda,
+        tipo: "respuesta_ente",
+        detalle: { enviadaEn: r.enviadaEn, archivos },
+        usuarioId: sesion.usuarioId,
+        ocurrioEn: c.ahora,
+      });
+      await registrarAuditoria(tx, {
+        usuarioId: sesion.usuarioId,
+        accion: "mejora_respuesta_ente",
+        entidad: ENTIDAD_HALLAZGO,
+        entidadId: h.id,
+        detalle: { codigo: h.codigo, enviadaEn: r.enviadaEn, archivos },
+      });
     }),
   );
 }

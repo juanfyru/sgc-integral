@@ -235,10 +235,12 @@ export async function verificarImplementacion(
           WHERE id IN ${tx(conformes.map((x) => x.id))}`;
       }
       for (const x of devueltas) {
-        // Vuelve a estar abierta: quién la terminó queda en su evento `actividad_terminada` (lo lee `quienesVerifican`).
+        // Vuelve a estar abierta: quién la terminó queda en su evento `actividad_terminada` (lo lee `quienesVerifican`). Su plazo
+        // es ahora la fecha para corregir: las marcas del aviso de vencida y del escalamiento se borran (spec §14.3), y el
+        // recordatorio de seguimiento cuenta desde la devolución, que ya le llega como aviso.
         await tx`UPDATE mejora_actividades
           SET estado = 'en_proceso', verificacion = 'devuelta', verificacion_nota = ${x.nota}, corregir_antes_de = ${x.corregirAntesDe},
-            terminada_en = NULL, terminada_por = NULL
+            terminada_en = NULL, terminada_por = NULL, aviso_vencido_en = NULL, escalado_en = NULL, recordatorio_en = ${ahora}
           WHERE id = ${x.id}`;
       }
       // La evidencia de la verificación que había al verificar (PC-08): desde ahora no se quita (`archivos.ts`).

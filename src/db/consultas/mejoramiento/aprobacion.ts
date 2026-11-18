@@ -292,8 +292,8 @@ export async function devolverPlan(
  * Deja el plan de la ronda aprobado, por la «Aprobó» o por la «Revisó» que vale como aprobación, en la transacción del acto:
  * el estado del plan, quién lo aprobó y con qué rol; la fecha de fin original de cada actividad (no cambia nunca después);
  * el cierre previsto (§11.3); el paso por `transicionarHallazgo` con el plan congelado y su huella; y el aviso a cada
- * responsable por su actividad, sin el contenido del hallazgo. La respuesta al ente de un hallazgo externo la calcula la
- * Tarea 19.
+ * responsable por su actividad, sin el contenido del hallazgo. La tarea de la respuesta al ente de un hallazgo externo nace
+ * de este estado, sin escribir nada aquí: «Mis tareas» la calcula (`mej-ente`, `tareas.ts`) y la cumple `registrarRespuestaAlEnte`.
  */
 async function dejarAprobado(
   tx: TransactionSql,

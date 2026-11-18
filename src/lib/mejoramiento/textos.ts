@@ -80,6 +80,12 @@ export const ETIQUETA_ESTADO_AJUSTE: Record<EstadoAjuste, string> = {
   negado: "Negado",
 };
 
+/**
+ * El comienzo del título de la tarea de quien actúa por el proceso ante la actividad de un responsable inactivo (spec §14.1):
+ * «Reasignar: <descripción>». «Mis tareas» agrupa las actividades y las distingue por él.
+ */
+export const PREFIJO_REASIGNAR = "Reasignar: ";
+
 /** La nota con que se niegan los ajustes pendientes de un hallazgo que se anula (spec §7.6 y §10.6). */
 export const AJUSTE_POR_ANULACION = "Se anuló el hallazgo";
 

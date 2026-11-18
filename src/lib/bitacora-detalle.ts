@@ -1071,6 +1071,12 @@ export function describirEvento(e: EventoAuditoria): string {
     }
     case "mejora_reporte_descartado":
       return `Descartó ${elReporte(d, e.entidadId)}`;
+    // ── Mejoramiento (15A): la respuesta al ente de un hallazgo externo (la fecha de envío; el oficio son los ids del detalle)
+    case "mejora_respuesta_ente": {
+      const codigo = texto(d.codigo);
+      const enviada = dia(d.enviadaEn);
+      return `Registró la respuesta al ente ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${enviada ? `, enviada el ${enviada}` : ""}`;
+    }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1546,6 +1552,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_reporte_convertido: "Convirtió un reporte en hallazgo",
   mejora_reporte_sumado: "Añadió un reporte como ocurrencia de un hallazgo",
   mejora_reporte_descartado: "Descartó un reporte",
+  mejora_respuesta_ente: "Registró la respuesta al ente de un hallazgo",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",
