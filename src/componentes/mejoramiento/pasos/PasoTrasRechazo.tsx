@@ -41,7 +41,7 @@ export function PasoTrasRechazo({
       <Desplegable titulo="Retirarlo">
         <form action={enviarR} onSubmit={enviarSinReiniciar(enviarR)} className="flex flex-col gap-3">
           <input type="hidden" name="hallazgoId" value={hallazgoId} />
-          <p className="text-sm">El hallazgo queda «Rechazado», con las dos razones a la vista en su historial. No se puede deshacer.</p>
+          <p className="text-sm">El hallazgo queda «Rechazado», con la justificación del rechazo a la vista en su historial. No se puede deshacer.</p>
           <ErrorDelPaso estado={estadoR} />
           <Boton type="submit" variante="peligro" pendiente={pendienteR} className="self-start">
             {pendienteR ? "Retirando…" : "Retirar el hallazgo"}

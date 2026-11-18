@@ -107,8 +107,8 @@ fecha, el paso en que va y los que faltan.
 Después, una sección por etapa, en el orden del formato SGC-FO-AC-01: **1. Identificación**,
 **2. Corrección o contención**, **3. Causa raíz**, **4. Plan de acción**, **5. Seguimiento**,
 **6. Verificación de eficacia** y **7. Cierre**. Las hechas se pliegan con su resumen en una línea;
-la actual queda abierta; las que faltan no aparecen. Una ronda anterior aparece plegada como
-**Ronda anterior**.
+la actual queda abierta; las que faltan no aparecen. Una ronda anterior aparece plegada con su
+número y su resultado, por ejemplo **Ronda 1 · no eficaz**.
 
 A la derecha (abajo, en un teléfono):
 
@@ -297,12 +297,14 @@ jefe, sin el contenido del hallazgo.
 
 El líder, en **Lo que sigue**: **Aceptar el hallazgo** o **Rechazar el hallazgo**, con **Por qué lo
 rechaza (al menos 10 caracteres)**. Un hallazgo de origen externo no se rechaza. Rechazado, quien lo
-registró lo **retira** (queda **Rechazado**, con las dos razones a la vista en el historial) o lo
-**sostiene** con su réplica. Sostenido, lo arbitra el Administrador del SGC, o Gerencia si un
+registró lo **retira** (queda **Rechazado**; retirarlo no pide una razón propia, y el historial
+conserva la justificación del rechazo) o lo **sostiene** con su réplica. Sostenido, lo arbitra el Administrador del SGC, o Gerencia si un
 Administrador del SGC fue quien lo registró o lo sostuvo: nadie arbitra lo que ya defendió.
 **Registrar el arbitraje** confirma el hallazgo (sigue como aceptado, con los 10 días de formular
 contados desde el arbitraje) o confirma el rechazo, con una nota y, si se quiere, el acta del
-Comité. Es definitivo.
+Comité. Es definitivo. La campana avisa el resultado a quien lo registró y, si se confirmó el
+rechazo, también a los líderes del proceso (si el hallazgo sigue, ellos reciben su turno); un retiro
+se avisa a los líderes. Los avisos llevan el código y el título, nunca la nota.
 
 ### 4.3 Qué formato del hospital reemplaza cada pantalla
 
@@ -358,6 +360,8 @@ Con el «no», no hay plan: alguien que no participó valida lo hecho.
   justificaciones, la de no corregir y la de no requerir acción. No puede validarlo quien escribió
   el «no requiere corrección» **ni quien decidió el «no»**. **Validar el cierre sin acción** lo deja
   **Cerrado sin acción**.
+- Los dos cierres avisan, como el cierre eficaz, a los líderes del proceso, a quien lo registró y a
+  Gerencia: «Se cerró HZ-…: cerrado con corrección» o «…: cerrado sin acción».
 - **Exigir la acción correctiva:** mientras espera la validación, el Administrador del SGC o
   Gerencia pueden cambiar el «no» por «sí», con su justificación: el hallazgo pasa a **Por
   formular**, con sus 10 días contados desde ese momento.
@@ -585,8 +589,9 @@ este.
   controles, **Cómo se atendieron los cambios**. **Firmar «Cerró».** Queda **Cerrado · eficaz** y
   avisa a los líderes del proceso, a quien lo registró y a Gerencia. El visto bueno de Gerencia del
   formato es ese aviso, no una firma.
-- **No eficaz:** la ronda queda congelada y a la vista, plegada como **Ronda anterior**, y se abre
-  la siguiente en **Por formular**, con 10 días hábiles. La lista lo marca **Reabierto · ronda 2**.
+- **No eficaz:** la ronda queda congelada y a la vista, plegada como **Ronda 1 · no eficaz** (con su
+  número), y se abre la siguiente en **Por formular**, con 10 días hábiles. La lista lo marca
+  **Reabierto · ronda 2**.
 
 Un hallazgo cerrado, rechazado o anulado no cambia más. Lo que vuelva a pasar es otro hallazgo,
 reincidente.

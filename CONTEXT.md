@@ -564,7 +564,7 @@ hallazgos ya sembrados.
    o en el del paso 8: no se puede antes de la fecha.
 10. **No eficaz** (sobre el 003, que espera su fecha: «no eficaz» se registra en cualquier momento). Como
     `control.interno`, **No eficaz: se reabre con una ronda nueva**, con su justificación y la firma: el hallazgo vuelve a
-    «Por formular» en la ronda 2, con la ronda 1 plegada como **Ronda anterior** y la marca «Reabierto · ronda 2». El 002
+    «Por formular» en la ronda 2, con la ronda 1 plegada como **Ronda 1 · no eficaz** y la marca «Reabierto · ronda 2». El 002
     ya está así.
 11. **El camino corto.** Dos no conformidades nuevas de criticidad baja en Talento Humano, registradas por
     `control.interno`. En la primera, `lider.gth` acepta y registra la corrección; `coordinadora.sgc` decide que no requiere
@@ -572,7 +572,8 @@ hallazgos ya sembrados.
     **¿Requirió corrección?**; `coordinadora.sgc` decide «no» y no puede validarla; `control.interno` valida el cierre sin
     acción: «Cerrado sin acción». El 006 y el 007 ya están así.
 12. **Rechazo y arbitraje.** El 013: `lider.gth` lo rechazó y `control.interno` lo sostuvo; como `coordinadora.sgc`,
-    **Registrar el arbitraje**. El 012 muestra un rechazo retirado, con las dos razones en el historial.
+    **Registrar el arbitraje**. El 012 muestra un rechazo retirado: el historial trae la justificación del rechazo y el
+    retiro, que no pide razón propia.
 13. **Ente de control.** El 011 nació aceptado (no ofrece rechazo) y pidió la fecha del ente; como `gerente`, **Aprobar el
     plan**; `coordinadora.sgc` recibe la tarea **Registrar la respuesta al ente** (suba el oficio, elíjalo y registre la
     fecha).
