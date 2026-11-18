@@ -658,7 +658,9 @@ Después, la página del hallazgo le pide **el formato firmado escaneado** («A�
 formato firmado.»). Es obligatorio: **sin él, las actividades no llegan a sus responsables**, nadie
 puede registrar seguimientos ni terminar actividades, no se verifica y la pasada de vencimientos no
 lo cuenta. Mientras tanto sí se puede reasignar una actividad mal cargada o anular una carga
-equivocada. Al subir el formato, cada responsable recibe su actividad.
+equivocada. Hasta subirlo, cada Administrador del SGC tiene en **Mis tareas** «Adjuntar el formato
+firmado de HZ-…» (sin fecha límite), y en la lista el turno dice «El Administrador del SGC: falta el
+formato firmado». Al subir el formato, cada responsable recibe su actividad.
 
 El hallazgo recibe su código del año en que se carga y queda **En ejecución** (o **Por verificar**,
 si todo está terminado), con la marca **Cargado**. Cada paso hecho en papel queda en el historial
