@@ -5,7 +5,8 @@
  */
 import type { Cliente } from "@/db/cliente";
 import type { Periodicidad } from "@/lib/indicadores/tipos";
-import { fechaMinimaDeEficacia, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
+import type { ContextoMejora } from "@/db/consultas/mejoramiento/config";
+import { fechaMinimaDeEficacia, venceLaEvaluacion, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import type { Clase } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -59,6 +60,14 @@ export async function fechasMinimasDe(sql: Cliente, hallazgoIds: readonly number
     });
   }
   return resultado;
+}
+
+/**
+ * Hasta cuándo se evalúa la eficacia de un hallazgo en espera (spec §13.3): `venceLaEvaluacion` desde su fecha mínima, con el plazo
+ * de reporte del indicador enlazado solo si sigue activo. Una sola regla para «Mis tareas», la pasada y «Con algo vencido».
+ */
+export function venceLaEvaluacionDe(fm: FechaMinima, c: Pick<ContextoMejora, "config" | "calendario" | "zona">): Date {
+  return venceLaEvaluacion(fm.minima, fm.indicadorRetirado ? null : (fm.indicador?.plazoReporteDias ?? null), c);
 }
 
 /** La fecha mínima de eficacia de un hallazgo (`fechasMinimasDe` con uno solo); nulo si no está «En espera de eficacia». */

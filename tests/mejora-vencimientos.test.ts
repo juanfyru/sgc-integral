@@ -5,11 +5,34 @@
  * los demás módulos, dentro de una transacción que se revierte, y cuenta solo lo suyo.
  */
 import type { TransactionSql } from "postgres";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+// El gancho «entre la lista y el candado» (ronda 1, punto 5): `correrPaso` real, con algo que pasa después de resolver a quién
+// avisar y antes de la transacción del candado. Sin gancho, la pasada de siempre.
+const { entreLaListaYElCandado } = vi.hoisted(() => ({ entreLaListaYElCandado: { una: null as null | (() => Promise<unknown>) } }));
+vi.mock("@/db/consultas/indicadores/pasada", async (original) => {
+  const real = await original<typeof import("@/db/consultas/indicadores/pasada")>();
+  return {
+    ...real,
+    correrPaso: ((c, paso) =>
+      real.correrPaso(c, {
+        ...paso,
+        resolver: async (ctx, candidatas) => {
+          const resueltos = await paso.resolver(ctx, candidatas);
+          const gancho = entreLaListaYElCandado.una;
+          entreLaListaYElCandado.una = null;
+          if (gancho) await gancho();
+          return resueltos;
+        },
+      })) as typeof real.correrPaso,
+  };
+});
+
 import { obtenerSql } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
-import { decidirAjuste, pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
-import { registrarSeguimiento } from "@/db/consultas/mejoramiento/actividades";
+import { decidirAjuste, escalarAGerencia, pedirAjuste, SOLO_VENCIDA } from "@/db/consultas/mejoramiento/ajustes";
+import { leerActividad, misActividades, reasignarActividad, registrarSeguimiento } from "@/db/consultas/mejoramiento/actividades";
+import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { registrarCorreccion } from "@/db/consultas/mejoramiento/recorrido";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { revisarVencimientosDeMejoramiento } from "@/db/consultas/mejoramiento/vencimientos";
@@ -357,6 +380,110 @@ describe("revisarVencimientosDeMejoramiento", () => {
       expect(await pasada(tx, "2027-01-25T15:00:00Z")).toEqual({ avisados: 1, escalados: 0 });
       const [vencido] = await avisos(tx, "mejora.vencido", "mejora_hallazgo", h.id);
       expect(vencido.titulo).toBe(`Venció el plazo para evaluar la eficacia de ${h.codigo}`);
+    }));
+});
+
+describe("una sola regla de «actividad vencida» (ronda 1, punto 1)", () => {
+  const LUNES = "2026-11-23T15:00:00Z";
+
+  /** Una actividad devuelta el 18 de noviembre con su fecha para corregir, de un hallazgo «En ejecución». */
+  async function devuelta(tx: TransactionSql, fin: string, corregirAntesDe: string) {
+    const b = await baseDeMejora(tx);
+    const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+    const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId, fin });
+    const actividadId = await actividadDe(tx, h.id);
+    await terminarTodas(tx, b, h.id, HORA_DE_ESCENA);
+    await verificarImplementacion(
+      b.control,
+      { hallazgoId: h.id, actividades: [{ id: actividadId, conforme: false, nota: "Falta la firma del jefe de enfermería", corregirAntesDe }], metodos: ["evidencias"] },
+      c("2026-11-18T15:00:00Z", tx),
+    );
+    return { b, responsable, h, actividadId };
+  }
+
+  /** Lo que dicen de la actividad «Mis actividades», su página y la del hallazgo (el `vence` con que la pinta). */
+  async function loQueSeVe(tx: TransactionSql, x: Awaited<ReturnType<typeof devuelta>>) {
+    const o = c(LUNES, tx);
+    const propia = (await misActividades(x.responsable, o)).find((a) => a.id === x.actividadId);
+    const pagina = await leerActividad(x.responsable, x.actividadId, o);
+    const detalle = await leerHallazgo(x.b.admin, x.h.id, o);
+    const enElPlan = detalle?.rondas.flatMap((r) => r.acciones.flatMap((ac) => ac.actividades)).find((a) => a.id === x.actividadId);
+    return { mis: propia?.vencida, pagina: pagina?.vencida, vence: enElPlan?.vence, marca: detalle?.marcas.includes("Con algo vencido") };
+  }
+
+  it("devuelta con el fin pasado y la fecha para corregir por venir: a tiempo en todas partes, y no se escala", () =>
+    revertida(sql, async (tx) => {
+      const x = await devuelta(tx, "2026-11-19", "2026-11-27");
+      expect(await loQueSeVe(tx, x)).toEqual({ mis: false, pagina: false, vence: "2026-11-27", marca: false });
+      // La página ofrece «Escalar a Gerencia» solo con `vence` antes de hoy; el servidor tampoco lo acepta.
+      await expect(
+        escalarAGerencia(x.b.admin, { actividadId: x.actividadId, nota: "Lleva días vencida y nadie responde" }, c(LUNES, tx)),
+      ).rejects.toThrow(SOLO_VENCIDA);
+    }));
+
+  it("devuelta con la fecha para corregir ya pasada y el fin por venir: vencida en todas partes, y se escala", () =>
+    revertida(sql, async (tx) => {
+      const x = await devuelta(tx, "2026-12-15", "2026-11-20");
+      expect(await loQueSeVe(tx, x)).toEqual({ mis: true, pagina: true, vence: "2026-11-20", marca: true });
+      await escalarAGerencia(x.b.admin, { actividadId: x.actividadId, nota: "Lleva días vencida y nadie responde" }, c(LUNES, tx));
+      const [a] = await tx`SELECT gerencia_en FROM mejora_actividades WHERE id = ${x.actividadId}`;
+      expect(a.gerencia_en).toEqual(new Date(LUNES));
+    }));
+});
+
+describe("lo que cambió entre la lista y el candado, y la reasignación (ronda 1, puntos 5 y 6)", () => {
+  it("el aviso de una actividad va a quien la tiene ahora: reasignada entre la lista y el candado, se salta sin marca", () =>
+    revertida(sql, async (tx) => {
+      await silenciarTodo(tx);
+      const b = await baseDeMejora(tx);
+      const antes = await usuarioDePrueba(tx, { rol: "consulta" });
+      const despues = await usuarioDePrueba(tx, { rol: "consulta" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: antes.usuarioId, fin: "2026-11-19" });
+      const actividadId = await actividadDe(tx, h.id);
+      entreLaListaYElCandado.una = () => tx`UPDATE mejora_actividades SET responsable_id = ${despues.usuarioId} WHERE id = ${actividadId}`;
+      expect(await pasada(tx, "2026-11-20T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+      const [sinMarca] = await tx`SELECT aviso_vencido_en FROM mejora_actividades WHERE id = ${actividadId}`;
+      expect(sinMarca.aviso_vencido_en).toBeNull();
+      expect(await avisos(tx, "mejora.actividad_vencida", "mejora_actividad", actividadId)).toEqual([]);
+      expect(await pasada(tx, "2026-11-20T16:00:00Z")).toEqual({ avisados: 1, escalados: 0 });
+      expect((await avisos(tx, "mejora.actividad_vencida", "mejora_actividad", actividadId)).map((a) => a.usuario_id)).toEqual([despues.usuarioId]);
+    }));
+
+  it("reasignar no adelanta el recordatorio: cuenta desde la reasignación", () =>
+    revertida(sql, async (tx) => {
+      await silenciarTodo(tx);
+      const b = await baseDeMejora(tx);
+      const antes = await usuarioDePrueba(tx, { rol: "consulta" });
+      const despues = await usuarioDePrueba(tx, { rol: "consulta" });
+      // Del 17 de noviembre al 31 de marzo, sin seguimientos: el recordatorio tocaba el 17 de diciembre.
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: antes.usuarioId, fin: "2027-03-31" });
+      const actividadId = await actividadDe(tx, h.id);
+      await reasignarActividad(
+        b.lider,
+        { actividadId, responsableId: despues.usuarioId, motivo: "Quien la tenía pasó a otro servicio del hospital" },
+        c("2026-12-20T15:00:00Z", tx),
+      );
+      expect(await pasada(tx, "2026-12-21T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+      expect(await pasada(tx, "2027-01-18T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+      expect(await pasada(tx, "2027-01-19T15:00:00Z")).toEqual({ avisados: 1, escalados: 0 });
+      expect((await avisos(tx, "mejora.recordatorio", "mejora_actividad", actividadId)).map((a) => a.usuario_id)).toEqual([despues.usuarioId]);
+    }));
+});
+
+describe("«Con algo vencido» de un hallazgo en espera (ronda 1, punto 7)", () => {
+  it("cuenta y filtra la evaluación vencida con la regla de la pasada", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_espera");
+      // La fecha mínima, el domingo 17 de enero; el plazo de evaluar vence al final del viernes 22.
+      const lista = async (ahora: string) => {
+        const o = { sql: tx, ahora: new Date(ahora) };
+        const l = await listarHallazgos(b.lider, { procesoId: b.procesoId }, o);
+        const vencidos = await listarHallazgos(b.lider, { procesoId: b.procesoId, soloVencidos: true }, o);
+        return { cifra: l.cifras.conAlgoVencido, filtro: vencidos.filas.map((f) => f.id) };
+      };
+      expect(await lista("2027-01-22T15:00:00Z")).toEqual({ cifra: 0, filtro: [] });
+      expect(await lista("2027-01-25T15:00:00Z")).toEqual({ cifra: 1, filtro: [h.id] });
     }));
 });
 

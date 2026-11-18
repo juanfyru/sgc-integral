@@ -19,7 +19,7 @@ import {
 } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
-import { leerCriterios } from "@/lib/mejoramiento/eficacia";
+import { leerCriterios, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { esExterno } from "@/lib/mejoramiento/origenes";
@@ -48,8 +48,11 @@ import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura"
 export type { AjusteDeDetalle } from "./ajustes-lectura";
 import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
 import { indicadoresDeEficacia } from "./indicador-de-eficacia";
-import { tareasConSuHallazgo, venceLaActividad } from "./tareas";
+import { tareasConSuHallazgo } from "./tareas";
+import { venceLaActividad } from "./vence-actividad";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
+import { contextoDeMejora } from "./config";
+import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
 import { evaluablesDesde, NADIE_PUEDE_VERIFICAR, type FilaDelIndicador } from "./verificacion";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -243,13 +246,19 @@ export async function listarHallazgos(
   const memoria: Memoria = new Map();
   const visible = filtroHallazgos(sql, sesion);
   const abierto = sql`h.estado NOT IN ${sql([...TERMINALES])}`;
-  const algoVencido = sql`(${ACTIVIDAD_VENCIDA(sql, hoy)} OR h.vence_en < ${ahora})`;
 
-  // Desde cuándo se evalúa cada hallazgo en espera que la persona ve, en una pasada para todos (R4: nunca una por fila).
+  // Desde cuándo se evalúa cada hallazgo en espera que la persona ve, en una pasada para todos (R4: nunca una por fila), y si ya
+  // venció su evaluación (`venceLaEvaluacionDe`, la regla de la pasada: la espera no guarda `vence_en`).
+  const zona = zonaHoraria();
   const enEspera = await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${visible} AND h.estado = 'en_espera'`;
-  const evaluables = await evaluablesDesde(sql, enEspera.map((f) => Number(f.id)), ahora);
-  const porEvaluar = [...evaluables].flatMap(([id, e]) => (e.yaSePuede ? [id] : []));
-  const yaSePuede = (h: HallazgoBase) => ({ yaSePuedeEvaluar: evaluables.get(h.id)?.yaSePuede === true });
+  const minimas = await fechasMinimasDe(sql, enEspera.map((f) => Number(f.id)), zona);
+  const porEvaluar = [...minimas].flatMap(([id, fm]) => (yaSePuedeEvaluar(fm.minima, ahora, zona) ? [id] : []));
+  const yaSePuede = (h: HallazgoBase) => ({ yaSePuedeEvaluar: porEvaluar.includes(h.id) });
+  const contexto = minimas.size > 0 ? await contextoDeMejora(sql, ahora) : null;
+  const evaluacionVencida = contexto
+    ? [...minimas].flatMap(([id, fm]) => (venceLaEvaluacionDe(fm, contexto).getTime() < ahora.getTime() ? [id] : []))
+    : [];
+  const algoVencido = sql`(${ACTIVIDAD_VENCIDA(sql, hoy)} OR h.vence_en < ${ahora} OR h.id = ANY(${sql.array(evaluacionVencida)}::bigint[]))`;
 
   // Los que esperan la decisión de quien mira (R2): los hallazgos distintos entre sus tareas de mejoramiento, las mismas de
   // «Mis tareas», en una sola llamada para toda la lista (nunca una por fila); de esos, solo los que ve.
@@ -361,6 +370,8 @@ export type ActividadDeDetalle = {
   inicio: string;
   finOriginal: string | null;
   fin: string;
+  /** El día en que vence (`venceLaActividad`): la fecha para corregir si se devolvió, si no `fin`. */
+  vence: string;
   avance: number;
   estado: string;
   reprogramaciones: number;
@@ -982,6 +993,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
         inicio: a.inicio as string,
         finOriginal: (a.fin_original as string | null) ?? null,
         fin: a.fin as string,
+        vence: a.vence as string,
         avance: Number(a.avance),
         estado: a.estado as string,
         reprogramaciones: Number(a.reprogramaciones),

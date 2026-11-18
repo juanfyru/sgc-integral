@@ -770,9 +770,9 @@ describe("el plan de acción (maqueta 5)", () => {
           indicadorCumplimiento: "Procedimiento publicado", meta: null, causaIds: [11],
           actividades: [
             { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: true,
-              inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", avance: 60, estado: "en_proceso", reprogramaciones: 0 },
+              inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", vence: "2026-11-20", avance: 60, estado: "en_proceso", reprogramaciones: 0 },
             { id: 22, orden: 2, descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
-              inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0 },
+              inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", vence: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0 },
           ],
         },
       ],
@@ -1052,6 +1052,7 @@ describe("las actividades (maqueta 6)", () => {
     inicio: "2026-11-01",
     finOriginal: "2026-11-14",
     fin: "2026-11-14",
+    vence: "2026-11-14",
     avance: 30,
     estado: "en_proceso",
     reprogramaciones: 0,
@@ -1189,9 +1190,9 @@ describe("las actividades (maqueta 6)", () => {
       <MisActividades
         hoy="2026-11-18"
         actividades={[
-          { id: 22, descripcion: "Comprar e instalar el equipo", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A2.1", fin: "2026-11-14", avance: 30, estado: "en_proceso", vencida: true, devuelta: false },
-          { id: 23, descripcion: "Capacitar al turno de noche", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A2.2", fin: "2026-12-01", avance: 0, estado: "abierta", vencida: false, devuelta: true },
-          { id: 24, descripcion: "Pedir el cambio documental", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A1.1", fin: "2026-11-10", avance: 100, estado: "terminada", vencida: false, devuelta: false },
+          { id: 22, descripcion: "Comprar e instalar el equipo", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A2.1", fin: "2026-11-14", vence: "2026-11-14", avance: 30, estado: "en_proceso", vencida: true, devuelta: false },
+          { id: 23, descripcion: "Capacitar al turno de noche", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A2.2", fin: "2026-12-01", vence: "2026-12-01", avance: 0, estado: "abierta", vencida: false, devuelta: true },
+          { id: 24, descripcion: "Pedir el cambio documental", hallazgoId: 14, hallazgoCodigo: "HZ-2026-014", etiqueta: "A1.1", fin: "2026-11-10", vence: "2026-11-10", avance: 100, estado: "terminada", vencida: false, devuelta: false },
         ]}
       />,
     );
@@ -1239,9 +1240,9 @@ describe("las actividades (maqueta 6)", () => {
           causaIds: [], avance: 45,
           actividades: [
             { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: false,
-              inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", avance: 60, estado: "en_proceso", reprogramaciones: 0, seAbre: true },
+              inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", vence: "2026-11-20", avance: 60, estado: "en_proceso", reprogramaciones: 0, seAbre: true },
             { id: 22, orden: 2, descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
-              inicio: "2026-11-01", finOriginal: "2026-11-30", fin: "2026-11-30", avance: 30, estado: "en_proceso", reprogramaciones: 0, seAbre: false },
+              inicio: "2026-11-01", finOriginal: "2026-11-30", fin: "2026-11-30", vence: "2026-11-30", avance: 30, estado: "en_proceso", reprogramaciones: 0, seAbre: false },
           ],
         },
       ],
@@ -1500,7 +1501,7 @@ describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => 
   it("la página de la actividad: «Pedir ajuste de fecha» a quien puede, el ajuste por decidir y la marca de la escalada", () => {
     const base: DetalleDeActividad = {
       id: 22, etiqueta: "A2.1", descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
-      inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0,
+      inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", vence: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0,
       terminadaEn: null, terminadaPor: null, verificacion: null, verificacionNota: null, corregirAntesDe: null, vencida: true,
       accion: { id: 5, etiqueta: "A2", tipo: "correctiva", descripcion: "Instalar un termómetro" },
       hallazgo: { id: 14, codigo: "HZ-2026-014", titulo: "Dos turnos sin registro", proceso: "Farmacia", estado: "en_ejecucion", etiqueta: "En ejecución", ronda: 1, ve: "actividad" },
@@ -1553,10 +1554,10 @@ describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => 
           causaIds: [], avance: 30,
           actividades: [
             { id: 22, orden: 1, descripcion: "Comprar e instalar el equipo", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
-              inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0, seAbre: true,
+              inicio: "2026-11-01", finOriginal: "2026-11-14", fin: "2026-11-14", vence: "2026-11-14", avance: 30, estado: "en_proceso", reprogramaciones: 0, seAbre: true,
               gerenciaEn: pedido },
             { id: 23, orden: 2, descripcion: "Capacitar al turno de noche", responsableId: 8, responsable: "J. Perdomo", responsableActivo: true,
-              inicio: "2026-11-01", finOriginal: "2026-12-01", fin: "2026-12-01", avance: 0, estado: "abierta", reprogramaciones: 0, seAbre: true,
+              inicio: "2026-11-01", finOriginal: "2026-12-01", fin: "2026-12-01", vence: "2026-12-01", avance: 0, estado: "abierta", reprogramaciones: 0, seAbre: true,
               gerenciaEn: null },
           ],
         },
@@ -1777,7 +1778,7 @@ describe("verificar la implementación, evaluar la eficacia y cerrar (maqueta 7)
         indicadorCumplimiento: null, meta: null, causaIds: [11], avance: 100,
         actividades: [
           { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: true,
-            inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", avance: 100, estado: "terminada", reprogramaciones: 0,
+            inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", vence: "2026-11-20", avance: 100, estado: "terminada", reprogramaciones: 0,
             terminadaEn: new Date("2026-11-19T15:00:00Z"), verificacion: "conforme", verificacionNota: null, corregirAntesDe: null, seAbre: true,
             gerenciaEn: null, evidencias: 1 },
         ],
@@ -1995,7 +1996,7 @@ describe("los retoques de la página del hallazgo (puntos de control)", () => {
           meta: null, causaIds: [], avance: null,
           actividades: [
             { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: true,
-              inicio: "2026-11-14", finOriginal: null, fin: "2026-11-20", avance: 0, estado: "abierta", reprogramaciones: 0 },
+              inicio: "2026-11-14", finOriginal: null, fin: "2026-11-20", vence: "2026-11-20", avance: 0, estado: "abierta", reprogramaciones: 0 },
           ],
         },
       ],
@@ -2472,42 +2473,71 @@ describe("Tarea 18, ronda 1: sumar por código, los avisos del formulario y la e
 
 describe("la respuesta al ente (Tarea 19, spec §13.4)", () => {
   const oficio = <ArchivosDe archivos={[{ id: 77, nombre: "oficio-respuesta.pdf", mime: "application/pdf", tamano: 4096 }]} />;
+  const accion = async () => null;
 
   it("registrada: la fecha, quién y el oficio, sin formulario", () => {
     const html = renderToStaticMarkup(
-      <SeccionRespuestaAlEnte fechaLimite="2026-12-30" respuesta={{ enviadaEn: "2026-11-18", por: "Ana Ruiz" }} oficio={oficio} />,
+      <SeccionRespuestaAlEnte fechaLimite="2026-12-30" respuesta={{ enviadaEn: "2026-11-18", por: "Ana Ruiz" }} terminado={false} oficio={oficio} />,
     );
     expect(html).toContain("Respuesta al ente");
     expect(html).toContain(`Fecha límite de respuesta: ${fechaDeDia("2026-12-30")}.`);
     expect(html).toContain(`Enviada el ${fechaDeDia("2026-11-18")} · la registró Ana Ruiz.`);
+    expect(html).toContain("El oficio");
     expect(html).toContain('href="/mejoramiento/archivos/77/oficio-respuesta.pdf"');
     expect(html).not.toContain("<form");
   });
 
-  it("sin registrar, al Admin SGC: el oficio por subir y la fecha de envío, que no puede ser futura", () => {
+  it("sin registrar, al Admin SGC: elige el oficio (uno solo, ya elegido) y la fecha, entre la aprobación y hoy", () => {
     const html = renderToStaticMarkup(
-      <SeccionRespuestaAlEnte fechaLimite={null} respuesta={null} oficio={oficio}>
-        <PasoResponderAlEnte hallazgoId={14} hoy="2026-11-18" accion={async () => null} />
+      <SeccionRespuestaAlEnte fechaLimite={null} respuesta={null} terminado={false} oficio={oficio}>
+        <PasoResponderAlEnte hallazgoId={14} hoy="2026-11-18" desde="2026-11-17" candidatos={[{ id: 77, nombre: "oficio-respuesta.pdf" }]} accion={accion} />
       </SeccionRespuestaAlEnte>,
     );
-    expect(html).toContain("Suba el oficio de respuesta y registre la fecha en que se envió.");
+    expect(html).toContain("Suba el oficio de respuesta, elíjalo y registre la fecha en que se envió.");
+    expect(html).toContain('id="oficio-ente"');
     expect(html).not.toContain("Fecha límite de respuesta");
-    expect(html).toMatch(/<input(?=[^>]*type="date")(?=[^>]*name="enviadaEn")(?=[^>]*required="")(?=[^>]*max="2026-11-18")/);
+    expect(html).toMatch(/<input(?=[^>]*type="radio")(?=[^>]*name="oficioId")(?=[^>]*value="77")(?=[^>]*checked="")(?=[^>]*required="")/);
+    expect(html).toMatch(/<input(?=[^>]*type="date")(?=[^>]*name="enviadaEn")(?=[^>]*required="")(?=[^>]*min="2026-11-17")(?=[^>]*max="2026-11-18")/);
     expect(html).toMatch(/<input(?=[^>]*type="hidden")(?=[^>]*name="hallazgoId")(?=[^>]*value="14")/);
     expect(html).toContain("Registrar la respuesta al ente");
   });
 
-  it("sin registrar, a los demás: que falta, sin el oficio ni el formulario", () => {
-    const html = renderToStaticMarkup(<SeccionRespuestaAlEnte fechaLimite="2026-12-30" respuesta={null} oficio={oficio} />);
+  it("con dos archivos que pueden ser el oficio, ninguno viene elegido; sin ninguno, falta el oficio y enlaza la zona de carga", () => {
+    const dos = renderToStaticMarkup(
+      <PasoResponderAlEnte
+        hallazgoId={14}
+        hoy="2026-11-18"
+        desde="2026-11-17"
+        candidatos={[
+          { id: 77, nombre: "oficio-respuesta.pdf" },
+          { id: 78, nombre: "anexo.pdf" },
+        ]}
+        accion={accion}
+      />,
+    );
+    expect(dos.match(/name="oficioId"/g)).toHaveLength(2);
+    expect(dos).not.toContain('checked=""');
+    const ninguno = renderToStaticMarkup(<PasoResponderAlEnte hallazgoId={14} hoy="2026-11-18" desde="2026-11-17" candidatos={[]} accion={accion} />);
+    expect(ninguno).toContain("Adjunte el oficio de respuesta");
+    expect(ninguno).toContain('href="#oficio-ente"');
+    expect(ninguno).not.toContain("<form");
+  });
+
+  it("sin registrar, a los demás: que falta; terminado sin respuesta: que no se registró", () => {
+    const html = renderToStaticMarkup(<SeccionRespuestaAlEnte fechaLimite="2026-12-30" respuesta={null} terminado={false} oficio={oficio} />);
     expect(html).toContain("El Administrador del SGC todavía no registra la respuesta.");
     expect(html).not.toContain("oficio-respuesta.pdf");
     expect(html).not.toContain("<form");
+    const terminado = renderToStaticMarkup(<SeccionRespuestaAlEnte fechaLimite="2026-12-30" respuesta={null} terminado oficio={oficio} />);
+    expect(terminado).toContain("No se registró la respuesta al ente.");
+    expect(terminado).not.toContain("todavía no registra");
+    expect(terminado).not.toContain("oficio-respuesta.pdf");
   });
 
   it("el historial dice cuándo se envió", () => {
     const html = renderToStaticMarkup(
       <HistorialDelHallazgo
-        eventos={[{ id: 1, tipo: "respuesta_ente", ronda: 1, quien: "Ana Ruiz", cuando: new Date("2026-11-18T15:00:00Z"), detalle: { enviadaEn: "2026-11-18", archivos: [77] } }]}
+        eventos={[{ id: 1, tipo: "respuesta_ente", ronda: 1, quien: "Ana Ruiz", cuando: new Date("2026-11-18T15:00:00Z"), detalle: { enviadaEn: "2026-11-18", oficioId: 77 } }]}
         zona="America/Bogota"
       />,
     );

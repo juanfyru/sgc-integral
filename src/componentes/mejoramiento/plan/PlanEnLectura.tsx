@@ -30,11 +30,14 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 /** Sin terminar ni cancelar, de un plan aprobado: la que todavía necesita a su responsable. */
 const pendiente = (a: Actividad) => a.finOriginal !== null && estaAbierta(a.estado);
 
-/** El estado, siempre con texto; «Vencida hace N días» (spec §10.2) solo con el plan aprobado y sin terminar ni cancelar. */
+/**
+ * El estado, siempre con texto; «Vencida hace N días» (spec §10.2) solo con el plan aprobado y sin terminar ni cancelar, desde su
+ * `vence` (la fecha para corregir si se devolvió, si no el fin: la regla de la pasada).
+ */
 function EstadoDeActividad({ a, hoy }: { a: Actividad; hoy: string }) {
   const estado = a.estado as EstadoActividad;
-  const vencida = pendiente(a) && a.fin < hoy;
-  if (vencida) return <Insignia variante="critico">{vencidaHace(a.fin, hoy)}</Insignia>;
+  const vencida = pendiente(a) && a.vence < hoy;
+  if (vencida) return <Insignia variante="critico">{vencidaHace(a.vence, hoy)}</Insignia>;
   return (
     <Insignia variante={VARIANTE_ACTIVIDAD[estado] ?? "sin-dato"} modulo="planes">
       {ETIQUETA_ESTADO_ACTIVIDAD[estado] ?? a.estado}

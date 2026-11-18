@@ -321,9 +321,19 @@ const acta = z
 /** Un acto sobre el hallazgo que no lleva más datos: aceptar, retirar y validar. */
 export const EsquemaPasoDelHallazgo = z.object({ hallazgoId: idDeHallazgo }).strict();
 
-/** La respuesta al ente de un hallazgo externo (spec §13.4): la fecha en que se envió. Que no sea futura lo mira el dominio. */
+/**
+ * La respuesta al ente de un hallazgo externo (spec §13.4): la fecha en que se envió y el oficio. Sus bordes (hoy y la aprobación
+ * del plan) y que el oficio sea de los que se pueden elegir los mira el dominio.
+ */
 export const EsquemaRespuestaAlEnte = z
-  .object({ hallazgoId: idDeHallazgo, enviadaEn: fechaDelDia("Escriba la fecha en que se envió la respuesta al ente") })
+  .object({
+    hallazgoId: idDeHallazgo,
+    enviadaEn: fechaDelDia("Escriba la fecha en que se envió la respuesta al ente"),
+    // El oficio: uno de los archivos del hallazgo subidos después de aprobar el plan (lo comprueba el dominio).
+    oficioId: z
+      .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "Elija el oficio de respuesta" })
+      .transform(Number),
+  })
   .strict();
 
 export const EsquemaRechazo = z.object({ hallazgoId: idDeHallazgo, justificacion }).strict();

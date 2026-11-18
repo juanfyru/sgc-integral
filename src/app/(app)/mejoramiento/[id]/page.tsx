@@ -93,7 +93,7 @@ import {
 import { parecidosDeOtrosProcesos } from "@/db/consultas/mejoramiento/parecidos";
 import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
-import { oficiosPosibles } from "@/db/consultas/mejoramiento/registro";
+import { aprobacionEnVigor, oficiosPosibles } from "@/db/consultas/mejoramiento/registro";
 import { datosDeEvaluacion, huellaDeLoVisto } from "@/db/consultas/mejoramiento/verificacion";
 import { puedeVerIndicador } from "@/lib/alcance";
 import { leerCambios } from "@/lib/mejoramiento/analisis";
@@ -204,8 +204,9 @@ const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((
  * actividad (`ve: "actividad"`) no recibe el historial ni los archivos. Cada actividad enlaza a su página para quien la abre.
  * Con el plan aprobado, «Ajustes del plan» lista los ajustes de cada ronda (spec §10.6) y ofrece «Pedir un ajuste» (añadir o
  * cancelar) a un líder del proceso o al Admin SGC; quien decide un ajuste lo hace en «Lo que sigue»; el Admin SGC escala a
- * Gerencia una actividad vencida y Gerencia responde la escalada (§10.7). En un hallazgo externo con el plan aprobado, «Respuesta al
- * ente» (§13.4): el Admin SGC sube el oficio y registra la fecha de envío; registrada, la fecha, quién y el oficio.
+ * Gerencia una actividad vencida y Gerencia responde la escalada (§10.7). En un hallazgo externo con el plan de la ronda en vigor
+ * aprobado, «Respuesta al ente» (§13.4): el Admin SGC sube el oficio, lo elige y registra la fecha de envío; registrada, la
+ * fecha, quién y el oficio.
  */
 export default async function PaginaHallazgo({
   params,
@@ -373,7 +374,8 @@ export default async function PaginaHallazgo({
   const escala = gestiona && h.estado === "en_ejecucion";
   const responde = completo && !terminado && puede(sesion, "mejora.aprobar");
   const deActividad = (x: ActividadDeDetalle) => {
-    const vencida = x.finOriginal !== null && estaAbierta(x.estado) && x.fin < hoy;
+    // La regla de la pasada (`venceLaActividad`, que la lectura trae en `vence`): devuelta, la fecha para corregir.
+    const vencida = x.finOriginal !== null && estaAbierta(x.estado) && x.vence < hoy;
     const etiqueta = etiquetas[x.id] ?? "";
     const controles = [
       reasignaAqui && sinResponsable.some((s) => s.id === x.id) ? (
@@ -397,22 +399,26 @@ export default async function PaginaHallazgo({
     return controles.length > 0 ? <div className="flex flex-wrap justify-end gap-2">{controles}</div> : null;
   };
 
-  // La respuesta al ente de un hallazgo externo (spec §13.4), desde que su plan se aprobó, a quien lo ve completo: la registra el
-  // Admin SGC con la fecha de envío y el oficio, un archivo del hallazgo subido después de aprobado el plan (`oficiosPosibles`, la
-  // regla del acto, que el servidor repite). Registrada, el oficio es el del evento.
-  const conRespuestaAlEnte = completo && esExterno(h.origen) && h.rondas.some((r) => r.estadoPlan === "aprobado");
-  const registraRespuesta = conRespuestaAlEnte && gestiona && h.respuestaAlEnte === null;
-  const delOficio = (() => {
-    const registrado = h.eventos.findLast((e) => e.tipo === "respuesta_ente")?.detalle;
-    const ids = typeof registrado === "object" && registrado !== null ? (registrado as Record<string, unknown>).archivos : null;
-    return Array.isArray(ids) ? new Set(ids.map(Number)) : null;
+  // La respuesta al ente de un hallazgo externo (spec §13.4), a quien lo ve completo, desde que el plan de la ronda en vigor se
+  // aprobó (o ya registrada): la registra el Admin SGC eligiendo el oficio entre los archivos del hallazgo subidos después de esa
+  // aprobación (`oficiosPosibles`, la regla del acto, que el servidor repite) y la fecha de envío, entre esa aprobación y hoy.
+  // Registrada, el oficio es el del evento.
+  const planEnVigorAprobado = rondaEnCurso?.estadoPlan === "aprobado";
+  const conRespuestaAlEnte = completo && esExterno(h.origen) && (h.respuestaAlEnte !== null || planEnVigorAprobado);
+  const registraRespuesta = conRespuestaAlEnte && gestiona && h.respuestaAlEnte === null && planEnVigorAprobado;
+  const oficioRegistrado = (() => {
+    const d = h.eventos.findLast((e) => e.tipo === "respuesta_ente")?.detalle;
+    const id = typeof d === "object" && d !== null ? (d as Record<string, unknown>).oficioId : null;
+    return typeof id === "number" ? id : null;
   })();
-  const posibles = registraRespuesta ? new Set(await oficiosPosibles(sqlArchivos, h.id)) : null;
-  const oficio = evidencias.filter((a) => (h.respuestaAlEnte ? delOficio?.has(a.id) : posibles?.has(a.id)) === true);
+  const candidatos = registraRespuesta ? new Set(await oficiosPosibles(sqlArchivos, h.id)) : new Set<number>();
+  const aprobacion = registraRespuesta ? await aprobacionEnVigor(sqlArchivos, h.id, zona) : null;
+  const oficio = evidencias.filter((a) => (h.respuestaAlEnte ? a.id === oficioRegistrado : candidatos.has(a.id)));
   const seccionRespuesta = conRespuestaAlEnte ? (
     <SeccionRespuestaAlEnte
       fechaLimite={h.fechaLimiteEnte}
       respuesta={h.respuestaAlEnte}
+      terminado={terminado}
       oficio={
         <ArchivosDe
           archivos={oficio}
@@ -423,7 +429,16 @@ export default async function PaginaHallazgo({
         />
       }
     >
-      {registraRespuesta ? <PasoResponderAlEnte key={`ente-${clave}`} hallazgoId={h.id} hoy={hoy} accion={registrarRespuestaAlEnteAccion} /> : null}
+      {registraRespuesta && aprobacion ? (
+        <PasoResponderAlEnte
+          key={`ente-${clave}-${oficio.length}`}
+          hallazgoId={h.id}
+          hoy={hoy}
+          desde={aprobacion.dia}
+          candidatos={oficio.map((a) => ({ id: a.id, nombre: a.nombre }))}
+          accion={registrarRespuestaAlEnteAccion}
+        />
+      ) : null}
     </SeccionRespuestaAlEnte>
   ) : null;
 

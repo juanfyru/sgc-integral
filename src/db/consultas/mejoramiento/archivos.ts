@@ -16,7 +16,7 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { MAXIMO_POR_REPORTE } from "@/lib/mejoramiento/reportes";
 import { ErrorMejora, TERMINALES } from "@/lib/mejoramiento/tipos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
-import { actuaPorElProceso } from "./avisos";
+import { actuaPorElProceso } from "./proceso";
 
 export type DestinoDeMejora =
   | { contexto: "mejora_hallazgo"; id: number; rol: "evidencia" | "correccion" | "carga" }
@@ -281,10 +281,11 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   }
   // Lo mismo con la de la verificación (PC-08): la que había al verificar quedó en el evento de la verificación y ya no se
   // quita; la que se sube durante la espera (la de la eficacia), solo hasta que se registra la evaluación. Tampoco el Admin SGC.
-  // El oficio de la respuesta al ente (spec §13.4) quedó en el evento de la respuesta: ya no se quita, tampoco el Admin SGC.
+  // El oficio de la respuesta al ente (spec §13.4), el archivo que eligió quien la registró, quedó en su evento: ya no se quita,
+  // tampoco el Admin SGC. Las demás evidencias del hallazgo siguen su regla.
   if (a.contexto === "mejora_hallazgo" && a.rol === "evidencia" && f.hallazgoId !== null) {
     const [registrado] = await sql`SELECT 1 FROM mejora_eventos
-      WHERE hallazgo_id = ${f.hallazgoId} AND tipo = 'respuesta_ente' AND detalle->'archivos' @> jsonb_build_array(${a.id}::bigint) LIMIT 1`;
+      WHERE hallazgo_id = ${f.hallazgoId} AND tipo = 'respuesta_ente' AND detalle->>'oficioId' = ${String(a.id)} LIMIT 1`;
     if (registrado) return OFICIO_REGISTRADO;
   }
   if (a.contexto === "mejora_ronda" && a.rol === "verificacion" && f.hallazgoId !== null) {

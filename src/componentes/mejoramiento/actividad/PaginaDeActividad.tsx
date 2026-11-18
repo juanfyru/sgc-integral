@@ -73,7 +73,7 @@ export function PaginaDeActividad({
       <div className="flex min-w-0 flex-col gap-4">
         <section aria-label="Estado de la actividad" className={CAJA}>
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <EstadoDeLaActividad estado={a.estado} vencida={a.vencida} devuelta={devuelta} fin={a.fin} hoy={hoy} />
+            <EstadoDeLaActividad estado={a.estado} vencida={a.vencida} devuelta={devuelta} vence={a.vence} hoy={hoy} />
             <span className="text-muted-foreground">{`Fin: ${fechaDeDia(a.fin)}`}</span>
             {a.finOriginal && a.finOriginal !== a.fin ? (
               <span className="text-muted-foreground">{`original: ${fechaDeDia(a.finOriginal)}`}</span>

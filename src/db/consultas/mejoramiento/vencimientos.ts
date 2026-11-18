@@ -19,9 +19,12 @@
  *
  * La mecánica de `correrPaso` (la de las pasadas de los indicadores): candidatas por marca nula, lo que puede fallar (a quién,
  * sus jefes) buscado antes del candado, una entidad a la vez (la que falla se registra y se salta), y en una transacción corta
- * por paso el candado, lo releído, los avisos y las marcas. El candado sigue el orden del módulo: el hallazgo primero (`FOR
- * SHARE` cuando se marca una hija, cuyo trigger lo pide) y la hija después, los dos `SKIP LOCKED`. Lo resuelto para un
- * hallazgo en otro estado o en otra ronda que el releído no se usa: esa fila espera la pasada siguiente. Cada transición, cada
+ * por paso el candado, lo releído, los avisos y las marcas. Al marcar una hija (una actividad, un ajuste), su trigger pide el
+ * hallazgo `FOR SHARE`: la relectura toma en una sola sentencia el hallazgo `FOR SHARE` y la hija `FOR UPDATE`, los dos `SKIP
+ * LOCKED`. Esa sentencia no garantiza en qué orden se toman los dos, pero no espera a nadie (lo que está tomado se salta) y la
+ * marca solo pide lo que la transacción ya tiene: la pasada nunca espera un candado, y por eso no se cruza con el orden del
+ * módulo (el hallazgo primero, las hijas después) de quien sí espera. Lo resuelto para un hallazgo en otro estado o en otra
+ * ronda que el releído, o para una actividad con otro responsable, no se usa: esa fila espera la pasada siguiente. Cada transición, cada
  * reprogramación aprobada y cada devolución borran las marcas del paso anterior (`transicionarHallazgo`, `decidirAjuste`,
  * `verificarImplementacion`). Lo hace el sistema, no una persona: no deja fila en `auditoria`; el rastro son los avisos y las
  * marcas. `avisados` cuenta las entidades avisadas (pasos, reportes, ajustes, actividades, recordatorios y eficacias por
@@ -35,7 +38,7 @@ import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { correrPaso, diaYMes, type PasoDeVencimiento } from "@/db/consultas/indicadores/pasada";
 import { adminsActivos } from "@/db/consultas/tramites";
 import { quienesVerifican } from "@/lib/alcance";
-import { venceLaEvaluacion, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
+import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { ENTIDAD_REPORTE, RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
 import { rutaDeActividad, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { TERMINALES, type HallazgoBase } from "@/lib/mejoramiento/tipos";
@@ -46,10 +49,10 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { quienDecideAjustes } from "./ajustes";
 import { ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO, lideresOAdmins, queLeToca, quienTieneElTurno, revisoresDe } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
-import { fechasMinimasDe } from "./espera";
-import { hallazgoBase } from "./flujo";
+import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
+import { aBase, hallazgoBase } from "./flujo";
 import { etiquetaDeActividad } from "./plan";
-import { baseDeFila, venceLaActividad } from "./tareas";
+import { venceLaActividad } from "./vence-actividad";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; hoy: string; escalamientoDias: number; mejora: ContextoMejora };
 type Resultado = { avisados: number; escalados: number };
@@ -63,6 +66,8 @@ type Resuelto = {
   /** Lo que le toca a quien tiene el turno, con el código («Registrar la corrección de HZ-…»). */
   texto: string;
   jefes: Map<number, Array<{ id: number; nombre: string }>>;
+  /** En una actividad, el responsable y si estaba activo al resolverla: si el releído no coincide, no se usa. */
+  para?: string;
 };
 
 const dias = (n: number) => cuenta(n, "día", "días");
@@ -70,7 +75,11 @@ const minuscula = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 /** La descripción sin el punto final: el cuerpo de un aviso le añade la suya. */
 const sinPunto = (t: string) => t.trim().replace(/[.\s]+$/, "");
 
-/** Cada jefe, sin repetir, con los subalternos suyos de `responsables` (por nombre); vacío si nadie tiene jefe. */
+/**
+ * Cada jefe, sin repetir, con los subalternos suyos de `responsables` (por nombre); vacío si nadie tiene jefe. Es `jefesDe`, una
+ * vez por responsable: su resultado junto da los nombres de cada jefe pero no los ids, y el aviso escalado lleva el del subalterno
+ * (`entidad: "usuario"`).
+ */
 async function jefesConSubalternos(tx: TransactionSql, responsables: number[]): Promise<Resuelto["jefes"]> {
   const filas = await tx`SELECT id, nombre FROM usuarios WHERE id = ANY(${responsables}) ORDER BY nombre, id`;
   const salida: Resuelto["jefes"] = new Map();
@@ -147,10 +156,9 @@ async function leerHallazgos(
   const enEspera = filas.filter((f) => f.estado === "en_espera").map((f) => Number(f.id));
   const fechas = await fechasMinimasDe(sql, enEspera, c.zona);
   return filas.map((f) => {
-    const base = baseDeFila(f);
+    const base = aBase(f);
     const fm = base.estado === "en_espera" ? (fechas.get(base.id) ?? null) : null;
-    const plazoReporte = fm && !fm.indicadorRetirado ? (fm.indicador?.plazoReporteDias ?? null) : null;
-    const vence = fm ? venceLaEvaluacion(fm.minima, plazoReporte, c.mejora) : ((f.vence_en as Date | null) ?? null);
+    const vence = fm ? venceLaEvaluacionDe(fm, c.mejora) : ((f.vence_en as Date | null) ?? null);
     return { id: base.id, grupo: base.id, h: base, titulo: f.titulo as string, vence, minima: fm?.minima ?? null };
   });
 }
@@ -400,12 +408,21 @@ async function leerActividades(sql: Cliente, condicion: PendingQuery<Row[]>, ids
   }));
 }
 
-/** Su responsable o, si está inactivo, quien actúa por el proceso (los líderes activos o, sin ninguno, los Admin SGC). */
+/** Para quién se resolvió una actividad: su responsable y si estaba activo. */
+const paraDe = (f: Pick<DeActividad, "responsableId" | "activo">) => `${f.responsableId}:${f.activo}`;
+
+/**
+ * Su responsable o, si está inactivo, quien actúa por el proceso (los líderes activos o, sin ninguno, los Admin SGC), con
+ * `para`: si bajo el candado la actividad tiene otro responsable (una reasignación entre la lista y el candado) o cambió si está
+ * activo, lo resuelto no se usa y la fila espera la pasada siguiente, que avisa a quien la tiene entonces.
+ */
 const resolverActividades = (c: Contexto, candidatas: DeActividad[], conJefes: boolean) =>
   resolverCada(c, candidatas, "la actividad", async (tx, fila) => {
     const destinos = fila.activo ? [fila.responsableId] : await lideresOAdmins(tx, fila.procesoId);
-    return { estado: null, ronda: null, destinos, texto: "", jefes: conJefes ? await jefesConSubalternos(tx, destinos) : new Map() };
+    return { estado: null, ronda: null, destinos, texto: "", jefes: conJefes ? await jefesConSubalternos(tx, destinos) : new Map(), para: paraDe(fila) };
   });
+
+const paraLaMisma = (r: Resuelto | undefined, f: DeActividad): r is Resuelto => r !== undefined && r.para === paraDe(f);
 
 const vencidaHoy = (sql: Cliente, c: Contexto) => sql`${venceLaActividad(sql)} < ${c.hoy}::date`;
 
@@ -416,7 +433,7 @@ const ACTIVIDAD_VENCIDA: PasoDeVencimiento<DeActividad, Resuelto, Contexto> = {
     const avisadas: number[] = [];
     for (const f of filas) {
       const r = resueltos.get(f.grupo);
-      if (!r || r.destinos.length === 0) continue;
+      if (!paraLaMisma(r, f) || r.destinos.length === 0) continue;
       const cual = `la actividad ${f.etiqueta} de ${f.codigo}`;
       const cuando = `Venció el ${diaYMes(finDeFecha(f.dia, c.zona), c.zona)}.`;
       const aviso = f.activo
@@ -442,7 +459,7 @@ const ACTIVIDAD_ESCALADA: PasoDeVencimiento<DeActividad, Resuelto, Contexto> = {
     const escaladas: number[] = [];
     for (const f of filas) {
       const r = resueltos.get(f.grupo);
-      if (r && (await escalarA(tx, r, "Una actividad de mejoramiento sigue vencida", finDeFecha(f.dia, c.zona), c))) escaladas.push(f.id);
+      if (paraLaMisma(r, f) && (await escalarA(tx, r, "Una actividad de mejoramiento sigue vencida", finDeFecha(f.dia, c.zona), c))) escaladas.push(f.id);
     }
     return escaladas;
   },

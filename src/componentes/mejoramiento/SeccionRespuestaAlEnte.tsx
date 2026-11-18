@@ -1,21 +1,25 @@
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
 
 /**
- * «Respuesta al ente» de un hallazgo externo con el plan aprobado (spec 15 §13.4): la fecha límite del ente, si la tiene, y la
- * respuesta registrada (cuándo se envió y quién la registró) con su oficio; sin registrar, al Administrador del SGC, la zona de
- * carga del oficio y el formulario (`children`), y a los demás, que falta.
+ * «Respuesta al ente» de un hallazgo externo (spec 15 §13.4): la fecha límite del ente, si la tiene, y la respuesta registrada
+ * (cuándo se envió, quién la registró y el oficio); sin registrar, al Administrador del SGC, la zona de carga con los archivos que
+ * pueden ser el oficio (`oficio`, con el ancla `oficio-ente`) y el formulario (`children`); a los demás, que falta; y en un
+ * hallazgo terminado sin respuesta, que no se registró.
  */
 export function SeccionRespuestaAlEnte({
   fechaLimite,
   respuesta,
+  terminado,
   oficio,
   children,
 }: {
   fechaLimite: string | null;
   respuesta: { enviadaEn: string; por: string } | null;
-  /** Los archivos del oficio (la lista, con sus enlaces). */
+  /** El hallazgo ya terminó: sin respuesta, ya no se registra. */
+  terminado: boolean;
+  /** Registrada, el oficio; sin registrar, lo que puede serlo y la zona de carga. */
   oficio: React.ReactNode;
-  /** Sin registrar, al Admin SGC: lo que se sube y el formulario. */
+  /** Sin registrar, al Admin SGC: el formulario. */
   children?: React.ReactNode;
 }) {
   return (
@@ -27,12 +31,19 @@ export function SeccionRespuestaAlEnte({
       {respuesta ? (
         <>
           <p className="text-sm">{`Enviada el ${fechaDeDia(respuesta.enviadaEn)} · la registró ${respuesta.por}.`}</p>
-          {oficio}
+          <div className="flex min-w-0 flex-col gap-2">
+            <p className="text-xs font-medium text-muted-foreground">El oficio</p>
+            {oficio}
+          </div>
         </>
+      ) : terminado ? (
+        <p className="text-sm text-muted-foreground">No se registró la respuesta al ente.</p>
       ) : children ? (
         <>
-          <p className="text-sm">Suba el oficio de respuesta y registre la fecha en que se envió.</p>
-          {oficio}
+          <p className="text-sm">Suba el oficio de respuesta, elíjalo y registre la fecha en que se envió.</p>
+          <div id="oficio-ente" className="scroll-mt-4">
+            {oficio}
+          </div>
           {children}
         </>
       ) : (

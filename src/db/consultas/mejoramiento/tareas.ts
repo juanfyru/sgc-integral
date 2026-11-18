@@ -14,19 +14,11 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
-import { venceLaEvaluacion, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
+import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
 import { rutaDeActividad, rutaDeFormular, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { PREFIJO_REASIGNAR } from "@/lib/mejoramiento/textos";
-import {
-  TERMINALES,
-  type Clase,
-  type Criticidad,
-  type EstadoHallazgo,
-  type HallazgoBase,
-  type Origen,
-  type ResultadoCierre,
-} from "@/lib/mejoramiento/tipos";
+import { TERMINALES, type EstadoHallazgo, type HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { finDeFecha } from "@/lib/tramites/plazos";
@@ -34,7 +26,9 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { quienDecideAjustes } from "./ajustes";
 import { arbitrosDe, queLeToca } from "./avisos";
 import { contextoDeMejora } from "./config";
-import { fechasMinimasDe } from "./espera";
+import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
+import { aBase } from "./flujo";
+import { venceLaActividad } from "./vence-actividad";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -57,16 +51,6 @@ const PASO_DEL_ESTADO: Partial<Record<EstadoHallazgo, string>> = {
   por_cerrar: "cerrar",
 };
 
-/**
- * La fecha en que vence una actividad, para el SQL sobre `alias`: la fecha para corregir si la verificación la devolvió; si no,
- * su fin vigente. Una sola regla para las tareas, la pasada y la marca «Con algo vencido» de la lista; se compara contra el día
- * de hoy en la zona de la instalación.
- */
-export function venceLaActividad(sql: Cliente, alias: "a" | "va" = "a") {
-  const t = sql.unsafe(alias);
-  return sql`(CASE WHEN ${t}.verificacion = 'devuelta' AND ${t}.corregir_antes_de IS NOT NULL THEN ${t}.corregir_antes_de ELSE ${t}.fin END)`;
-}
-
 const verdad = (sql: Cliente, si: boolean) => (si ? sql`true` : sql`false`);
 
 /** Los líderes activos del proceso del hallazgo `h`, para un `EXISTS`; el que se busca se añade con `AND`. */
@@ -83,25 +67,6 @@ function actuaPorElProceso(sql: Cliente, s: SesionFlujo) {
 }
 
 const idONulo = (v: unknown) => (v === null || v === undefined ? null : Number(v));
-
-/** El hallazgo de una fila con las columnas de `HallazgoBase` (las de `hallazgoBase`, `flujo.ts`). La usa también la pasada. */
-export function baseDeFila(f: Record<string, unknown>): HallazgoBase {
-  return {
-    id: Number(f.id),
-    codigo: f.codigo as string,
-    clase: f.clase as Clase,
-    criticidad: (f.criticidad as Criticidad | null) ?? null,
-    origen: f.origen as Origen,
-    estado: f.estado as EstadoHallazgo,
-    ronda: Number(f.ronda),
-    procesoId: Number(f.proceso_id),
-    reincidenteDe: idONulo(f.reincidente_de),
-    correccionRequerida: (f.correccion_requerida as boolean | null) ?? null,
-    accionRequerida: (f.accion_requerida as boolean | null) ?? null,
-    resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
-    registradoPor: Number(f.registrado_por),
-  };
-}
 
 const deHallazgo = (h: HallazgoBase, titulo: string, detalle: string, vence: Date | null, enlace = rutaDeHallazgo(h.id)): TareaDeMejora => ({
   tarea: { id: `mej-${PASO_DEL_ESTADO[h.estado]}:${h.id}`, modulo: "planes", titulo, detalle, vence, enlace },
@@ -153,7 +118,7 @@ async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<Ta
 
   const tareas: TareaDeMejora[] = [];
   for (const f of filas) {
-    const h = baseDeFila(f);
+    const h = aBase(f);
     const titulo = f.titulo as string;
     const vence = (f.vence_en as Date | null) ?? null;
     switch (h.estado) {
@@ -170,8 +135,7 @@ async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<Ta
         const fm = fechas.get(h.id);
         if (!fm || !contexto || !yaSePuedeEvaluar(fm.minima, ahora, zona)) continue;
         if (!(await quienesVerifican(sql, h.id)).includes(yo)) continue;
-        const plazoReporte = fm.indicadorRetirado ? null : (fm.indicador?.plazoReporteDias ?? null);
-        tareas.push(deHallazgo(h, `Evaluar la eficacia de ${h.codigo}`, titulo, venceLaEvaluacion(fm.minima, plazoReporte, contexto)));
+        tareas.push(deHallazgo(h, `Evaluar la eficacia de ${h.codigo}`, titulo, venceLaEvaluacionDe(fm, contexto)));
         continue;
       }
       case "en_revision":
@@ -258,7 +222,8 @@ async function deLosAjustes(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora
 
 /**
  * Lo del Admin SGC que no es un paso del hallazgo: clasificar cada reporte recibido y registrar la respuesta al ente de cada
- * hallazgo externo con fecha del ente, con el plan aprobado y sin respuesta (spec §13.4: vence al final de la fecha del ente).
+ * hallazgo externo con fecha del ente, con el plan de la ronda en vigor aprobado y sin respuesta (spec §13.4: vence al final de
+ * la fecha del ente; la misma condición que `registrarRespuestaAlEnte`).
  */
 async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> {
   if (!puede(s, "mejora.gestionar")) return [];
@@ -268,7 +233,7 @@ async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> 
     FROM mejora_hallazgos h
     WHERE h.estado NOT IN ${sql([...TERMINALES])} AND h.origen IN ('auditoria_externa', 'ente_control')
       AND h.fecha_limite_ente IS NOT NULL AND h.respuesta_ente_en IS NULL
-      AND EXISTS (SELECT 1 FROM mejora_rondas r WHERE r.hallazgo_id = h.id AND r.estado_plan = 'aprobado')
+      AND EXISTS (SELECT 1 FROM mejora_rondas r WHERE r.hallazgo_id = h.id AND r.numero = h.ronda AND r.estado_plan = 'aprobado')
     ORDER BY h.id`;
   const zona = zonaHoraria();
   return [

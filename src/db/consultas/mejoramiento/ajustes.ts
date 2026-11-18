@@ -61,6 +61,7 @@ import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO } fro
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 import { ACCION_AJENA, CAUSA_AJENA, DEMASIADAS_ACCIONES, etiquetaDeAccion, etiquetaDeActividad, RESPONSABLE_INACTIVO } from "./plan";
+import { venceLaActividad } from "./vence-actividad";
 
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 type Acta = { numero: string; fecha: string } | null;
@@ -104,6 +105,8 @@ type ActividadDelAjuste = {
   inicio: string;
   fin: string;
   finOriginal: string | null;
+  /** El día en que vence (`venceLaActividad`): la fecha para corregir si se devolvió, si no `fin`. */
+  vence: string;
   estado: EstadoActividad;
   gerenciaEn: Date | null;
 };
@@ -111,7 +114,8 @@ type ActividadDelAjuste = {
 async function bloquearActividad(tx: TransactionSql, id: number): Promise<ActividadDelAjuste> {
   const [a] = await tx`SELECT a.id, a.hallazgo_id, a.orden, a.descripcion, a.responsable_id, a.estado, a.gerencia_en,
       to_char(a.inicio, 'YYYY-MM-DD') AS inicio, to_char(a.fin, 'YYYY-MM-DD') AS fin,
-      to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original, ac.orden AS accion_orden, r.numero AS ronda_numero
+      to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original, to_char(${venceLaActividad(tx)}, 'YYYY-MM-DD') AS vence,
+      ac.orden AS accion_orden, r.numero AS ronda_numero
     FROM mejora_actividades a
     JOIN mejora_acciones ac ON ac.id = a.accion_id
     JOIN mejora_rondas r ON r.id = ac.ronda_id
@@ -127,6 +131,7 @@ async function bloquearActividad(tx: TransactionSql, id: number): Promise<Activi
     inicio: a.inicio as string,
     fin: a.fin as string,
     finOriginal: (a.fin_original as string | null) ?? null,
+    vence: a.vence as string,
     estado: a.estado as EstadoActividad,
     gerenciaEn: (a.gerencia_en as Date | null) ?? null,
   };
@@ -589,8 +594,8 @@ async function ultimoDeLaEscalada(
 }
 
 /**
- * El Admin SGC escala a Gerencia una actividad vencida (sin terminar, de un plan aprobado y con el fin vigente ya pasado en la
- * zona), con una nota. No cambia ningún estado: deja `gerencia_en`, el evento `escalada` (con la nota, que no tiene otra
+ * El Admin SGC escala a Gerencia una actividad vencida (sin terminar, de un plan aprobado y con su fecha ya pasada en la zona: la
+ * de corregir si se devolvió, si no el fin vigente, `venceLaActividad`), con una nota. No cambia ningún estado: deja `gerencia_en`, el evento `escalada` (con la nota, que no tiene otra
  * columna), su bitácora sin la nota y un aviso a cada usuario activo de Gerencia; sin ninguno, no se escala. Una escalada vigente
  * no se repite: la borra una reprogramación aprobada.
  */
@@ -598,7 +603,7 @@ export async function escalarAGerencia(sesion: SesionFlujo, d: { actividadId: nu
   requerirPermiso(sesion, "mejora.gestionar");
   const v = leer(EsquemaEscalar, d);
   await conLaActividad(v.actividadId, opciones, async (tx, h, a, c) => {
-    if (!sigueAbierta(h, a) || a.fin >= fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(SOLO_VENCIDA);
+    if (!sigueAbierta(h, a) || a.vence >= fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(SOLO_VENCIDA);
     if (h.estado !== "en_ejecucion") throw new ErrorMejora(YA_CAMBIO);
     if (a.gerenciaEn !== null) throw new ErrorMejora(YA_ESCALADA);
     const gerencia = (await activosDeRol(tx, ["gerencia"])).filter((u) => u !== sesion.usuarioId);
@@ -619,7 +624,7 @@ export async function escalarAGerencia(sesion: SesionFlujo, d: { actividadId: nu
       entidadId: a.id,
       detalle: { codigo: h.codigo, ronda: h.ronda, hallazgoId: h.id, actividad: a.etiqueta, fin: a.fin },
     });
-    const cuerpo = `La actividad ${a.etiqueta} venció el ${fechaLargaDeDia(a.fin)}.`;
+    const cuerpo = `La actividad ${a.etiqueta} venció el ${fechaLargaDeDia(a.vence)}.`;
     await avisarA(
       tx,
       { tipo: "mejora.escalada", titulo: `Escalada a Gerencia: una actividad de ${h.codigo}`, enlace: rutaDeActividad(a.id), entidad: ENTIDAD_ACTIVIDAD, entidadId: a.id },

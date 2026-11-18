@@ -22,6 +22,7 @@ import { esExterno } from "@/lib/mejoramiento/origenes";
 import { formularAntesDe } from "@/lib/mejoramiento/plazos";
 import { destinoDeReclasificacion, type Perfil } from "@/lib/mejoramiento/reclasificar";
 import { aceptadoVaA } from "@/lib/mejoramiento/reglas";
+import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { AJUSTE_POR_ANULACION } from "@/lib/mejoramiento/textos";
 import { ErrorMejora, TERMINALES, type Clase, type Criticidad, type HallazgoBase, type Origen } from "@/lib/mejoramiento/tipos";
 import { DESDE, YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
@@ -679,23 +680,39 @@ export async function anularHallazgo(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const SIN_OFICIO = "Adjunte el oficio de respuesta";
+export const OFICIO_AJENO = "Elija el oficio entre los archivos del hallazgo subidos después de aprobar el plan";
 export const SOLO_EXTERNO = "Solo un hallazgo de origen externo lleva respuesta al ente";
 export const PLAN_SIN_APROBAR = "El plan todavía no está aprobado: la respuesta al ente se registra después de aprobarlo";
 export const YA_RESPONDIDO = "Ya se registró la respuesta al ente";
 export const ENVIO_FUTURO = "La fecha de envío no puede ser futura";
+export const envioAntesDeAprobar = (dia: string) =>
+  `La fecha de envío no puede ser anterior a la aprobación del plan, el ${fechaLargaDeDia(dia)}`;
 
 /**
- * Los archivos del hallazgo (rol `evidencia`) subidos después de aprobado su plan: los que pueden ser el oficio de la respuesta
- * al ente. «Después» lo dice el orden de la bitácora, la subida (`subir_archivo`) contra la transición que aprobó el plan (la
- * primera que llevó el hallazgo a «En ejecución»), y no la hora: `archivos.creado_en` es la de la base al subir y la
- * aprobación guarda la de `ahora`. Sin plan aprobado, ninguno. Una sola regla para el acto y para la página.
+ * La aprobación del plan de la ronda en vigor (la del hallazgo): el día, en la zona de la instalación, en que se aprobó; nula si
+ * el plan de esa ronda no está aprobado. La respuesta al ente responde a ese plan (spec §13.4).
+ */
+export async function aprobacionEnVigor(sql: Cliente, hallazgoId: number, zona: string): Promise<{ dia: string } | null> {
+  const [r] = await sql`SELECT r.aprobado_en FROM mejora_rondas r JOIN mejora_hallazgos h ON h.id = r.hallazgo_id AND h.ronda = r.numero
+    WHERE r.hallazgo_id = ${hallazgoId} AND r.estado_plan = 'aprobado' AND r.aprobado_en IS NOT NULL`;
+  return r ? { dia: fechaEnZona(r.aprobado_en as Date, zona) } : null;
+}
+
+/**
+ * Los archivos del hallazgo (rol `evidencia`) subidos después de aprobado el plan de la ronda en vigor: los que pueden ser el
+ * oficio de la respuesta al ente. «Después» lo dice el orden de la bitácora, la subida (`subir_archivo`) contra la transición que
+ * aprobó el plan de esa ronda (la que la llevó a «En ejecución», con su `ronda` en el detalle), y no la hora:
+ * `archivos.creado_en` es la de la base al subir y la aprobación guarda la de `ahora`. Sin ese plan aprobado, ninguno. Una sola
+ * regla para el acto y para el formulario.
  */
 export async function oficiosPosibles(sql: Cliente, hallazgoId: number): Promise<number[]> {
   const filas = await sql`
-    WITH aprobado AS (
-      SELECT min(id) AS id FROM auditoria
-      WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${hallazgoId}
-        AND accion IN ('mejora_aprobar_plan', 'mejora_revisar_plan') AND detalle->'estado'->>'despues' = 'en_ejecucion')
+    WITH h AS (SELECT id, ronda FROM mejora_hallazgos WHERE id = ${hallazgoId}),
+    aprobado AS (
+      SELECT max(au.id) AS id FROM auditoria au CROSS JOIN h
+      WHERE au.entidad = 'mejora_hallazgo' AND au.entidad_id = h.id
+        AND au.accion IN ('mejora_aprobar_plan', 'mejora_revisar_plan') AND au.detalle->'estado'->>'despues' = 'en_ejecucion'
+        AND au.detalle->>'ronda' = h.ronda::text)
     SELECT a.id FROM archivos a CROSS JOIN aprobado
     WHERE a.contexto = 'mejora_hallazgo' AND a.contexto_id = ${hallazgoId} AND a.rol = 'evidencia' AND a.version_id IS NULL
       AND aprobado.id IS NOT NULL
@@ -706,15 +723,16 @@ export async function oficiosPosibles(sql: Cliente, hallazgoId: number): Promise
 }
 
 /**
- * El Admin SGC registra la respuesta al ente de un hallazgo externo con el plan aprobado (spec §13.4): la fecha en que se envió
- * (no futura, en la zona de la instalación) y el oficio, que es al menos un archivo del hallazgo subido después de aprobado el
- * plan (`oficiosPosibles`). Una sola vez. Deja la fecha y quién en el hallazgo, el evento `respuesta_ente` y su bitácora, con
- * la fecha y los ids de los archivos, sin texto libre. Cumple la tarea «Registrar la respuesta al ente». No avisa: no le pasa
- * el turno a nadie.
+ * El Admin SGC registra la respuesta al ente de un hallazgo externo con el plan de la ronda en vigor aprobado (spec §13.4): la
+ * fecha en que se envió, ni posterior a hoy ni anterior al día en que se aprobó ese plan (en la zona de la instalación), y el
+ * oficio, uno de los archivos del hallazgo subidos después de esa aprobación (`oficiosPosibles`), comprobado dentro de la
+ * transacción. Una sola vez. Deja la fecha y quién en el hallazgo, el evento `respuesta_ente` y su bitácora, con la fecha y el id
+ * del oficio, sin texto libre; desde entonces el oficio no se quita. Cumple la tarea «Registrar la respuesta al ente». No avisa:
+ * no le pasa el turno a nadie.
  */
 export async function registrarRespuestaAlEnte(
   sesion: SesionFlujo,
-  d: { hallazgoId: number; enviadaEn: string },
+  d: { hallazgoId: number; enviadaEn: string; oficioId: number },
   opciones?: OpcionesFlujo,
 ): Promise<void> {
   requerirPermiso(sesion, "mejora.gestionar");
@@ -731,18 +749,20 @@ export async function registrarRespuestaAlEnte(
       if (!esExterno(h.origen)) throw new ErrorMejora(SOLO_EXTERNO);
       const [f] = await tx`SELECT respuesta_ente_en FROM mejora_hallazgos WHERE id = ${h.id}`;
       if (f.respuesta_ente_en !== null) throw new ErrorMejora(YA_RESPONDIDO);
-      const [aprobado] = await tx`SELECT 1 FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND estado_plan = 'aprobado' LIMIT 1`;
-      if (!aprobado) throw new ErrorMejora(PLAN_SIN_APROBAR);
       const c = await contextoDeMejora(tx, ahora);
+      const aprobacion = await aprobacionEnVigor(tx, h.id, c.zona);
+      if (!aprobacion) throw new ErrorMejora(PLAN_SIN_APROBAR);
       if (r.enviadaEn > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora(ENVIO_FUTURO);
-      const archivos = await oficiosPosibles(tx, h.id);
-      if (archivos.length === 0) throw new ErrorMejora(SIN_OFICIO);
+      if (r.enviadaEn < aprobacion.dia) throw new ErrorMejora(envioAntesDeAprobar(aprobacion.dia));
+      const candidatos = await oficiosPosibles(tx, h.id);
+      if (candidatos.length === 0) throw new ErrorMejora(SIN_OFICIO);
+      if (!candidatos.includes(r.oficioId)) throw new ErrorMejora(OFICIO_AJENO);
       await tx`UPDATE mejora_hallazgos SET respuesta_ente_en = ${r.enviadaEn}, respuesta_ente_por = ${sesion.usuarioId} WHERE id = ${h.id}`;
       await dejarEvento(tx, {
         hallazgoId: h.id,
         ronda: h.ronda,
         tipo: "respuesta_ente",
-        detalle: { enviadaEn: r.enviadaEn, archivos },
+        detalle: { enviadaEn: r.enviadaEn, oficioId: r.oficioId },
         usuarioId: sesion.usuarioId,
         ocurrioEn: c.ahora,
       });
@@ -751,7 +771,7 @@ export async function registrarRespuestaAlEnte(
         accion: "mejora_respuesta_ente",
         entidad: ENTIDAD_HALLAZGO,
         entidadId: h.id,
-        detalle: { codigo: h.codigo, enviadaEn: r.enviadaEn, archivos },
+        detalle: { codigo: h.codigo, enviadaEn: r.enviadaEn, oficioId: r.oficioId },
       });
     }),
   );

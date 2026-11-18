@@ -61,20 +61,29 @@ const destino = (p: Promise<unknown>) => p.then((r) => r, (err: Error) => err.me
 const ENVIADA = "2026-11-17";
 
 describe("registrarRespuestaAlEnteAccion", () => {
-  it("el Admin SGC la registra con la fecha y el oficio y vuelve al hallazgo; sin oficio, sin permiso o con un campo de más, no", () =>
+  it("el Admin SGC la registra con la fecha y el oficio elegido y vuelve al hallazgo; cada rechazo dice por qué", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const h = await hallazgoEn(tx, b, "en_ejecucion", { origen: "ente_control", fuente: "Superintendencia Nacional de Salud", fechaLimiteEnte: "2026-12-30" });
-      const campos = { hallazgoId: String(h.id), enviadaEn: ENVIADA };
       const registrar = (quien: SesionFlujo, c: Record<string, string>) => como(tx, quien, () => destino(registrarRespuestaAlEnteAccion(null, formulario(c))));
 
-      expect(await registrar(b.admin, campos)).toMatchObject({ ok: false, error: "Adjunte el oficio de respuesta" });
-      await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
-      expect(await registrar(b.control, campos)).toMatchObject({ ok: false });
-      expect(await registrar(b.admin, { ...campos, nota: "un campo que el formulario no manda" })).toMatchObject({ ok: false });
+      const sinOficio = { hallazgoId: String(h.id), enviadaEn: ENVIADA };
+      expect(await registrar(b.admin, sinOficio)).toMatchObject({ ok: false, error: "Elija el oficio de respuesta" });
+      expect(await registrar(b.admin, { ...sinOficio, oficioId: "999999999" })).toMatchObject({ ok: false, error: "Adjunte el oficio de respuesta" });
+      const oficioId = await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      const campos = { ...sinOficio, oficioId: String(oficioId) };
+      expect(await registrar(b.control, campos)).toMatchObject({ ok: false, error: "Sin permiso para esta acción" });
+      expect(await registrar(b.admin, { ...campos, nota: "un campo que el formulario no manda" })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("nota"),
+      });
       expect(await registrar(b.admin, { ...campos, enviadaEn: "17/11/2026" })).toMatchObject({
         ok: false,
         error: "Escriba la fecha en que se envió la respuesta al ente",
+      });
+      expect(await registrar(b.admin, { ...campos, oficioId: "999999999" })).toMatchObject({
+        ok: false,
+        error: "Elija el oficio entre los archivos del hallazgo subidos después de aprobar el plan",
       });
       const [antes] = await tx`SELECT respuesta_ente_en FROM mejora_hallazgos WHERE id = ${h.id}`;
       expect(antes.respuesta_ente_en).toBeNull();

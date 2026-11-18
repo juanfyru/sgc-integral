@@ -17,12 +17,15 @@ const VARIANTE: Record<EstadoActividad, VarianteInsignia> = {
   cancelada: "sin-dato",
 };
 
-/** El estado de una actividad, siempre con texto: «Vencida hace N días», el guardado y, si se devolvió, «Devuelta». */
-export function EstadoDeLaActividad({ estado, vencida, devuelta, fin, hoy }: { estado: EstadoActividad; vencida: boolean; devuelta: boolean; fin: string; hoy: string }) {
+/**
+ * El estado de una actividad, siempre con texto: «Vencida hace N días» (desde `vence`: la fecha para corregir si se devolvió, si no
+ * el fin), el guardado y, si se devolvió, «Devuelta».
+ */
+export function EstadoDeLaActividad({ estado, vencida, devuelta, vence, hoy }: { estado: EstadoActividad; vencida: boolean; devuelta: boolean; vence: string; hoy: string }) {
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {vencida ? (
-        <Insignia variante="critico">{vencidaHace(fin, hoy)}</Insignia>
+        <Insignia variante="critico">{vencidaHace(vence, hoy)}</Insignia>
       ) : (
         <Insignia variante={VARIANTE[estado]} modulo="planes">
           {ETIQUETA_ESTADO_ACTIVIDAD[estado]}
@@ -61,7 +64,7 @@ function Tarjeta({ a, hoy }: { a: ActividadPropia; hoy: string }) {
       </Link>
       <span className="font-mono text-xs text-muted-foreground">{`${a.hallazgoCodigo} · ${a.etiqueta}`}</span>
       <span className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <EstadoDeLaActividad estado={a.estado} vencida={a.vencida} devuelta={a.devuelta} fin={a.fin} hoy={hoy} />
+        <EstadoDeLaActividad estado={a.estado} vencida={a.vencida} devuelta={a.devuelta} vence={a.vence} hoy={hoy} />
         <span className="text-muted-foreground">{`Fin: ${fechaDeDia(a.fin)}`}</span>
       </span>
       <BarraDeAvance avance={a.avance} etiqueta={`Avance de ${a.etiqueta}`} />

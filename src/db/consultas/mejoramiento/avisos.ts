@@ -5,13 +5,13 @@
 import type { TransactionSql } from "postgres";
 import type { Cliente } from "@/db/cliente";
 import { avisarA, type Destinatario } from "@/db/consultas/avisos-vencimiento";
-import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
 import { turnoDe, type Turno } from "@/lib/mejoramiento/estados";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import type { EstadoHallazgo, HallazgoBase } from "@/lib/mejoramiento/tipos";
 import type { Rol } from "@/lib/roles";
+import { lideresOAdmins } from "./proceso";
 
 /** La entidad de los avisos y de la bitácora de un hallazgo. */
 export const ENTIDAD_HALLAZGO = "mejora_hallazgo";
@@ -27,21 +27,8 @@ export async function activosDeRol(sql: Cliente, roles: readonly Rol[]): Promise
   return filas.map((f) => Number(f.id));
 }
 
-/**
- * La condición de persona de todo lo que «le toca al líder» (spec §6.1, F15-DC3): ser un líder activo de ese proceso o,
- * si el proceso no tiene ninguno, ser Admin SGC.
- */
-export async function actuaPorElProceso(tx: Cliente, sesion: Pick<SesionFlujo, "usuarioId" | "rol">, procesoId: number): Promise<boolean> {
-  const lideres = await lideresDeProceso(procesoId, { sql: tx });
-  if (sesion.rol === "lider_proceso") return lideres.includes(sesion.usuarioId);
-  return sesion.rol === "admin_sgc" && lideres.length === 0;
-}
-
-/** Los líderes activos del proceso o, si no tiene ninguno, los Admin SGC activos. */
-export async function lideresOAdmins(tx: Cliente, procesoId: number): Promise<number[]> {
-  const lideres = await lideresDeProceso(procesoId, { sql: tx });
-  return lideres.length > 0 ? lideres : adminsActivos({ sql: tx });
-}
+// Viven en `proceso.ts`, liviano (lo importa `archivos.ts` sin llegar a `avisos-vencimiento.ts`); aquí se reexportan.
+export { actuaPorElProceso, lideresOAdmins } from "./proceso";
 
 /**
  * Quienes arbitran un rechazo sostenido (spec §8.3, F15-DC13: no arbitra quien ya tomó parte): los Admin SGC activos; los

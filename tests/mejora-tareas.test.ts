@@ -17,7 +17,7 @@ vi.mock("@/db/consultas/mejoramiento/tareas", async (original) => {
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
-import { aprobarPlan } from "@/db/consultas/mejoramiento/aprobacion";
+import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
@@ -27,7 +27,7 @@ import { decidirAccionCorrectiva, rechazarHallazgo, registrarCorreccion, sostene
 import { registrarHallazgo, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { tareasConSuHallazgo, tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
-import { fechaMinimaDe, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
+import { datosDeEvaluacion, evaluarEficacia, fechaMinimaDe, huellaDeLoVisto, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { venceLaEvaluacion } from "@/lib/mejoramiento/eficacia";
 import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
 import { rutaDeActividad, rutaDeFormular, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
@@ -40,10 +40,12 @@ import {
   baseDeMejora,
   c,
   datosDeHallazgo,
+  evidenciaDeActividad,
   evidenciaDelHallazgo,
   HORA_DE_ESCENA,
   hallazgoEn,
   otroProcesoConLider,
+  planDePrueba,
   terminarTodas,
   type BaseDeMejora,
 } from "./utiles/mejoramiento";
@@ -346,8 +348,8 @@ describe("las tareas de mejoramiento, una por fila de la tabla", () => {
       };
       expect(await laDe(b.admin, tx, esperada.id)).toEqual(esperada);
       expect(await laDe(b.control, tx, esperada.id)).toBeUndefined();
-      await evidenciaDelHallazgo(tx, antes.id, b.admin.usuarioId);
-      await registrarRespuestaAlEnte(b.admin, { hallazgoId: antes.id, enviadaEn: "2026-11-18" }, c(AHORA, tx));
+      const oficioId = await evidenciaDelHallazgo(tx, antes.id, b.admin.usuarioId);
+      await registrarRespuestaAlEnte(b.admin, { hallazgoId: antes.id, enviadaEn: "2026-11-18", oficioId }, c(AHORA, tx));
       expect(await laDe(b.admin, tx, esperada.id)).toBeUndefined();
     }));
 
@@ -400,42 +402,106 @@ describe("«Mis tareas» y «Esperan su decisión»", () => {
     }));
 });
 
-describe("la respuesta al ente", () => {
-  const ENVIADA = "2026-11-18";
+/**
+ * De un hallazgo «En ejecución» en su ronda 1, la ronda 2 con el plan aprobado (el 14 de diciembre): sus actividades terminan,
+ * Control Interno verifica, evalúa «no eficaz», la líder formula y envía, el Admin SGC revisa y Gerencia aprueba.
+ */
+async function aRondaDos(tx: TransactionSql, b: BaseDeMejora, id: number): Promise<void> {
+  await terminarTodas(tx, b, id, "2026-12-05T15:00:00Z");
+  const conformes = (await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${id} AND estado = 'terminada' ORDER BY id`).map((f) => ({
+    id: Number(f.id),
+    conforme: true,
+  }));
+  await verificarImplementacion(b.control, { hallazgoId: id, actividades: conformes, metodos: ["evidencias"] }, c("2026-12-07T15:00:00Z", tx));
+  const evalua = c("2026-12-10T15:00:00Z", tx);
+  await evaluarEficacia(
+    b.control,
+    {
+      hallazgoId: id,
+      resultado: "no_eficaz",
+      criterios: ["no_recurrencia"],
+      desde: "2026-12-05",
+      hasta: "2026-12-10",
+      justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre",
+      vistoHuella: huellaDeLoVisto(await datosDeEvaluacion(b.control, id, evalua)),
+      credenciales: { clave: "ok" },
+    },
+    evalua,
+  );
+  await planDePrueba(tx, b, id, { fin: "2027-03-31" });
+  const o = c("2026-12-11T15:00:00Z", tx);
+  await enviarPlan(b.lider, { hallazgoId: id, credenciales: { clave: "ok" } }, o);
+  await firmarRevision(b.admin, { hallazgoId: id, requiereRecursos: false, notaRecursos: null, credenciales: { clave: "ok" } }, o);
+  await aprobarPlan(b.gerencia, { hallazgoId: id, credenciales: { clave: "ok" } }, c("2026-12-14T15:00:00Z", tx));
+  expect(await bloquearHallazgo(tx, id)).toMatchObject({ estado: "en_ejecucion", ronda: 2 });
+}
 
-  it("exige un archivo del hallazgo subido después de aprobado el plan; deja la fecha, el evento y la bitácora", () =>
+describe("la respuesta al ente", () => {
+  // El día en que `hallazgoEn` aprueba el plan: el primero en que se pudo enviar la respuesta.
+  const ENVIADA = "2026-11-17";
+  const NO_ES_CANDIDATO = "Elija el oficio entre los archivos del hallazgo subidos después de aprobar el plan";
+
+  it("el oficio es uno de los archivos subidos después de aprobar el plan, elegido; la fecha, entre la aprobación y hoy", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const h = await externo(tx, b, "en_aprobacion");
       // Subido antes de aprobar el plan: no es el oficio de la respuesta.
-      await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      const antes = await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
       await aprobarPlan(b.gerencia, { hallazgoId: h.id, credenciales: { clave: "ok" } }, c(HORA_DE_ESCENA, tx));
       const o = c(AHORA, tx);
-      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: ENVIADA }, o)).rejects.toThrow("Adjunte el oficio de respuesta");
+      const registrar = (oficioId: number, enviadaEn = ENVIADA) => registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn, oficioId }, o);
+      await expect(registrar(antes)).rejects.toThrow("Adjunte el oficio de respuesta");
+
       const oficio = await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
-      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: "2026-11-19" }, o)).rejects.toThrow(
-        "La fecha de envío no puede ser futura",
+      const otro = await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      const [a] = await tx`SELECT id, responsable_id FROM mejora_actividades WHERE hallazgo_id = ${h.id} ORDER BY id LIMIT 1`;
+      const deUnaActividad = await evidenciaDeActividad(tx, Number(a.id), Number(a.responsable_id));
+      const ajeno = await externo(tx, b, "en_ejecucion");
+      const deOtroHallazgo = await evidenciaDelHallazgo(tx, ajeno.id, b.admin.usuarioId);
+      for (const noEs of [antes, deUnaActividad, deOtroHallazgo]) await expect(registrar(noEs)).rejects.toThrow(NO_ES_CANDIDATO);
+      await expect(registrar(oficio, "2026-11-19")).rejects.toThrow("La fecha de envío no puede ser futura");
+      await expect(registrar(oficio, "2026-11-16")).rejects.toThrow(
+        "La fecha de envío no puede ser anterior a la aprobación del plan, el 17 de noviembre de 2026",
       );
-      await registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: ENVIADA }, o);
+      await registrar(oficio);
 
       const [f] = await tx`SELECT to_char(respuesta_ente_en, 'YYYY-MM-DD') AS en, respuesta_ente_por FROM mejora_hallazgos WHERE id = ${h.id}`;
       expect(f).toEqual({ en: ENVIADA, respuesta_ente_por: b.admin.usuarioId });
       const [e] = await tx`SELECT detalle, usuario_id, ocurrio_en FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'respuesta_ente'`;
-      expect(e).toEqual({ detalle: { enviadaEn: ENVIADA, archivos: [oficio] }, usuario_id: b.admin.usuarioId, ocurrio_en: new Date(AHORA) });
+      expect(e).toEqual({ detalle: { enviadaEn: ENVIADA, oficioId: oficio }, usuario_id: b.admin.usuarioId, ocurrio_en: new Date(AHORA) });
       const [bit] = await tx`SELECT detalle FROM auditoria
         WHERE accion = 'mejora_respuesta_ente' AND entidad = 'mejora_hallazgo' AND entidad_id = ${h.id}`;
-      expect(bit.detalle).toEqual({ codigo: h.codigo, enviadaEn: ENVIADA, archivos: [oficio] });
+      expect(bit.detalle).toEqual({ codigo: h.codigo, enviadaEn: ENVIADA, oficioId: oficio });
 
-      // La página lee la respuesta y el oficio del evento (lo congelado del detalle no se lleva `archivos`).
+      // La página lee la respuesta y el oficio del evento (lo congelado del detalle no se lleva `oficioId`).
       const leido = await leerHallazgo(b.admin, h.id, { sql: tx, ahora: new Date(AHORA) });
       expect(leido?.respuestaAlEnte).toEqual({ enviadaEn: ENVIADA, por: b.admin.nombre });
-      expect(leido?.eventos.find((x) => x.tipo === "respuesta_ente")?.detalle).toEqual({ enviadaEn: ENVIADA, archivos: [oficio] });
+      expect(leido?.eventos.find((x) => x.tipo === "respuesta_ente")?.detalle).toEqual({ enviadaEn: ENVIADA, oficioId: oficio });
 
-      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(
-        "Ya se registró la respuesta al ente",
-      );
-      // El oficio registrado queda: ya no se quita.
+      await expect(registrar(otro)).rejects.toThrow("Ya se registró la respuesta al ente");
+      // Solo el oficio elegido queda sin poderse quitar; el otro archivo sigue su regla.
       await expect(quitarArchivoDeMejora(b.admin, oficio, { sql: tx })).rejects.toThrow("El oficio de la respuesta al ente ya se registró: no se quita");
+      await quitarArchivoDeMejora(b.admin, otro, { sql: tx });
+      expect(await tx`SELECT id FROM archivos WHERE id = ${otro}`).toHaveLength(0);
+    }));
+
+  it("en la ronda 2, el oficio es de después de aprobar su plan y la fecha, de ese día en adelante", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await externo(tx, b, "en_ejecucion");
+      const deLaRonda1 = await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      await aRondaDos(tx, b, h.id);
+      const o = c("2026-12-16T15:00:00Z", tx);
+      const registrar = (oficioId: number, enviadaEn: string) => registrarRespuestaAlEnte(b.admin, { hallazgoId: h.id, enviadaEn, oficioId }, o);
+      await expect(registrar(deLaRonda1, "2026-12-15")).rejects.toThrow("Adjunte el oficio de respuesta");
+      const deLaRonda2 = await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      await expect(registrar(deLaRonda1, "2026-12-15")).rejects.toThrow(NO_ES_CANDIDATO);
+      await expect(registrar(deLaRonda2, "2026-12-13")).rejects.toThrow(
+        "La fecha de envío no puede ser anterior a la aprobación del plan, el 14 de diciembre de 2026",
+      );
+      await registrar(deLaRonda2, "2026-12-14");
+      const [e] = await tx`SELECT detalle, ronda FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'respuesta_ente'`;
+      expect(e).toEqual({ detalle: { enviadaEn: "2026-12-14", oficioId: deLaRonda2 }, ronda: 2 });
     }));
 
   it("solo el Admin SGC, solo en un hallazgo externo y solo con el plan aprobado", () =>
@@ -443,14 +509,16 @@ describe("la respuesta al ente", () => {
       const b = await baseDeMejora(tx);
       const o = c(AHORA, tx);
       const enAprobacion = await externo(tx, b, "en_aprobacion");
-      await evidenciaDelHallazgo(tx, enAprobacion.id, b.admin.usuarioId);
-      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: enAprobacion.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(
+      const oficioId = await evidenciaDelHallazgo(tx, enAprobacion.id, b.admin.usuarioId);
+      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: enAprobacion.id, enviadaEn: ENVIADA, oficioId }, o)).rejects.toThrow(
         "El plan todavía no está aprobado",
       );
-      await expect(registrarRespuestaAlEnte(b.control, { hallazgoId: enAprobacion.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(ErrorPermiso);
+      await expect(registrarRespuestaAlEnte(b.control, { hallazgoId: enAprobacion.id, enviadaEn: ENVIADA, oficioId }, o)).rejects.toThrow(
+        ErrorPermiso,
+      );
       const interno = await hallazgoEn(tx, b, "en_ejecucion");
-      await evidenciaDelHallazgo(tx, interno.id, b.admin.usuarioId);
-      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: interno.id, enviadaEn: ENVIADA }, o)).rejects.toThrow(
+      const delInterno = await evidenciaDelHallazgo(tx, interno.id, b.admin.usuarioId);
+      await expect(registrarRespuestaAlEnte(b.admin, { hallazgoId: interno.id, enviadaEn: ENVIADA, oficioId: delInterno }, o)).rejects.toThrow(
         "Solo un hallazgo de origen externo lleva respuesta al ente",
       );
     }));

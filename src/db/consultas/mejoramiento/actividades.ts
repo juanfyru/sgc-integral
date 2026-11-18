@@ -44,6 +44,7 @@ import { contextoDeMejora, type ContextoMejora } from "./config";
 import { evaluableDesde } from "./espera";
 import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "./flujo";
 import { etiquetaDeAccion, etiquetaDeActividad } from "./plan";
+import { venceLaActividad } from "./vence-actividad";
 
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -330,8 +331,10 @@ export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: n
 
 /**
  * Un líder del proceso o el Admin SGC cambian el responsable de una actividad sin terminar, con motivo y sin aprobación. El
- * responsable nuevo es un usuario activo y distinto. Las marcas del aviso de vencida y del recordatorio se borran (la persona
- * nueva recibe los suyos); la del escalamiento al jefe se conserva: la actividad ya se escaló y reasignarla no la escala otra
+ * responsable nuevo es un usuario activo y distinto. La marca del aviso de vencida se borra (la persona nueva recibe el suyo) y
+ * el recordatorio de seguimiento cuenta desde la reasignación (`recordatorio_en = ahora`, como en la devolución: si se borrara,
+ * contaría desde el último seguimiento, de otra persona, y la nueva lo recibiría en la pasada siguiente); la del escalamiento al
+ * jefe se conserva: la actividad ya se escaló y reasignarla no la escala otra
  * vez, de inmediato, al jefe de la persona nueva (spec §14.3). Deja el evento `reasignada` con la forma
  * `{ actividadId, antes, despues, motivo }` (la Tarea 16 lee de ahí quién **fue** responsable), su bitácora sin el motivo y un
  * aviso a cada uno de los dos (salvo a quien reasigna y a un anterior inactivo): al nuevo, con el enlace a la actividad; al
@@ -353,7 +356,7 @@ export async function reasignarActividad(
     if (!nuevo) throw new ErrorMejora(RESPONSABLE_NUEVO_INACTIVO);
     const [anterior] = await tx`SELECT activo FROM usuarios WHERE id = ${a.responsableId}`;
     await tx`UPDATE mejora_actividades
-      SET responsable_id = ${v.responsableId}, aviso_vencido_en = NULL, recordatorio_en = NULL
+      SET responsable_id = ${v.responsableId}, aviso_vencido_en = NULL, recordatorio_en = ${c.ahora}
       WHERE id = ${a.id}`;
     await dejarEvento(tx, {
       hallazgoId: h.id,
@@ -418,7 +421,12 @@ export type DetalleDeActividad = {
   verificacion: "conforme" | "devuelta" | null;
   verificacionNota: string | null;
   corregirAntesDe: string | null;
-  /** Sin terminar ni cancelar y con el fin vigente ya pasado en la zona (spec §10.2). */
+  /** El día en que vence (`venceLaActividad`): la fecha para corregir si se devolvió, si no `fin`. */
+  vence: string;
+  /**
+   * Sin terminar ni cancelar y con su fecha ya pasada en la zona (spec §10.2): la fecha para corregir si se devolvió, si no el fin
+   * vigente (`venceLaActividad`).
+   */
   vencida: boolean;
   accion: { id: number; etiqueta: string; tipo: TipoAccion; descripcion: string };
   hallazgo: {
@@ -473,7 +481,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
       a.estado, a.reprogramaciones, a.terminada_en, ut.nombre AS terminada_por, a.verificacion, a.verificacion_nota, a.gerencia_en,
       to_char(a.inicio, 'YYYY-MM-DD') AS inicio, to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original,
       to_char(a.fin, 'YYYY-MM-DD') AS fin, to_char(a.corregir_antes_de, 'YYYY-MM-DD') AS corregir_antes_de,
-      ac.id AS accion_id, ac.orden AS accion_orden, ac.tipo AS accion_tipo, ac.descripcion AS accion_descripcion,
+      to_char(${venceLaActividad(sql)}, 'YYYY-MM-DD') AS vence, ac.id AS accion_id, ac.orden AS accion_orden, ac.tipo AS accion_tipo, ac.descripcion AS accion_descripcion,
       r.numero AS ronda_numero, h.id AS hallazgo_id, h.codigo, h.titulo, h.estado AS hallazgo_estado, h.ronda,
       h.proceso_id, h.resultado_cierre, h.correccion_requerida, p.nombre AS proceso
     FROM mejora_actividades a
@@ -528,7 +536,9 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     verificacion: (f.verificacion as "conforme" | "devuelta" | null) ?? null,
     verificacionNota: (f.verificacion_nota as string | null) ?? null,
     corregirAntesDe: (f.corregir_antes_de as string | null) ?? null,
-    vencida: ACTIVIDAD_ABIERTA.includes(estado) && fin < fechaHoy(ahora),
+    vence: f.vence as string,
+    // La regla de la pasada y de las tareas (`venceLaActividad`): devuelta, la fecha para corregir.
+    vencida: ACTIVIDAD_ABIERTA.includes(estado) && (f.vence as string) < fechaHoy(ahora),
     accion: {
       id: Number(f.accion_id),
       etiqueta: etiquetaDeAccion(Number(f.accion_orden)),
@@ -591,6 +601,8 @@ export type ActividadPropia = {
   hallazgoCodigo: string;
   etiqueta: string;
   fin: string;
+  /** El día en que vence (`venceLaActividad`): la fecha para corregir si se devolvió, si no `fin`. */
+  vence: string;
   avance: number;
   estado: EstadoActividad;
   vencida: boolean;
@@ -606,7 +618,7 @@ export async function misActividades(sesion: Pick<SesionFlujo, "usuarioId">, opc
   const hoy = fechaHoy(opciones?.ahora ?? new Date());
   const filas = await sql`
     SELECT a.id, a.descripcion, a.orden, a.avance, a.estado, a.verificacion, to_char(a.fin, 'YYYY-MM-DD') AS fin,
-      ac.orden AS accion_orden, h.id AS hallazgo_id, h.codigo
+      to_char(${venceLaActividad(sql)}, 'YYYY-MM-DD') AS vence, ac.orden AS accion_orden, h.id AS hallazgo_id, h.codigo
     FROM mejora_actividades a
     JOIN mejora_acciones ac ON ac.id = a.accion_id
     JOIN mejora_hallazgos h ON h.id = a.hallazgo_id
@@ -624,7 +636,8 @@ export async function misActividades(sesion: Pick<SesionFlujo, "usuarioId">, opc
       fin,
       avance: Number(f.avance),
       estado,
-      vencida: ACTIVIDAD_ABIERTA.includes(estado) && fin < hoy,
+      vence: f.vence as string,
+      vencida: ACTIVIDAD_ABIERTA.includes(estado) && (f.vence as string) < hoy,
       devuelta: f.verificacion === "devuelta",
     };
   });

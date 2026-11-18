@@ -246,12 +246,13 @@ describe("reasignarActividad", () => {
       const [a] = ids;
       const nuevo = await usuarioDePrueba(tx, { rol: "consulta" });
       expect((await misActividades(responsable, c(AHORA, tx))).map((x) => x.id)).toEqual([a]);
-      // Las marcas de los avisos: la de vencida y el recordatorio son de quien la tenía; el escalamiento, de la actividad.
-      await tx`UPDATE mejora_actividades SET aviso_vencido_en = ${AHORA}, escalado_en = ${AHORA}, recordatorio_en = ${AHORA} WHERE id = ${a}`;
+      // Las marcas de los avisos: la de vencida es de quien la tenía; el escalamiento, de la actividad; el recordatorio cuenta
+      // desde la reasignación (ronda 1 de la Tarea 19: borrado, adelantaría el de la persona nueva).
+      await tx`UPDATE mejora_actividades SET aviso_vencido_en = ${AHORA}, escalado_en = ${AHORA}, recordatorio_en = '2026-11-20T15:00:00Z' WHERE id = ${a}`;
       await reasignar(tx, b, a, nuevo.usuarioId);
       const marcas = await filaDe(tx, a);
       expect(marcas.aviso_vencido_en).toBeNull();
-      expect(marcas.recordatorio_en).toBeNull();
+      expect((marcas.recordatorio_en as Date).toISOString()).toBe(new Date(AHORA).toISOString());
       expect((marcas.escalado_en as Date).toISOString()).toBe(new Date(AHORA).toISOString());
       expect((await filaDe(tx, a)).responsable_id).toBe(nuevo.usuarioId);
       expect(await misActividades(responsable, c(AHORA, tx))).toEqual([]);
@@ -486,8 +487,8 @@ describe("lo que se lee", () => {
       const despues = c("2026-12-16T15:00:00Z", tx);
       const lista = await misActividades(responsable, despues);
       expect(lista).toEqual([
-        { id: a1, descripcion: "Actividad 1 del plan de prueba", hallazgoId: h.id, hallazgoCodigo: h.codigo, etiqueta: "A1.1", fin: "2026-12-15", avance: 0, estado: "abierta", vencida: true, devuelta: false },
-        { id: a2, descripcion: "Actividad 2 del plan de prueba", hallazgoId: h.id, hallazgoCodigo: h.codigo, etiqueta: "A1.2", fin: "2026-12-15", avance: 0, estado: "abierta", vencida: true, devuelta: true },
+        { id: a1, descripcion: "Actividad 1 del plan de prueba", hallazgoId: h.id, hallazgoCodigo: h.codigo, etiqueta: "A1.1", fin: "2026-12-15", vence: "2026-12-15", avance: 0, estado: "abierta", vencida: true, devuelta: false },
+        { id: a2, descripcion: "Actividad 2 del plan de prueba", hallazgoId: h.id, hallazgoCodigo: h.codigo, etiqueta: "A1.2", fin: "2026-12-15", vence: "2026-12-15", avance: 0, estado: "abierta", vencida: true, devuelta: true },
       ]);
       expect((await misActividades(responsable, c(AHORA, tx))).every((x) => !x.vencida)).toBe(true);
       // Una actividad de un borrador no es de nadie todavía.

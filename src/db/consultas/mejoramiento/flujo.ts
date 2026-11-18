@@ -80,7 +80,8 @@ export type FilaNueva = {
 
 const idONulo = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
-function aBase(f: Row): HallazgoBase {
+/** El hallazgo de una fila con sus columnas (las de `hallazgoBase`). Lo reutilizan las tareas y la pasada de vencimientos. */
+export function aBase(f: Row): HallazgoBase {
   return {
     id: Number(f.id),
     codigo: f.codigo as string,
