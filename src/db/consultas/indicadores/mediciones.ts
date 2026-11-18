@@ -358,7 +358,8 @@ export const conDatos = (sql: Cliente) => sql`(m.estado <> 'abierta' OR m.no_apl
   OR EXISTS (SELECT 1 FROM medicion_eventos me WHERE me.medicion_id = m.id)
   OR EXISTS (SELECT 1 FROM medicion_observaciones mo WHERE mo.medicion_id = m.id)
   OR EXISTS (SELECT 1 FROM archivos ar WHERE ar.contexto = 'medicion' AND ar.contexto_id = m.id)
-  OR EXISTS (SELECT 1 FROM mejora_hallazgos mh WHERE mh.medicion_id = m.id))`;
+  OR EXISTS (SELECT 1 FROM mejora_hallazgos mh WHERE mh.medicion_id = m.id)
+  OR EXISTS (SELECT 1 FROM mejora_marcas mk WHERE mk.medicion_id = m.id))`;
 
 /**
  * Un hallazgo de mejoramiento cita al indicador (alias `i`): como su indicador, por una de sus mediciones o como el
@@ -368,7 +369,9 @@ export const conDatos = (sql: Cliente) => sql`(m.estado <> 'abierta' OR m.no_apl
 export const citadoEnMejoramiento = (sql: Cliente) => sql`(
   EXISTS (SELECT 1 FROM mejora_hallazgos mh WHERE mh.indicador_id = i.id)
   OR EXISTS (SELECT 1 FROM mejora_hallazgos mh JOIN mediciones mhm ON mhm.id = mh.medicion_id WHERE mhm.indicador_id = i.id)
-  OR EXISTS (SELECT 1 FROM mejora_rondas mr WHERE mr.indicador_eficacia_id = i.id))`;
+  OR EXISTS (SELECT 1 FROM mejora_rondas mr WHERE mr.indicador_eficacia_id = i.id)
+  OR EXISTS (SELECT 1 FROM mejora_marcas mk WHERE mk.indicador_id = i.id)
+  OR EXISTS (SELECT 1 FROM mejora_reportes mre WHERE mre.indicador_id = i.id))`;
 
 /**
  * Al aprobar un cambio mayor que cambia la periodicidad: quita las mediciones abiertas y sin datos de otra periodicidad

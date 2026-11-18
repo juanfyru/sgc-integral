@@ -25,7 +25,7 @@ export const ITEMS_VERIFICACION: ReadonlyArray<readonly [string, boolean]> = [
 ];
 
 /** Maestro editable de tipos de norma del normograma (spec 13C §10.1). */
-/** Las quince claves de configuración de mejoramiento (Fase 15A) con su valor por omisión; los tres formatos, sin documento. */
+/** Las dieciocho claves de configuración de mejoramiento (15A y 15B) con su valor por omisión; los cuatro formatos, sin documento. */
 export const CLAVES_DE_MEJORA: ReadonlyArray<readonly [string, string]> = [
   ["mej_plazo_clasificar_dias", "3"],
   ["mej_plazo_aceptar_dias", "3"],
@@ -42,6 +42,9 @@ export const CLAVES_DE_MEJORA: ReadonlyArray<readonly [string, string]> = [
   ["mej_formato_registro_documento_id", ""],
   ["mej_formato_porques_documento_id", ""],
   ["mej_formato_ishikawa_documento_id", ""],
+  ["mej_formato_plan_documento_id", ""],
+  ["mej_sugerir_hallazgos", "3"],
+  ["mej_sugerir_meses", "12"],
 ];
 
 export const TIPOS_NORMA: ReadonlyArray<string> = [
@@ -114,7 +117,9 @@ export async function limpiarTodo(db: Db): Promise<void> {
       reporte_externo_eventos, impactos_indicadores,
       dias_no_habiles, mejora_consecutivos, mejora_hallazgos, mejora_rondas, mejora_analisis, mejora_causas,
       mejora_acciones, mejora_accion_causas, mejora_actividades, mejora_seguimientos, mejora_ajustes,
-      mejora_ocurrencias, mejora_eventos, mejora_reportes, mejora_reporte_eventos
+      mejora_ocurrencias, mejora_eventos, mejora_reportes, mejora_reporte_eventos,
+      mejora_plan_consecutivos, mejora_planes, mejora_clasificacion, mejora_plan_eventos, mejora_plan_respuestas,
+      mejora_plan_respuesta_hallazgos, mejora_marcas, mejora_actividad_tramites
     RESTART IDENTITY CASCADE
   `);
 }

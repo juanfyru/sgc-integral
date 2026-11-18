@@ -302,7 +302,7 @@ const COLUMNAS: Record<string, string[]> = {
     "correccion_registrada_en", "accion_requerida", "accion_justificacion", "accion_decidida_por", "accion_decidida_en",
     "validada_por", "validada_en", "fecha_limite_ente", "respuesta_ente_en", "respuesta_ente_por", "vence_en",
     "aviso_vencido_en", "escalado_en", "aviso_evaluar_en", "cerrado_en", "cerrado_por", "resultado_cierre", "lecciones",
-    "cambios_atendidos", "anulado_motivo",
+    "cambios_atendidos", "anulado_motivo", "verificacion_hallazgo_id", "impacto_id", "impacto_indicador_id",
   ],
   mejora_rondas: [
     "id", "hallazgo_id", "numero", "formular_antes_de", "enviado_en", "estado_plan", "elaborado_por", "revisado_por",
@@ -329,7 +329,8 @@ const COLUMNAS: Record<string, string[]> = {
   mejora_eventos: ["id", "hallazgo_id", "ronda", "tipo", "detalle", "usuario_id", "fuera", "ocurrio_en", "creado_en"],
   mejora_reportes: [
     "id", "reportado_por", "reportado_en", "descripcion", "visto_en", "proceso_id", "referencia_caso", "estado", "hallazgo_id",
-    "motivo_descarte", "clasificado_por", "clasificado_en", "vence_en", "aviso_vencido_en", "escalado_en",
+    "motivo_descarte", "clasificado_por", "clasificado_en", "vence_en", "aviso_vencido_en", "escalado_en", "documento_id",
+    "indicador_id",
   ],
   mejora_reporte_eventos: ["id", "reporte_id", "tipo", "detalle", "usuario_id", "creado_en"],
 };
@@ -400,6 +401,10 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("esquema de la migración 00
       if (tabla !== "mejora_reporte_eventos") esperado[tabla].push(`BEFORE INSERT · ${TERMINADO}`);
       esperado[tabla].sort();
     }
+    // Las tres de la 0019: el enlace con un trámite cuelga del hallazgo; las dos de solo inserción no (§13).
+    esperado.mejora_actividad_tramites = [`BEFORE INSERT OR DELETE OR UPDATE · ${TERMINADO}`];
+    esperado.mejora_plan_eventos = [`BEFORE DELETE OR UPDATE · ${INMUTABLE}`];
+    esperado.mejora_marcas = [`BEFORE DELETE OR UPDATE · ${INMUTABLE}`];
     for (const lista of Object.values(encontrados)) lista.sort();
     expect(encontrados).toEqual(esperado);
   });

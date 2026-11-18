@@ -50,6 +50,7 @@ const ESPERADA: Record<Permiso, Rol[]> = {
   "mejora.aprobar": ["gerencia"],
   "mejora.verificar": ["admin_sgc", "gerencia", "control_interno"],
   "mejora.ver_todo": ["admin_sgc", "gerencia", "control_interno"],
+  "mejora.planes": ["admin_sgc", "control_interno"],
 };
 
 describe("matriz de permisos", () => {

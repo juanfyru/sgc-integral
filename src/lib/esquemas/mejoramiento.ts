@@ -71,11 +71,14 @@ export const EsquemaConfigMejora = z
       .strict(),
     recordatorioAltaDias: entero("El recordatorio de un hallazgo recién registrado", 1, 365),
     recordatorioDias: entero("El recordatorio", 1, 365),
+    sugerirHallazgos: entero("El número de hallazgos de la sugerencia", 2, 20),
+    sugerirMeses: entero("El número de meses de la sugerencia", 1, 60),
     formatos: z
       .object({
         registro: documentoOpcional("El formato de registro"),
         porques: documentoOpcional("El formato de los cinco porqués"),
         ishikawa: documentoOpcional("El formato de Ishikawa"),
+        plan: documentoOpcional("El formato del plan de mejoramiento"),
       })
       .strict(),
   })

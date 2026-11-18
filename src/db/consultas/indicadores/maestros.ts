@@ -235,6 +235,12 @@ export async function borrarDeMaestro(sesion: SesionFlujo, m: Maestro, id: numbe
     const fila = await filaBloqueada(tx, m, id);
     const [uso] = await tx.unsafe(`SELECT 1 FROM indicador_versiones WHERE ${TABLA[m].columnaUso} = $1 LIMIT 1`, [id]);
     if (uso) throw new ErrorIndicador("No se puede borrar: lo usa algún indicador. Desactívelo.");
+    if (m === "objetivos") {
+      // Un plan o la clasificación de un hallazgo lo citan (15B): el `23503` no llega a la persona.
+      const [enMejoramiento] = await tx`SELECT 1 WHERE EXISTS (SELECT 1 FROM mejora_planes WHERE objetivo_id = ${id})
+        OR EXISTS (SELECT 1 FROM mejora_clasificacion WHERE objetivo_id = ${id})`;
+      if (enMejoramiento) throw new ErrorIndicador("El objetivo está en uso en Mejoramiento");
+    }
     await tx.unsafe(`DELETE FROM ${TABLA[m].tabla} WHERE id = $1`, [id]);
     await registrarAuditoria(tx, {
       usuarioId: sesion.usuarioId,

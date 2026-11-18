@@ -12,7 +12,7 @@ export type RolArchivo = (typeof ROLES_ARCHIVO)[number];
  * anual, un hallazgo, una medición de indicador (sus soportes), una constancia de envío externo (`reporte_externo`, 14B),
  * la plantilla de un lote de importación de indicadores (`importacion_indicadores`, 14A), un periodo de un dato
  * compartido (`dato_compartido`, sus soportes: 14C) o lo de mejoramiento (15A): un hallazgo, una ronda, una actividad o
- * el reporte de un funcionario. `hallazgo` es el de la 13B.
+ * el reporte de un funcionario; y, desde la 15B, un plan de mejoramiento (`mejora_plan`). `hallazgo` es el de la 13B.
  */
 export const CONTEXTOS_EVIDENCIA = [
   "jornada",
@@ -28,6 +28,7 @@ export const CONTEXTOS_EVIDENCIA = [
   "mejora_ronda",
   "mejora_actividad",
   "mejora_reporte",
+  "mejora_plan",
 ] as const;
 export type ContextoEvidencia = (typeof CONTEXTOS_EVIDENCIA)[number];
 /**
@@ -41,6 +42,7 @@ export const CONTEXTOS_CON_EXCEL: readonly ContextoEvidencia[] = [
   "mejora_ronda",
   "mejora_actividad",
   "mejora_reporte",
+  "mejora_plan",
 ];
 /** Los roles que las listas y las rutas de archivos de un documento ofrecen: las actas quedan fuera. */
 export const ROLES_ARCHIVO_LISTA: string[] = [...ROLES_ARCHIVO];

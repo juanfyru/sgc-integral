@@ -93,6 +93,14 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("rol sgc_app", () => {
     expect(await codigoDeError(app`UPDATE mejora_reporte_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
     expect(await codigoDeError(app`DELETE FROM mejora_reporte_eventos WHERE id = -1`)).toBe("42501");
   });
+  it("no puede modificar ni borrar mejora_plan_eventos", async () => {
+    expect(await codigoDeError(app`UPDATE mejora_plan_eventos SET creado_en = creado_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM mejora_plan_eventos WHERE id = -1`)).toBe("42501");
+  });
+  it("no puede modificar ni borrar mejora_marcas", async () => {
+    expect(await codigoDeError(app`UPDATE mejora_marcas SET decidido_en = decidido_en WHERE id = -1`)).toBe("42501");
+    expect(await codigoDeError(app`DELETE FROM mejora_marcas WHERE id = -1`)).toBe("42501");
+  });
   it("sí puede insertar, leer y borrar en tablas operativas", async () => {
     const [u] = await app`INSERT INTO usuarios (usuario, nombre, hash_clave) VALUES (${'zz_priv_u_' + Date.now()}, 'x', 'h') RETURNING id`;
     expect(u.id).toBeGreaterThan(0);

@@ -292,7 +292,7 @@ export const archivos = pgTable(
     ),
     check(
       "archivos_contexto_valido",
-      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores', 'dato_compartido', 'mejora_hallazgo', 'mejora_ronda', 'mejora_actividad', 'mejora_reporte')`,
+      sql`${t.contexto} IN ('version', 'jornada', 'verificacion_item', 'norma', 'revision_anual', 'hallazgo', 'medicion', 'reporte_externo', 'importacion_indicadores', 'dato_compartido', 'mejora_hallazgo', 'mejora_ronda', 'mejora_actividad', 'mejora_reporte', 'mejora_plan')`,
     ),
     check(
       "archivos_contexto_coherente",
@@ -2319,9 +2319,23 @@ export const mejoraHallazgos = pgTable(
     lecciones: text("lecciones"),
     cambiosAtendidos: text("cambios_atendidos"),
     anuladoMotivo: text("anulado_motivo"),
+    // Fase 15B: de dónde nació, si nació de un hallazgo de verificación o de un impacto. Se escriben solo al nacer.
+    verificacionHallazgoId: ref("verificacion_hallazgo_id", () => hallazgos.id),
+    impactoId: ref("impacto_id", () => impactosNormativos.id),
+    impactoIndicadorId: ref("impacto_indicador_id", () => impactosIndicadores.id),
   },
   (t) => [
     unique("mejora_hallazgos_anio_consecutivo_unico").on(t.anio, t.consecutivo),
+    index("mejora_hallazgos_verificacion_hallazgo_idx").on(t.verificacionHallazgoId),
+    index("mejora_hallazgos_impacto_idx").on(t.impactoId),
+    index("mejora_hallazgos_impacto_indicador_idx").on(t.impactoIndicadorId),
+    uniqueIndex("mejora_hallazgos_verificacion_hallazgo_unico")
+      .on(t.verificacionHallazgoId)
+      .where(sql`estado NOT IN ('rechazado', 'anulado')`),
+    uniqueIndex("mejora_hallazgos_impacto_unico").on(t.impactoId).where(sql`estado NOT IN ('rechazado', 'anulado')`),
+    uniqueIndex("mejora_hallazgos_impacto_indicador_unico")
+      .on(t.impactoIndicadorId)
+      .where(sql`estado NOT IN ('rechazado', 'anulado')`),
     index("mejora_hallazgos_proceso_estado_idx").on(t.procesoId, t.estado),
     index("mejora_hallazgos_estado_vence_idx").on(t.estado, t.venceEn),
     index("mejora_hallazgos_registrado_por_idx").on(t.registradoPor),
@@ -2670,8 +2684,13 @@ export const mejoraReportes = pgTable(
     venceEn: marca("vence_en").notNull(),
     avisoVencidoEn: marca("aviso_vencido_en"),
     escaladoEn: marca("escalado_en"),
+    // Fase 15B: el documento y el indicador sobre los que se reporta.
+    documentoId: ref("documento_id", () => documentos.id),
+    indicadorId: ref("indicador_id", () => indicadores.id),
   },
   (t) => [
+    index("mejora_reportes_documento_idx").on(t.documentoId),
+    index("mejora_reportes_indicador_idx").on(t.indicadorId),
     index("mejora_reportes_estado_vence_idx").on(t.estado, t.venceEn),
     index("mejora_reportes_reportado_por_idx").on(t.reportadoPor),
     index("mejora_reportes_hallazgo_idx").on(t.hallazgoId),
@@ -2692,4 +2711,158 @@ export const mejoraReporteEventos = pgTable(
     creadoEn: creado(),
   },
   (t) => [index("mejora_reporte_eventos_reporte_idx").on(t.reporteId, t.creadoEn)],
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 15B: planes de mejoramiento y enganches (migración 0019). El plan, su clasificación y sus eventos no cuelgan del
+// trigger del hallazgo terminado: un hallazgo cerrado entra, sale y cambia de plan.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// El consecutivo del código `PM-AAAA-NN` por vigencia, como `mejora_consecutivos`.
+export const mejoraPlanConsecutivos = pgTable("mejora_plan_consecutivos", {
+  vigencia: integer("vigencia").primaryKey(),
+  ultimo: integer("ultimo").notNull(),
+});
+
+export const mejoraPlanes = pgTable(
+  "mejora_planes",
+  {
+    id: id(),
+    codigo: text("codigo").notNull().unique(),
+    vigencia: integer("vigencia").notNull(),
+    consecutivo: integer("consecutivo").notNull(),
+    nombre: text("nombre").notNull(),
+    origen: text("origen").notNull(),
+    fechaEvento: date("fecha_evento").notNull(),
+    objetivoTexto: text("objetivo_texto"),
+    objetivoId: ref("objetivo_id", () => objetivos.id),
+    fechaLimiteEnte: date("fecha_limite_ente"),
+    creadoPor: refUsuario("creado_por").notNull(),
+    creadoEn: creado(),
+    anuladoEn: marca("anulado_en"),
+    anuladoPor: refUsuario("anulado_por"),
+    anuladoMotivo: text("anulado_motivo"),
+  },
+  (t) => [
+    unique("mejora_planes_vigencia_consecutivo_unico").on(t.vigencia, t.consecutivo),
+    index("mejora_planes_objetivo_idx").on(t.objetivoId),
+    check(
+      "mejora_planes_origen_valido",
+      sql`${t.origen} IN ('auditoria_interna', 'control_interno', 'revision_direccion', 'pamec', 'autoevaluacion', 'indicador', 'pqrsf', 'evento_adverso', 'riesgo_materializado', 'satisfaccion_usuario', 'control_documental', 'otro', 'auditoria_externa', 'ente_control')`,
+    ),
+  ],
+);
+
+// El plan y el objetivo de un hallazgo, fuera de él. La fila se borra cuando quedan los dos nulos.
+export const mejoraClasificacion = pgTable(
+  "mejora_clasificacion",
+  {
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).primaryKey(),
+    planId: ref("plan_id", () => mejoraPlanes.id),
+    objetivoId: ref("objetivo_id", () => objetivos.id),
+    actualizadoPor: refUsuario("actualizado_por").notNull(),
+    actualizadoEn: marca("actualizado_en").notNull(),
+  },
+  (t) => [
+    index("mejora_clasificacion_plan_idx").on(t.planId),
+    index("mejora_clasificacion_objetivo_idx").on(t.objetivoId),
+    check("mejora_clasificacion_no_vacia", sql`${t.planId} IS NOT NULL OR ${t.objetivoId} IS NOT NULL`),
+  ],
+);
+
+// Solo-inserción (trigger en la migración 0019 y REVOKE en roles-bd.ts)
+export const mejoraPlanEventos = pgTable(
+  "mejora_plan_eventos",
+  {
+    id: id(),
+    planId: ref("plan_id", () => mejoraPlanes.id).notNull(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id),
+    tipo: text("tipo").notNull(),
+    detalle: jsonb("detalle").notNull().default(sql`'{}'::jsonb`),
+    usuarioId: refUsuario("usuario_id").notNull(),
+    creadoEn: creado(),
+  },
+  (t) => [
+    index("mejora_plan_eventos_plan_idx").on(t.planId, t.creadoEn),
+    index("mejora_plan_eventos_hallazgo_idx").on(t.hallazgoId),
+    check(
+      "mejora_plan_eventos_tipo_valido",
+      sql`${t.tipo} IN ('creado', 'editado', 'anulado', 'entra', 'sale', 'archivo', 'archivo_quitado', 'respuesta')`,
+    ),
+  ],
+);
+
+export const mejoraPlanRespuestas = pgTable(
+  "mejora_plan_respuestas",
+  {
+    id: id(),
+    planId: ref("plan_id", () => mejoraPlanes.id).notNull(),
+    enviadaEn: date("enviada_en").notNull(),
+    archivoId: ref("archivo_id", () => archivos.id).notNull().unique(),
+    registradaPor: refUsuario("registrada_por").notNull(),
+    registradaEn: marca("registrada_en").notNull(),
+  },
+  (t) => [index("mejora_plan_respuestas_plan_idx").on(t.planId)],
+);
+
+export const mejoraPlanRespuestaHallazgos = pgTable(
+  "mejora_plan_respuesta_hallazgos",
+  {
+    respuestaId: ref("respuesta_id", () => mejoraPlanRespuestas.id).notNull(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.respuestaId, t.hallazgoId] }),
+    index("mejora_plan_respuesta_hallazgos_hallazgo_idx").on(t.hallazgoId),
+  ],
+);
+
+// Solo-inserción (trigger en la migración 0019 y REVOKE en roles-bd.ts). Una fila por decisión, varias por medición.
+export const mejoraMarcas = pgTable(
+  "mejora_marcas",
+  {
+    id: id(),
+    medicionId: ref("medicion_id", () => mediciones.id).notNull(),
+    indicadorId: ref("indicador_id", () => indicadores.id).notNull(),
+    salida: text("salida").notNull(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id),
+    justificacion: text("justificacion"),
+    decididoPor: refUsuario("decidido_por").notNull(),
+    decididoEn: marca("decidido_en").notNull(),
+  },
+  (t) => [
+    index("mejora_marcas_medicion_idx").on(t.medicionId),
+    index("mejora_marcas_indicador_idx").on(t.indicadorId),
+    index("mejora_marcas_hallazgo_idx").on(t.hallazgoId),
+    check("mejora_marcas_salida_valida", sql`${t.salida} IN ('hallazgo', 'ocurrencia', 'no_requiere')`),
+    check(
+      "mejora_marcas_coherente",
+      sql`(${t.salida} = 'no_requiere' AND ${t.justificacion} IS NOT NULL AND ${t.hallazgoId} IS NULL) OR (${t.salida} <> 'no_requiere' AND ${t.justificacion} IS NULL AND ${t.hallazgoId} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// El trámite documental que atiende una actividad. Con el trigger del hallazgo terminado (migración 0019).
+export const mejoraActividadTramites = pgTable(
+  "mejora_actividad_tramites",
+  {
+    id: id(),
+    hallazgoId: ref("hallazgo_id", () => mejoraHallazgos.id).notNull(),
+    actividadId: ref("actividad_id", () => mejoraActividades.id).notNull(),
+    tramiteId: ref("tramite_id", () => tramites.id).notNull().unique(),
+    origen: text("origen").notNull(),
+    enlazadoPor: refUsuario("enlazado_por").notNull(),
+    enlazadoEn: marca("enlazado_en").notNull(),
+    avisadoEn: marca("avisado_en"),
+  },
+  (t) => [
+    index("mejora_actividad_tramites_hallazgo_idx").on(t.hallazgoId),
+    index("mejora_actividad_tramites_actividad_idx").on(t.actividadId),
+    foreignKey({
+      name: "mejora_actividad_tramites_actividad_coherente",
+      columns: [t.actividadId, t.hallazgoId],
+      foreignColumns: [mejoraActividades.id, mejoraActividades.hallazgoId],
+    }).onDelete("restrict"),
+    check("mejora_actividad_tramites_origen_valido", sql`${t.origen} IN ('pedido', 'enlazado')`),
+  ],
 );

@@ -81,7 +81,7 @@ describe("/mejoramiento/[id]/imprimir", () => {
     enTransaccion(async (tx) => {
       const b = await baseDeMejora(tx);
       const h = await hallazgoEn(tx, b, "en_ejecucion");
-      await formatosElegidos(tx, b.admin, { registro: null, porques: null, ishikawa: null });
+      await formatosElegidos(tx, b.admin, { registro: null, porques: null, ishikawa: null, plan: null });
       const sinFormato = await imprimir(b.lider, h.id);
       expect(sinFormato).toContain(">1. Identificación<");
       expect(sinFormato).toContain(">7. Cierre<");
@@ -89,7 +89,7 @@ describe("/mejoramiento/[id]/imprimir", () => {
       expect(sinFormato).toContain(`por ${b.lider.nombre}`);
 
       const doc = await documentoLibre(tx, { proceso: "CEX", tipo: "FO" });
-      await formatosElegidos(tx, b.admin, { registro: doc.id, porques: null, ishikawa: null });
+      await formatosElegidos(tx, b.admin, { registro: doc.id, porques: null, ishikawa: null, plan: null });
       const conFormato = await imprimir(b.lider, h.id);
       expect(conFormato).toContain(doc.codigo);
       expect(conFormato).toContain("Fecha de emisión");

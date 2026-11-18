@@ -82,13 +82,13 @@ describe("sembrarBase", () => {
     }
   });
 
-  it("deja las quince claves de mejoramiento con sus valores por omisión (Fase 15A)", async () => {
+  it("deja las dieciocho claves de mejoramiento con sus valores por omisión (Fases 15A y 15B)", async () => {
     const configuracion = new Map(((await loQueSiembra()).get(e.configuracion) ?? []).map((f) => [f.clave, f.valor]));
     const esperadas = Object.fromEntries([
       ...CAMPOS_MEJORA.map((c) => [c.clave, String(c.leer(CONFIG_MEJORA_DEFECTO))]),
       ...CAMPOS_FORMATO.map((f) => [f.clave, ""]),
     ]);
-    expect(Object.keys(esperadas)).toHaveLength(15);
+    expect(Object.keys(esperadas)).toHaveLength(18);
     expect(Object.fromEntries(Object.keys(esperadas).map((k) => [k, configuracion.get(k)]))).toEqual(esperadas);
   });
 });

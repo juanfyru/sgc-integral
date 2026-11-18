@@ -19,7 +19,10 @@ export type ConfigMejora = {
   };
   recordatorioAltaDias: number;
   recordatorioDias: number;
-  formatos: { registro: number | null; porques: number | null; ishikawa: number | null };
+  formatos: { registro: number | null; porques: number | null; ishikawa: number | null; plan: number | null };
+  /** La sugerencia de «Este punto acumula»: cuántos hallazgos (de 2 a 20) en cuántos meses (de 1 a 60). */
+  sugerirHallazgos: number;
+  sugerirMeses: number;
 };
 
 export const CONFIG_MEJORA_DEFECTO: ConfigMejora = {
@@ -29,7 +32,9 @@ export const CONFIG_MEJORA_DEFECTO: ConfigMejora = {
   },
   recordatorioAltaDias: 15,
   recordatorioDias: 30,
-  formatos: { registro: null, porques: null, ishikawa: null },
+  formatos: { registro: null, porques: null, ishikawa: null, plan: null },
+  sugerirHallazgos: 3,
+  sugerirMeses: 12,
 };
 
 type CampoNumerico = {
@@ -59,12 +64,15 @@ export const CAMPOS_MEJORA: readonly CampoNumerico[] = [
   plazoDe("evaluar", "mej_plazo_evaluar_dias"),
   { clave: "mej_recordatorio_alta_dias", minimo: 1, maximo: 365, leer: (c) => c.recordatorioAltaDias, poner: (c, n) => { c.recordatorioAltaDias = n; } },
   { clave: "mej_recordatorio_dias", minimo: 1, maximo: 365, leer: (c) => c.recordatorioDias, poner: (c, n) => { c.recordatorioDias = n; } },
+  { clave: "mej_sugerir_hallazgos", minimo: 2, maximo: 20, leer: (c) => c.sugerirHallazgos, poner: (c, n) => { c.sugerirHallazgos = n; } },
+  { clave: "mej_sugerir_meses", minimo: 1, maximo: 60, leer: (c) => c.sugerirMeses, poner: (c, n) => { c.sugerirMeses = n; } },
 ];
 
 export const CAMPOS_FORMATO = [
   { campo: "registro", clave: "mej_formato_registro_documento_id" },
   { campo: "porques", clave: "mej_formato_porques_documento_id" },
   { campo: "ishikawa", clave: "mej_formato_ishikawa_documento_id" },
+  { campo: "plan", clave: "mej_formato_plan_documento_id" },
 ] as const;
 
 type Opciones = { sql?: Cliente };

@@ -45,6 +45,27 @@ describe("obtenerConfigMejora", () => {
     });
   });
 
+  it("las tres claves de la 15B se leen con su valor por omisión", async () => {
+    await revertida(sql, async (tx) => {
+      await tx`DELETE FROM configuracion WHERE clave IN ('mej_formato_plan_documento_id', 'mej_sugerir_hallazgos', 'mej_sugerir_meses')`;
+      const c = await obtenerConfigMejora({ sql: tx });
+      expect(c.formatos.plan).toBeNull();
+      expect(c.sugerirHallazgos).toBe(3);
+      expect(c.sugerirMeses).toBe(12);
+    });
+  });
+
+  it("mej_sugerir_hallazgos fuera de 2 a 20 cae al de omisión y mej_sugerir_meses, fuera de 1 a 60", async () => {
+    await revertida(sql, async (tx) => {
+      for (const [clave, valor] of [["mej_sugerir_hallazgos", "1"], ["mej_sugerir_meses", "61"]]) {
+        await tx`INSERT INTO configuracion (clave, valor) VALUES (${clave}, ${valor}) ON CONFLICT (clave) DO UPDATE SET valor = ${valor}`;
+      }
+      const c = await obtenerConfigMejora({ sql: tx });
+      expect(c.sugerirHallazgos).toBe(3);
+      expect(c.sugerirMeses).toBe(12);
+    });
+  });
+
   it("un valor fuera de rango cae al de omisión", async () => {
     await revertida(sql, async (tx) => {
       await tx`INSERT INTO configuracion (clave, valor) VALUES ('mej_plazo_formular_dias', '0')
@@ -82,6 +103,20 @@ describe("guardarConfigMejora", () => {
         mej_plazo_formular_dias: { antes: "10", despues: "12" },
         mej_recordatorio_dias: { antes: "30", despues: "45" },
       });
+    });
+  });
+
+  it("mej_sugerir_hallazgos fuera de 2 a 20 se rechaza al guardar", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      for (const n of [1, 21]) {
+        await expect(guardarConfigMejora(admin, { ...CONFIG_MEJORA_DEFECTO, sugerirHallazgos: n }, opc(tx))).rejects.toThrow(
+          "El número de hallazgos de la sugerencia",
+        );
+      }
+      await guardarConfigMejora(admin, { ...CONFIG_MEJORA_DEFECTO, sugerirHallazgos: 20, sugerirMeses: 60 }, opc(tx));
+      const c = await obtenerConfigMejora({ sql: tx });
+      expect([c.sugerirHallazgos, c.sugerirMeses]).toEqual([20, 60]);
     });
   });
 
@@ -129,7 +164,7 @@ describe("encabezadoDeFormato", () => {
       await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${doc.id}`;
       await tx`INSERT INTO documento_versiones (documento_id, numero, estado, aprobo, fecha_aprobacion)
         VALUES (${doc.id}, 2, 'vigente', 'Prueba', '2026-03-15')`;
-      const formatos = { registro: doc.id, porques: null, ishikawa: null };
+      const formatos = { registro: doc.id, porques: null, ishikawa: null, plan: null };
       await guardarConfigMejora(admin, { ...CONFIG_MEJORA_DEFECTO, formatos }, opc(tx));
 
       const e = await encabezadoDeFormato(tx, "registro");
