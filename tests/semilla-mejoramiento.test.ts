@@ -45,7 +45,9 @@ const CLAVES = Object.keys(HALLAZGOS_DE_LA_DEMO) as Clave[];
 /**
  * Si lo sembrado en mejoramiento sigue como se sembró: los catorce hallazgos y los dos reportes, ningún paso ni evento de un
  * reporte después del reloj de la siembra (lo que se hace al recorrer la demo lleva la hora real: `ocurrio_en` en los
- * hallazgos y `creado_en` en los reportes, que la siembra inyecta) y el día no hábil de ejemplo como único del calendario.
+ * hallazgos y `creado_en` en los reportes, que la siembra inyecta), ningún aviso de mejoramiento leído por una persona (la
+ * semilla deja leídos los resueltos en la hora en que nacieron; quien lee después lo hace más tarde) y el día no hábil de
+ * ejemplo como único del calendario.
  */
 async function comoSeSembro(): Promise<{ intacta: boolean; motivo: string }> {
   const t = await sembradaEn(sql);
@@ -54,12 +56,14 @@ async function comoSeSembro(): Promise<{ intacta: boolean; motivo: string }> {
       (SELECT count(*)::int FROM mejora_reportes) AS reportes,
       (SELECT count(*)::int FROM mejora_eventos WHERE ocurrio_en > ${t}) AS eventos,
       (SELECT count(*)::int FROM mejora_reporte_eventos WHERE creado_en > ${t}) AS "eventosDeReportes",
+      (SELECT count(*)::int FROM notificaciones WHERE tipo LIKE 'mejora.%' AND leida_en > creado_en) AS leidos,
       (SELECT count(*)::int FROM dias_no_habiles) AS dias`;
   const cambios: string[] = [];
   if (c.hallazgos !== 14) cambios.push(`${c.hallazgos} hallazgos (se sembraron 14)`);
   if (c.reportes !== 2) cambios.push(`${c.reportes} reportes (se sembraron 2)`);
   if (c.eventos > 0) cambios.push(`${c.eventos} pasos de hallazgos posteriores a la siembra`);
   if (c.eventosDeReportes > 0) cambios.push(`${c.eventosDeReportes} eventos de reportes posteriores a la siembra`);
+  if (c.leidos > 0) cambios.push(`${c.leidos} avisos de mejoramiento leídos después de la siembra`);
   if (c.dias !== 1) cambios.push(`${c.dias} días en el calendario de la entidad (se sembró 1)`);
   return { intacta: cambios.length === 0, motivo: cambios.length === 0 ? "mejoramiento está como se sembró" : `hay ${cambios.join("; ")}` };
 }
@@ -189,6 +193,35 @@ describe("los planes de mejoramiento de la demo", () => {
     expect(firmas).toEqual([]);
     const [confirmada] = await sql`SELECT ocurrio_en FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'carga_confirmada'`;
     expect((confirmada.ocurrio_en as Date).getTime()).toBeLessThan((await sembradaEn(sql)).getTime());
+  });
+
+  it("los avisos que la historia sembrada ya resolvió quedan leídos; los de lo que hoy toca, no", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const aviso = (usuario: string, extra: ReturnType<typeof sql>) => sql`SELECT n.tipo, n.leida_en FROM notificaciones n
+      JOIN usuarios u ON u.id = n.usuario_id WHERE u.usuario = ${usuario} AND ${extra}`;
+    // El cierre del eficaz (HZ-…-001): Gerencia recibió su aviso y la semilla lo deja leído, como todo lo del hallazgo.
+    const eficaz = await hallazgo("eficaz");
+    const delEficaz = await aviso("gerente", sql`n.entidad = 'mejora_hallazgo' AND n.entidad_id = ${eficaz.id}`);
+    expect(delEficaz.map((n) => n.tipo)).toContain("mejora.cerrado");
+    expect(delEficaz.filter((n) => n.leida_en === null)).toEqual([]);
+    // La actividad de `consulta` en el caso de las maquetas sigue abierta: su aviso de asignación queda sin leer.
+    const maquetas = await hallazgo("enEjecucion");
+    const [abierta] = await sql`SELECT a.id FROM mejora_actividades a JOIN usuarios u ON u.id = a.responsable_id
+      WHERE a.hallazgo_id = ${maquetas.id} AND u.usuario = 'consulta' AND a.estado = 'abierta'`;
+    const asignada = await aviso("consulta", sql`n.tipo = 'mejora.actividad_asignada' AND n.entidad_id = ${abierta.id}`);
+    expect(asignada.map((n) => n.leida_en)).toEqual([null]);
+    // Y la del coordinador, terminada, queda leída.
+    const [terminada] = await sql`SELECT a.id FROM mejora_actividades a JOIN usuarios u ON u.id = a.responsable_id
+      WHERE a.hallazgo_id = ${maquetas.id} AND u.usuario = 'coordinadora.sgc' AND a.estado = 'terminada'`;
+    const suya = await aviso("coordinadora.sgc", sql`n.tipo = 'mejora.actividad_asignada' AND n.entidad_id = ${terminada.id}`);
+    expect(suya.map((n) => n.leida_en !== null)).toEqual([true]);
+    // El turno de hoy queda sin leer: `lider.gth` acepta o rechaza el «Por aceptar»; el de un paso que ya pasó, leído.
+    const porAceptar = await hallazgo("porAceptar");
+    const turno = await aviso("lider.gth", sql`n.tipo = 'mejora.turno' AND n.entidad_id = ${porAceptar.id}`);
+    expect(turno.map((n) => n.leida_en)).toEqual([null]);
+    const yaPaso = await aviso("lider.cex", sql`n.tipo = 'mejora.turno' AND n.entidad_id = ${(await hallazgo("enRevision")).id}`);
+    expect(yaPaso.length).toBeGreaterThan(0);
+    expect(yaPaso.every((n) => n.leida_en !== null)).toBe(true);
   });
 
   it("el calendario de la entidad trae un día no hábil de ejemplo", async (ctx) => {

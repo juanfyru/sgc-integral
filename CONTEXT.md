@@ -494,7 +494,10 @@ navegador durante la construcción (el registro de la ejecución, `progress.md` 
   suelta del id del reporte en «hace 10 días» y en «Prueba 48»). `tests/cascaron-consultas.test.ts` contaba desde la Tarea
   19 una sentencia de más para todos (las actividades de mejoramiento de «Mis tareas») y, con la demo, las del turno de cada
   hallazgo abierto: ahora deja fuera las tareas de mejoramiento (las simula) y comprueba que el cascarón las pide una vez por
-  render. El capítulo 9 del manual (`docs/manual/usuario/09-mejoramiento.md`), `AGENTS.md` y este archivo.
+  render. La semilla deja leídos los avisos que su propia historia ya resolvió (los de los hallazgos terminados, los de
+  turno de quien ya no lo tiene y los de asignación de las actividades terminadas), antes de su pasada final: la campana de
+  cada usuario de la demo trae lo que hoy le toca. El capítulo 9 del manual (`docs/manual/usuario/09-mejoramiento.md`),
+  `AGENTS.md` y este archivo.
 
 ### Qué probar y cómo (Fase 15A)
 
@@ -526,8 +529,8 @@ hallazgos ya sembrados.
    primer día hábil desde tres semanas después de la siembra).
 1. **Registrar con parecidos y reincidencia.** Como `control.interno`, **Registrar hallazgo**: una no conformidad de
    auditoría interna en Consulta Externa, de criticidad **Alta** (así la aprobará Gerencia en el paso 5), con un título
-   parecido al 006 («Consentimiento informado en versión obsoleta otra vez en odontología»). A la derecha, **Parecidos en el
-   proceso** muestra el 006 cerrado: elija «Es reincidencia de HZ-2026-006, que está cerrado». Nace «Por aceptar», con la
+   parecido al 006 («Consentimiento informado en versión obsoleta otra vez en odontología»). A la derecha, **Parecidos en Consulta
+   Externa** muestra el 006 cerrado: elija «Es reincidencia de HZ-2026-006, que está cerrado». Nace «Por aceptar», con la
    marca «Reincidente».
 2. **Aceptar y corregir.** Como `lider.cex`: **Aceptar el hallazgo**; en **2. Corrección o contención**, suba un archivo y
    **Registrar la corrección**. Pasa directo a **Por formular** (la acción correctiva es obligada) y «Vence» dice «quedan N
@@ -546,8 +549,9 @@ hallazgos ya sembrados.
    (la actividad de `consulta` está abierta).
 7. **El ajuste.** En el 005, la actividad de `jefe.urgencias` está vencida y su ajuste de fecha está por decidir: como
    `gerente`, en **Lo que sigue**, **Aprobar el ajuste**. La fecha de fin original queda intacta y la actividad, con la
-   marca «Reprogramada»; mientras estuvo por decidir, siguió vencida. (En el hallazgo del paso 4, pídalo con **Pedir ajuste
-   de fecha** y vea que sigue vencida hasta aprobarlo.)
+   marca «Reprogramada»; mientras estuvo por decidir, siguió vencida (véalo antes de aprobarlo: «Vencida hace N días» y el
+   ajuste «por decidir»). En el hallazgo del paso 4 no hay una actividad vencida que mostrar: el plan no se envía con una
+   fecha de fin pasada y en el navegador no hay reloj que adelantar.
 8. **Quien ejecuta no verifica.** Con todas las actividades del hallazgo del paso 4 terminadas, como `coordinadora.sgc`
    (responsable de una), **Ir a verificar**: no la deja, y dice por qué. Como `control.interno`, devuelva una actividad con su
    nota y su fecha; corregida (un seguimiento y un archivo nuevos), dé todas por conformes: queda «En espera de eficacia»,
@@ -555,7 +559,8 @@ hallazgos ya sembrados.
 9. **Eficaz y cierre** (sobre el 004, ya en su fecha mínima). Como `control.interno`, **Ir a evaluar**: se ven los
    resultados de `AIN-IND-01` (antes, durante y después) y las ocurrencias; **Eficaz**, los criterios, el periodo y la
    justificación; **Firmar «Verificó»**. Como `coordinadora.sgc`, las lecciones aprendidas y **Firmar «Cerró»**: queda
-   «Cerrado · eficaz», y `gerente` ve en la campana «Se cerró HZ-…: el plan fue eficaz». Antes, intente **Eficaz** en el 003
+   «Cerrado · eficaz», y `gerente` ve en la campana «Se cerró HZ-2026-004: el plan fue eficaz» (el aviso del cierre del 001,
+   que dejó la semilla, ya está leído). Antes, intente **Eficaz** en el 003
    o en el del paso 8: no se puede antes de la fecha.
 10. **No eficaz** (sobre el 003, que espera su fecha: «no eficaz» se registra en cualquier momento). Como
     `control.interno`, **No eficaz: se reabre con una ronda nueva**, con su justificación y la firma: el hallazgo vuelve a
@@ -747,8 +752,9 @@ carpeta es de `src/db/consultas/mejoramiento/`):
 - Varias pruebas faltan o se hacen en serie: dos decisiones de un ajuste a la vez, la página de edición, el rechazo de dominio
   al sumar un reporte a un hallazgo cerrado o no visible, y la prueba de ciclos no ve un `import` sin cláusula ni un
   `import()`; la del tope simultáneo de archivos depende de una espera de 300 ms.
-- La demo no deja leídos los avisos de lo que la historia sembrada ya resolvió (la de indicadores sí): la campana de los
-  usuarios de la demo trae los avisos de turno de cada paso sembrado.
+- La semilla de indicadores (de la 14A y la 14C, no de esta entrega) no siembra antes del 2026-09-11 (su lote importado
+  lleva una fecha de aprobación fija) y, con el reloj falseado, falló el 1.º de un mes y el domingo 1 de noviembre («No se
+  puede dar la sigla TSR al subproceso Gestión Tesorería»); no se probó una siembra real en esos días.
 - Lo que cuestan las tareas de mejoramiento en el cascarón crece con los hallazgos abiertos de quien tiene un turno por rol
   (el turno se resuelve hallazgo por hallazgo, decisión 30): con la demo, unas diez sentencias más por render para un Admin
   SGC o Gerencia. `tests/cascaron-consultas.test.ts` las deja fuera; queda para la revisión final.

@@ -25,7 +25,8 @@ import path from "node:path";
 import type { Sql } from "postgres";
 import { resolverRutaAlmacen } from "../../lib/almacen";
 import { esHabil, restarDiasHabiles, type AjustesDeCalendario } from "../../lib/dias-habiles";
-import type { CriterioEficacia, MetodoAnalisis, TipoAccion } from "../../lib/mejoramiento/tipos";
+import { TERMINALES, type CriterioEficacia, type MetodoAnalisis, type TipoAccion } from "../../lib/mejoramiento/tipos";
+import { sanearNombre } from "../../lib/subida";
 import { fechaEnZona, finDeFecha } from "../../lib/tramites/plazos";
 import { zonaHoraria } from "../../lib/zona-horaria";
 import { registrarArchivo } from "../consultas/admin";
@@ -36,8 +37,10 @@ import { pedirAjuste } from "../consultas/mejoramiento/ajustes";
 import { guardarAnalisis, guardarCausas, responderPreguntas } from "../consultas/mejoramiento/analisis";
 import { aprobarPlan, enviarPlan, firmarRevision } from "../consultas/mejoramiento/aprobacion";
 import { cargarHallazgo } from "../consultas/mejoramiento/carga";
+import { quienTieneElTurno } from "../consultas/mejoramiento/avisos";
 import { agregarDiaDeCalendario, calendarioDeMejora } from "../consultas/mejoramiento/config";
 import { fechaMinimaDe } from "../consultas/mejoramiento/espera";
+import { hallazgoBase } from "../consultas/mejoramiento/flujo";
 import { guardarAccion, guardarCriterio } from "../consultas/mejoramiento/plan";
 import {
   aceptarHallazgo,
@@ -76,6 +79,34 @@ export const HALLAZGOS_DE_LA_DEMO = {
   reabierto: { titulo: "Unificar el formato de entrega de turno entre hospitalización y urgencias", etiqueta: "Por formular", marca: "Reabierto · ronda 2" },
   cargado: { titulo: "Carro de paro de urgencias sin la lista de chequeo diaria diligenciada", etiqueta: "En ejecución", marca: "Cargado" },
 } as const satisfies Record<string, HallazgoDeLaDemo>;
+
+type Clave = keyof typeof HALLAZGOS_DE_LA_DEMO;
+
+/** Un momento de la siembra: hace `dias` días (`momentoHace`) y `minutos` después. */
+type Momento = { dias: number; minutos?: number };
+
+/**
+ * Cuándo se registra cada hallazgo de la demo: un solo lugar, que usan su escenario y el orden de la siembra (los códigos salen
+ * en el orden de sus fechas). El «Por formular» no está aquí: se registra en días hábiles hacia atrás (`diaDelPorFormular`).
+ */
+const REGISTRO: Record<Exclude<Clave, "porFormular">, Momento> = {
+  eficaz: { dias: 210 },
+  reabierto: { dias: 100 },
+  enEspera: { dias: 80 },
+  porEvaluar: { dias: 75 },
+  enEjecucion: { dias: 30 },
+  conCorreccion: { dias: 25 },
+  sinAccion: { dias: 20 },
+  cargado: { dias: 12 },
+  enRevision: { dias: 11 },
+  enAprobacion: { dias: 9 },
+  rechazado: { dias: 7 },
+  enArbitraje: { dias: 6 },
+  porAceptar: { dias: 1, minutos: 120 },
+};
+
+/** Cuándo se envía el reporte que sigue por clasificar. */
+const REPORTE_POR_CLASIFICAR: Momento = { dias: 1, minutos: 150 };
 
 /** Los dos reportes de `consulta` (spec §7.3), por lo que escribió: uno por clasificar y otro convertido en «En revisión». */
 export const REPORTES_DE_LA_DEMO = {
@@ -141,6 +172,13 @@ const enElDia = (s: Siembra, dia: string, minutos = 0) =>
 /** El día del calendario, en la zona, de hace `dias` días (negativo: en el futuro). Solo fechas: no es la hora de un paso. */
 const dia = (s: Siembra, dias: number) => fechaEnZona(momentoHace(dias, s.ahora), s.zona);
 
+/** El momento del registro de un hallazgo de la demo (`REGISTRO`, o el día hábil del «Por formular»), o el de un `Momento`. */
+function registroDe(s: Siembra, de: Clave | Momento): Date {
+  if (de === "porFormular") return enElDia(s, diaDelPorFormular(s));
+  const m = typeof de === "string" ? REGISTRO[de] : de;
+  return hace(s, m.dias, m.minutos ?? 0);
+}
+
 /** Las opciones del dominio de un paso: su hora y la firma de la demo. */
 const en = (s: Siembra, momento: Date): OpcionesFlujo => ({ sql: s.sql, ahora: momento, verificar: firmaDeLaDemo });
 
@@ -160,7 +198,7 @@ async function subir(
   x: { contexto: keyof typeof CARPETA; id: number; rol: "correccion" | "carga" | "evidencia"; nombre: string; quien: SesionFlujo; ahora?: Date },
 ): Promise<void> {
   const contenido = await generarPlaceholder({ codigo: x.nombre, titulo: "Archivo de la demo de mejoramiento", numeroVersion: 1, ext: "pdf", entidad: s.entidad });
-  const archivo = `${x.nombre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}.pdf`;
+  const archivo = sanearNombre(`${x.nombre}.pdf`);
   const ruta = `mejoramiento/${CARPETA[x.contexto]}/${x.id}/${archivo}`;
   const destino = resolverRutaAlmacen(ruta);
   if (!destino) throw new Error(`Ruta de almacén inválida: ${ruta}`);
@@ -340,7 +378,7 @@ async function evaluar(
   );
 }
 
-/** La identificación común: una no conformidad interna del proceso, detectada `detectado` días atrás. */
+/** La identificación de un hallazgo de la demo: su título de `HALLAZGOS_DE_LA_DEMO` y la fecha en que se detectó, `detectado` días atrás. */
 function identificacion(s: Siembra, clave: keyof typeof HALLAZGOS_DE_LA_DEMO, d: Omit<DatosDeHallazgo, "titulo" | "detectadoEn"> & { detectado: number }): DatosDeHallazgo {
   const { detectado, ...resto } = d;
   return { ...resto, titulo: HALLAZGOS_DE_LA_DEMO[clave].titulo, detectadoEn: dia(s, detectado) };
@@ -366,7 +404,7 @@ async function eficaz(s: Siembra): Promise<void> {
         "En la auditoría interna de cadena de frío se encontró la planilla de temperatura de la nevera de vacunas de farmacia sin los registros del sábado y el domingo de dos fines de semana seguidos.",
       requisitoClausula: "ISO 9001:2015, 7.1.5 y 8.5.4",
     }),
-    en(s, hace(s, 210)),
+    en(s, registroDe(s, "eficaz")),
   );
   s.ids.eficaz = h;
   await corregir(s, h, s.s.coordinadora, {
@@ -453,7 +491,7 @@ async function reabierto(s: Siembra): Promise<void> {
       descripcion:
         "En la autoevaluación de estándares se vio que hospitalización y urgencias entregan el turno con formatos distintos, y que la información de quien pasa de un servicio al otro llega incompleta.",
     }),
-    en(s, hace(s, 100)),
+    en(s, registroDe(s, "reabierto")),
   );
   s.ids.reabierto = h;
   const [[propuesta, prueba]] = await formular(
@@ -517,7 +555,7 @@ async function enEspera(s: Siembra): Promise<void> {
         "En las quejas del mes, varios usuarios dicen que no consiguen cita de medicina general, mientras en la agenda quedan cupos sin usar de personas que no asistieron ni cancelaron.",
       requisitoClausula: "ISO 9001:2015, 8.2.1 y 9.1.2",
     }),
-    en(s, hace(s, 80)),
+    en(s, registroDe(s, "enEspera")),
   );
   s.ids.enEspera = h;
   await corregir(s, h, s.s.liderCex, {
@@ -603,7 +641,7 @@ async function porEvaluar(s: Siembra): Promise<void> {
       descripcion:
         "En el seguimiento mensual del indicador, el tiempo de espera de los pacientes clasificados en triage II pasó la meta de treinta minutos, sobre todo en el turno de la noche.",
     }),
-    en(s, hace(s, 75)),
+    en(s, registroDe(s, "porEvaluar")),
   );
   s.ids.porEvaluar = h;
   const [[clasificacion]] = await formular(
@@ -665,7 +703,7 @@ async function enEjecucion(s: Siembra): Promise<void> {
       riesgo: "R-07 Pérdida de biológicos",
       reincidenteDe: s.ids.eficaz,
     }),
-    en(s, hace(s, 30)),
+    en(s, registroDe(s, "enEjecucion")),
   );
   s.ids.enEjecucion = h;
   await corregir(s, h, s.s.coordinadora, {
@@ -764,7 +802,7 @@ async function conCorreccion(s: Siembra): Promise<void> {
       descripcion: "En la revisión del punto de uso de odontología se encontró en uso una copia en papel del consentimiento informado en una versión ya obsoleta.",
       requisitoClausula: "ISO 9001:2015, 7.5.3",
     }),
-    en(s, hace(s, 25)),
+    en(s, registroDe(s, "conCorreccion")),
   );
   s.ids.conCorreccion = h;
   await aceptarHallazgo(s.s.liderCex, { hallazgoId: h }, en(s, hace(s, 24)));
@@ -796,7 +834,7 @@ async function sinAccion(s: Siembra): Promise<void> {
       descripcion: "En el seguimiento de Control Interno al proceso de ingreso, el registro de asistencia de la última inducción tiene un participante sin firma.",
       requisitoClausula: "ISO 9001:2015, 7.5.3",
     }),
-    en(s, hace(s, 20)),
+    en(s, registroDe(s, "sinAccion")),
   );
   s.ids.sinAccion = h;
   await aceptarHallazgo(s.s.liderGth, { hallazgoId: h }, en(s, hace(s, 19)));
@@ -819,7 +857,7 @@ async function sinAccion(s: Siembra): Promise<void> {
 
 /** «Cargado» (spec §15): un hallazgo de Atención Inmediata tramitado en papel, con su plan aprobado por Gerencia y su escaneo. */
 async function cargado(s: Siembra): Promise<void> {
-  const momento = hace(s, 12);
+  const momento = registroDe(s, "cargado");
   const { id: h } = await cargarHallazgo(
     s.s.coordinadora,
     {
@@ -898,7 +936,7 @@ async function enRevision(s: Siembra): Promise<void> {
       requisitoClausula: "ISO 9001:2015, 8.5.2",
       reporteId,
     }),
-    en(s, hace(s, 11)),
+    en(s, registroDe(s, "enRevision")),
   );
   s.ids.enRevision = h;
   await aceptarHallazgo(s.s.liderCex, { hallazgoId: h }, en(s, hace(s, 10)));
@@ -1001,7 +1039,7 @@ async function porFormular(s: Siembra): Promise<void> {
       requisitoClausula: "Guía de práctica clínica de hipertensión arterial adoptada por la institución",
       indicadorId: s.indicador(CEX_HIPERTENSION),
     },
-    en(s, enElDia(s, registro)),
+    en(s, registroDe(s, "porFormular")),
   );
   s.ids.porFormular = h;
   await subir(s, { contexto: "mejora_hallazgo", id: h, rol: "correccion", nombre: "Evidencia de la corrección", quien: s.s.liderCex });
@@ -1040,7 +1078,7 @@ async function enAprobacion(s: Siembra): Promise<void> {
       requisitoClausula: "Resolución 3100 de 2019, estándar de dotación",
       fechaLimiteEnte: dia(s, -16),
     }),
-    en(s, hace(s, 9)),
+    en(s, registroDe(s, "enAprobacion")),
   );
   s.ids.enAprobacion = h;
   await corregir(s, h, s.s.coordinadora, {
@@ -1103,7 +1141,7 @@ async function rechazado(s: Siembra): Promise<void> {
       descripcion: "En la revisión de historias clínicas de odontología, el consentimiento informado impreso no tiene la firma del profesional.",
       requisitoClausula: "ISO 9001:2015, 8.5.1",
     }),
-    en(s, hace(s, 7)),
+    en(s, registroDe(s, "rechazado")),
   );
   s.ids.rechazado = h;
   await rechazarHallazgo(
@@ -1133,7 +1171,7 @@ async function enArbitraje(s: Siembra): Promise<void> {
         "En el seguimiento a las vinculaciones del semestre, tres hojas de vida del personal asistencial no tienen la verificación de los títulos ante la entidad que los expidió.",
       requisitoClausula: "Resolución 3100 de 2019, estándar de talento humano",
     }),
-    en(s, hace(s, 6)),
+    en(s, registroDe(s, "enArbitraje")),
   );
   s.ids.enArbitraje = h;
   await rechazarHallazgo(
@@ -1164,7 +1202,7 @@ async function porAceptar(s: Siembra): Promise<void> {
         "En la auditoría interna, las capacitaciones del semestre tienen registro de asistencia pero ninguna tiene la evaluación de su eficacia que pide el procedimiento.",
       requisitoClausula: "ISO 9001:2015, 7.2 d)",
     }),
-    en(s, hace(s, 1, 120)),
+    en(s, registroDe(s, "porAceptar")),
   );
   s.ids.porAceptar = h;
 }
@@ -1174,7 +1212,7 @@ async function reportePorClasificar(s: Siembra): Promise<void> {
   await enviarReporte(
     s.s.consulta,
     { descripcion: REPORTES_DE_LA_DEMO.porClasificar, vistoEn: dia(s, 2), procesoId: s.proceso.AIN },
-    en(s, hace(s, 1, 150)),
+    en(s, registroDe(s, REPORTE_POR_CLASIFICAR)),
   );
 }
 
@@ -1185,6 +1223,36 @@ function diaDeEjemplo(s: Siembra): string {
   let d = dia(s, -21);
   while (!esHabil(d, s.calendario)) d = fechaEnZona(new Date(finDeFecha(d, s.zona).getTime() + 1), s.zona);
   return d;
+}
+
+/**
+ * Los avisos que la historia sembrada ya resolvió, leídos (como `leerAvisosResueltos` de `indicadores-demo.ts`): la campana de
+ * cada usuario de la demo trae lo que hoy le toca, no cada paso de catorce historias. No puede decidirse por la hora: todos los
+ * avisos llevan la de la siembra. Quedan leídos los `mejora.*` de los hallazgos terminados (los del hallazgo y los de sus
+ * actividades), los `mejora.turno` de quien ya no tiene el turno de su hallazgo (`quienTieneElTurno`, la regla del motor) y los
+ * `mejora.actividad_asignada` de las actividades terminadas. Se marcan leídos en la hora en que nacieron (`leida_en =
+ * creado_en`): así lo que una persona lea después (con la hora de entonces) se distingue de lo que dejó leído la semilla
+ * (`tests/semilla-mejoramiento.test.ts`). `notificaciones` no es una tabla de mejoramiento y la marca de lectura no se audita
+ * (F12-D35).
+ */
+async function leerAvisosResueltos(sql: Sql): Promise<void> {
+  const terminados = sql`SELECT id FROM mejora_hallazgos WHERE estado IN ${sql([...TERMINALES])}`;
+  await sql`UPDATE notificaciones n SET leida_en = n.creado_en
+    WHERE n.leida_en IS NULL AND n.tipo LIKE 'mejora.%' AND (
+      (n.entidad = 'mejora_hallazgo' AND n.entidad_id IN (${terminados}))
+      OR (n.entidad = 'mejora_actividad' AND n.entidad_id IN (SELECT id FROM mejora_actividades WHERE hallazgo_id IN (${terminados})))
+      OR (n.tipo = 'mejora.actividad_asignada' AND n.entidad = 'mejora_actividad'
+        AND n.entidad_id IN (SELECT id FROM mejora_actividades WHERE estado = 'terminada')))`;
+  const conTurno = await sql`SELECT DISTINCT entidad_id FROM notificaciones
+    WHERE leida_en IS NULL AND tipo = 'mejora.turno' AND entidad = 'mejora_hallazgo' ORDER BY entidad_id`;
+  for (const f of conTurno) {
+    const h = await hallazgoBase(sql, Number(f.entidad_id));
+    if (!h) continue;
+    const turno = await quienTieneElTurno(sql, h);
+    await sql`UPDATE notificaciones SET leida_en = creado_en
+      WHERE leida_en IS NULL AND tipo = 'mejora.turno' AND entidad = 'mejora_hallazgo' AND entidad_id = ${h.id}
+        AND NOT (usuario_id = ANY(${turno}::bigint[]))`;
+  }
 }
 
 async function prepararSiembra(sql: Sql, c: ContextoDistribucion): Promise<Siembra> {
@@ -1228,27 +1296,32 @@ export async function sembrarMejoramiento(sql: Sql, c: ContextoDistribucion): Pr
   await agregarDiaDeCalendario(s.s.coordinadora, { fecha: diaDeEjemplo(s), tipo: "no_habil", motivo: DIA_NO_HABIL_DE_EJEMPLO }, { sql });
   s.calendario = await calendarioDeMejora(sql);
 
-  // En el orden de su registro: así los códigos salen en el orden de sus fechas.
-  const hallazgos: Array<{ registro: Date; sembrar: (s: Siembra) => Promise<void> }> = [
-    { registro: hace(s, 210), sembrar: eficaz },
-    { registro: hace(s, 100), sembrar: reabierto },
-    { registro: hace(s, 80), sembrar: enEspera },
-    { registro: hace(s, 75), sembrar: porEvaluar },
-    { registro: hace(s, 30), sembrar: enEjecucion },
-    { registro: hace(s, 25), sembrar: conCorreccion },
-    { registro: hace(s, 20), sembrar: sinAccion },
-    { registro: hace(s, 12), sembrar: cargado },
-    { registro: hace(s, 11), sembrar: enRevision },
-    { registro: enElDia(s, diaDelPorFormular(s)), sembrar: porFormular },
-    { registro: hace(s, 9), sembrar: enAprobacion },
-    { registro: hace(s, 7), sembrar: rechazado },
-    { registro: hace(s, 6), sembrar: enArbitraje },
-    { registro: hace(s, 1, 120), sembrar: porAceptar },
-    { registro: hace(s, 1, 150), sembrar: reportePorClasificar },
+  // En el orden de su registro (`REGISTRO`): así los códigos salen en el orden de sus fechas. A igual hora, en el de esta lista.
+  const escenarios: Record<Clave, (s: Siembra) => Promise<void>> = {
+    eficaz,
+    reabierto,
+    enEspera,
+    porEvaluar,
+    enEjecucion,
+    conCorreccion,
+    sinAccion,
+    cargado,
+    enRevision,
+    porFormular,
+    enAprobacion,
+    rechazado,
+    enArbitraje,
+    porAceptar,
+  };
+  const siembras = [
+    ...(Object.keys(escenarios) as Clave[]).map((clave) => ({ registro: registroDe(s, clave), sembrar: escenarios[clave] })),
+    { registro: registroDe(s, REPORTE_POR_CLASIFICAR), sembrar: reportePorClasificar },
   ];
-  hallazgos.sort((a, b) => a.registro.getTime() - b.registro.getTime());
-  for (const { sembrar } of hallazgos) await sembrar(s);
+  siembras.sort((a, b) => a.registro.getTime() - b.registro.getTime());
+  for (const { sembrar } of siembras) await sembrar(s);
 
+  // Antes de la pasada: lo que ella avise queda sin leer.
+  await leerAvisosResueltos(sql);
   // A la hora de la siembra: lo que ya venció avisa ahora, y otra pasada a esa hora no tiene nada nuevo que avisar.
   await revisarVencimientosDeMejoramiento({ sql, ahora: c.ahora, config: await obtenerConfigDocumental({ sql }) });
 }

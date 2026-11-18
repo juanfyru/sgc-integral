@@ -230,16 +230,16 @@ Administrador del SGC. Con la fecha del ente, el plazo de formular sale de esa f
 
 ### 3.3 Los parecidos y la reincidencia
 
-Mientras usted escribe el título y la descripción, a la derecha aparecen **Parecidos en el proceso**:
-hasta cinco hallazgos de ese mismo proceso que se le parecen, abiertos o cerrados. Si alguno es lo
-mismo, elija una de las tres salidas:
+Mientras usted escribe el título y la descripción, a la derecha aparecen los parecidos del proceso
+(**Parecidos en Consulta Externa**, por ejemplo): hasta cinco hallazgos de ese mismo proceso que se
+le parecen, abiertos o cerrados. Si alguno es lo mismo, elija una de las tres salidas:
 
-1. **Es el mismo problema de HZ-…, que está abierto: se añade como ocurrencia.** No nace otro
+1. **Es el mismo problema de HZ-…, que está abierto: se añade como ocurrencia**. No nace otro
    hallazgo: la fecha y la descripción del formulario quedan como una ocurrencia del que ya existe.
-2. **Es reincidencia de HZ-…, que está cerrado.** El hallazgo nuevo queda enlazado al anterior,
+2. **Es reincidencia de HZ-…, que está cerrado**. El hallazgo nuevo queda enlazado al anterior,
    lleva la marca **Reincidente** y exige acción correctiva. Al formular, el SGC le muestra cómo se
    analizó y se resolvió la vez pasada.
-3. **Es distinto: se registra como un hallazgo nuevo.**
+3. **Es distinto: se registra como un hallazgo nuevo**.
 
 Evitar el duplicado importa: dos hallazgos del mismo problema reparten la evidencia y cuentan dos
 veces en el informe.
@@ -512,7 +512,8 @@ cambia, y contra ella se juzga si se cumplió a tiempo.
 - **Reasignar la actividad** (líder del proceso o Administrador del SGC): el **Responsable nuevo** y
   el **Motivo (al menos 10 caracteres)**, sin aprobación. Avisa a los dos.
 - **Escalar a Gerencia** (Administrador del SGC): una actividad vencida, con su nota. Gerencia puede
-  **Responder**. No cambia ningún estado: es la «Decisión de la Alta Dirección» del informe.
+  **Responder la escalada**, con su nota. No cambia ningún estado: es la «Decisión de la Alta
+  Dirección» del informe.
 
 ## 9. Verificar, evaluar la eficacia y cerrar
 
