@@ -1,5 +1,5 @@
 import { fechaDeDia } from "./formato";
-import type { Clase, CriterioEficacia, Criticidad, EstadoActividad, EstadoAjuste, TipoAccion } from "./tipos";
+import type { Clase, CriterioEficacia, Criticidad, EstadoActividad, EstadoAjuste, MetodoDeVerificacion, TipoAccion } from "./tipos";
 
 /** Va en todo formulario del módulo con texto libre (spec §6.4). */
 export const AVISO_SIN_PACIENTES = "No escriba nombres ni documentos de pacientes o de quien se quejó. Use el número del caso.";
@@ -28,6 +28,38 @@ export const ETIQUETA_CRITERIO: Record<CriterioEficacia, string> = {
   reduccion_pqrs: "Reducción de PQRS o eventos",
   otro: "Otro",
 };
+
+/** Cómo verificó quien verifica la implementación (spec §11.4, maqueta 7). */
+export const ETIQUETA_METODO_VERIFICACION: Record<MetodoDeVerificacion, string> = {
+  evidencias: "Revisión de evidencias",
+  observacion: "Observación en sitio",
+  auditoria: "Auditoría de seguimiento",
+  entrevista: "Entrevista",
+};
+
+/** Un usuario de un selector: su nombre, su cargo y, para distinguir homónimos, su usuario de ingreso. */
+export type UsuarioDeSelector = { id: number; nombre: string; cargo?: string | null; usuario?: string | null };
+
+/** «Nombre · cargo», o solo el nombre sin cargo. */
+const visibleDe = (u: UsuarioDeSelector) => (u.cargo ? `${u.nombre} · ${u.cargo}` : u.nombre);
+
+/**
+ * El texto de cada usuario en un selector de responsables: «nombre · cargo»; si dos se ven igual (el mismo nombre y el mismo
+ * cargo), cada uno añade su usuario de ingreso entre paréntesis. Solo los homónimos lo llevan.
+ */
+export function etiquetasDeUsuarios(usuarios: readonly UsuarioDeSelector[]): Map<number, string> {
+  const veces = new Map<string, number>();
+  for (const u of usuarios) veces.set(visibleDe(u), (veces.get(visibleDe(u)) ?? 0) + 1);
+  return new Map(
+    usuarios.map((u) => {
+      const visible = visibleDe(u);
+      return [u.id, (veces.get(visible) ?? 0) > 1 && u.usuario ? `${visible} (${u.usuario})` : visible];
+    }),
+  );
+}
+
+/** El texto de un usuario en un selector: el que le dio la lectura (`etiqueta`) o, sin él, «nombre · cargo». */
+export const textoDeUsuario = (u: UsuarioDeSelector & { etiqueta?: string }): string => u.etiqueta ?? visibleDe(u);
 
 export const ETIQUETA_ESTADO_ACTIVIDAD: Record<EstadoActividad, string> = {
   abierta: "Abierta",

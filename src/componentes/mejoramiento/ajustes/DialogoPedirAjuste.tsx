@@ -6,7 +6,7 @@ import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
-import { AVISO_SIN_PACIENTES, ETIQUETA_TIPO_ACCION, MIENTRAS_SE_DECIDE } from "@/lib/mejoramiento/textos";
+import { AVISO_SIN_PACIENTES, ETIQUETA_TIPO_ACCION, MIENTRAS_SE_DECIDE, textoDeUsuario, type UsuarioDeSelector } from "@/lib/mejoramiento/textos";
 import { TIPOS_ACCION, type TipoAccion } from "@/lib/mejoramiento/tipos";
 import { ErrorDelPaso, type AccionDelPaso } from "../pasos/Partes";
 
@@ -109,7 +109,7 @@ export function DialogoAjusteDelPlan({
   causas: ReadonlyArray<{ id: number; orden: number; texto: string }>;
   /** El tipo que propone la clase del hallazgo para una acción nueva. */
   tipoPropuesto: TipoAccion;
-  usuarios: ReadonlyArray<{ id: number; nombre: string }>;
+  usuarios: ReadonlyArray<UsuarioDeSelector & { etiqueta?: string }>;
   hoy: string;
   accion: AccionDelPaso;
 }) {
@@ -196,7 +196,7 @@ export function DialogoAjusteDelPlan({
                 </option>
                 {usuarios.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.nombre}
+                    {textoDeUsuario(u)}
                   </option>
                 ))}
               </select>

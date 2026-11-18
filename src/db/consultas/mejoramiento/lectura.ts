@@ -3,20 +3,38 @@
  * lectura pasa por `filtroHallazgos` (`src/lib/alcance.ts`): quien no ve un hallazgo no lo recibe, no lo cuenta, y un
  * identificador que no existe y uno que no se ve responden igual (nulo). El turno y lo vencido se calculan al leer.
  */
+import { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
+import { nombreSql } from "@/db/consultas/normograma/busqueda";
 import { lideresDeProceso } from "@/db/consultas/tramites";
-import { filtroHallazgos, participacionEnHallazgo, puedeVerHallazgo } from "@/lib/alcance";
-import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
-import { esExterno } from "@/lib/mejoramiento/origenes";
 import {
+  componentesVisibles,
+  filtroAcceso,
+  filtroHallazgos,
+  participacionEnHallazgo,
+  puedeVerHallazgo,
+  puedeVerificar,
+  quienesVerifican,
+} from "@/lib/alcance";
+import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
+import { leerCriterios } from "@/lib/mejoramiento/eficacia";
+import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
+import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
+import { esExterno } from "@/lib/mejoramiento/origenes";
+import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import {
+  METODOS_DE_VERIFICACION,
   SE_AJUSTA_EN,
   TERMINALES,
   type Clase,
+  type CriterioEficacia,
   type Criticidad,
   type EstadoActividad,
   type EstadoHallazgo,
   type HallazgoBase,
+  type MetodoDeVerificacion,
   type Origen,
   type ResultadoCierre,
 } from "@/lib/mejoramiento/tipos";
@@ -29,7 +47,9 @@ import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura"
 
 export type { AjusteDeDetalle } from "./ajustes-lectura";
 import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
+import { indicadoresDeEficacia } from "./indicador-de-eficacia";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
+import { evaluablesDesde, NADIE_PUEDE_VERIFICAR, type FilaDelIndicador } from "./verificacion";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -39,7 +59,8 @@ export type FiltroDeLista = {
   origen?: Origen;
   clase?: Clase;
   criticidad?: Criticidad;
-  estado?: EstadoHallazgo | "abiertos" | "reabiertos" | "sin_accion";
+  /** Además de los estados guardados: `por_evaluar`, los «En espera de eficacia» que ya llegaron a su fecha mínima (R4). */
+  estado?: EstadoHallazgo | "abiertos" | "reabiertos" | "sin_accion" | "por_evaluar";
   soloVencidos?: boolean;
   /** Los que esperan la decisión de quien mira (R2: está en `quienTieneElTurno`). */
   esperanSuDecision?: boolean;
@@ -67,6 +88,8 @@ export type CifrasDeLista = {
   conAlgoVencido: number;
   esperanSuDecision: number;
   enEspera: number;
+  /** Los «En espera de eficacia» que ya llegaron a su fecha mínima: «Por evaluar la eficacia» (R4). */
+  porEvaluar: number;
   reabiertos: number;
 };
 
@@ -93,6 +116,10 @@ function aBase(f: Record<string, unknown>): HallazgoBase {
 
 const ADMIN = "Administrador del SGC";
 const QUIEN_LO_ELABORO = "Quien lo elaboró";
+const QUIEN_VERIFICA = "Quien puede verificar";
+/** El turno de un paso que nadie puede dar hoy (la lista lo dice así; «Lo que sigue», con su porqué). */
+const NADIE_VERIFICA_TURNO = "Nadie puede verificarlo";
+const NADIE_ARBITRA_TURNO = "Nadie puede arbitrarlo";
 
 /** Lo que le toca a quien elaboró el plan en revisión cuando no queda ningún Admin SGC que lo revise (F15-DC15). */
 const SIN_REVISOR = "devolverlo y reenviarlo: no hay otro Administrador del SGC activo que lo revise";
@@ -104,7 +131,20 @@ const recordar = <T>(m: Memoria, clave: string, f: () => Promise<T>): Promise<T>
   return m.get(clave) as Promise<T>;
 };
 
-async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<{ ids: number[]; texto: string }> {
+/**
+ * Quién tiene el turno y cómo se dice. En la espera de eficacia nadie lo tiene hasta la fecha mínima; desde ella, quien puede
+ * verificar (spec §8.1; `yaSePuedeEvaluar`, R4).
+ */
+async function resolverTurno(
+  tx: Cliente,
+  h: HallazgoBase,
+  m: Memoria,
+  x?: { yaSePuedeEvaluar?: boolean },
+): Promise<{ ids: number[]; texto: string }> {
+  if (h.estado === "en_espera" && x?.yaSePuedeEvaluar) {
+    const ids = await recordar(m, `verificadores:${h.id}`, () => quienesVerifican(tx, h.id));
+    return { ids, texto: ids.length > 0 ? QUIEN_VERIFICA : NADIE_VERIFICA_TURNO };
+  }
   const turno = turnoDe(h.estado);
   if (!turno) return { ids: [], texto: esTerminal(h.estado) ? "Sin pendientes" : "Nadie por ahora" };
   // Quién tiene el turno depende solo de esto: el proceso, quien registró, el hallazgo o nada.
@@ -125,8 +165,9 @@ async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<
     case "registrador":
       return { ids, texto: ids.includes(h.registradoPor) ? "Quien lo registró" : ADMIN };
     case "arbitro": {
+      if (ids.length === 0) return { ids, texto: NADIE_ARBITRA_TURNO };
       const gerencia = await recordar(m, "gerencia-activa", () => activosDeRol(tx, ["gerencia"]));
-      return { ids, texto: ids.length > 0 && ids.every((id) => gerencia.includes(id)) ? "Gerencia" : ADMIN };
+      return { ids, texto: ids.every((id) => gerencia.includes(id)) ? "Gerencia" : ADMIN };
     }
     case "admin": {
       // Sin nadie que revise lo enviado, el turno es de quien lo elaboró, para devolverlo y reenviarlo (`QUIENES.admin`).
@@ -139,7 +180,7 @@ async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<
     case "responsables":
       return { ids, texto: "Los responsables de las actividades" };
     case "verificadores":
-      return { ids, texto: "Quien puede verificar" };
+      return { ids, texto: ids.length > 0 ? QUIEN_VERIFICA : NADIE_VERIFICA_TURNO };
     case "validadores":
       return { ids, texto: "Quien puede validar" };
   }
@@ -149,8 +190,8 @@ async function resolverTurno(tx: Cliente, h: HallazgoBase, m: Memoria): Promise<
  * Con quién está el hallazgo, en palabras, según los usuarios activos de hoy (nunca se guarda): si el turno es del líder y
  * el proceso ya no tiene ninguno activo, es del Administrador del SGC.
  */
-export async function turnoEnTexto(tx: Cliente, h: HallazgoBase): Promise<string> {
-  return (await resolverTurno(tx, h, new Map())).texto;
+export async function turnoEnTexto(tx: Cliente, h: HallazgoBase, x?: { yaSePuedeEvaluar?: boolean }): Promise<string> {
+  return (await resolverTurno(tx, h, new Map(), x)).texto;
 }
 
 /** Una actividad vencida: con el plan aprobado (`fin_original`), sin terminar ni cancelar y con el fin ya pasado en la zona. */
@@ -198,13 +239,20 @@ export async function listarHallazgos(
   const abierto = sql`h.estado NOT IN ${sql([...TERMINALES])}`;
   const algoVencido = sql`(${ACTIVIDAD_VENCIDA(sql, hoy)} OR h.vence_en < ${ahora})`;
 
-  // Quienes esperan la decisión de quien mira (R2): los abiertos que tienen turno y donde está en `quienTieneElTurno`.
+  // Desde cuándo se evalúa cada hallazgo en espera que la persona ve, en una pasada para todos (R4: nunca una por fila).
+  const enEspera = await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${visible} AND h.estado = 'en_espera'`;
+  const evaluables = await evaluablesDesde(sql, enEspera.map((f) => Number(f.id)), ahora);
+  const porEvaluar = [...evaluables].flatMap(([id, e]) => (e.yaSePuede ? [id] : []));
+  const yaSePuede = (h: HallazgoBase) => ({ yaSePuedeEvaluar: evaluables.get(h.id)?.yaSePuede === true });
+
+  // Quienes esperan la decisión de quien mira (R2): los abiertos que tienen turno y donde está en `quienTieneElTurno`; de los
+  // de la espera, los que ya se pueden evaluar (su turno es de quien puede verificar).
   const conTurno = await sql`SELECT ${COLUMNAS_BASE(sql)} FROM mejora_hallazgos h
-    WHERE ${visible} AND ${abierto} AND h.estado <> 'en_espera'`;
+    WHERE ${visible} AND ${abierto} AND (h.estado <> 'en_espera' OR h.id = ANY(${sql.array(porEvaluar)}::bigint[]))`;
   const suyos: number[] = [];
   for (const f of conTurno) {
     const h = aBase(f);
-    if ((await resolverTurno(sql, h, memoria)).ids.includes(sesion.usuarioId)) suyos.push(h.id);
+    if ((await resolverTurno(sql, h, memoria, yaSePuede(h))).ids.includes(sesion.usuarioId)) suyos.push(h.id);
   }
 
   const [c] = await sql`SELECT
@@ -218,6 +266,7 @@ export async function listarHallazgos(
     conAlgoVencido: Number(c.con_algo_vencido),
     esperanSuDecision: suyos.length,
     enEspera: Number(c.en_espera),
+    porEvaluar: porEvaluar.length,
     reabiertos: Number(c.reabiertos),
   };
 
@@ -234,6 +283,7 @@ export async function listarHallazgos(
     e === "abiertos" ? abierto
     : e === "reabiertos" ? sql`(${abierto} AND h.ronda > 1)`
     : e === "sin_accion" ? sql`(h.estado = 'cerrado' AND h.resultado_cierre = 'sin_accion')`
+    : e === "por_evaluar" ? sql`h.id = ANY(${sql.array(porEvaluar)}::bigint[])`
     : e ? sql`h.estado = ${e}`
     : sql`true`,
     filtro.soloVencidos ? sql`(${abierto} AND ${algoVencido})` : sql`true`,
@@ -260,9 +310,9 @@ export async function listarHallazgos(
       origen: h.origen,
       proceso: f.proceso as string,
       estado: h.estado,
-      etiqueta: etiquetaDeEstado(h),
+      etiqueta: etiquetaDeEstado(h, yaSePuede(h)),
       marcas: marcasDeHallazgo(h, { cargado: f.cargado === true, algunaActividadVencida: f.actividad_vencida === true }),
-      turno: (await resolverTurno(sql, h, memoria)).texto,
+      turno: (await resolverTurno(sql, h, memoria, yaSePuede(h))).texto,
       avance: idONulo(f.avance),
       vence,
       prioridadAlta: abierta && esExterno(h.origen),
@@ -313,6 +363,12 @@ export type ActividadDeDetalle = {
   seAbre: boolean;
   /** Cuándo se escaló a Gerencia (spec §10.7), o nulo; una reprogramación aprobada la borra. */
   gerenciaEn: Date | null;
+  /** La nota con que se devolvió en la verificación, solo a quien ve el hallazgo completo; el responsable la lee en su página. */
+  verificacionNota: string | null;
+  /** Hasta cuándo se corrige una actividad devuelta (`yyyy-mm-dd`). */
+  corregirAntesDe: string | null;
+  /** Cuántos archivos de evidencia tiene, para quien ve el hallazgo completo; nulo para quien no ve los archivos. */
+  evidencias: number | null;
 };
 
 export type AccionDeDetalle = {
@@ -358,7 +414,63 @@ export type RondaDeDetalle = {
   acciones: AccionDeDetalle[];
   /** En el orden en que se pidieron; vacía para quien ve el hallazgo solo por una actividad (spec §6.3). */
   ajustes: AjusteDeDetalle[];
+  /** La verificación de la implementación (spec §11.4), cuando todas quedaron conformes: quién, cuándo, cómo y la nota. */
+  verificacion: VerificacionDeRonda | null;
+  /** La evaluación de la eficacia de la ronda (spec §11.4), si ya se registró. */
+  evaluacion: EvaluacionDeRonda | null;
 };
+
+export type VerificacionDeRonda = {
+  por: string;
+  en: Date;
+  metodos: MetodoDeVerificacion[];
+  /** Solo a quien ve el hallazgo completo (texto libre de quien verificó). */
+  nota: string | null;
+};
+
+/**
+ * El indicador de lo que mostró la evaluación, tal como lo puede leer quien mira (spec §6.3 y §11.2): con su código, su nombre y
+ * sus filas solo si lo ve (`componentesVisibles`, la regla de `puedeVerIndicador`); si no, «un indicador», sin nada más.
+ */
+export type IndicadorDeLoVisto = { visible: true; codigo: string; nombre: string; filas: FilaDelIndicador[] } | { visible: false } | null;
+
+/** Lo que la pantalla de evaluar mostró, congelado en el evento (spec §12.2), ya decidido para quien mira. */
+export type VistoEnLectura = {
+  minima: string;
+  r: string;
+  indicador: IndicadorDeLoVisto;
+  ocurrencias: Array<{ fecha: string; descripcion: string }>;
+};
+
+export type EvaluacionDeRonda = {
+  resultado: "eficaz" | "no_eficaz";
+  por: string;
+  en: Date;
+  criterios: CriterioEficacia[];
+  desde: string | null;
+  hasta: string | null;
+  /** La justificación y lo que la pantalla mostró, solo a quien ve el hallazgo completo (spec §6.3). */
+  justificacion: string | null;
+  visto: VistoEnLectura | null;
+};
+
+/** Las fechas de la columna derecha de la página (spec §16.2, maqueta 2), de la ronda en curso. */
+export type FechasDeHallazgo = {
+  /** El primer envío de la causa raíz y el plan de la ronda, y si fue dentro de su plazo de formular. */
+  planFormulado: { cuando: Date; aTiempo: boolean } | null;
+  cierrePrevisto: Date | null;
+  /** Desde qué día se puede registrar «eficaz» (`fechaMinimaDe`), mientras está en espera. */
+  evaluableDesde: string | null;
+  reprogramaciones: { aprobadas: number; pedidas: number };
+};
+
+/**
+ * Un enlace del hallazgo (spec §6.3, F15-DC5): con su nombre y su ruta solo a quien puede ver lo enlazado, con la regla de alcance
+ * de ese módulo; a los demás, solo su clase («un indicador», «un documento restringido»). Un hallazgo que no se ve no está.
+ */
+export type EnlaceDelHallazgo =
+  | { visible: true; clase: "hallazgo" | "documento" | "norma" | "indicador"; rotulo: string; codigo: string | null; nombre: string; href: string }
+  | { visible: false; clase: "indicador" | "documento" | "norma"; rotulo: string };
 
 export type DetalleDeHallazgo = {
   /** `completo`, o `actividad` si solo es responsable de una actividad: lo ve en texto, sin historial y sin archivos de otros. */
@@ -402,8 +514,20 @@ export type DetalleDeHallazgo = {
     validadaEn: Date | null;
   };
   decision: { accionRequerida: boolean | null; justificacion: string | null; decididaEn: Date | null };
-  cierre: { resultado: ResultadoCierre | null; cerradoEn: Date | null; lecciones: string | null; anuladoMotivo: string | null };
+  cierre: {
+    resultado: ResultadoCierre | null;
+    cerradoEn: Date | null;
+    /** Quién firmó «Cerró» (el cierre eficaz); en el camino corto cierra la validación (`correccion.validadaPor`). */
+    cerradoPor: string | null;
+    lecciones: string | null;
+    cambiosAtendidos: string | null;
+    anuladoMotivo: string | null;
+  };
   rondas: RondaDeDetalle[];
+  /** Las rondas que terminaron «no eficaz» (las de número menor que la en curso), congeladas y a la vista (spec §8.7). */
+  rondasAnteriores: RondaDeDetalle[];
+  fechas: FechasDeHallazgo;
+  enlaces: EnlaceDelHallazgo[];
   ocurrencias: Array<{ id: number; fecha: string; descripcion: string; origen: string; quien: string }>;
   eventos: Array<{
     id: number;
@@ -426,7 +550,10 @@ export type DetalleDeHallazgo = {
  * «Lo que sigue» (spec §16.2): el paso del estado (el formulario que pinta la página), si quien mira puede darlo y la frase
  * que lo dice («A usted le toca…» o quién tiene el turno). `paso` es nulo en los estados cuyo formulario llega en otra tarea.
  */
-export type LoQueSigueDelHallazgo = { paso: PasoDelRecorrido | null; puede: boolean; turno: string };
+export type LoQueSigueDelHallazgo = { paso: PasoDelHallazgo | null; puede: boolean; turno: string };
+
+/** Los pasos que pinta «Lo que sigue»: los del recorrido hasta el plan y, después, verificar, evaluar la eficacia y cerrar. */
+export type PasoDelHallazgo = PasoDelRecorrido | "verificar" | "evaluar" | "cerrar";
 
 /** Lo que le toca a quien tiene el turno, por estado. */
 const LE_TOCA: Partial<Record<EstadoHallazgo, string>> = {
@@ -441,10 +568,21 @@ const LE_TOCA: Partial<Record<EstadoHallazgo, string>> = {
   en_aprobacion: "aprobar el plan",
   en_ejecucion: "ejecutar sus actividades",
   por_verificar: "verificar la implementación",
+  en_espera: "evaluar la eficacia",
   por_cerrar: "cerrar el hallazgo",
 };
 
-/** La frase de «Lo que sigue» (pura): el turno va en minúscula tras los dos puntos («Tiene el turno: la líder del proceso»). */
+/** Cómo se nombra tras los dos puntos a quien tiene el turno: los roles, con su mayúscula y su artículo. */
+function quienEnLaFrase(turno: string): string {
+  if (turno === ADMIN) return "el Administrador del SGC";
+  if (turno === "Gerencia") return turno;
+  return turno.charAt(0).toLowerCase() + turno.slice(1);
+}
+
+/**
+ * La frase de «Lo que sigue» (pura): el turno va en minúscula tras los dos puntos («Tiene el turno: la líder del proceso»), salvo
+ * los roles, que van con su mayúscula y su artículo («el Administrador del SGC», «Gerencia»).
+ */
 export function fraseDeLoQueSigue(
   h: Pick<HallazgoBase, "estado" | "resultadoCierre" | "correccionRequerida">,
   turno: string,
@@ -452,8 +590,8 @@ export function fraseDeLoQueSigue(
   x?: { sinRechazo?: boolean; sinRevisor?: boolean },
 ): string {
   if (esTerminal(h.estado)) return "El hallazgo está " + etiquetaDeEstado(h).toLowerCase() + ": no tiene pasos pendientes.";
-  if (h.estado === "en_espera") return "Espera el momento de evaluar la eficacia de las acciones.";
-  const quien = turno.charAt(0).toLowerCase() + turno.slice(1);
+  if (h.estado === "en_espera") return ESPERA + ".";
+  const quien = quienEnLaFrase(turno);
   const toca =
     h.estado === "por_validar" && h.correccionRequerida === false ? "validar el cierre sin acción"
     : h.estado === "por_aceptar" && x?.sinRechazo ? "aceptar el hallazgo"
@@ -463,35 +601,90 @@ export function fraseDeLoQueSigue(
   return mio ? "A usted le toca " + toca + "." : "Tiene el turno: " + quien + ", para " + toca + ".";
 }
 
+const ESPERA = "Espera el momento de evaluar la eficacia de las acciones";
+
+/** Cuando nadie cumple la regla de quién arbitra (§8.3, F15-DC13): el acto se rechaza y la pantalla dice por qué. */
+export const NADIE_ARBITRA =
+  "Nadie puede arbitrarlo: no hay un Administrador del SGC ni Gerencia activos que no hayan tomado parte en el hallazgo. Dé el " +
+  "rol a otra persona.";
+
+/** Cuando nadie cumple la regla de quién verifica (§11.1): el acto se rechaza y la pantalla dice por qué. */
+export const NADIE_VERIFICA = `${NADIE_PUEDE_VERIFICAR}. Dé el rol de Administrador del SGC o de Control Interno a otra persona.`;
+
 /** Cuando nadie cumple la regla de quién valida (§8.5 y §11.1): el acto se rechaza y la pantalla dice por qué. */
 const NADIE_VALIDA =
   "Nadie puede validarla: quien registró la corrección, su responsable y, en el cierre sin acción, quien decidió el «no» no " +
   "validan. Dé el rol de Administrador del SGC o de Control Interno a otra persona.";
 
 /**
+ * La espera de eficacia (spec §11.4): quien puede verificar puede registrar «No eficaz» en cualquier momento y «Eficaz» desde la
+ * fecha mínima, así que el formulario es suyo toda la espera; a los demás se les dice desde cuándo, y desde ese día quién tiene el
+ * turno (o que nadie puede).
+ */
+async function laEspera(
+  tx: Cliente,
+  h: HallazgoBase,
+  sesion: SesionFlujo,
+  e: { desde: string; yaSePuede: boolean } | null,
+): Promise<LoQueSigueDelHallazgo> {
+  if (!e) return { paso: null, puede: false, turno: ESPERA + "." };
+  const desde = fechaLargaDeDia(e.desde);
+  if (await puedeVerificar(h.id, sesion, { sql: tx })) {
+    return {
+      paso: "evaluar",
+      puede: true,
+      turno: e.yaSePuede
+        ? "A usted le toca evaluar la eficacia."
+        : `Puede registrar «No eficaz» en cualquier momento de la espera; «Eficaz», desde el ${desde}.`,
+    };
+  }
+  if (!e.yaSePuede) return { paso: "evaluar", puede: false, turno: `${ESPERA}: desde el ${desde}.` };
+  if ((await quienesVerifican(tx, h.id)).length === 0) return { paso: "evaluar", puede: false, turno: NADIE_VERIFICA };
+  return { paso: "evaluar", puede: false, turno: `Tiene el turno: ${quienEnLaFrase(QUIEN_VERIFICA)}, para ${LE_TOCA.en_espera}.` };
+}
+
+/**
  * El paso, si quien mira puede darlo (la regla del acto, `puedeDarElPaso`) y la frase. «A usted le toca…» sale de poder
  * darlo, no de estar en el turno: tras un rechazo, el Admin SGC puede retirarlo o sostenerlo sin tener el turno; el turno
- * de «Por aceptar» puede incluir a quien lo registró, que no lo acepta. Los pasos de las tareas siguientes, por el turno.
+ * de «Por aceptar» puede incluir a quien lo registró, que no lo acepta. Verificar y evaluar, por `puedeVerificar`; cerrar, por
+ * `mejora.gestionar`. Cuando nadie puede dar el paso (validar, arbitrar, verificar), la frase dice por qué.
  */
-async function loQueSigue(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, turno: string): Promise<LoQueSigueDelHallazgo> {
-  const paso = pasoDelEstado(h.estado);
-  if (esTerminal(h.estado) || h.estado === "en_espera" || !LE_TOCA[h.estado]) {
-    return { paso: null, puede: false, turno: fraseDeLoQueSigue(h, turno, false) };
+async function loQueSigue(
+  tx: Cliente,
+  h: HallazgoBase,
+  sesion: SesionFlujo,
+  turno: string,
+  evaluable: { desde: string; yaSePuede: boolean } | null,
+): Promise<LoQueSigueDelHallazgo> {
+  if (esTerminal(h.estado)) return { paso: null, puede: false, turno: fraseDeLoQueSigue(h, turno, false) };
+  if (h.estado === "en_espera") return laEspera(tx, h, sesion, evaluable);
+  if (h.estado === "por_verificar") {
+    const verifica = await puedeVerificar(h.id, sesion, { sql: tx });
+    if (!verifica && (await quienesVerifican(tx, h.id)).length === 0) return { paso: "verificar", puede: false, turno: NADIE_VERIFICA };
+    return { paso: "verificar", puede: verifica, turno: fraseDeLoQueSigue(h, turno, verifica) };
   }
+  if (h.estado === "por_cerrar") {
+    const cierra = puede(sesion, "mejora.gestionar");
+    return { paso: "cerrar", puede: cierra, turno: fraseDeLoQueSigue(h, turno, cierra) };
+  }
+  const paso = pasoDelEstado(h.estado);
+  if (!LE_TOCA[h.estado]) return { paso: null, puede: false, turno: fraseDeLoQueSigue(h, turno, false) };
   if (!paso) {
     const sinRevisor = h.estado === "en_revision" && (await revisoresDe(tx, h)).length === 0;
     const mio = (await quienTieneElTurno(tx, h)).includes(sesion.usuarioId);
     return { paso, puede: false, turno: fraseDeLoQueSigue(h, turno, mio, { sinRevisor }) };
   }
-  const puede = await puedeDarElPaso(tx, sesion, h);
-  if (!puede && h.estado === "por_validar" && (await quienTieneElTurno(tx, h)).length === 0) {
-    return { paso, puede, turno: NADIE_VALIDA };
+  const daElPaso = await puedeDarElPaso(tx, sesion, h);
+  if (!daElPaso && (h.estado === "por_validar" || h.estado === "arbitraje") && (await quienTieneElTurno(tx, h)).length === 0) {
+    return { paso, puede: daElPaso, turno: h.estado === "por_validar" ? NADIE_VALIDA : NADIE_ARBITRA };
   }
-  // «o rechazarlo», solo a quien puede rechazar; a los demás, sin él si el turno es del Admin SGC (proceso sin líder).
+  // «o rechazarlo», solo a quien puede rechazar; a los demás, sin él si el origen es externo (no se rechaza: se responde) o si el
+  // turno es del Admin SGC (proceso sin líder).
   const sinRechazo =
     h.estado === "por_aceptar" &&
-    (puede ? !(await ofreceRechazo(tx, sesion, h)) : (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0);
-  return { paso, puede, turno: fraseDeLoQueSigue(h, turno, puede, { sinRechazo }) };
+    (esExterno(h.origen) ||
+      (daElPaso ? !(await ofreceRechazo(tx, sesion, h)) : (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0));
+  return { paso, puede: daElPaso, turno: fraseDeLoQueSigue(h, turno, daElPaso, { sinRechazo }) };
 }
 
 /** Lo congelado de un evento (spec §12.2): el plan del envío y de la aprobación, y lo que mostró la evaluación de la eficacia. */
@@ -509,6 +702,154 @@ function sinLoCongelado(detalle: unknown): unknown {
   return resto;
 }
 
+const LoVisto = z.object({
+  r: z.string(),
+  minima: z.string(),
+  indicadorId: z.number().nullable().optional(),
+  indicador: z
+    .object({
+      codigo: z.string(),
+      nombre: z.string(),
+      filas: z.array(
+        z.object({
+          periodo: z.string(),
+          etiqueta: z.string(),
+          resultado: z.string().nullable(),
+          semaforo: z.string().nullable(),
+          noAplica: z.boolean(),
+          momento: z.enum(["antes", "durante", "despues"]),
+        }),
+      ),
+    })
+    .nullable(),
+  ocurrencias: z.array(z.object({ fecha: z.string(), descripcion: z.string() })),
+});
+
+const LeidoMetodos = z.array(z.enum(METODOS_DE_VERIFICACION));
+
+/** Los métodos de la verificación tal como se guardaron (jsonb): una lista que no se puede leer es «ninguno». */
+function leerMetodos(crudo: unknown): MetodoDeVerificacion[] {
+  const leido = LeidoMetodos.safeParse(crudo);
+  return leido.success ? METODOS_DE_VERIFICACION.filter((m) => leido.data.includes(m)) : [];
+}
+
+/**
+ * Lo congelado de una evaluación (`detalle.visto`, spec §12.2), para quien mira: el indicador se nombra, con sus filas, solo si
+ * la persona lo ve (`visibles`, por el id que guardó el evento, no por el que enlaza hoy la ronda); si quien evaluó tampoco lo veía,
+ * se congeló sin código, y así sigue. Lo que no se puede leer es nulo.
+ */
+function vistoParaQuienLee(crudo: unknown, visibles: ReadonlySet<number>): VistoEnLectura | null {
+  const leido = LoVisto.safeParse(crudo);
+  if (!leido.success) return null;
+  const v = leido.data;
+  const id = v.indicadorId ?? null;
+  const indicador: IndicadorDeLoVisto =
+    v.indicador === null
+      ? null
+      : id !== null && visibles.has(id) && v.indicador.codigo !== ""
+        ? { visible: true, codigo: v.indicador.codigo, nombre: v.indicador.nombre, filas: v.indicador.filas }
+        : { visible: false };
+  return { minima: v.minima, r: v.r, indicador, ocurrencias: v.ocurrencias };
+}
+
+/** El id del indicador que nombra lo congelado de una evaluación, si lo trae. */
+const indicadorDeLoVisto = (crudo: unknown): number | null => {
+  const leido = LoVisto.safeParse(crudo);
+  return leido.success ? (leido.data.indicadorId ?? null) : null;
+};
+
+const textoONulo = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+
+/**
+ * Los enlaces del hallazgo (spec §6.3, F15-DC5), cada uno con la regla de su módulo: un hallazgo (la reincidencia, el de origen y
+ * los derivados) solo si quien mira lo ve (`filtroHallazgos`), y si no, no está; un documento con `filtroAcceso` («un documento
+ * restringido»); una norma, que lee toda sesión; un indicador con `componentesVisibles` (la regla de `puedeVerIndicador`).
+ */
+async function enlacesDe(
+  sql: Cliente,
+  sesion: SesionFlujo,
+  x: {
+    id: number;
+    reincidente: { id: number; codigo: string; titulo: string } | null;
+    derivadoDe: number | null;
+    documentoId: number | null;
+    requisitoDocumentoId: number | null;
+    requisitoNormaId: number | null;
+    indicadorId: number | null;
+    medicionId: number | null;
+    indicadorEficaciaId: number | null;
+    visibles: ReadonlySet<number>;
+  },
+): Promise<EnlaceDelHallazgo[]> {
+  const enlaces: EnlaceDelHallazgo[] = [];
+  const hallazgo = (rotulo: string, o: { id: number; codigo: string; titulo: string }): EnlaceDelHallazgo => ({
+    visible: true,
+    clase: "hallazgo",
+    rotulo,
+    codigo: o.codigo,
+    nombre: o.titulo,
+    href: rutaDeHallazgo(o.id),
+  });
+  if (x.reincidente) enlaces.push(hallazgo("Reincidencia de", x.reincidente));
+  const relacionados = await sql`SELECT h.id, h.codigo, h.titulo, (h.derivado_de IS NOT DISTINCT FROM ${x.id}) AS derivado
+    FROM mejora_hallazgos h
+    WHERE (h.id = ${x.derivadoDe} OR h.derivado_de = ${x.id}) AND h.id <> ${x.id} AND ${filtroHallazgos(sql, sesion)}
+    ORDER BY h.id`;
+  for (const o of relacionados.filter((f) => f.derivado !== true)) {
+    enlaces.push(hallazgo("Derivado de", { id: Number(o.id), codigo: o.codigo as string, titulo: o.titulo as string }));
+  }
+  for (const o of relacionados.filter((f) => f.derivado === true)) {
+    enlaces.push(hallazgo("Hallazgo derivado", { id: Number(o.id), codigo: o.codigo as string, titulo: o.titulo as string }));
+  }
+
+  const documentos = [x.documentoId, x.requisitoDocumentoId].filter((d): d is number => d !== null);
+  if (documentos.length > 0) {
+    const filas = await sql`SELECT d.id, d.codigo, d.titulo, ${filtroAcceso(sql, sesion)} AS ve FROM documentos d WHERE d.id IN ${sql(documentos)}`;
+    const de = new Map(filas.map((f) => [Number(f.id), f]));
+    for (const [rotulo, docId] of [
+      ["Documento del requisito", x.requisitoDocumentoId],
+      ["Documento", x.documentoId === x.requisitoDocumentoId ? null : x.documentoId],
+    ] as const) {
+      const d = docId === null ? undefined : de.get(docId);
+      if (!d) continue;
+      enlaces.push(
+        d.ve === true
+          ? { visible: true, clase: "documento", rotulo, codigo: d.codigo as string, nombre: d.titulo as string, href: `/documentos/${encodeURIComponent(d.codigo as string)}` }
+          : { visible: false, clase: "documento", rotulo },
+      );
+    }
+  }
+
+  if (x.requisitoNormaId !== null) {
+    const [n] = await sql`SELECT n.id, ${nombreSql(sql)} AS nombre, n.titulo FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+      WHERE n.id = ${x.requisitoNormaId}`;
+    if (n) {
+      enlaces.push({ visible: true, clase: "norma", rotulo: "Norma del requisito", codigo: n.nombre as string, nombre: n.titulo as string, href: `/normograma/${Number(n.id)}` });
+    }
+  }
+
+  const indicadores = [x.indicadorId, x.indicadorEficaciaId].filter((i): i is number => i !== null);
+  if (indicadores.length > 0) {
+    const de = await indicadoresDeEficacia(sql, indicadores);
+    const [medicion] = x.medicionId === null ? [] : await sql`SELECT periodo FROM mediciones WHERE id = ${x.medicionId}`;
+    const periodo = medicion ? (periodoDe(medicion.periodo as string, zonaHoraria())?.etiqueta ?? (medicion.periodo as string)) : null;
+    for (const [rotulo, indId] of [
+      ["Indicador", x.indicadorId],
+      ["Indicador de eficacia", x.indicadorEficaciaId === x.indicadorId ? null : x.indicadorEficaciaId],
+    ] as const) {
+      const ind = indId === null ? undefined : de.get(indId);
+      if (indId === null || !ind) continue;
+      const conPeriodo = rotulo === "Indicador" && periodo ? ` · ${periodo}` : "";
+      enlaces.push(
+        x.visibles.has(indId)
+          ? { visible: true, clase: "indicador", rotulo, codigo: ind.codigo, nombre: `${ind.nombre}${conPeriodo}`, href: rutaDeIndicador(ind.codigo) }
+          : { visible: false, clase: "indicador", rotulo },
+      );
+    }
+  }
+  return enlaces;
+}
+
 /**
  * El hallazgo completo para quien lo ve; nulo si no existe **o** si no lo ve (la misma respuesta). Quien lo ve solo por
  * ser responsable de una actividad lo recibe en texto, sin eventos ni ocurrencias, y sin listas de archivos (los
@@ -521,6 +862,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   if (ve === null) return null;
   const [f] = await sql`
     SELECT h.*, p.nombre AS proceso, ur.nombre AS registrador, uc.nombre AS correccion_responsable, uv.nombre AS validador,
+      uz.nombre AS cerrador,
       to_char(h.detectado_en, 'YYYY-MM-DD') AS detectado, to_char(h.fecha_limite_ente, 'YYYY-MM-DD') AS limite_ente,
       to_char(h.correccion_implementada_en, 'YYYY-MM-DD') AS implementada
     FROM mejora_hallazgos h
@@ -528,11 +870,15 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     JOIN usuarios ur ON ur.id = h.registrado_por
     LEFT JOIN usuarios uc ON uc.id = h.correccion_responsable_id
     LEFT JOIN usuarios uv ON uv.id = h.validada_por
+    LEFT JOIN usuarios uz ON uz.id = h.cerrado_por
     WHERE h.id = ${id}`;
   if (!f) return null;
   const h = aBase(f);
-  const turno = await turnoEnTexto(sql, h);
-  const anterior = (async () => {
+  const ahora = opciones?.ahora ?? new Date();
+  // «Por evaluar la eficacia» (R4): desde qué día y si ya llegó, con la misma regla de la lista.
+  const evaluable = h.estado === "en_espera" ? ((await evaluablesDesde(sql, [h.id], ahora)).get(h.id) ?? null) : null;
+  const turno = await turnoEnTexto(sql, h, { yaSePuedeEvaluar: evaluable?.yaSePuede === true });
+  const anterior = (async (): Promise<DetalleDeHallazgo["reincidenteDe"]> => {
     if (h.reincidenteDe === null) return null;
     if (!(await puedeVerHallazgo(h.reincidenteDe, sesion, { sql }))) return { visible: false as const };
     const [o] = await sql`SELECT id, codigo, titulo FROM mejora_hallazgos WHERE id = ${h.reincidenteDe}`;
@@ -545,15 +891,28 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
         r.criterio_otro, r.indicador_eficacia_id, to_char(r.fecha_evaluacion, 'YYYY-MM-DD') AS fecha_evaluacion,
         coalesce((SELECT (e.detalle->>'elaboroAdmin')::boolean FROM mejora_eventos e
           WHERE e.hallazgo_id = r.hallazgo_id AND e.ronda = r.numero AND e.tipo = 'enviar_plan' ORDER BY e.id DESC LIMIT 1), false)
-          AS elaboro_admin
-      FROM mejora_rondas r WHERE r.hallazgo_id = ${id} ORDER BY r.numero`,
+          AS elaboro_admin,
+        r.verificada_en, uvr.nombre AS verificador, r.verificacion_metodos, r.verificacion_nota,
+        r.evaluada_en, uev.nombre AS evaluador, r.evaluacion_criterios, r.evaluacion_justificacion,
+        to_char(r.evaluacion_desde, 'YYYY-MM-DD') AS evaluacion_desde, to_char(r.evaluacion_hasta, 'YYYY-MM-DD') AS evaluacion_hasta,
+        (SELECT min(e.ocurrio_en) FROM mejora_eventos e
+          WHERE e.hallazgo_id = r.hallazgo_id AND e.ronda = r.numero AND e.tipo = 'enviar_plan') AS formulado_en,
+        (SELECT count(*) FROM mejora_ajustes x WHERE x.ronda_id = r.id AND x.tipo = 'reprogramar') AS reprogramaciones_pedidas,
+        (SELECT count(*) FROM mejora_ajustes x WHERE x.ronda_id = r.id AND x.tipo = 'reprogramar' AND x.estado = 'aprobado')
+          AS reprogramaciones_aprobadas
+      FROM mejora_rondas r
+      LEFT JOIN usuarios uvr ON uvr.id = r.verificada_por
+      LEFT JOIN usuarios uev ON uev.id = r.evaluada_por
+      WHERE r.hallazgo_id = ${id} ORDER BY r.numero`,
     sql`SELECT id, ronda_id, orden, metodo, equipo, observaciones, contenido FROM mejora_analisis WHERE hallazgo_id = ${id} ORDER BY orden, id`,
     sql`SELECT id, ronda_id, orden, texto, sin_accion_porque FROM mejora_causas WHERE hallazgo_id = ${id} ORDER BY orden, id`,
     sql`SELECT id, ronda_id, orden, tipo, descripcion, recursos, indicador_cumplimiento, meta
       FROM mejora_acciones WHERE hallazgo_id = ${id} ORDER BY orden, id`,
     sql`SELECT accion_id, causa_id FROM mejora_accion_causas WHERE hallazgo_id = ${id}`,
     sql`SELECT a.id, a.accion_id, a.orden, a.descripcion, a.responsable_id, u.nombre AS responsable, u.activo AS responsable_activo,
-        a.avance, a.estado, a.terminada_en, a.verificacion, a.gerencia_en,
+        a.avance, a.estado, a.terminada_en, a.verificacion, a.gerencia_en, a.verificacion_nota,
+        to_char(a.corregir_antes_de, 'YYYY-MM-DD') AS corregir_antes_de,
+        (SELECT count(*) FROM archivos f WHERE f.contexto = 'mejora_actividad' AND f.contexto_id = a.id AND f.version_id IS NULL) AS evidencias,
         a.reprogramaciones, to_char(a.inicio, 'YYYY-MM-DD') AS inicio, to_char(a.fin_original, 'YYYY-MM-DD') AS fin_original,
         to_char(a.fin, 'YYYY-MM-DD') AS fin,
         EXISTS (SELECT 1 FROM mejora_seguimientos s WHERE s.actividad_id = a.id AND s.registrado_por = ${sesion.usuarioId}) AS siguio
@@ -604,7 +963,62 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
         verificacion: (a.verificacion as string | null) ?? null,
         seAbre: seAbre(a),
         gerenciaEn: (a.gerencia_en as Date | null) ?? null,
+        verificacionNota: ve === "completo" ? textoONulo(a.verificacion_nota) : null,
+        corregirAntesDe: (a.corregir_antes_de as string | null) ?? null,
+        evidencias: ve === "completo" ? Number(a.evidencias) : null,
       }));
+  const completo = ve === "completo";
+  // En una reasignación, `antes` y `despues` son ids de usuario (el CASE guarda el cast: otros eventos usan `antes` para otra
+  // cosa).
+  const eventos = completo
+    ? await sql`SELECT e.id, e.tipo, e.ronda, e.detalle, e.fuera, e.ocurrio_en, u.nombre AS quien, ua.nombre AS de, ud.nombre AS a
+        FROM mejora_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
+        LEFT JOIN usuarios ua ON ua.id = (CASE WHEN e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'antes') = 'number'
+          THEN (e.detalle->>'antes')::bigint END)
+        LEFT JOIN usuarios ud ON ud.id = (CASE WHEN e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'despues') = 'number'
+          THEN (e.detalle->>'despues')::bigint END)
+        WHERE e.hallazgo_id = ${id} ORDER BY e.ocurrio_en, e.id`
+    : [];
+  // Lo que mostró la evaluación de cada ronda (el último evento que la evaluó), solo a quien ve el hallazgo completo.
+  const vistoDeRonda = new Map<number, unknown>();
+  for (const e of eventos) {
+    if (e.tipo !== "evaluar_eficaz" && e.tipo !== "evaluar_no_eficaz") continue;
+    const d = e.detalle as Record<string, unknown> | null;
+    if (d && typeof d === "object" && "visto" in d) vistoDeRonda.set(Number(e.ronda), d.visto);
+  }
+  const rondaActual = rondas.find((r) => Number(r.numero) === h.ronda);
+  const indicadorEficacia = idONulo(rondaActual?.indicador_eficacia_id);
+  // Quién ve qué indicador, en una consulta: los que nombran lo congelado y los enlaces.
+  const visibles = await componentesVisibles(sql, sesion, [
+    ...[...vistoDeRonda.values()].flatMap((v) => {
+      const i = indicadorDeLoVisto(v);
+      return i === null ? [] : [i];
+    }),
+    ...[idONulo(f.indicador_id), indicadorEficacia].filter((i): i is number => i !== null),
+  ]);
+  const verificacionDe = (r: (typeof rondas)[number]): VerificacionDeRonda | null =>
+    r.verificada_en === null || r.verificada_en === undefined
+      ? null
+      : {
+          por: (r.verificador as string | null) ?? "",
+          en: r.verificada_en as Date,
+          metodos: leerMetodos(r.verificacion_metodos),
+          nota: completo ? textoONulo(r.verificacion_nota) : null,
+        };
+  const evaluacionDe = (r: (typeof rondas)[number]): EvaluacionDeRonda | null =>
+    r.evaluada_en === null || r.evaluada_en === undefined || (r.resultado !== "eficaz" && r.resultado !== "no_eficaz")
+      ? null
+      : {
+          resultado: r.resultado,
+          por: (r.evaluador as string | null) ?? "",
+          en: r.evaluada_en as Date,
+          criterios: leerCriterios(r.evaluacion_criterios),
+          desde: (r.evaluacion_desde as string | null) ?? null,
+          hasta: (r.evaluacion_hasta as string | null) ?? null,
+          justificacion: completo ? textoONulo(r.evaluacion_justificacion) : null,
+          visto: completo ? vistoParaQuienLee(vistoDeRonda.get(Number(r.numero)), visibles) : null,
+        };
+
   const rondasDeDetalle: RondaDeDetalle[] = rondas.map((r) => ({
     id: Number(r.id),
     numero: Number(r.numero),
@@ -665,26 +1079,40 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     ajustes: ajustes
       .filter((x) => x.rondaId === Number(r.id))
       .map((x): AjusteDeDetalle => ({ ...sinLaFila(x), puedeDecidir: decidibles.has(x.id) })),
+    verificacion: verificacionDe(r),
+    evaluacion: evaluacionDe(r),
   }));
 
-  const completo = ve === "completo";
+  const reincidente = await anterior;
+  const enlaces = await enlacesDe(sql, sesion, {
+    id: h.id,
+    reincidente: reincidente && "id" in reincidente ? reincidente : null,
+    derivadoDe: idONulo(f.derivado_de),
+    documentoId: idONulo(f.documento_id),
+    requisitoDocumentoId: idONulo(f.requisito_documento_id),
+    requisitoNormaId: idONulo(f.requisito_norma_id),
+    indicadorId: idONulo(f.indicador_id),
+    medicionId: idONulo(f.medicion_id),
+    indicadorEficaciaId: indicadorEficacia,
+    visibles,
+  });
+  const formulado = (rondaActual?.formulado_en as Date | null | undefined) ?? null;
+  const formularAntes = (rondaActual?.formular_antes_de as Date | null | undefined) ?? null;
+  const fechas: FechasDeHallazgo = {
+    planFormulado: formulado ? { cuando: formulado, aTiempo: formularAntes === null || formulado <= formularAntes } : null,
+    cierrePrevisto: (rondaActual?.cierre_previsto as Date | null | undefined) ?? null,
+    evaluableDesde: evaluable?.desde ?? null,
+    reprogramaciones: {
+      aprobadas: Number(rondaActual?.reprogramaciones_aprobadas ?? 0),
+      pedidas: Number(rondaActual?.reprogramaciones_pedidas ?? 0),
+    },
+  };
+
   const ocurrencias = completo
     ? await sql`SELECT o.id, o.descripcion, o.origen, to_char(o.fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS quien
         FROM mejora_ocurrencias o JOIN usuarios u ON u.id = o.registrado_por
         WHERE o.hallazgo_id = ${id} ORDER BY o.fecha, o.id`
     : [];
-  // En una reasignación, `antes` y `despues` son ids de usuario (el CASE guarda el cast: otros eventos usan `antes` para otra
-  // cosa).
-  const eventos = completo
-    ? await sql`SELECT e.id, e.tipo, e.ronda, e.detalle, e.fuera, e.ocurrio_en, u.nombre AS quien, ua.nombre AS de, ud.nombre AS a
-        FROM mejora_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
-        LEFT JOIN usuarios ua ON ua.id = (CASE WHEN e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'antes') = 'number'
-          THEN (e.detalle->>'antes')::bigint END)
-        LEFT JOIN usuarios ud ON ud.id = (CASE WHEN e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'despues') = 'number'
-          THEN (e.detalle->>'despues')::bigint END)
-        WHERE e.hallazgo_id = ${id} ORDER BY e.ocurrio_en, e.id`
-    : [];
-
   return {
     ve,
     id: h.id,
@@ -704,16 +1132,16 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     requisitoDocumentoId: idONulo(f.requisito_documento_id),
     riesgo: (f.riesgo as string | null) ?? null,
     estado: h.estado,
-    etiqueta: etiquetaDeEstado(h),
+    etiqueta: etiquetaDeEstado(h, { yaSePuedeEvaluar: evaluable?.yaSePuede === true }),
     ronda: h.ronda,
     registradoPor: f.registrador as string,
     registradoPorId: Number(f.registrado_por),
     registradoEn: f.registrado_en as Date,
     cargado: f.cargado === true,
-    reincidenteDe: await anterior,
+    reincidenteDe: reincidente,
     marcas: marcasDeHallazgo(h, {
       cargado: f.cargado === true,
-      algunaActividadVencida: actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.fin as string) < fechaEnZona(opciones?.ahora ?? new Date(), zonaHoraria())),
+      algunaActividadVencida: actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.fin as string) < fechaEnZona(ahora, zonaHoraria())),
     }),
     fechaLimiteEnte: (f.limite_ente as string | null) ?? null,
     vence: esTerminal(h.estado) ? null : ((f.vence_en as Date | null) ?? null),
@@ -734,10 +1162,15 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     cierre: {
       resultado: h.resultadoCierre,
       cerradoEn: (f.cerrado_en as Date | null) ?? null,
+      cerradoPor: (f.cerrador as string | null) ?? null,
       lecciones: (f.lecciones as string | null) ?? null,
+      cambiosAtendidos: (f.cambios_atendidos as string | null) ?? null,
       anuladoMotivo: (f.anulado_motivo as string | null) ?? null,
     },
     rondas: rondasDeDetalle,
+    rondasAnteriores: rondasDeDetalle.filter((r) => r.numero < h.ronda),
+    fechas,
+    enlaces,
     ocurrencias: ocurrencias.map((o) => ({
       id: Number(o.id),
       fecha: o.fecha as string,
@@ -756,7 +1189,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       personas: e.tipo === "reasignada" && e.de && e.a ? { de: e.de as string, a: e.a as string } : null,
     })),
     turno,
-    loQueSigue: await loQueSigue(sql, h, sesion, turno),
+    loQueSigue: await loQueSigue(sql, h, sesion, turno, evaluable),
     avance: avanceDeHallazgo(rondasDeDetalle.find((r) => r.numero === h.ronda)?.acciones.map((a) => a.avance) ?? []),
   };
 }

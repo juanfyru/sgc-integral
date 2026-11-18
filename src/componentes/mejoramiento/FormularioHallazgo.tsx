@@ -28,6 +28,8 @@ type Props = {
   lateral?: React.ReactNode;
   /** Editar un hallazgo «Por aceptar» (spec §7.6): sin parecidos, y el envío guarda los cambios en vez de registrar. */
   edicion?: { hallazgoId: number };
+  /** El hallazgo en cuya verificación se encontró este, distinto (spec §11.4): viaja en `derivadoDe` y queda enlazado. */
+  derivado?: { id: number; codigo: string; titulo: string };
 };
 
 const texto = (v: Record<string, string | string[]> | undefined, c: string, defecto = ""): string => {
@@ -42,7 +44,7 @@ const NOTA = "rounded-md border border-border bg-muted px-3 py-2 text-sm";
  * y del origen aparece y desaparece (la criticidad, la referencia del caso, la fecha límite al ente) y las notas dicen lo
  * que ese hallazgo llevará. Los nombres de los campos son los de `EsquemaHallazgo`, que es estricto.
  */
-export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral, edicion }: Props) {
+export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral, edicion, derivado }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const v = estado?.valores ?? valores;
   const [clase, setClase] = useState<string>(texto(v, "clase"));
@@ -63,6 +65,14 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
     <div className={edicion && !lateral ? "grid gap-6" : "grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"}>
       <form id="formulario-hallazgo" action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
         {edicion ? <input type="hidden" name="hallazgoId" value={edicion.hallazgoId} /> : null}
+        {derivado && !edicion ? (
+          <>
+            <input type="hidden" name="derivadoDe" value={derivado.id} />
+            <p className={NOTA}>
+              Derivado de <span className="font-semibold">{derivado.codigo}</span> {derivado.titulo}: queda enlazado a él.
+            </p>
+          </>
+        ) : null}
         {estado?.ok === false ? (
           <p role="alert" className="rounded-md border border-estado-critico/40 bg-estado-critico-fondo px-3 py-2 text-sm text-estado-critico-texto">
             {estado.error}

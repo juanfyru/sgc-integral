@@ -14,6 +14,7 @@ import {
   EsquemaHallazgo,
   EsquemaOcurrencia,
   EsquemaReclasificacion,
+  HALLAZGO_DE_ORIGEN,
   type HallazgoValidado,
 } from "@/lib/esquemas/mejoramiento";
 import { esExterno } from "@/lib/mejoramiento/origenes";
@@ -53,6 +54,11 @@ export type DatosDeHallazgo = {
   fechaLimiteEnte?: string | null;
   /** Un hallazgo `cerrado` del mismo proceso del que este es reincidencia (spec §7.5). */
   reincidenteDe?: number | null;
+  /**
+   * El hallazgo en cuya verificación se encontró este, distinto (spec §11.4): uno que quien registra puede ver. Solo al
+   * registrar: editar y reclasificar no lo cambian.
+   */
+  derivadoDe?: number | null;
   /** El reporte que se convierte lo deja `convertido` la Tarea 18 (spec §7.3); hasta entonces no se usa. */
   reporteId?: number | null;
 };
@@ -151,11 +157,21 @@ export async function registrarHallazgo(
       const c = await contextoDeMejora(tx, ahora);
       await revisarIdentificacion(tx, v, c);
       await exigirReincidencia(tx, v.reincidenteDe, v.procesoId);
+      // Para quien no puede ver el hallazgo de origen, no existe (spec §6.3): la misma frase que para un id que no existe.
+      if (v.derivadoDe !== null && !(await puedeVerHallazgo(v.derivadoDe, sesion, { sql: tx }))) throw new ErrorMejora(HALLAZGO_DE_ORIGEN);
       const lideres = await lideresDeProceso(v.procesoId, { sql: tx });
       const nacioAceptado = esExterno(v.origen) || lideres.length === 0 || lideres.includes(sesion.usuarioId);
       const anio = Number(fechaEnZona(c.ahora, c.zona).slice(0, 4));
       const { consecutivo, codigo } = await tomarCodigo(tx, anio);
-      const h = await nacerHallazgo(tx, sesion, { ...filaDe(v), codigo, anio, consecutivo }, "registrar", { rumbo: { nacioAceptado } }, c);
+      const h = await nacerHallazgo(
+        tx,
+        sesion,
+        { ...filaDe(v), derivadoDe: v.derivadoDe, codigo, anio, consecutivo },
+        "registrar",
+        // El evento y la bitácora llevan el id del de origen, nunca su texto.
+        { rumbo: { nacioAceptado }, ...(v.derivadoDe !== null ? { detalle: { derivadoDe: v.derivadoDe } } : {}) },
+        c,
+      );
       if (esExterno(v.origen)) await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
       return { id: h.id, codigo: h.codigo };
     }),
@@ -658,4 +674,20 @@ export async function procesoDelHallazgo(id: number, opciones?: { sql?: Cliente 
   const [f] = await (opciones?.sql ?? obtenerSql())`SELECT proceso_id FROM mejora_hallazgos WHERE id = ${id}`;
   if (!f) throw new ErrorMejora(NO_EXISTE);
   return Number(f.proceso_id);
+}
+
+/**
+ * El hallazgo de origen de uno derivado (`/mejoramiento/nuevo?derivado=<id>`, spec §11.4): su código, su título y su proceso,
+ * solo si quien registra lo ve; si no, o si no existe, nulo (la página no dice por qué lo ignoró).
+ */
+export async function hallazgoDeOrigen(
+  sesion: SesionFlujo,
+  id: number,
+  opciones?: { sql?: Cliente },
+): Promise<{ id: number; codigo: string; titulo: string; procesoId: number } | null> {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const sql = opciones?.sql ?? obtenerSql();
+  if (!(await puedeVerHallazgo(id, sesion, { sql }))) return null;
+  const [f] = await sql`SELECT id, codigo, titulo, proceso_id FROM mejora_hallazgos WHERE id = ${id}`;
+  return f ? { id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string, procesoId: Number(f.proceso_id) } : null;
 }

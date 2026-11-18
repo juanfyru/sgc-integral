@@ -141,7 +141,7 @@ describe("aceptar o rechazar", () => {
         turno: "A usted le toca aceptar el hallazgo.",
       });
       expect((await leerHallazgo(b.control, otro.id, { sql: tx }))?.loQueSigue.turno).toBe(
-        "Tiene el turno: administrador del SGC, para aceptar el hallazgo.",
+        "Tiene el turno: el Administrador del SGC, para aceptar el hallazgo.",
       );
       expect(await ofreceRechazo(tx, b.admin, otro)).toBe(false);
       await aceptarHallazgo(b.admin, { hallazgoId: otro.id }, c(LUEGO, tx));

@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
-import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
+import { AVISO_SIN_PACIENTES, textoDeUsuario, type UsuarioDeSelector } from "@/lib/mejoramiento/textos";
 import { ErrorDelPaso, type AccionDelPaso } from "./Partes";
 
 /**
@@ -19,7 +19,7 @@ export function PasoCorregir({
   accion,
 }: {
   hallazgoId: number;
-  usuarios: ReadonlyArray<{ id: number; nombre: string }>;
+  usuarios: ReadonlyArray<UsuarioDeSelector & { etiqueta?: string }>;
   hoy: string;
   accion: AccionDelPaso;
 }) {
@@ -53,7 +53,7 @@ export function PasoCorregir({
               <option value="">Sin cuenta</option>
               {usuarios.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.nombre}
+                  {textoDeUsuario(u)}
                 </option>
               ))}
             </select>

@@ -80,7 +80,7 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
         />
       ) : (
         <>
-          <section aria-label="Cifras de los hallazgos" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <section aria-label="Cifras de los hallazgos" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <CifraEnlazada href="/mejoramiento?estado=abiertos" etiqueta="Abiertos" valor={cifras.abiertos} />
             <CifraEnlazada
               href="/mejoramiento?vencidos=1"
@@ -95,6 +95,12 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
               estado={cifras.esperanSuDecision > 0 ? "atencion" : undefined}
             />
             <CifraEnlazada href="/mejoramiento?estado=en_espera" etiqueta="En espera de eficacia" valor={cifras.enEspera} />
+            <CifraEnlazada
+              href="/mejoramiento?estado=por_evaluar"
+              etiqueta="Por evaluar la eficacia"
+              valor={cifras.porEvaluar}
+              estado={cifras.porEvaluar > 0 ? "atencion" : undefined}
+            />
             <CifraEnlazada href="/mejoramiento?estado=reabiertos" etiqueta="Reabiertos" valor={cifras.reabiertos} />
           </section>
           <FiltrosDeHallazgos filtro={filtro} procesos={procesos} />

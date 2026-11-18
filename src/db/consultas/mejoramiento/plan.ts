@@ -26,6 +26,7 @@ import { auditar, enBorrador, leer } from "./analisis";
 import type { ContextoMejora } from "./config";
 import { dejarEvento, NO_EXISTE } from "./flujo";
 import { indicadorDeEficacia, indicadorElegible } from "./indicador-de-eficacia";
+import { usuariosActivos, type UsuarioElegible } from "./opciones";
 
 export const ACCION_AJENA = "La acción no existe en esta ronda";
 export const ACTIVIDAD_AJENA = "Una de las actividades ya no existe: vuelva a cargar la página";
@@ -400,10 +401,10 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
   return { faltas, plan, huella: huellaDePlan(plan), evaluableDesde };
 }
 
-/** Los usuarios activos que pueden ser responsables de una actividad (cualquiera, spec §10.2), con su cargo. */
-export async function usuariosAsignables(sql: Cliente): Promise<Array<{ id: number; nombre: string; cargo: string | null }>> {
-  const filas = await sql`SELECT u.id, u.nombre, c.nombre AS cargo
-    FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
-    WHERE u.activo ORDER BY u.nombre, u.id`;
-  return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, cargo: texto(f.cargo) }));
+/**
+ * Los usuarios activos que pueden ser responsables de una actividad (cualquiera, spec §10.2), con su cargo y el texto que los
+ * distingue de un homónimo (`usuariosActivos`).
+ */
+export function usuariosAsignables(sql: Cliente): Promise<UsuarioElegible[]> {
+  return usuariosActivos({ sql });
 }

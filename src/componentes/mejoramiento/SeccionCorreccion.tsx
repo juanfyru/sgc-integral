@@ -77,9 +77,8 @@ export function SeccionCorreccion({
             </span>
           </p>
         ) : null}
-        {c.requerida === null ? (
-          <p className="text-sm text-muted-foreground">Aún no se registra la corrección.</p>
-        ) : (
+        {/* Sin corrección registrada, el resumen de la sección ya lo dice: el cuerpo no lo repite. */}
+        {c.requerida === null ? null : (
           <dl className="grid gap-3 sm:grid-cols-2">
             <Dato etiqueta="¿Requirió corrección?">{c.requerida ? "Sí requirió corrección" : "No requiere corrección inmediata"}</Dato>
             {c.requerida && c.implementadaEn ? <Dato etiqueta="Fecha en que se implementó">{fechaDeDia(c.implementadaEn)}</Dato> : null}

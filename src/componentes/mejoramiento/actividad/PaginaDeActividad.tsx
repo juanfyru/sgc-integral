@@ -6,7 +6,7 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
-import { ETIQUETA_TIPO_ACCION } from "@/lib/mejoramiento/textos";
+import { ETIQUETA_TIPO_ACCION, type UsuarioDeSelector } from "@/lib/mejoramiento/textos";
 import { estaAbierta } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -58,7 +58,7 @@ export function PaginaDeActividad({
   actividad: DetalleDeActividad;
   hoy: string;
   /** Los usuarios activos, para reasignar (vacío si quien mira no puede). */
-  usuarios: ReadonlyArray<{ id: number; nombre: string }>;
+  usuarios: ReadonlyArray<UsuarioDeSelector & { etiqueta?: string }>;
   /** La dirección de la zona de carga de la evidencia, o nula si quien mira no sube. */
   subida: string | null;
   quitables: number[];

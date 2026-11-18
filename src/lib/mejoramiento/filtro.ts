@@ -8,7 +8,7 @@ const primero = (v: string | string[] | undefined): string | undefined => (Array
 const dentro = <T extends string>(lista: readonly T[], v: string | undefined): T | undefined =>
   v !== undefined && (lista as readonly string[]).includes(v) ? (v as T) : undefined;
 
-export const ESTADOS_ESPECIALES = ["abiertos", "reabiertos", "sin_accion"] as const;
+export const ESTADOS_ESPECIALES = ["abiertos", "reabiertos", "sin_accion", "por_evaluar"] as const;
 
 export function filtroDeConsulta(p: Parametros): FiltroDeLista {
   const filtro: FiltroDeLista = {};

@@ -151,6 +151,9 @@ const fechaOpcional = (mensaje: string) =>
     .refine((v) => v === null || esFechaReal(v), mensaje)
     .refine((v) => v === null || enRango(v), FECHA_FUERA_DE_RANGO);
 
+/** Un hallazgo de origen que quien registra no ve y uno que no existe se dicen igual (spec §6.3). */
+export const HALLAZGO_DE_ORIGEN = "El hallazgo de origen no existe";
+
 /**
  * La identificación de un hallazgo tal como la recibe `registrarHallazgo` (objeto del dominio o campos del formulario).
  * Lo que depende de la base o de la hora (la fecha futura, los enlaces) lo comprueba el dominio.
@@ -190,6 +193,8 @@ export const EsquemaHallazgo = z
     riesgo: textoOpcional("El riesgo asociado", 200),
     fechaLimiteEnte: fechaOpcional("Escriba una fecha límite de respuesta al ente válida"),
     reincidenteDe: idOpcional("El hallazgo anterior no es válido"),
+    /** El hallazgo distinto que encontró quien verificaba otro (spec §11.4): solo al registrar; editar y reclasificar no lo tocan. */
+    derivadoDe: idOpcional(HALLAZGO_DE_ORIGEN),
     reporteId: idOpcional("El reporte no es válido"),
   })
   .strict()
@@ -1021,3 +1026,50 @@ export type EvaluacionValidada = z.output<typeof EsquemaEvaluacion>;
 /** Cerrar un hallazgo eficaz (spec §11.5): las lecciones aprendidas y, si el análisis pidió cambios, cómo se atendieron. */
 export const EsquemaCierre = z.object({ hallazgoId: idDeHallazgo, lecciones, cambiosAtendidos }).strict();
 export type CierreValidado = z.output<typeof EsquemaCierre>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los formularios de verificar, evaluar y cerrar (Tarea 17): campos planos que las acciones dejan en la forma del dominio, que
+// los vuelve a validar todos con `EsquemaVerificacion`, `EsquemaEvaluacion` y `EsquemaCierre`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La verificación: una casilla `actividad` por fila (su id) y los métodos marcados. Lo que se decide de cada actividad viaja en
+ * `decision_<id>`, `nota_<id>` y `corregir_<id>`: la acción los lee aparte (`camposDeLaVerificada`) y los omite aquí.
+ */
+export const EsquemaFormularioVerificacion = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    actividad: variosValores(SIN_DECIDIR).pipe(z.array(z.string().regex(/^\d{1,15}$/, SIN_DECIDIR), { error: SIN_DECIDIR })),
+    metodos: variosValores(SIN_METODO).pipe(z.array(z.string(), { error: SIN_METODO })),
+    nota: z.string().optional(),
+  })
+  .strict();
+
+/** Los campos que la verificación lee de cada actividad (`actividad` lleva su id). */
+export const camposDeLaVerificada = (id: string) => [`decision_${id}`, `nota_${id}`, `corregir_${id}`] as const;
+
+/**
+ * La evaluación con su firma: los campos de `EsquemaEvaluacion` como texto (los criterios, en casillas con el mismo nombre; la
+ * confirmación de las ocurrencias, `si` o nada) más la clave y el código.
+ */
+export const EsquemaFormularioEvaluacion = z
+  .object({
+    hallazgoId: idDeHallazgo,
+    resultado: z.string().optional(),
+    criterios: variosValores("Marque los criterios que evaluó").pipe(z.array(z.string(), { error: "Marque los criterios que evaluó" })),
+    desde: z.string().optional(),
+    hasta: z.string().optional(),
+    justificacion: z.string().optional(),
+    confirmaOcurrencias: marca,
+    lecciones: z.string().optional(),
+    cambiosAtendidos: z.string().optional(),
+    vistoHuella: z.string().optional(),
+    ...firma,
+  })
+  .strict()
+  .transform((d) => ({ ...d, confirmaOcurrencias: d.confirmaOcurrencias === "si" }));
+
+/** El cierre con su firma: las lecciones, cómo se atendieron los cambios, la clave y el código. */
+export const EsquemaFormularioCierre = z
+  .object({ hallazgoId: idDeHallazgo, lecciones: z.string().optional(), cambiosAtendidos: z.string().optional(), ...firma })
+  .strict();

@@ -33,7 +33,7 @@ import { fechaMinimaDeEficacia, leerCriterios, yaSePuedeEvaluar } from "@/lib/me
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { huellaDeCierre, huellaDeContenido, huellaDeEvaluacion } from "@/lib/mejoramiento/huellas";
 import { rutaDeActividad } from "@/lib/mejoramiento/rutas";
-import { ErrorMejora, METODOS_DE_VERIFICACION, type CriterioEficacia, type HallazgoBase } from "@/lib/mejoramiento/tipos";
+import { ErrorMejora, METODOS_DE_VERIFICACION, type Clase, type CriterioEficacia, type HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -43,7 +43,7 @@ import { verificarFirma } from "./aprobacion";
 import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, hallazgoBase, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
-import { indicadorDeEficacia } from "./indicador-de-eficacia";
+import { indicadoresDeEficacia } from "./indicador-de-eficacia";
 import { etiquetaDeActividad } from "./plan";
 
 export { METODOS_DE_VERIFICACION };
@@ -299,62 +299,80 @@ export async function verificarImplementacion(
 
 export type IndicadorDeLaEspera = { id: number; codigo: string; nombre: string; periodicidad: Periodicidad; plazoReporteDias: number };
 
-/**
- * R (spec §11.3): el día, en la zona, en que terminó la última actividad no cancelada de la ronda en curso; nulo si no tiene
- * ninguna o alguna sigue sin terminar.
- */
-async function diaR(sql: Cliente, h: Pick<HallazgoBase, "id" | "ronda">, zona: string): Promise<string | null> {
-  const [f] = await sql`SELECT max(a.terminada_en) AS r, bool_and(a.estado = 'terminada') AS todas
-    FROM mejora_actividades a JOIN mejora_acciones ac ON ac.id = a.accion_id JOIN mejora_rondas r ON r.id = ac.ronda_id
-    WHERE a.hallazgo_id = ${h.id} AND r.numero = ${h.ronda} AND a.estado <> 'cancelada'`;
-  if (!f || f.r === null || f.todas !== true) return null;
-  return fechaEnZona(f.r as Date, zona);
-}
+/** La fecha mínima de un hallazgo en espera, con R y el indicador enlazado (spec §11.3). */
+export type FechaMinima = { minima: string; r: string; indicador: IndicadorDeLaEspera | null; indicadorRetirado: boolean };
 
 /**
- * La fecha mínima de eficacia de la ronda en espera (spec §11.3), calculada al leer: desde R, con el indicador enlazado si sigue
- * activo, con la periodicidad de su ficha vigente. Retirado (o ya no enlazable), la espera vuelve a la de dos meses y
- * `indicadorRetirado` lo dice. Nulo si el hallazgo no está «En espera de eficacia». Sin regla de visibilidad: el nombre del
- * indicador lo muestra quien llama solo a quien puede verlo.
+ * La fecha mínima de eficacia de cada hallazgo de `hallazgoIds` que está «En espera de eficacia» (spec §11.3), calculada al leer,
+ * en dos consultas para todos (la lista y las cifras, R4): R es el día, en la zona, en que terminó la última actividad no
+ * cancelada de la ronda en curso (sin R si no tiene ninguna o alguna sigue sin terminar); con el indicador enlazado si sigue
+ * activo, con la periodicidad de su ficha vigente. Retirado (o ya no enlazable), la espera vuelve a la de dos meses e
+ * `indicadorRetirado` lo dice. Los que no están en espera, o no tienen R, no están en el mapa. Sin regla de visibilidad: el nombre
+ * del indicador lo muestra quien llama solo a quien puede verlo.
  */
-export async function fechaMinimaDe(
-  sql: Cliente,
-  hallazgoId: number,
-  zona: string,
-): Promise<{ minima: string; r: string; indicador: IndicadorDeLaEspera | null; indicadorRetirado: boolean } | null> {
-  const h = await hallazgoBase(sql, hallazgoId);
-  if (!h || h.estado !== "en_espera") return null;
-  const ronda = await rondaEnCurso(sql, h);
-  const r = await diaR(sql, h, zona);
-  if (r === null) return null;
-  const enlazado = ronda.indicadorId === null ? null : await indicadorDeEficacia(sql, ronda.indicadorId);
-  const activo = enlazado !== null && enlazado.activo;
-  const minima = fechaMinimaDeEficacia(
-    { clase: h.clase, r, fechaEvaluacion: ronda.fechaEvaluacion, periodicidad: enlazado && enlazado.activo ? enlazado.periodicidad : null },
-    zona,
+export async function fechasMinimasDe(sql: Cliente, hallazgoIds: readonly number[], zona: string): Promise<Map<number, FechaMinima>> {
+  const ids = [...new Set(hallazgoIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  if (ids.length === 0) return new Map();
+  const filas = await sql`SELECT h.id, h.clase, r.indicador_eficacia_id, to_char(r.fecha_evaluacion, 'YYYY-MM-DD') AS fecha_evaluacion,
+      ult.r, ult.todas
+    FROM mejora_hallazgos h
+    JOIN mejora_rondas r ON r.hallazgo_id = h.id AND r.numero = h.ronda
+    JOIN LATERAL (SELECT max(a.terminada_en) AS r, bool_and(a.estado = 'terminada') AS todas
+      FROM mejora_actividades a JOIN mejora_acciones ac ON ac.id = a.accion_id
+      WHERE ac.ronda_id = r.id AND a.estado <> 'cancelada') ult ON true
+    WHERE h.id IN ${sql(ids)} AND h.estado = 'en_espera'`;
+  const indicadores = await indicadoresDeEficacia(
+    sql,
+    filas.flatMap((f) => (f.indicador_eficacia_id === null ? [] : [Number(f.indicador_eficacia_id)])),
   );
-  return {
-    minima,
-    r,
-    indicador: enlazado
-      ? { id: enlazado.id, codigo: enlazado.codigo, nombre: enlazado.nombre, periodicidad: enlazado.periodicidad, plazoReporteDias: enlazado.plazoReporteDias }
-      : null,
-    indicadorRetirado: enlazado !== null && !activo,
-  };
+  const resultado = new Map<number, FechaMinima>();
+  for (const f of filas) {
+    if (f.r === null || f.todas !== true) continue;
+    const r = fechaEnZona(f.r as Date, zona);
+    const enlazado = f.indicador_eficacia_id === null ? null : (indicadores.get(Number(f.indicador_eficacia_id)) ?? null);
+    const activo = enlazado !== null && enlazado.activo;
+    const minima = fechaMinimaDeEficacia(
+      { clase: f.clase as Clase, r, fechaEvaluacion: (f.fecha_evaluacion as string | null) ?? null, periodicidad: activo ? enlazado.periodicidad : null },
+      zona,
+    );
+    resultado.set(Number(f.id), {
+      minima,
+      r,
+      indicador: enlazado
+        ? { id: enlazado.id, codigo: enlazado.codigo, nombre: enlazado.nombre, periodicidad: enlazado.periodicidad, plazoReporteDias: enlazado.plazoReporteDias }
+        : null,
+      indicadorRetirado: enlazado !== null && !activo,
+    });
+  }
+  return resultado;
+}
+
+/** La fecha mínima de eficacia de un hallazgo (`fechasMinimasDe` con uno solo); nulo si no está «En espera de eficacia». */
+export async function fechaMinimaDe(sql: Cliente, hallazgoId: number, zona: string): Promise<FechaMinima | null> {
+  return (await fechasMinimasDe(sql, [hallazgoId], zona)).get(hallazgoId) ?? null;
 }
 
 /**
- * Desde qué día se puede registrar «eficaz» y si ya llegó (R4: lo que pinta «Por evaluar la eficacia» en la lista, la página y
- * las cifras, con `etiquetaDeEstado(h, { yaSePuedeEvaluar })`). Nulo si el hallazgo no está «En espera de eficacia».
+ * Desde qué día se puede registrar «eficaz» y si ya llegó, para varios hallazgos en una pasada (R4: «Por evaluar la eficacia»
+ * en la lista, la página y las cifras, con `etiquetaDeEstado(h, { yaSePuedeEvaluar })`). Los que no están en espera no están.
  */
+export async function evaluablesDesde(
+  sql: Cliente,
+  hallazgoIds: readonly number[],
+  ahora: Date,
+): Promise<Map<number, { desde: string; yaSePuede: boolean }>> {
+  const zona = zonaHoraria();
+  const fechas = await fechasMinimasDe(sql, hallazgoIds, zona);
+  return new Map([...fechas].map(([id, fm]) => [id, { desde: fm.minima, yaSePuede: yaSePuedeEvaluar(fm.minima, ahora, zona) }]));
+}
+
+/** `evaluablesDesde` de un solo hallazgo; nulo si no está «En espera de eficacia». */
 export async function evaluableDesde(
   sql: Cliente,
   hallazgoId: number,
   ahora: Date,
 ): Promise<{ desde: string; yaSePuede: boolean } | null> {
-  const zona = zonaHoraria();
-  const fm = await fechaMinimaDe(sql, hallazgoId, zona);
-  return fm ? { desde: fm.minima, yaSePuede: yaSePuedeEvaluar(fm.minima, ahora, zona) } : null;
+  return (await evaluablesDesde(sql, [hallazgoId], ahora)).get(hallazgoId) ?? null;
 }
 
 export type FilaDelIndicador = {
@@ -398,6 +416,8 @@ async function filasDelIndicador(sql: Cliente, indicadorId: number, r: string, a
 
 export type DatosDeEvaluacion = {
   minima: string;
+  /** R: el día en que terminó la última actividad (el inicio que la pantalla propone para el periodo evaluado). */
+  r: string;
   yaSePuede: boolean;
   /** Los criterios del plan de la ronda. */
   criterios: string[];
@@ -434,6 +454,7 @@ async function loQueSeMuestra(
     ronda,
     datos: {
       minima: fm.minima,
+      r: fm.r,
       yaSePuede: yaSePuedeEvaluar(fm.minima, ahora, zona),
       criterios: ronda.criterios,
       indicador,

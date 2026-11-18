@@ -48,6 +48,7 @@ export function PanelDeFirmas({
   firmas,
   elabora,
   sinRevision,
+  nadieRevisa = false,
   gerencia,
   enCurso,
   vence,
@@ -60,6 +61,11 @@ export function PanelDeFirmas({
   elabora: string;
   /** Elaboró un Administrador del SGC y no hay otro que lo revise: el envío pasa directo a aprobación. */
   sinRevision: boolean;
+  /**
+   * El plan está en revisión y ya no queda nadie que lo revise (el otro Administrador del SGC dejó de estar activo): quien lo
+   * elaboró lo devuelve y lo reenvía (F15-DC15).
+   */
+  nadieRevisa?: boolean;
   /** Por qué aprueba Gerencia (`razonDeGerencia`), o `null`: la revisión vale como aprobación, salvo que marque recursos. */
   gerencia: string | null;
   /** La firma que espera ahora, si alguna. */
@@ -84,7 +90,9 @@ export function PanelDeFirmas({
             estado: "no_aplica",
             detalle: "No hay otro Administrador del SGC activo: nadie firma «Revisó» sobre lo que elaboró",
           }
-        : { firma: "reviso", titulo: "Revisó", estado: "pendiente", detalle: `Administrador del SGC · ${dias(plazos.revisar)}` },
+        : nadieRevisa
+          ? { firma: "reviso", titulo: "Revisó", estado: "pendiente", detalle: "Nadie puede revisarlo: lo devuelve quien lo elaboró" }
+          : { firma: "reviso", titulo: "Revisó", estado: "pendiente", detalle: `Administrador del SGC · ${dias(plazos.revisar)}` },
     firmas.aprobo
       ? { firma: "aprobo", titulo: "Aprobó", estado: "firmada", detalle: quien(firmas.aprobo, zona) }
       : gerencia !== null

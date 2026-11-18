@@ -4,6 +4,7 @@
 // de persona (el alcance de proceso, quien tiene el turno) la vuelve a comprobar la consulta dentro de su transacción.
 // Las de la configuración viven en `src/app/admin/acciones-mejoramiento.ts`.
 
+import { revalidatePath } from "next/cache";
 import { idNumerico, mutacion, type EstadoAccion } from "@/app/admin/comun";
 import { ErrorFirma } from "@/db/consultas/flujo/contrato";
 import { reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
@@ -33,6 +34,7 @@ import {
   registrarHallazgo,
   registrarOcurrencia,
 } from "@/db/consultas/mejoramiento/registro";
+import { cerrarHallazgo, evaluarEficacia, LO_VISTO_CAMBIO, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
   EsquemaActividad,
@@ -48,12 +50,15 @@ import {
   EsquemaFormularioAnalisis,
   EsquemaFormularioArbitraje,
   EsquemaFormularioCausas,
+  EsquemaFormularioCierre,
   EsquemaFormularioDecidirAjuste,
   EsquemaFormularioDecision,
+  EsquemaFormularioEvaluacion,
   EsquemaFormularioFirmaDelPlan,
   EsquemaFormularioPreguntas,
   EsquemaFormularioResponderEscalada,
   EsquemaFormularioRevisarPlan,
+  EsquemaFormularioVerificacion,
   EsquemaHallazgo,
   EsquemaOcurrencia,
   EsquemaPasoDelHallazgo,
@@ -65,8 +70,11 @@ import {
   EsquemaSeguimiento,
   EsquemaSostener,
   RELACION_DE_REGISTRO,
+  SIN_DECIDIR,
+  camposDeLaVerificada,
 } from "@/lib/esquemas/mejoramiento";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { parsearFormulario } from "@/lib/validacion";
 
 /**
@@ -495,5 +503,96 @@ export async function escalarAGerenciaAccion(_previo: EstadoAccion, formData: Fo
 export async function responderEscaladaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.aprobar", async (_usuarioId, datos, sesion) => {
     await responderEscalada(sesion, parsearFormulario(datos, EsquemaFormularioResponderEscalada));
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verificar la implementación, evaluar la eficacia y cerrar (spec 15 §11.4 y §11.5). Quien ejecutó no verifica: lo comprueba
+// `puedeVerificar` dentro de cada transacción; evaluar firma «Verificó» y cerrar «Cerró» (F13A-R4).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Quien no ejecutó verifica la implementación en un solo acto: cada actividad terminada conforme o devuelta (con su nota y su
+ * fecha para corregir) y cómo verificó. Cada fila manda `actividad` (su id); lo que se decidió de ella viaja en sus propios
+ * campos (`camposDeLaVerificada`), que se leen aquí y el dominio vuelve a validar.
+ */
+export async function verificarImplementacionAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.verificar", async (_usuarioId, datos, sesion) => {
+    const ids = datos.getAll("actividad").filter((v): v is string => typeof v === "string" && /^\d{1,15}$/.test(v));
+    const d = parsearFormulario(datos, EsquemaFormularioVerificacion, { omitir: ids.flatMap((id) => [...camposDeLaVerificada(id)]) });
+    const texto = (campo: string) => {
+      const v = datos.get(campo);
+      return typeof v === "string" && v.trim() !== "" ? v : null;
+    };
+    await verificarImplementacion(sesion, {
+      hallazgoId: d.hallazgoId,
+      actividades: d.actividad.map((id) => {
+        const [decision, nota, corregir] = camposDeLaVerificada(id);
+        const elegida = datos.get(decision);
+        if (elegida !== "conforme" && elegida !== "devuelta") throw new ErrorMejora(SIN_DECIDIR);
+        return { id: Number(id), conforme: elegida === "conforme", nota: texto(nota), corregirAntesDe: texto(corregir) };
+      }),
+      metodos: d.metodos,
+      nota: d.nota ?? null,
+    });
+    return rutaDeHallazgo(d.hallazgoId);
+  });
+}
+
+/**
+ * Evalúa la eficacia con la firma «Verificó» (y, si evalúa «eficaz» un Admin SGC, también «Cerró»). Si cambió lo que la pantalla
+ * mostró, el dominio lo rechaza sin escribir nada; la página se vuelve a leer, con los datos nuevos y su huella, para revisarlo.
+ */
+export async function evaluarEficaciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "mejora.verificar", async (_usuarioId, _datos, sesion) => {
+    const d = parsearFormulario(firma, EsquemaFormularioEvaluacion);
+    try {
+      await evaluarEficacia(
+        sesion,
+        {
+          hallazgoId: d.hallazgoId,
+          // Texto del formulario: `evaluarEficacia` lo valida con `EsquemaEvaluacion` antes de nada.
+          resultado: (d.resultado ?? "") as "eficaz" | "no_eficaz",
+          criterios: d.criterios,
+          desde: d.desde ?? "",
+          hasta: d.hasta ?? "",
+          justificacion: d.justificacion ?? "",
+          confirmaOcurrencias: d.confirmaOcurrencias,
+          lecciones: d.lecciones ?? null,
+          cambiosAtendidos: d.cambiosAtendidos ?? null,
+          vistoHuella: d.vistoHuella ?? "",
+          credenciales: { clave: d.clave, codigo: d.codigo },
+        },
+        { contexto: await contextoDePeticion() },
+      );
+      return rutaDeHallazgo(d.hallazgoId);
+    } catch (err) {
+      if (err instanceof ErrorMejora && err.message === LO_VISTO_CAMBIO) revalidatePath(rutaDeHallazgo(d.hallazgoId));
+      return destinoDeFirma(err);
+    }
+  });
+}
+
+/** El Admin SGC cierra un hallazgo eficaz con las lecciones aprendidas y la firma «Cerró». */
+export async function cerrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  const firma = separarFirma(formData);
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, _datos, sesion) => {
+    const d = parsearFormulario(firma, EsquemaFormularioCierre);
+    try {
+      await cerrarHallazgo(
+        sesion,
+        {
+          hallazgoId: d.hallazgoId,
+          lecciones: d.lecciones ?? "",
+          cambiosAtendidos: d.cambiosAtendidos ?? null,
+          credenciales: { clave: d.clave, codigo: d.codigo },
+        },
+        { contexto: await contextoDePeticion() },
+      );
+      return rutaDeHallazgo(d.hallazgoId);
+    } catch (err) {
+      return destinoDeFirma(err);
+    }
   });
 }

@@ -5,7 +5,7 @@ import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
-import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
+import { AVISO_SIN_PACIENTES, textoDeUsuario, type UsuarioDeSelector } from "@/lib/mejoramiento/textos";
 import { ErrorDelPaso, type AccionDelPaso } from "../pasos/Partes";
 
 /**
@@ -25,7 +25,7 @@ export function DialogoReasignar({
   etiqueta: string;
   responsableId: number;
   responsable: string;
-  usuarios: ReadonlyArray<{ id: number; nombre: string }>;
+  usuarios: ReadonlyArray<UsuarioDeSelector & { etiqueta?: string }>;
   accion: AccionDelPaso;
 }) {
   const [abierto, setAbierto] = useState(false);
@@ -58,7 +58,7 @@ export function DialogoReasignar({
                 .filter((u) => u.id !== responsableId)
                 .map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.nombre}
+                    {textoDeUsuario(u)}
                   </option>
                 ))}
             </select>

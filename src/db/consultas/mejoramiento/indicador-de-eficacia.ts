@@ -33,19 +33,32 @@ const VIGENTE = (sql: Cliente) => sql`LATERAL (
 
 /** El indicador con su ficha vigente; `null` si no existe o no tiene ninguna aprobada. Sin regla de visibilidad: la pone quien llama. */
 export async function indicadorDeEficacia(sql: Cliente, indicadorId: number): Promise<IndicadorDeEficacia | null> {
-  if (!Number.isSafeInteger(indicadorId) || indicadorId <= 0) return null;
-  const [f] = await sql`SELECT i.id, i.codigo, ${ENLAZABLE(sql)} AS enlazable, i.plazo_reporte_dias, vig.nombre, vig.periodicidad
+  return (await indicadoresDeEficacia(sql, [indicadorId])).get(indicadorId) ?? null;
+}
+
+/**
+ * Los mismos datos de `indicadorDeEficacia` para varios a la vez, en una consulta (la lista de hallazgos, R4): los que no existen
+ * o no tienen ficha aprobada no están en el mapa.
+ */
+export async function indicadoresDeEficacia(sql: Cliente, indicadorIds: readonly number[]): Promise<Map<number, IndicadorDeEficacia>> {
+  const ids = [...new Set(indicadorIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  if (ids.length === 0) return new Map();
+  const filas = await sql`SELECT i.id, i.codigo, ${ENLAZABLE(sql)} AS enlazable, i.plazo_reporte_dias, vig.nombre, vig.periodicidad
     FROM indicadores i JOIN ${VIGENTE(sql)} ON true
-    WHERE i.id = ${indicadorId}`;
-  if (!f) return null;
-  return {
-    id: Number(f.id),
-    codigo: f.codigo as string,
-    nombre: (f.nombre as string | null) ?? (f.codigo as string),
-    activo: f.enlazable === true,
-    periodicidad: f.periodicidad as Periodicidad,
-    plazoReporteDias: Number(f.plazo_reporte_dias),
-  };
+    WHERE i.id IN ${sql(ids)}`;
+  return new Map(
+    filas.map((f) => [
+      Number(f.id),
+      {
+        id: Number(f.id),
+        codigo: f.codigo as string,
+        nombre: (f.nombre as string | null) ?? (f.codigo as string),
+        activo: f.enlazable === true,
+        periodicidad: f.periodicidad as Periodicidad,
+        plazoReporteDias: Number(f.plazo_reporte_dias),
+      },
+    ]),
+  );
 }
 
 /** Los que quien formula puede enlazar: activos, con ficha vigente y que ve (`filtroIndicadores`). */

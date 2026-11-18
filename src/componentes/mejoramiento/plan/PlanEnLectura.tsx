@@ -179,12 +179,17 @@ export function PlanEnLectura({
                         ) : null}
                       </Dato>
                       <Dato etiqueta="Avance">
-                        <span className="flex items-center gap-2">
-                          <span aria-hidden="true" className="h-1.5 w-full max-w-24 overflow-hidden rounded-full bg-muted">
-                            <span className="block h-full rounded-full bg-mod-planes" style={{ width: `${Math.max(0, Math.min(100, x.avance))}%` }} />
+                        {/* Antes de aprobarse el plan, la actividad no ha empezado: «—», como en la lista. */}
+                        {x.finOriginal === null ? (
+                          <span>—</span>
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            <span aria-hidden="true" className="h-1.5 w-full max-w-24 overflow-hidden rounded-full bg-muted">
+                              <span className="block h-full rounded-full bg-mod-planes" style={{ width: `${Math.max(0, Math.min(100, x.avance))}%` }} />
+                            </span>
+                            <span>{`${x.avance} %`}</span>
                           </span>
-                          <span>{`${x.avance} %`}</span>
-                        </span>
+                        )}
                       </Dato>
                       <Dato etiqueta="Estado">
                         <EstadoDeActividad a={x} hoy={hoy} />

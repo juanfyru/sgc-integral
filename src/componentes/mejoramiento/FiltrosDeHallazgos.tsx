@@ -11,6 +11,7 @@ const ESTADOS_ESPECIALES: Array<[string, string]> = [
   ["abiertos", "Abiertos"],
   ["reabiertos", "Reabiertos"],
   ["sin_accion", "Cerrados sin acción"],
+  ["por_evaluar", "Por evaluar la eficacia"],
 ];
 
 function Selector({

@@ -72,6 +72,8 @@ export type FilaNueva = {
   riesgo: string | null;
   fechaLimiteEnte: string | null;
   reincidenteDe: number | null;
+  /** El hallazgo en cuya verificación se encontró este (spec §11.4); quien registra lo ve (`registrarHallazgo`). */
+  derivadoDe?: number | null;
 };
 
 const idONulo = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -211,13 +213,13 @@ export async function nacerHallazgo(
   const [nuevo] = await tx`INSERT INTO mejora_hallazgos
       (codigo, anio, consecutivo, clase, origen, fuente, referencia_caso, detectado_en, proceso_id, subproceso_id,
        criticidad, titulo, descripcion, requisito_clausula, requisito_norma_id, requisito_documento_id, documento_id,
-       indicador_id, medicion_id, riesgo, estado, ronda, registrado_por, registrado_en, reincidente_de, cargado,
+       indicador_id, medicion_id, riesgo, estado, ronda, registrado_por, registrado_en, reincidente_de, derivado_de, cargado,
        fecha_limite_ente, vence_en)
     VALUES (${fila.codigo}, ${fila.anio}, ${fila.consecutivo}, ${fila.clase}, ${fila.origen}, ${fila.fuente},
       ${fila.referenciaCaso}, ${fila.detectadoEn}, ${fila.procesoId}, ${fila.subprocesoId}, ${fila.criticidad},
       ${fila.titulo}, ${fila.descripcion}, ${fila.requisitoClausula}, ${fila.requisitoNormaId},
       ${fila.requisitoDocumentoId}, ${fila.documentoId}, ${fila.indicadorId}, ${fila.medicionId}, ${fila.riesgo},
-      ${estado}, 1, ${sesion.usuarioId}, ${c.ahora}, ${fila.reincidenteDe}, ${accion === "cargar"},
+      ${estado}, 1, ${sesion.usuarioId}, ${c.ahora}, ${fila.reincidenteDe}, ${fila.derivadoDe ?? null}, ${accion === "cargar"},
       ${fila.fechaLimiteEnte}, ${vence})
     RETURNING id`;
   const id = Number(nuevo.id);

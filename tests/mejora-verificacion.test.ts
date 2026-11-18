@@ -13,13 +13,14 @@ import { quitarAnalisis } from "@/db/consultas/mejoramiento/analisis";
 import { enviarPlan } from "@/db/consultas/mejoramiento/aprobacion";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, dejarEvento } from "@/db/consultas/mejoramiento/flujo";
-import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { ACCION_AJENA, guardarAccion, quitarAccion } from "@/db/consultas/mejoramiento/plan";
 import { registrarOcurrencia } from "@/db/consultas/mejoramiento/registro";
 import {
   cerrarHallazgo,
   datosDeEvaluacion,
   evaluableDesde,
+  evaluablesDesde,
   evaluarEficacia,
   fechaMinimaDe,
   huellaDeLoVisto,
@@ -36,6 +37,7 @@ import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, versionTrimestral } from "./utiles/indicadores";
 import { baseDeMejora, c, evidenciaDeActividad, hallazgoEn, planDePrueba, terminarTodas, type BaseDeMejora } from "./utiles/mejoramiento";
+import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 import { firmaDePrueba } from "./utiles/vigencia";
@@ -962,5 +964,86 @@ describe("un hallazgo cerrado", () => {
       expect(
         await legible(verificarImplementacion(b.control, { hallazgoId: h.id, actividades: [{ id: Number(a.id), conforme: true }], metodos: ["evidencias"] }, c(DESPUES, tx))),
       ).toBe(YA_CAMBIO);
+    }));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lo que leen la lista y la página (Tarea 17): «Por evaluar la eficacia» (R4) y lo congelado según quién mira (§6.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("«Por evaluar la eficacia» en la lista, la página y las cifras (R4)", () => {
+  it("antes de la fecha mínima, «En espera de eficacia»; desde ella, la etiqueta, el turno, el filtro y la cifra; el lote dice lo mismo que uno", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const lista = (ahora: string, filtro: Parameters<typeof listarHallazgos>[1] = {}) =>
+        listarHallazgos(b.lider, filtro, { sql: tx, ahora: new Date(ahora) });
+
+      const antes = await lista(LA_VISPERA);
+      expect(antes.filas.find((f) => f.id === h.id)?.etiqueta).toBe("En espera de eficacia");
+      expect(antes.cifras.porEvaluar).toBe(0);
+      expect((await lista(LA_VISPERA, { estado: "por_evaluar" })).filas).toHaveLength(0);
+
+      const ya = await lista(LA_MINIMA);
+      const fila = ya.filas.find((f) => f.id === h.id)!;
+      expect(fila.etiqueta).toBe("Por evaluar la eficacia");
+      expect(fila.turno).toBe("Quien puede verificar");
+      expect(ya.cifras.porEvaluar).toBe(1);
+      expect(ya.cifras.enEspera).toBe(1);
+      expect((await lista(LA_MINIMA, { estado: "por_evaluar" })).filas.map((f) => f.id)).toEqual([h.id]);
+
+      const pagina = await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(LA_MINIMA) });
+      expect(pagina!.etiqueta).toBe("Por evaluar la eficacia");
+      expect(pagina!.fechas.evaluableDesde).toBe("2027-02-05");
+      expect((await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(LA_VISPERA) }))!.etiqueta).toBe("En espera de eficacia");
+
+      const lote = await evaluablesDesde(tx, [h.id, 0x7fffffff], new Date(LA_MINIMA));
+      expect(lote.get(h.id)).toEqual(await evaluableDesde(tx, h.id, new Date(LA_MINIMA)));
+      expect(lote.get(h.id)).toEqual({ desde: "2027-02-05", yaSePuede: true });
+      expect(lote.has(0x7fffffff)).toBe(false);
+    }));
+
+  it("«Lo que sigue» en la espera: quien puede verificar ya puede registrar «No eficaz»; a los demás, desde cuándo", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const del = (quien: SesionFlujo, ahora: string) => leerHallazgo(quien, h.id, { sql: tx, ahora: new Date(ahora) });
+      const control = (await del(b.control, LA_VISPERA))!.loQueSigue;
+      expect(control).toMatchObject({ paso: "evaluar", puede: true });
+      expect(control.turno).toContain("«No eficaz»");
+      const lider = (await del(b.lider, LA_VISPERA))!.loQueSigue;
+      expect(lider.puede).toBe(false);
+      expect(lider.turno).toBe("Espera el momento de evaluar la eficacia de las acciones: desde el 5 de febrero de 2027.");
+      expect((await del(b.control, LA_MINIMA))!.loQueSigue.turno).toBe("A usted le toca evaluar la eficacia.");
+      expect((await del(b.lider, LA_MINIMA))!.loQueSigue.turno).toBe("Tiene el turno: quien puede verificar, para evaluar la eficacia.");
+    }));
+});
+
+describe("la evaluación en lectura (spec §6.3)", () => {
+  it("lo congelado nombra el indicador solo a quien lo ve; a los demás, «un indicador», sin código ni cifras", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId, periodicidad: "mensual" });
+      const h = await enEspera(tx, b, { indicadorId: ind.id });
+      const JUSTIFICACION = "El indicador subió y se mantuvo en los dos periodos siguientes";
+      await evaluar(tx, b.control, h.id, CON_INDICADOR, { criterios: ["mejora_indicador"], hasta: "2027-02-28", justificacion: JUSTIFICACION });
+      const o = { sql: tx, ahora: new Date(CON_INDICADOR) };
+
+      const ve = (await leerHallazgo(b.lider, h.id, o))!;
+      const ev = ve.rondas[0].evaluacion!;
+      expect(ev).toMatchObject({ resultado: "eficaz", desde: "2026-12-05", hasta: "2027-02-28", justificacion: JUSTIFICACION });
+      expect(ev.visto!.indicador).toMatchObject({ visible: true, codigo: ind.codigo });
+      expect(ve.rondas[0].verificacion).toMatchObject({ metodos: ["evidencias"] });
+
+      // El indicador pasa a ser restringido de otro proceso: el líder ya no lo ve, ni en lo congelado ni en los enlaces.
+      const otro = await procesoNuevo(tx);
+      await tx`UPDATE indicadores SET nivel_acceso = 'restringido', proceso_id = ${otro} WHERE id = ${ind.id}`;
+      const yaNo = (await leerHallazgo(b.lider, h.id, o))!;
+      expect(yaNo.rondas[0].evaluacion!.visto!.indicador).toEqual({ visible: false });
+      expect(yaNo.enlaces).toContainEqual({ visible: false, clase: "indicador", rotulo: "Indicador de eficacia" });
+      expect(JSON.stringify(yaNo)).not.toContain(ind.codigo);
+      // Control Interno lo sigue viendo.
+      const control = (await leerHallazgo(b.control, h.id, o))!;
+      expect(control.rondas[0].evaluacion!.visto!.indicador).toMatchObject({ visible: true, codigo: ind.codigo });
     }));
 });

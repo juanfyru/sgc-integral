@@ -14,7 +14,8 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { enTransaccion } from "@/db/consultas/flujo/contrato";
 import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
-import { actuaPorElProceso, quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
+import { actuaPorElProceso, avisarDelTurno, quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
+import { leerHallazgo, listarHallazgos, NADIE_ARBITRA } from "@/db/consultas/mejoramiento/lectura";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
@@ -24,7 +25,7 @@ import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { indicadorDePrueba } from "./utiles/indicadores";
-import { baseDeMejora, c, datosDeHallazgo } from "./utiles/mejoramiento";
+import { baseDeMejora, c, datosDeHallazgo, hallazgoEn, otroProcesoConLider } from "./utiles/mejoramiento";
 import { medicionDe, procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
 
@@ -569,5 +570,97 @@ describe("legible", () => {
     const otro = Object.assign(new Error("violación de un CHECK"), { code: "23514" });
     await expect(legible(Promise.reject(otro))).rejects.toBe(otro);
     expect(await legible(Promise.resolve(7))).toBe(7);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El hallazgo derivado y lo que la página dice del turno (Tarea 17)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("el hallazgo derivado (spec §11.4)", () => {
+  it("de un hallazgo que quien registra no ve, o que no existe: «El hallazgo de origen no existe»", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const origen = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(AHORA, tx));
+      const otro = await otroProcesoConLider(tx);
+      await expect(
+        registrarHallazgo(otro.lider, datosDeHallazgo(otro.procesoId, { derivadoDe: origen.id }), c(AHORA, tx)),
+      ).rejects.toThrow(new ErrorMejora("El hallazgo de origen no existe"));
+      const [{ libre }] = await tx`SELECT coalesce(max(id), 0) + 1000 AS libre FROM mejora_hallazgos`;
+      await expect(
+        registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { derivadoDe: Number(libre) }), c(AHORA, tx)),
+      ).rejects.toThrow(new ErrorMejora("El hallazgo de origen no existe"));
+    });
+  });
+
+  it("con uno que ve, queda enlazado: el evento y la bitácora llevan el id, y cada página enlaza a la otra solo a quien la ve", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const TITULO = "Origen con un título que no debe viajar a la bitácora";
+      const origen = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { titulo: TITULO }), c(AHORA, tx));
+      const otro = await otroProcesoConLider(tx);
+      const derivado = await registrarHallazgo(b.control, datosDeHallazgo(otro.procesoId, { derivadoDe: origen.id }), c(AHORA, tx));
+
+      expect(Number((await hallazgo(tx, derivado.id)).derivado_de)).toBe(origen.id);
+      const [evento] = await eventos(tx, derivado.id);
+      expect(evento.detalle).toMatchObject({ derivadoDe: origen.id });
+      const [bitacora] = await tx`SELECT detalle FROM auditoria WHERE accion = 'mejora_registrar' AND entidad = 'mejora_hallazgo'
+        AND entidad_id = ${derivado.id}`;
+      expect(bitacora.detalle).toMatchObject({ derivadoDe: origen.id });
+      expect(JSON.stringify(bitacora.detalle)).not.toContain(TITULO);
+      expect(JSON.stringify(evento.detalle)).not.toContain(TITULO);
+
+      // Control Interno ve los dos: cada página enlaza a la otra.
+      const o = { sql: tx, ahora };
+      const enElDerivado = (await leerHallazgo(b.control, derivado.id, o))!.enlaces;
+      expect(enElDerivado).toContainEqual(
+        expect.objectContaining({ visible: true, clase: "hallazgo", rotulo: "Derivado de", codigo: origen.codigo, href: `/mejoramiento/${origen.id}` }),
+      );
+      const enElOrigen = (await leerHallazgo(b.control, origen.id, o))!.enlaces;
+      expect(enElOrigen).toContainEqual(
+        expect.objectContaining({ visible: true, clase: "hallazgo", rotulo: "Hallazgo derivado", codigo: derivado.codigo, href: `/mejoramiento/${derivado.id}` }),
+      );
+      // El líder del otro proceso ve el derivado, no el de origen; el líder del origen no ve el derivado: ni enlace ni código.
+      const delOtro = (await leerHallazgo(otro.lider, derivado.id, o))!;
+      expect(delOtro.enlaces.some((e) => e.clase === "hallazgo")).toBe(false);
+      expect(JSON.stringify(delOtro)).not.toContain(origen.codigo);
+      const delLider = (await leerHallazgo(b.lider, origen.id, o))!;
+      expect(delLider.enlaces.some((e) => e.clase === "hallazgo")).toBe(false);
+      expect(JSON.stringify(delLider)).not.toContain(derivado.codigo);
+    });
+  });
+});
+
+describe("lo que la página dice del turno (puntos de control)", () => {
+  it("f. un hallazgo de origen externo «Por aceptar»: el turno y su aviso dicen «aceptar el hallazgo», nunca «o rechazarlo»", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const { id, codigo } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(AHORA, tx));
+      // Un externo nace aceptado: así lo encuentra la lectura si de todos modos llega a «Por aceptar» (una carga, la demo).
+      await tx`UPDATE mejora_hallazgos SET origen = 'auditoria_externa' WHERE id = ${id}`;
+      const leido = await leerHallazgo(b.control, id, { sql: tx, ahora });
+      expect(leido!.loQueSigue.turno).toBe("Tiene el turno: la líder del proceso, para aceptar el hallazgo.");
+      const delLider = await leerHallazgo(b.lider, id, { sql: tx, ahora });
+      expect(delLider!.loQueSigue.turno).toBe("A usted le toca aceptar el hallazgo.");
+      await avisarDelTurno(tx, await bloquearHallazgo(tx, id), "Un título", null);
+      const [aviso] = await tx`SELECT titulo FROM notificaciones WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${id}
+        AND tipo = 'mejora.turno' ORDER BY id DESC LIMIT 1`;
+      expect(aviso.titulo).toBe(`Aceptar ${codigo}`);
+    });
+  });
+
+  it("h. sin nadie que pueda arbitrar, el turno y «Lo que sigue» lo dicen en vez de nombrar al Administrador del SGC", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "arbitraje");
+      // Lo registró y lo sostuvo Control Interno: arbitra el Admin SGC; sin ninguno activo, nadie puede.
+      await tx`UPDATE usuarios SET activo = false WHERE activo AND rol = 'admin_sgc'`;
+      const leido = await leerHallazgo(b.control, h.id, { sql: tx, ahora });
+      expect(leido!.turno).toBe("Nadie puede arbitrarlo");
+      expect(leido!.loQueSigue.turno).toBe(NADIE_ARBITRA);
+      expect(leido!.loQueSigue.turno).not.toContain("El Administrador del SGC");
+      const { filas } = await listarHallazgos(b.control, { procesoId: b.procesoId }, { sql: tx, ahora });
+      expect(filas.find((f) => f.id === h.id)?.turno).toBe("Nadie puede arbitrarlo");
+    });
   });
 });

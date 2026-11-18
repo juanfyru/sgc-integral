@@ -56,6 +56,18 @@ import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
+import { EnlacesDelHallazgo } from "@/componentes/mejoramiento/EnlacesDelHallazgo";
+import { FechasDelHallazgo } from "@/componentes/mejoramiento/FechasDelHallazgo";
+import { RondaAnterior } from "@/componentes/mejoramiento/RondaAnterior";
+import { SeccionCierre } from "@/componentes/mejoramiento/SeccionCierre";
+import { SeccionEficacia, SeccionVerificacion } from "@/componentes/mejoramiento/SeccionVerificacion";
+import { PasoCerrar } from "@/componentes/mejoramiento/pasos/PasoCerrar";
+import { PasoEvaluar } from "@/componentes/mejoramiento/pasos/PasoEvaluar";
+import { PasoVerificar } from "@/componentes/mejoramiento/pasos/PasoVerificar";
+import type { DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
+import type { DatosDeEvaluacion } from "@/db/consultas/mejoramiento/verificacion";
+import { etiquetasDeUsuarios } from "@/lib/mejoramiento/textos";
+import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 
 // La zona de carga de la evidencia (en la página de una actividad) pide el enrutador del cliente.
 vi.mock("next/navigation", async (importar) => ({
@@ -1551,5 +1563,422 @@ describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => 
     expect(html).toContain("Respondió la escalada de la actividad A2.1");
     expect(html).toContain("Nota: Se autoriza otro proveedor");
     expect(html).toContain(`Acta del Comité: 12-2026, del ${fechaDeDia("2026-11-18")}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verificar, evaluar y cerrar; las rondas anteriores, las fechas y los enlaces (Tarea 17, maquetas 2 y 7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("verificar la implementación, evaluar la eficacia y cerrar (maqueta 7)", () => {
+  const accion = vi.fn(async () => null);
+  const aviso = (html: string) => html.split(AVISO_SIN_PACIENTES).length - 1;
+  const actividades = [
+    { id: 31, etiqueta: "A1.1", descripcion: "Pedir el cambio documental", terminadaEn: "2026-11-19", evidencias: 1 },
+    { id: 32, etiqueta: "A1.2", descripcion: "Socializar la versión nueva", terminadaEn: "2026-12-04", evidencias: 2 },
+  ];
+
+  it("PasoVerificar: una fila por actividad con «Conforme» y «Devolver»; al devolver, la nota y la fecha; los cuatro métodos", () => {
+    const sinDecidir = renderToStaticMarkup(<PasoVerificar hallazgoId={14} actividades={actividades} hoy="2026-12-07" accion={accion} />);
+    for (const id of [31, 32]) {
+      expect(sinDecidir).toMatch(new RegExp(`<input[^>]*type="radio"[^>]*name="decision_${id}"[^>]*value="conforme"`));
+      expect(sinDecidir).toMatch(new RegExp(`<input[^>]*type="radio"[^>]*name="decision_${id}"[^>]*value="devuelta"`));
+      expect(sinDecidir).toMatch(new RegExp(`<input[^>]*type="hidden"[^>]*name="actividad"[^>]*value="${id}"`));
+    }
+    expect(sinDecidir).toContain("Conforme");
+    expect(sinDecidir).toContain("Devolver");
+    expect(sinDecidir).toContain("A1.1");
+    expect(sinDecidir).toContain("Pedir el cambio documental");
+    expect(sinDecidir).not.toContain('name="nota_31"');
+    expect(sinDecidir).not.toContain('name="corregir_32"');
+    const metodos = [...sinDecidir.matchAll(/<input[^>]*type="checkbox"[^>]*name="metodos"[^>]*value="([a-z]+)"/g)].map((m) => m[1]);
+    expect(metodos).toEqual(["evidencias", "observacion", "auditoria", "entrevista"]);
+    for (const m of ["Revisión de evidencias", "Observación en sitio", "Auditoría de seguimiento", "Entrevista"]) expect(sinDecidir).toContain(m);
+    // La nota general de la verificación lleva el aviso de pacientes.
+    expect(aviso(sinDecidir)).toBe(1);
+
+    const devuelta = renderToStaticMarkup(
+      <PasoVerificar hallazgoId={14} actividades={actividades} hoy="2026-12-07" accion={accion} inicial={{ 32: "devuelta" }} />,
+    );
+    expect(devuelta).toMatch(/<textarea(?=[^>]*name="nota_32")(?=[^>]*minLength="10")/);
+    expect(devuelta).toMatch(/<input(?=[^>]*type="date")(?=[^>]*name="corregir_32")(?=[^>]*min="2026-12-07")/);
+    expect(devuelta).not.toContain('name="nota_31"');
+    // Cada nota de una devuelta lleva su aviso, además del de la nota general.
+    expect(aviso(devuelta)).toBe(2);
+  });
+
+  const datos = (extra?: Partial<DatosDeEvaluacion>): DatosDeEvaluacion => ({
+    minima: "2027-03-01",
+    r: "2026-12-05",
+    yaSePuede: false,
+    criterios: ["mejora_indicador"],
+    indicador: {
+      codigo: "FAR-ID-002",
+      nombre: "Registros de temperatura completos",
+      filas: [
+        { periodo: "2026-10", etiqueta: "Octubre 2026", resultado: "93 %", semaforo: "atencion", noAplica: false, momento: "antes" },
+        { periodo: "2026-12", etiqueta: "Diciembre 2026", resultado: "97 %", semaforo: "atencion", noAplica: false, momento: "durante" },
+        { periodo: "2027-01", etiqueta: "Enero 2027", resultado: "100 %", semaforo: "bien", noAplica: false, momento: "despues" },
+        { periodo: "2027-02", etiqueta: "Febrero 2027", resultado: null, semaforo: null, noAplica: false, momento: "despues" },
+      ],
+    },
+    indicadorRetirado: false,
+    ocurrencias: [{ fecha: "2026-12-20", descripcion: "Un turno de diciembre quedó sin el registro" }],
+    ...extra,
+  });
+  const evaluar = (x?: { datos?: DatosDeEvaluacion; cierra?: boolean; derivar?: string | null }) =>
+    renderToStaticMarkup(
+      <PasoEvaluar
+        hallazgoId={14}
+        datos={x?.datos ?? datos()}
+        vistoHuella={"a".repeat(64)}
+        hoy="2026-12-28"
+        cierra={x?.cierra ?? false}
+        pideCambios={false}
+        pideCodigo={false}
+        accion={accion}
+        derivar={x && "derivar" in x ? (x.derivar ?? null) : "/mejoramiento/nuevo?derivado=14"}
+      />,
+    );
+
+  it("PasoEvaluar: antes de la fecha mínima «Eficaz» está deshabilitado y lo dice; «No eficaz» está disponible", () => {
+    const html = evaluar();
+    const eficaz = html.match(/<input[^>]*value="eficaz"[^>]*>/)![0];
+    const noEficaz = html.match(/<input[^>]*value="no_eficaz"[^>]*>/)![0];
+    expect(eficaz).toContain('disabled=""');
+    expect(noEficaz).not.toContain('disabled=""');
+    expect(html).toContain(`Se puede registrar desde el ${fechaLargaDeDia("2027-03-01")}`);
+    // Ninguno de los dos viene elegido.
+    expect(eficaz).not.toContain("checked");
+    expect(noEficaz).not.toContain("checked");
+    // Sin `opacity` para atenuar lo deshabilitado (F12-D41).
+    expect(html).not.toMatch(/opacity-/);
+    const ya = evaluar({ datos: datos({ yaSePuede: true }) });
+    expect(ya.match(/<input[^>]*value="eficaz"[^>]*>/)![0]).not.toContain('disabled=""');
+    expect(ya).not.toContain("Se puede registrar desde el");
+  });
+
+  it("PasoEvaluar: la tabla del indicador dice «antes», «durante» y «después» como texto; las ocurrencias piden confirmarlo; lleva el aviso", () => {
+    const html = evaluar();
+    expect(html).toContain("FAR-ID-002");
+    expect(html).toContain("Registros de temperatura completos");
+    expect(html).toMatch(/<td[^>]*>antes<\/td>/);
+    expect(html).toMatch(/<td[^>]*>durante<\/td>/);
+    expect(html).toMatch(/<td[^>]*>después<\/td>/);
+    expect(html).toContain("Atención");
+    expect(html).toContain("Sin dato");
+    expect(html).toContain("Un turno de diciembre quedó sin el registro");
+    expect(html).toMatch(/<input(?=[^>]*type="checkbox")(?=[^>]*id="confirma-ocurrencias-14")/);
+    expect(html).toContain("1 ocurrencia posterior");
+    expect(aviso(html)).toBeGreaterThanOrEqual(1);
+    expect(html).toContain('href="/mejoramiento/nuevo?derivado=14"');
+    expect(html).toContain("Registrar un hallazgo distinto");
+    // Sin ocurrencias posteriores, no hay nada que confirmar.
+    expect(evaluar({ datos: datos({ ocurrencias: [] }) })).not.toContain('id="confirma-ocurrencias-14"');
+    // Quien no ve el indicador lee «un indicador», sin código ni cifras.
+    const oculto = evaluar({ datos: datos({ indicador: { codigo: "", nombre: "un indicador", filas: [] } }) });
+    expect(oculto).toContain("un indicador");
+    expect(oculto).not.toContain("FAR-ID-002");
+    expect(oculto).not.toContain("<td");
+    // Sin `mejora.registrar`, no se ofrece registrar otro hallazgo.
+    expect(evaluar({ derivar: null })).not.toContain("Registrar un hallazgo distinto");
+  });
+
+  it("PasoEvaluar: para un Admin SGC pide además las lecciones aprendidas; para Control Interno, no", () => {
+    const admin = evaluar({ cierra: true });
+    expect(admin).toContain("Lecciones aprendidas");
+    expect(admin).toMatch(/<textarea[^>]*id="lecciones-14"/);
+    const control = evaluar({ cierra: false });
+    expect(control).not.toContain("Lecciones aprendidas");
+    expect(control).not.toMatch(/id="lecciones-14"/);
+  });
+
+  it("PasoCerrar: las lecciones con el aviso; si el análisis pidió cambios, cómo se atendieron; firma «Cerró»", () => {
+    const sin = renderToStaticMarkup(<PasoCerrar hallazgoId={14} cambios={null} pideCodigo={false} accion={accion} />);
+    expect(sin).toContain("Lecciones aprendidas");
+    expect(sin).not.toContain("Cómo se atendieron");
+    expect(aviso(sin)).toBe(1);
+    expect(sin).toContain("Cerrar el hallazgo");
+    const con = renderToStaticMarkup(<PasoCerrar hallazgoId={14} cambios="documentos, matriz de riesgos" pideCodigo={false} accion={accion} />);
+    expect(con).toContain("Cómo se atendieron los cambios");
+    expect(con).toContain("documentos, matriz de riesgos");
+    expect(aviso(con)).toBe(2);
+  });
+
+  const rondaNoEficaz = {
+    id: 5,
+    numero: 1,
+    estadoPlan: "aprobado",
+    fechaEvaluacion: null,
+    criterios: ["no_recurrencia"],
+    criterioOtro: null,
+    indicadorEficaciaId: null,
+    similares: false,
+    similaresDetalle: null,
+    cambios: { documentos: false, riesgos: false, controles: false, descripcion: null },
+    analisis: [],
+    causas: [{ id: 11, orden: 1, texto: "El procedimiento no asigna el registro al turno de noche", sinAccionPorque: null }],
+    acciones: [
+      {
+        id: 3, orden: 1, tipo: "correctiva", descripcion: "Actualizar el procedimiento de cadena de frío", recursos: null,
+        indicadorCumplimiento: null, meta: null, causaIds: [11], avance: 100,
+        actividades: [
+          { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: true,
+            inicio: "2026-11-14", finOriginal: "2026-11-20", fin: "2026-11-20", avance: 100, estado: "terminada", reprogramaciones: 0,
+            terminadaEn: new Date("2026-11-19T15:00:00Z"), verificacion: "conforme", verificacionNota: null, corregirAntesDe: null, seAbre: true,
+            gerenciaEn: null, evidencias: 1 },
+        ],
+      },
+    ],
+    ajustes: [],
+    resultado: "no_eficaz",
+    verificacion: { por: "Control Interno", en: new Date("2026-12-07T15:00:00Z"), metodos: ["evidencias", "observacion"], nota: null },
+    evaluacion: {
+      resultado: "no_eficaz",
+      por: "Control Interno",
+      en: new Date("2026-12-10T15:00:00Z"),
+      criterios: ["no_recurrencia"],
+      desde: "2026-12-05",
+      hasta: "2026-12-10",
+      justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre",
+      visto: { minima: "2027-02-05", r: "2026-12-05", indicador: null, ocurrencias: [{ fecha: "2026-12-09", descripcion: "Otro turno sin registro" }] },
+    },
+  } as unknown as RondaDeDetalle;
+
+  it("RondaAnterior: «Ronda 1 · no eficaz», plegada, con su causa, su plan y su evaluación en lectura", () => {
+    const html = renderToStaticMarkup(<RondaAnterior ronda={rondaNoEficaz} indicador={null} hoy="2026-12-28" zona="America/Bogota" />);
+    expect(html).toContain("Ronda 1 · no eficaz");
+    const primera = html.match(/<details[^>]*>/)![0];
+    expect(primera).not.toContain("open");
+    expect(html).not.toMatch(/<details[^>]*open/);
+    expect(html).toContain("3. Causa raíz");
+    expect(html).toContain("El procedimiento no asigna el registro al turno de noche");
+    expect(html).toContain("4. Plan de acción");
+    expect(html).toContain("Actualizar el procedimiento de cadena de frío");
+    expect(html).toContain("6. Verificación de eficacia");
+    expect(html).toContain("No eficaz");
+    expect(html).toContain("El hecho se repitió en el turno de noche del 9 de diciembre");
+    expect(html).toContain("Otro turno sin registro");
+    // Sin controles: lo de una ronda anterior es solo lectura.
+    expect(html).not.toMatch(/<(button|form|input|textarea|select)[\s>]/);
+  });
+
+  it("la verificación y la eficacia en lectura: métodos, la devuelta con su nota, «antes/durante/después» como texto y «un indicador»", () => {
+    const ronda = {
+      ...rondaNoEficaz,
+      acciones: [
+        {
+          ...rondaNoEficaz.acciones[0],
+          actividades: [
+            { ...rondaNoEficaz.acciones[0].actividades[0], verificacion: "devuelta", verificacionNota: "Faltan 2 auxiliares de noche", corregirAntesDe: "2026-12-12", estado: "en_proceso" },
+          ],
+        },
+      ],
+      verificacion: null,
+    } as unknown as RondaDeDetalle;
+    const verif = renderToStaticMarkup(<SeccionVerificacion ronda={ronda} abierta zona="America/Bogota" />);
+    expect(verif).toContain("5. Seguimiento y verificación");
+    expect(verif).toContain("Devuelta");
+    expect(verif).toContain("Faltan 2 auxiliares de noche");
+    expect(verif).toContain(fechaLargaDeDia("2026-12-12"));
+    const hecha = renderToStaticMarkup(<SeccionVerificacion ronda={rondaNoEficaz} abierta={false} zona="America/Bogota" />);
+    expect(hecha).toContain("Revisión de evidencias, observación en sitio");
+    expect(hecha).toContain("Control Interno");
+
+    const visto = (indicador: unknown) =>
+      renderToStaticMarkup(
+        <SeccionEficacia
+          evaluacion={{ ...(rondaNoEficaz.evaluacion as NonNullable<RondaDeDetalle["evaluacion"]>), visto: { minima: "2027-03-01", r: "2026-12-05", indicador, ocurrencias: [] } as never }}
+          evaluableDesde={null}
+          abierta
+          zona="America/Bogota"
+        />,
+      );
+    const conIndicador = visto({
+      visible: true,
+      codigo: "FAR-ID-002",
+      nombre: "Registros de temperatura completos",
+      filas: [{ periodo: "2026-11", etiqueta: "Noviembre 2026", resultado: "90 %", semaforo: "atencion", noAplica: false, momento: "antes" }],
+    });
+    expect(conIndicador).toMatch(/<td[^>]*>antes<\/td>/);
+    expect(conIndicador).toContain("FAR-ID-002");
+    const oculto = visto({ visible: false });
+    expect(oculto).toContain("un indicador");
+    expect(oculto).not.toContain("FAR-ID-002");
+    expect(oculto).not.toContain("<td");
+    // En espera, sin evaluar: dice desde cuándo.
+    const espera = renderToStaticMarkup(<SeccionEficacia evaluacion={null} evaluableDesde="2027-03-01" abierta zona="America/Bogota" />);
+    expect(espera).toContain(fechaLargaDeDia("2027-03-01"));
+  });
+
+  it("«7. Cierre»: el resultado, quién cerró, las lecciones y cómo se atendieron los cambios", () => {
+    const html = renderToStaticMarkup(
+      <SeccionCierre
+        estado="cerrado"
+        etiqueta="Cerrado · eficaz"
+        cierre={{
+          resultado: "eficaz",
+          cerradoEn: new Date("2027-03-02T15:00:00Z"),
+          cerradoPor: "Ana Admin",
+          lecciones: "Asignar el registro a cada turno evita perderlo",
+          cambiosAtendidos: null,
+          anuladoMotivo: null,
+        }}
+        validacion={null}
+        abierta
+        zona="America/Bogota"
+      />,
+    );
+    expect(html).toContain("7. Cierre");
+    expect(html).toContain("Cerrado · eficaz");
+    expect(html).toContain("Ana Admin");
+    expect(html).toContain("Asignar el registro a cada turno evita perderlo");
+  });
+
+  it("EnlacesDelHallazgo: un indicador que la persona no ve sale como «un indicador», sin código, sin nombre y sin enlace", () => {
+    const html = renderToStaticMarkup(
+      <EnlacesDelHallazgo
+        enlaces={[
+          { visible: true, clase: "hallazgo", rotulo: "Reincidencia de", codigo: "HZ-2025-031", nombre: "Planilla sin diligenciar", href: "/mejoramiento/3" },
+          { visible: true, clase: "documento", rotulo: "Documento", codigo: "FAR-PR-04", nombre: "Cadena de frío", href: "/documentos/FAR-PR-04" },
+          { visible: false, clase: "indicador", rotulo: "Indicador" },
+          { visible: false, clase: "documento", rotulo: "Requisito incumplido" },
+        ]}
+      />,
+    );
+    expect(html).toContain("Enlaces");
+    expect(html).toContain('href="/mejoramiento/3"');
+    expect(html).toContain("HZ-2025-031");
+    expect(html).toContain('href="/documentos/FAR-PR-04"');
+    expect(html).toContain("un indicador");
+    expect(html).toContain("un documento restringido");
+    expect(html.match(/<a[\s>]/g)).toHaveLength(2);
+    expect(renderToStaticMarkup(<EnlacesDelHallazgo enlaces={[]} />)).toBe("");
+  });
+
+  it("FechasDelHallazgo: plan formulado a tiempo o no, cierre previsto, desde cuándo se evalúa y las reprogramaciones", () => {
+    const fechas: DetalleDeHallazgo["fechas"] = {
+      planFormulado: { cuando: new Date("2026-11-10T15:00:00Z"), aTiempo: true },
+      cierrePrevisto: new Date("2027-03-08T15:00:00Z"),
+      evaluableDesde: "2027-03-01",
+      reprogramaciones: { aprobadas: 0, pedidas: 1 },
+    };
+    const html = renderToStaticMarkup(<FechasDelHallazgo fechas={fechas} zona="America/Bogota" />);
+    expect(html).toContain("Plan formulado");
+    expect(html).toContain("a tiempo");
+    expect(html).toContain("Cierre previsto");
+    expect(html).toContain(fechaLargaDeDia("2027-03-01"));
+    expect(html).toContain("0 aprobadas · 1 pedida");
+    const tarde = renderToStaticMarkup(
+      <FechasDelHallazgo fechas={{ ...fechas, planFormulado: { cuando: new Date("2026-11-30T15:00:00Z"), aTiempo: false } }} zona="America/Bogota" />,
+    );
+    expect(tarde).toContain("fuera de plazo");
+  });
+});
+
+describe("los retoques de la página del hallazgo (puntos de control)", () => {
+  const accion = vi.fn(async () => null);
+  const h = (estado: HallazgoBase["estado"]) => ({ estado, resultadoCierre: null, correccionRequerida: null });
+
+  it("a. el turno nombra los roles con su mayúscula y su artículo", () => {
+    expect(fraseDeLoQueSigue(h("por_decidir"), "Administrador del SGC", false)).toBe(
+      "Tiene el turno: el Administrador del SGC, para decidir si lleva acción correctiva.",
+    );
+    expect(fraseDeLoQueSigue(h("en_aprobacion"), "Gerencia", false)).toBe("Tiene el turno: Gerencia, para aprobar el plan.");
+    expect(fraseDeLoQueSigue(h("por_aceptar"), "La líder del proceso", false)).toBe(
+      "Tiene el turno: la líder del proceso, para aceptar el hallazgo o rechazarlo.",
+    );
+    expect(fraseDeLoQueSigue(h("por_verificar"), "Quien puede verificar", false)).toBe(
+      "Tiene el turno: quien puede verificar, para verificar la implementación.",
+    );
+  });
+
+  it("b. el recorrido no parte una palabra: las etiquetas cortan entre palabras y la lista pasa a otra fila", () => {
+    const html = renderToStaticMarkup(<Recorrido pasos={pasosDelRecorrido(base({}))} />);
+    expect(html).not.toMatch(/break-words|break-all|\[overflow-wrap:anywhere\]/);
+    expect(html.match(/<ol[^>]*>/)![0]).toContain("flex-wrap");
+    // Ninguna columna fija que obligue a encoger una palabra por debajo de su ancho.
+    expect(html).not.toMatch(/grid-cols-10/);
+  });
+
+  it("c. «2. Corrección» sin registrar no repite «Aún no se registra la corrección»", () => {
+    const html = renderToStaticMarkup(
+      <SeccionCorreccion
+        correccion={{ requerida: null, descripcion: null, responsable: null, implementadaEn: null, registradaEn: null, validadaPor: null, validadaEn: null }}
+        decision={{ accionRequerida: null, justificacion: null, decididaEn: null }}
+        zona="America/Bogota"
+        abierta
+        archivos={0}
+      />,
+    );
+    expect(html.split("Aún no se registra la corrección").length - 1).toBe(1);
+  });
+
+  it("d. sin nadie que revise el plan enviado, las firmas lo dicen en lugar de «Administrador del SGC»", () => {
+    const html = renderToStaticMarkup(
+      <PanelDeFirmas
+        firmas={{ elaboro: { nombre: "Ana", cargo: null, cuando: new Date("2026-11-10T15:00:00Z") }, reviso: null, aprobo: null }}
+        elabora="Quien formula"
+        sinRevision={false}
+        nadieRevisa
+        gerencia={null}
+        enCurso="reviso"
+        vence={null}
+        plazos={{ revisar: 3, aprobar: 3 }}
+        contexto={CONTEXTO}
+      />,
+    );
+    expect(html).toContain("Nadie puede revisarlo: lo devuelve quien lo elaboró");
+    expect(html).not.toContain("Administrador del SGC · 3 días hábiles");
+  });
+
+  it("e. «4. Plan de acción» muestra «—» como avance antes de aprobarse el plan", () => {
+    const ronda = {
+      id: 1, numero: 1, estadoPlan: "enviado", fechaEvaluacion: null, criterios: [], criterioOtro: null, indicadorEficaciaId: null,
+      causas: [],
+      acciones: [
+        {
+          id: 3, orden: 1, tipo: "correctiva", descripcion: "Actualizar el procedimiento", recursos: null, indicadorCumplimiento: null,
+          meta: null, causaIds: [], avance: null,
+          actividades: [
+            { id: 21, orden: 1, descripcion: "Pedir el cambio documental", responsableId: 7, responsable: "L. Rojas", responsableActivo: true,
+              inicio: "2026-11-14", finOriginal: null, fin: "2026-11-20", avance: 0, estado: "abierta", reprogramaciones: 0 },
+          ],
+        },
+      ],
+      ajustes: [],
+    } as unknown as RondaDeDetalle;
+    const html = renderToStaticMarkup(<PlanEnLectura ronda={ronda} abierta hoy="2026-11-18" indicador={null} />);
+    expect(html).toContain("—");
+    expect(html).not.toContain("0 %");
+  });
+
+  it("g. el selector de responsables distingue a dos homónimos con su usuario", () => {
+    const etiquetas = etiquetasDeUsuarios([
+      { id: 1, nombre: "Laura Rojas", cargo: "Auxiliar de farmacia", usuario: "lrojas" },
+      { id: 2, nombre: "Laura Rojas", cargo: "Auxiliar de farmacia", usuario: "lrojas2" },
+      { id: 3, nombre: "Laura Rojas", cargo: "Regente", usuario: "laurar" },
+      { id: 4, nombre: "Juan Perdomo", cargo: null, usuario: "jperdomo" },
+    ]);
+    expect(etiquetas.get(1)).toBe("Laura Rojas · Auxiliar de farmacia (lrojas)");
+    expect(etiquetas.get(2)).toBe("Laura Rojas · Auxiliar de farmacia (lrojas2)");
+    expect(etiquetas.get(3)).toBe("Laura Rojas · Regente");
+    expect(etiquetas.get(4)).toBe("Juan Perdomo");
+    const html = renderToStaticMarkup(
+      <FormularioPlan
+        hallazgoId={1}
+        tipoPropuesto="correctiva"
+        acciones={[]}
+        causas={[]}
+        usuarios={[
+          { id: 1, nombre: "Laura Rojas", cargo: "Auxiliar de farmacia", etiqueta: "Laura Rojas · Auxiliar de farmacia (lrojas)" },
+          { id: 2, nombre: "Laura Rojas", cargo: "Auxiliar de farmacia", etiqueta: "Laura Rojas · Auxiliar de farmacia (lrojas2)" },
+        ]}
+        guardar={accion}
+        quitar={accion}
+      />,
+    );
+    expect(html).toContain("Laura Rojas · Auxiliar de farmacia (lrojas)");
+    expect(html).toContain("Laura Rojas · Auxiliar de farmacia (lrojas2)");
   });
 });

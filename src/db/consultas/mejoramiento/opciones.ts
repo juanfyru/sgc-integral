@@ -3,6 +3,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
 import { alcanceProcesos, filtroAcceso } from "@/lib/alcance";
+import { etiquetasDeUsuarios } from "@/lib/mejoramiento/textos";
 
 /** Los procesos activos que la persona alcanza: el líder, solo los suyos; Admin SGC y Control Interno, todos (`alcanceProcesos`). */
 export async function procesosDelAlcance(sesion: SesionFlujo, opciones?: { sql?: Cliente }): Promise<Array<{ id: number; nombre: string }>> {
@@ -51,9 +52,19 @@ export async function cerradosDelProceso(
   return filas.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string }));
 }
 
-/** Los usuarios activos, para elegir el responsable de una corrección (spec 15 §8.4). */
-export async function usuariosActivos(opciones?: { sql?: Cliente }): Promise<Array<{ id: number; nombre: string }>> {
+/** Un usuario activo para un selector, con su cargo y el texto que lo distingue de un homónimo (`etiquetasDeUsuarios`). */
+export type UsuarioElegible = { id: number; nombre: string; cargo: string | null; etiqueta: string };
+
+/**
+ * Los usuarios activos con su cargo, para elegir un responsable (la corrección, una actividad, un ajuste o una reasignación). El
+ * usuario de ingreso no sale de aquí: solo va dentro de la etiqueta de dos que se ven igual.
+ */
+export async function usuariosActivos(opciones?: { sql?: Cliente }): Promise<UsuarioElegible[]> {
   const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT id, nombre FROM usuarios WHERE activo ORDER BY nombre, id`;
-  return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string }));
+  const filas = await sql`SELECT u.id, u.nombre, u.usuario, c.nombre AS cargo
+    FROM usuarios u LEFT JOIN cargos c ON c.id = u.cargo_id
+    WHERE u.activo ORDER BY u.nombre, u.id`;
+  const usuarios = filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, cargo: (f.cargo as string | null) ?? null, usuario: f.usuario as string }));
+  const etiquetas = etiquetasDeUsuarios(usuarios);
+  return usuarios.map((u) => ({ id: u.id, nombre: u.nombre, cargo: u.cargo, etiqueta: etiquetas.get(u.id) ?? u.nombre }));
 }

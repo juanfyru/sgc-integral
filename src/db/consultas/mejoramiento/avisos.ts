@@ -9,6 +9,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
 import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
 import { turnoDe, type Turno } from "@/lib/mejoramiento/estados";
+import { esExterno } from "@/lib/mejoramiento/origenes";
 import type { EstadoHallazgo, HallazgoBase } from "@/lib/mejoramiento/tipos";
 import type { Rol } from "@/lib/roles";
 
@@ -170,8 +171,10 @@ export async function avisarDelTurno(
   const texto = LO_QUE_SIGUE[h.estado];
   if (!texto) return [];
   const destinos = (await quienTieneElTurno(tx, h)).filter((u) => u !== actorId);
-  // Sin líder, lo acepta el Admin SGC, que no rechaza (un rechazo solo existe con líder, `puedeRechazar`): «Aceptar».
-  const sinRechazo = h.estado === "por_aceptar" && (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0;
+  // Sin líder, lo acepta el Admin SGC, que no rechaza (un rechazo solo existe con líder, `puedeRechazar`); un externo no se
+  // rechaza, se responde (spec §7.4): «Aceptar».
+  const sinRechazo =
+    h.estado === "por_aceptar" && (esExterno(h.origen) || (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0);
   await avisarDeMejora(
     tx,
     { tipo: "mejora.turno", titulo: sinRechazo ? `Aceptar ${h.codigo}` : texto(h.codigo, h), hallazgoId: h.id },

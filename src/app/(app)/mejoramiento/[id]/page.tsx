@@ -5,6 +5,7 @@ import {
   anularHallazgoAccion,
   aprobarPlanAccion,
   arbitrarHallazgoAccion,
+  cerrarHallazgoAccion,
   arbitrarHallazgoGerenciaAccion,
   cambiarProcesoAccion,
   decidirAccionCorrectivaAccion,
@@ -15,6 +16,7 @@ import {
   devolverPlanAccion,
   devolverPlanGerenciaAccion,
   escalarAGerenciaAccion,
+  evaluarEficaciaAccion,
   firmarRevisionAccion,
   pedirAjusteAccion,
   reasignarActividadAccion,
@@ -26,6 +28,7 @@ import {
   retirarHallazgoAccion,
   sostenerHallazgoAccion,
   validarCorreccionAccion,
+  verificarImplementacionAccion,
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
@@ -43,7 +46,15 @@ import { PlanEnLectura, type IndicadorEnLectura } from "@/componentes/mejoramien
 import { DialogoCambiarProceso } from "@/componentes/mejoramiento/DialogoCambiarProceso";
 import { DialogoAnular } from "@/componentes/mejoramiento/DialogoAnular";
 import { DialogoReclasificar } from "@/componentes/mejoramiento/DialogoReclasificar";
+import { EnlacesDelHallazgo } from "@/componentes/mejoramiento/EnlacesDelHallazgo";
+import { FechasDelHallazgo } from "@/componentes/mejoramiento/FechasDelHallazgo";
 import { Ocurrencias } from "@/componentes/mejoramiento/Ocurrencias";
+import { RondaAnterior } from "@/componentes/mejoramiento/RondaAnterior";
+import { SeccionCierre } from "@/componentes/mejoramiento/SeccionCierre";
+import { SeccionEficacia, SeccionVerificacion } from "@/componentes/mejoramiento/SeccionVerificacion";
+import { PasoCerrar } from "@/componentes/mejoramiento/pasos/PasoCerrar";
+import { PasoEvaluar } from "@/componentes/mejoramiento/pasos/PasoEvaluar";
+import { PasoVerificar } from "@/componentes/mejoramiento/pasos/PasoVerificar";
 import { PasoAceptar } from "@/componentes/mejoramiento/pasos/PasoAceptar";
 import { PasoArbitrar } from "@/componentes/mejoramiento/pasos/PasoArbitrar";
 import { PasoCorregir } from "@/componentes/mejoramiento/pasos/PasoCorregir";
@@ -64,6 +75,7 @@ import { pideAjustesDelPlan, puedeReasignar } from "@/db/consultas/mejoramiento/
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { firmasDeHallazgo, puedeAprobar, puedeDevolverSinRevisor, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
+import { revisoresDe } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
 import type { ActividadDeDetalle, DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
@@ -77,13 +89,15 @@ import {
 import { parecidosDeOtrosProcesos } from "@/db/consultas/mejoramiento/parecidos";
 import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
+import { datosDeEvaluacion, huellaDeLoVisto } from "@/db/consultas/mejoramiento/verificacion";
 import { puedeVerIndicador } from "@/lib/alcance";
+import { leerCambios } from "@/lib/mejoramiento/analisis";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
 import { fechaDelAjustePasada, razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import { rutaDeFormular } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
-import { estaAbierta, SE_AJUSTA_EN, TERMINALES } from "@/lib/mejoramiento/tipos";
+import { ErrorMejora, estaAbierta, SE_AJUSTA_EN, TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
 import { exigirSesion } from "@/lib/paginas";
 import type { SesionValida } from "@/lib/sesion";
@@ -100,14 +114,20 @@ const ESPERA_ACEPTACION = new Set(["por_aceptar", "rechazo", "arbitraje"]);
 /** Estados en que la corrección (y su decisión) es la etapa en curso: «2. Corrección» queda abierta. */
 const EN_LA_CORRECCION = new Set(["por_corregir", "por_decidir", "por_validar"]);
 
-/** Los pasos del recorrido con la fecha de lo ya ocurrido que el historial permite decir. */
+/**
+ * Los pasos del recorrido con la fecha de lo ya ocurrido que el historial permite decir; en la espera de eficacia, desde cuándo se
+ * puede registrar «eficaz» (maqueta 2: «Eficacia · desde el 1 mar»).
+ */
 function pasosConFechas(h: DetalleDeHallazgo, zona: string): PasoDeRecorrido[] {
   const cuando = (tipo: string) => h.eventos.find((e) => e.tipo === tipo)?.cuando;
+  const enCurso = h.rondas.find((r) => r.numero === h.ronda);
   const fechas: Record<string, Date | undefined> = {
     registro: h.registradoEn,
     aceptado: cuando("aceptar") ?? cuando("confirmar_hallazgo"),
     correccion: h.correccion.registradaEn ?? undefined,
     decision: h.decision.decididaEn ?? undefined,
+    verificacion: enCurso?.verificacion?.en,
+    eficacia: enCurso?.evaluacion?.en,
     cierre: h.cierre.cerradoEn ?? undefined,
   };
   return pasosDelRecorrido({
@@ -126,6 +146,7 @@ function pasosConFechas(h: DetalleDeHallazgo, zona: string): PasoDeRecorrido[] {
     registradoPor: 0,
   }).map((p) => {
     const f = fechas[p.clave];
+    if (p.clave === "eficacia" && p.estado === "actual" && h.fechas.evaluableDesde) return { ...p, nota: `desde el ${fechaDeDia(h.fechas.evaluableDesde)}` };
     return p.estado === "hecho" && f ? { ...p, nota: diaCorto(f, zona) } : p;
   });
 }
@@ -142,6 +163,18 @@ function textoDelEvento(e: DetalleDeHallazgo["eventos"][number] | undefined, cla
 const EN_EL_PLAN = new Set(["por_formular", "en_revision", "en_aprobacion", "en_ejecucion"]);
 /** Estados con el plan de la ronda en curso sin aprobar: la sección dice desde cuándo se podría evaluar con sus fechas. */
 const PLAN_SIN_APROBAR = new Set(["por_formular", "en_revision", "en_aprobacion"]);
+/** Desde el plan aprobado: «5. Seguimiento y verificación» aparece; abierta mientras se verifica. */
+const CON_SEGUIMIENTO = new Set(["en_ejecucion", "por_verificar", "en_espera", "por_cerrar", "cerrado"]);
+/** «7. Cierre» aparece por cerrar y en un hallazgo cerrado o anulado. */
+const CON_CIERRE = new Set(["por_cerrar", "cerrado", "anulado"]);
+
+/** Los cambios que pidió la segunda pregunta del análisis, en palabras («documentos, matriz de riesgos»), o nulo. */
+function cambiosPedidos(cambios: unknown): string | null {
+  const c = leerCambios(cambios);
+  if (!c) return null;
+  const cuales = [c.documentos ? "documentos" : null, c.riesgos ? "matriz de riesgos" : null, c.controles ? "controles" : null].filter(Boolean);
+  return cuales.length > 0 ? cuales.join(", ") : null;
+}
 
 /** El indicador enlazado al criterio de la ronda, nombrado solo a quien lo ve (spec §11.2); a los demás, «un indicador». */
 async function indicadorParaQuienLee(r: RondaDeDetalle, sesion: SesionValida): Promise<IndicadorEnLectura> {
@@ -156,9 +189,12 @@ async function indicadorParaQuienLee(r: RondaDeDetalle, sesion: SesionValida): P
 const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((e) => tipos.includes(e.tipo));
 
 /**
- * La página de un hallazgo (spec 15 §16.2, maqueta 2): el recorrido, la identificación, la corrección, lo que sigue (con el
- * formulario del paso a quien puede darlo) y el historial. Las demás secciones (causa raíz, plan, ejecución, verificación,
- * eficacia y cierre) las añaden las tareas 11 a 17. Quien no lo ve recibe «no encontrado». Quien lo ve solo por una
+ * La página de un hallazgo (spec 15 §16.2, maqueta 2): el recorrido arriba y, debajo, una sección por etapa en el orden del
+ * SGC-FO-AC-01 (1. Identificación, 2. Corrección, 3. Causa raíz, 4. Plan de acción, 5. Seguimiento y verificación, 6. Verificación
+ * de eficacia y 7. Cierre): las hechas, plegadas con su resumen de una línea; la actual, abierta; las que faltan no aparecen. Las
+ * rondas anteriores, plegadas («Ronda 1 · no eficaz»). A la derecha, «Lo que sigue» (con el formulario del paso a quien puede
+ * darlo: también verificar, evaluar la eficacia y cerrar), las firmas del plan, las fechas, los enlaces, las ocurrencias y el
+ * historial. Quien no lo ve recibe «no encontrado». Quien lo ve solo por una
  * actividad (`ve: "actividad"`) no recibe el historial ni los archivos. Cada actividad enlaza a su página para quien la abre.
  * Con el plan aprobado, «Ajustes del plan» lista los ajustes de cada ronda (spec §10.6) y ofrece «Pedir un ajuste» (añadir o
  * cancelar) a un líder del proceso o al Admin SGC; quien decide un ajuste lo hace en «Lo que sigue»; el Admin SGC escala a
@@ -167,9 +203,11 @@ const ultimoDe = (h: DetalleDeHallazgo, tipos: string[]) => h.eventos.findLast((
 export default async function PaginaHallazgo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
   const { id } = await params;
-  const h = await exigirHallazgo(sesion, id);
+  // Una sola hora para toda la página: la etiqueta, «Lo que sigue» y lo que se muestra para evaluar se calculan con ella.
+  const ahora = new Date();
+  const h = await exigirHallazgo(sesion, id, { ahora });
   const zona = zonaHoraria();
-  const hoy = fechaEnZona(new Date(), zona);
+  const hoy = fechaEnZona(ahora, zona);
   const completo = h.ve === "completo";
   const terminado = TERMINALES.includes(h.estado);
   const gestiona = completo && !terminado && puede(sesion, "mejora.gestionar");
@@ -231,12 +269,14 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
   const firmas = enviado ? await firmasDeHallazgo(sqlPlan, h.id) : [];
   const envio = rondaEnCurso && enviado ? firmasDelEnvio(firmas, h.ronda, rondaEnCurso.estadoPlan) : null;
   const huellaDelEnvio = firmas.findLast((f) => f.ronda === h.ronda && f.firma === "elaboro")?.huella ?? null;
-  const contextoDelPlan = envio?.elaboro ? await contextoDeMejora(sqlPlan, new Date()) : null;
+  const contextoDelPlan = envio?.elaboro ? await contextoDeMejora(sqlPlan, ahora) : null;
   const elaboroAdmin = rondaEnCurso?.elaboroAdmin ?? false;
   const revisa = completo && h.estado === "en_revision" && huellaDelEnvio !== null && (await puedeRevisar(sqlPlan, sesion, h));
   const aprueba = completo && h.estado === "en_aprobacion" && huellaDelEnvio !== null && puedeAprobar(sesion);
   // Sin nadie que lo revise, quien lo elaboró lo devuelve para reenviarlo directo a Gerencia (F15-DC15).
   const devuelveSinRevisor = completo && h.estado === "en_revision" && !revisa && (await puedeDevolverSinRevisor(sqlPlan, sesion, h));
+  // Sin nadie activo que revise lo enviado, la firma «Revisó» lo dice en lugar de nombrar al Administrador del SGC.
+  const nadieRevisa = h.estado === "en_revision" && (await revisoresDe(sqlPlan, { id: h.id, ronda: h.ronda })).length === 0;
   // Los parecidos de otros procesos, solo al Administrador del SGC que revisa (spec §8.6): la consulta no recibe sesión.
   const parecidosDeOtros = revisa ? await parecidosDeOtrosProcesos(sqlPlan, h.id) : [];
   const anteriorAlRevisar = revisa && h.reincidenteDe && "id" in h.reincidenteDe ? await laVezPasada(sqlPlan, h.id) : null;
@@ -332,6 +372,52 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
     return controles.length > 0 ? <div className="flex flex-wrap justify-end gap-2">{controles}</div> : null;
   };
 
+  // Verificar, evaluar y cerrar (spec §11.4 y §11.5): el formulario a quien puede dar el paso (`loQueSigue`, con `puedeVerificar`);
+  // los archivos de la verificación y de la evaluación son de la ronda (rol `verificacion`).
+  const duenoDeLaRonda = rondaEnCurso ? ({ contexto: "mejora_ronda", contextoId: rondaEnCurso.id } as const) : null;
+  const deVerificacion =
+    completo && duenoDeLaRonda ? (await archivosDe(sqlArchivos, sesion, duenoDeLaRonda)).filter((a) => a.rol === "verificacion") : [];
+  const subeVerificacion =
+    completo &&
+    rondaEnCurso !== null &&
+    (h.estado === "por_verificar" || h.estado === "en_espera") &&
+    (await autorizarSubida(sesion, { contexto: "mejora_ronda", id: rondaEnCurso.id, rol: "verificacion" })).ok;
+  const quitablesDeVerificacion = duenoDeLaRonda && subeVerificacion ? await archivosQuitables(sqlArchivos, sesion, deVerificacion, duenoDeLaRonda) : [];
+  const archivosDeVerificacion =
+    rondaEnCurso && subeVerificacion ? (
+      <ArchivosDe
+        archivos={deVerificacion}
+        quitables={quitablesDeVerificacion}
+        direccionDeSubida={`/api/mejoramiento/rondas/${rondaEnCurso.id}/archivos?rol=verificacion`}
+        nombre="Zona de carga de la evidencia de la verificación"
+        vacio="Sin archivos de la verificación."
+      />
+    ) : null;
+  const verifica = completo && sigue.paso === "verificar" && sigue.puede && rondaEnCurso !== null;
+  const porVerificar = verifica
+    ? rondaEnCurso.acciones.flatMap((a) =>
+        a.actividades
+          .filter((x) => x.finOriginal !== null && x.estado === "terminada")
+          .map((x) => ({
+            id: x.id,
+            etiqueta: `A${a.orden}.${x.orden}`,
+            descripcion: x.descripcion,
+            terminadaEn: x.terminadaEn ? fechaEnZona(x.terminadaEn, zona) : null,
+            evidencias: x.evidencias,
+          })),
+      )
+    : [];
+  const evalua = completo && sigue.paso === "evaluar" && sigue.puede;
+  // Lo que se muestra para evaluar, y su huella, de exactamente lo que se pinta: se firma lo que se vio.
+  // Si el hallazgo cambió entre la lectura y aquí (otra persona evaluó a la vez), no hay formulario: la página ya no lo ofrece.
+  const datosEval = evalua
+    ? await datosDeEvaluacion(sesion, h.id, { ahora }).catch((err: unknown) => {
+        if (err instanceof ErrorMejora) return null;
+        throw err;
+      })
+    : null;
+  const cierra = completo && sigue.paso === "cerrar" && sigue.puede;
+
   const formulario = formulaAqui ? (
     <Link href={rutaDeFormular(h.id)} className={claseBoton("primario")}>
       Formular el análisis y el plan
@@ -367,6 +453,33 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
       pideCodigo={sesion.totpActivo}
       aprobar={aprobarPlanAccion}
       devolver={devolverPlanGerenciaAccion}
+    />
+  ) : verifica ? (
+    <PasoVerificar key={`paso-${clave}`} hallazgoId={h.id} actividades={porVerificar} hoy={hoy} accion={verificarImplementacionAccion}>
+      {archivosDeVerificacion}
+    </PasoVerificar>
+  ) : datosEval ? (
+    <PasoEvaluar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      datos={datosEval}
+      vistoHuella={huellaDeLoVisto(datosEval)}
+      hoy={hoy}
+      cierra={puede(sesion, "mejora.gestionar")}
+      pideCambios={cambiosPedidos(rondaEnCurso?.cambios) !== null}
+      pideCodigo={sesion.totpActivo}
+      accion={evaluarEficaciaAccion}
+      derivar={puede(sesion, "mejora.registrar") ? `/mejoramiento/nuevo?derivado=${h.id}` : null}
+    >
+      {archivosDeVerificacion}
+    </PasoEvaluar>
+  ) : cierra ? (
+    <PasoCerrar
+      key={`paso-${clave}`}
+      hallazgoId={h.id}
+      cambios={cambiosPedidos(rondaEnCurso?.cambios)}
+      pideCodigo={sesion.totpActivo}
+      accion={cerrarHallazgoAccion}
     />
   ) : !conFormulario ? null : sigue.paso === "aceptar" ? (
     <PasoAceptar
@@ -461,83 +574,121 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
             </SeccionCorreccion>
           ) : null}
           {await Promise.all(
-            h.rondas.map(async (r) => {
-              const enCurso = r.numero === h.ronda;
-              // La causa raíz y el plan se leen en texto también por quien solo es responsable de una actividad (spec §6.3).
-              const secciones = seccionesDeLaRonda(h, r);
-              const conAnalisis = secciones.causaRaiz;
-              const conPlan = secciones.plan;
-              // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí; solo quien ve completo.
-              const adjuntos = secciones.adjuntos
+            h.rondasAnteriores.map(async (r) => {
+              const adjuntos = seccionesDeLaRonda(h, r).adjuntos
                 ? (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis")
                 : [];
-              const evaluableDesde =
-                conPlan && enCurso && r.estadoPlan !== "aprobado" && PLAN_SIN_APROBAR.has(h.estado)
-                  ? (await examinarPlan(sqlArchivos, h.id, await contextoDeMejora(sqlArchivos, new Date()))).evaluableDesde
-                  : null;
               return (
-                <div key={`ronda-${r.id}`} className="contents">
-                  {conAnalisis ? (
-                    <AnalisisEnLectura
-                      ronda={r}
-                      titulo={enCurso ? "3. Causa raíz" : `3. Causa raíz (ronda ${r.numero})`}
-                      abierta={enCurso && h.estado === "por_formular"}
-                    >
-                      {adjuntos.length > 0 ? (
-                        <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
-                          <h3 className="text-sm font-semibold">Adjuntos del análisis</h3>
-                          <ArchivosDe archivos={adjuntos} nombre="Adjuntos del análisis" />
-                        </div>
-                      ) : null}
-                    </AnalisisEnLectura>
-                  ) : null}
-                  {conPlan ? (
-                    <PlanEnLectura
-                      ronda={r}
-                      titulo={enCurso ? "4. Plan de acción" : `4. Plan de acción (ronda ${r.numero})`}
-                      abierta={enCurso && EN_EL_PLAN.has(h.estado)}
-                      indicador={await indicadorParaQuienLee(r, sesion)}
-                      evaluableDesde={evaluableDesde}
-                      hoy={hoy}
-                      deActividad={enCurso ? deActividad : undefined}
-                    />
-                  ) : null}
-                  {conPlan && r.estadoPlan === "aprobado" && (r.ajustes.length > 0 || (enCurso && pideAjustes)) ? (
+                <RondaAnterior
+                  key={`ronda-${r.id}`}
+                  ronda={r}
+                  indicador={await indicadorParaQuienLee(r, sesion)}
+                  hoy={hoy}
+                  zona={zona}
+                  adjuntos={adjuntos.length > 0 ? <ArchivosDe archivos={adjuntos} nombre={`Adjuntos del análisis de la ronda ${r.numero}`} /> : null}
+                >
+                  {r.ajustes.length > 0 ? (
                     <AjustesDelPlan
                       ajustes={r.ajustes}
                       etiquetas={etiquetas}
                       acciones={etiquetasDeAccion}
                       causas={numerosDeCausa(r)}
                       zona={zona}
-                      titulo={enCurso ? "Ajustes del plan" : `Ajustes del plan (ronda ${r.numero})`}
-                    >
-                      {enCurso && pideAjustes ? (
-                        <DialogoAjusteDelPlan
-                          key={`ajuste-plan-${r.ajustes.length}`}
-                          hallazgoId={h.id}
-                          actividades={cancelables}
-                          acciones={r.acciones.map((a) => ({ id: a.id, etiqueta: `A${a.orden}`, descripcion: a.descripcion }))}
-                          causas={r.causas.map((c) => ({ id: c.id, orden: c.orden, texto: c.texto }))}
-                          tipoPropuesto={tipoPropuesto(h.clase)}
-                          usuarios={usuariosParaAjustes}
-                          hoy={hoy}
-                          accion={pedirAjusteAccion}
-                        />
-                      ) : null}
-                    </AjustesDelPlan>
+                      titulo={`Ajustes del plan (ronda ${r.numero})`}
+                    />
                   ) : null}
-                </div>
+                </RondaAnterior>
               );
             }),
           )}
-          {completo ? (
-            <Ocurrencias
-              key={`ocurrencias-${h.ocurrencias.length}`}
-              hallazgoId={h.id}
-              ocurrencias={h.ocurrencias}
-              puedeAnadir={!terminado && puede(sesion, "mejora.registrar")}
-              hoy={hoy}
-              accion={registrarOcurrenciaAccion}
+          {rondaEnCurso
+            ? await (async (r: RondaDeDetalle) => {
+                // La causa raíz y el plan se leen en texto también por quien solo es responsable de una actividad (spec §6.3).
+                const secciones = seccionesDeLaRonda(h, r);
+                const conAnalisis = secciones.causaRaiz;
+                const conPlan = secciones.plan;
+                // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí; solo quien ve completo.
+                const adjuntos = secciones.adjuntos
+                  ? (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis")
+                  : [];
+                const evaluableDesde =
+                  conPlan && r.estadoPlan !== "aprobado" && PLAN_SIN_APROBAR.has(h.estado)
+                    ? (await examinarPlan(sqlArchivos, h.id, await contextoDeMejora(sqlArchivos, ahora))).evaluableDesde
+                    : null;
+                const conSeguimiento = r.estadoPlan === "aprobado" && (CON_SEGUIMIENTO.has(h.estado) || r.verificacion !== null);
+                const conEficacia = h.estado === "en_espera" || r.evaluacion !== null;
+                return (
+                  <>
+                    {conAnalisis ? (
+                      <AnalisisEnLectura ronda={r} titulo="3. Causa raíz" abierta={h.estado === "por_formular"}>
+                        {adjuntos.length > 0 ? (
+                          <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
+                            <h3 className="text-sm font-semibold">Adjuntos del análisis</h3>
+                            <ArchivosDe archivos={adjuntos} nombre="Adjuntos del análisis" />
+                          </div>
+                        ) : null}
+                      </AnalisisEnLectura>
+                    ) : null}
+                    {conPlan ? (
+                      <PlanEnLectura
+                        ronda={r}
+                        titulo="4. Plan de acción"
+                        abierta={EN_EL_PLAN.has(h.estado)}
+                        indicador={await indicadorParaQuienLee(r, sesion)}
+                        evaluableDesde={evaluableDesde}
+                        hoy={hoy}
+                        deActividad={deActividad}
+                      />
+                    ) : null}
+                    {conPlan && r.estadoPlan === "aprobado" && (r.ajustes.length > 0 || pideAjustes) ? (
+                      <AjustesDelPlan
+                        ajustes={r.ajustes}
+                        etiquetas={etiquetas}
+                        acciones={etiquetasDeAccion}
+                        causas={numerosDeCausa(r)}
+                        zona={zona}
+                        titulo="Ajustes del plan"
+                      >
+                        {pideAjustes ? (
+                          <DialogoAjusteDelPlan
+                            key={`ajuste-plan-${r.ajustes.length}`}
+                            hallazgoId={h.id}
+                            actividades={cancelables}
+                            acciones={r.acciones.map((a) => ({ id: a.id, etiqueta: `A${a.orden}`, descripcion: a.descripcion }))}
+                            causas={r.causas.map((c) => ({ id: c.id, orden: c.orden, texto: c.texto }))}
+                            tipoPropuesto={tipoPropuesto(h.clase)}
+                            usuarios={usuariosParaAjustes}
+                            hoy={hoy}
+                            accion={pedirAjusteAccion}
+                          />
+                        ) : null}
+                      </AjustesDelPlan>
+                    ) : null}
+                    {conSeguimiento ? (
+                      <SeccionVerificacion ronda={r} abierta={h.estado === "por_verificar"} zona={zona}>
+                        {!subeVerificacion && deVerificacion.length > 0 ? (
+                          <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
+                            <h3 className="text-sm font-semibold">Archivos de la verificación</h3>
+                            <ArchivosDe archivos={deVerificacion} nombre="Archivos de la verificación" />
+                          </div>
+                        ) : null}
+                      </SeccionVerificacion>
+                    ) : null}
+                    {conEficacia ? (
+                      <SeccionEficacia evaluacion={r.evaluacion} evaluableDesde={h.fechas.evaluableDesde} abierta={h.estado === "en_espera"} zona={zona} />
+                    ) : null}
+                  </>
+                );
+              })(rondaEnCurso)
+            : null}
+          {CON_CIERRE.has(h.estado) ? (
+            <SeccionCierre
+              estado={h.estado}
+              etiqueta={h.etiqueta}
+              cierre={h.cierre}
+              validacion={h.correccion.validadaPor && h.correccion.validadaEn ? { por: h.correccion.validadaPor, en: h.correccion.validadaEn } : null}
+              abierta
+              zona={zona}
             />
           ) : null}
           {puedeEditar || gestiona ? (
@@ -599,11 +750,24 @@ export default async function PaginaHallazgo({ params }: { params: Promise<{ id:
               firmas={envio}
               elabora="Quien formula, con su clave, al enviar"
               sinRevision={envio.reviso === null && h.estado !== "en_revision"}
+              nadieRevisa={nadieRevisa}
               gerencia={razonDeGerencia(h, { requiereRecursos: rondaEnCurso.requiereRecursos, elaboroAdmin })}
               enCurso={h.estado === "en_revision" ? "reviso" : h.estado === "en_aprobacion" ? "aprobo" : null}
               vence={h.vence}
               plazos={{ revisar: contextoDelPlan.config.plazos.revisar, aprobar: contextoDelPlan.config.plazos.aprobar }}
               contexto={contextoDelPlan}
+            />
+          ) : null}
+          <FechasDelHallazgo fechas={h.fechas} zona={zona} />
+          <EnlacesDelHallazgo enlaces={h.enlaces} />
+          {completo ? (
+            <Ocurrencias
+              key={`ocurrencias-${h.ocurrencias.length}`}
+              hallazgoId={h.id}
+              ocurrencias={h.ocurrencias}
+              puedeAnadir={!terminado && puede(sesion, "mejora.registrar")}
+              hoy={hoy}
+              accion={registrarOcurrenciaAccion}
             />
           ) : null}
           {completo ? <HistorialDelHallazgo eventos={h.eventos} zona={zona} etiquetasDeActividad={etiquetas} /> : null}

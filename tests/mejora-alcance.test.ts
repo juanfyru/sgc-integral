@@ -71,7 +71,7 @@ describe("alcance de los hallazgos", () => {
       const { b, a } = await escena(tx);
       const r = await listarHallazgos(b.consulta, {}, opt(tx));
       expect(r.filas).toHaveLength(0);
-      expect(r.cifras).toEqual({ abiertos: 0, conAlgoVencido: 0, esperanSuDecision: 0, enEspera: 0, reabiertos: 0 });
+      expect(r.cifras).toEqual({ abiertos: 0, conAlgoVencido: 0, esperanSuDecision: 0, enEspera: 0, porEvaluar: 0, reabiertos: 0 });
       expect(await leerHallazgo(b.consulta, a.id, opt(tx))).toBeNull();
       expect(await puedeVerHallazgo(a.id, b.consulta, { sql: tx })).toBe(false);
     });
@@ -227,7 +227,7 @@ describe("la lista", () => {
       await tx`UPDATE mejora_hallazgos SET vence_en = '2026-11-01T00:00:00Z' WHERE id = ${conPaso.id}`;
       await tx`UPDATE mejora_hallazgos SET estado = 'en_espera', ronda = 2, vence_en = NULL WHERE id = ${enEspera.id}`;
       const r = await listarHallazgos(b.lider, {}, opt(tx));
-      expect(r.cifras).toEqual({ abiertos: 4, conAlgoVencido: 2, esperanSuDecision: 3, enEspera: 1, reabiertos: 1 });
+      expect(r.cifras).toEqual({ abiertos: 4, conAlgoVencido: 2, esperanSuDecision: 3, enEspera: 1, porEvaluar: 0, reabiertos: 1 });
       const marcasDe = (id: number) => r.filas.find((fila) => fila.id === id)!.marcas;
       expect(marcasDe(conActividad.id)).toContain("Con algo vencido");
       expect(marcasDe(conPaso.id)).not.toContain("Con algo vencido");

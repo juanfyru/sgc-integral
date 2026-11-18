@@ -5,7 +5,7 @@ import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import { Dialogo } from "@/componentes/ui/Dialogo";
-import { AVISO_SIN_PACIENTES, ETIQUETA_TIPO_ACCION } from "@/lib/mejoramiento/textos";
+import { AVISO_SIN_PACIENTES, ETIQUETA_TIPO_ACCION, textoDeUsuario } from "@/lib/mejoramiento/textos";
 import { TIPOS_ACCION, type TipoAccion } from "@/lib/mejoramiento/tipos";
 import { ErrorDeAnalisis, useGuardado, type AccionDeAnalisis } from "../analisis/Partes";
 
@@ -31,7 +31,8 @@ export type AccionDelFormulario = {
   actividades: ActividadDelFormulario[];
 };
 
-export type UsuarioAsignable = { id: number; nombre: string; cargo: string | null };
+/** Un responsable posible, con el texto que lo distingue de un homónimo (`etiquetasDeUsuarios`), si la lectura lo dio. */
+export type UsuarioAsignable = { id: number; nombre: string; cargo: string | null; etiqueta?: string };
 
 const vacia = (): ActividadDelFormulario => ({ id: null, descripcion: "", responsableId: null, inicio: "", fin: "" });
 
@@ -97,7 +98,7 @@ export function TarjetaDeAccion({
         {ausente ? <option value={ausente.id}>{`${ausente.nombre} (ya no está activo)`}</option> : null}
         {usuarios.map((u) => (
           <option key={u.id} value={u.id}>
-            {u.cargo ? `${u.nombre} · ${u.cargo}` : u.nombre}
+            {textoDeUsuario(u)}
           </option>
         ))}
       </>
