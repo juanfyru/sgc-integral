@@ -158,11 +158,3 @@ function reportesDelHallazgo(tx: Cliente, hallazgoId: number) {
   return tx`SELECT id, reportado_por, to_char(visto_en, 'YYYY-MM-DD') AS visto FROM mejora_reportes
     WHERE hallazgo_id = ${hallazgoId} AND estado IN ('convertido', 'sumado') ORDER BY id`;
 }
-
-/**
- * Quienes reportaron lo que dio origen al hallazgo o se le sumó (los mismos de `avisarAQuienesReportaron`): de un desenlace reciben
- * solo el aviso neutro de «Mis reportes», aunque también lo reciban por otra regla (`avisarDelDesenlace`).
- */
-export async function quienesReportaron(tx: Cliente, hallazgoId: number): Promise<number[]> {
-  return [...new Set((await reportesDelHallazgo(tx, hallazgoId)).map((r) => Number(r.reportado_por)))];
-}

@@ -860,7 +860,7 @@ export const NADIE_ACEPTA_SU_LIDER =
  * A quien por su rol verificaría (Admin SGC o Control Interno; Gerencia, cuando solo ella puede) pero ejecutó en el hallazgo
  * (`ejecutoEnElHallazgo`, la regla de `quienesVerifican`, spec §11.1): por qué no ve «Ir a verificar», sin decir qué hizo.
  */
-export const NO_VERIFICA_QUIEN_EJECUTO = "No puede verificar este plan: tuvo a su cargo una de sus actividades.";
+export const NO_VERIFICA_QUIEN_EJECUTO = "No puede verificarlo: participó en la corrección o en la ejecución del plan.";
 
 /** Si la persona, que no puede verificar, verificaría por su rol de no haber ejecutado en el hallazgo. */
 async function noVerificaPorqueEjecuto(tx: Cliente, h: HallazgoBase, sesion: SesionFlujo, verificadores: number[]): Promise<boolean> {

@@ -689,7 +689,7 @@ describe("los desenlaces avisan a quien tomó parte (revisión final, I3)", () =
       await soloA(tx, h.id, "mejora.retirado", `Se retiró ${h.codigo}`, [b.lider.usuarioId]);
     }));
 
-  it("quien reportó lo que se convirtió en el hallazgo recibe solo el aviso neutro, aunque lidere el proceso", () =>
+  it("quien reportó lo que se convirtió en el hallazgo y lidera el proceso recibe el aviso del cierre y además el neutro", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const { id: reporteId } = await enviarReporte(
@@ -710,6 +710,7 @@ describe("los desenlaces avisan a quien tomó parte (revisión final, I3)", () =
       await validarCorreccion(b.control, { hallazgoId: id }, c(DESPUES, tx));
       const { codigo } = await bloquearHallazgo(tx, id);
       await soloA(tx, id, "mejora.cerrado", `Se cerró ${codigo}: cerrado con corrección`, [
+        b.lider.usuarioId,
         otroLider.usuarioId,
         b.admin.usuarioId,
         ...(await activos(tx, ["gerencia"])),

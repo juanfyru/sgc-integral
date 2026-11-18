@@ -269,7 +269,7 @@ describe("LoQueSigue", () => {
   });
 
   it("donde iría el botón, la línea de por qué no puede dar el paso, sin botones (recorrido de cierre, D3)", () => {
-    const nota = "No puede verificar este plan: tuvo a su cargo una de sus actividades.";
+    const nota = "No puede verificarlo: participó en la corrección o en la ejecución del plan.";
     const html = renderToStaticMarkup(<LoQueSigue texto="Tiene el turno: quien puede verificar, para verificar la implementación." nota={nota} />);
     expect(html).toContain(`<p class="mt-3 text-sm">${nota}</p>`);
     expect(html).not.toMatch(/<(button|a)[\s>]/);

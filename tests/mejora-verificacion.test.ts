@@ -1107,7 +1107,7 @@ describe("Tarea 17, ronda 1: cada hallazgo con sus verificadores y lo que se lee
         paso: "verificar",
         puede: false,
         turno: "Tiene el turno: quien puede verificar, para verificar la implementación.",
-        nota: "No puede verificar este plan: tuvo a su cargo una de sus actividades.",
+        nota: "No puede verificarlo: participó en la corrección o en la ejecución del plan.",
       });
       expect(await lee(b.control)).toEqual({ paso: "verificar", puede: true, turno: "A usted le toca verificar la implementación." });
       // Gerencia no verifica mientras un Admin SGC o Control Interno pueda, sin haber ejecutado nada; el líder no tiene el rol.

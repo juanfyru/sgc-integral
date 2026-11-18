@@ -12,7 +12,6 @@ import { esExterno } from "@/lib/mejoramiento/origenes";
 import type { EstadoHallazgo, HallazgoBase, ResultadoCierre } from "@/lib/mejoramiento/tipos";
 import type { Rol } from "@/lib/roles";
 import { lideresOAdmins } from "./proceso";
-import { quienesReportaron } from "./reportes-base";
 
 /** La entidad de los avisos y de la bitácora de un hallazgo. */
 export const ENTIDAD_HALLAZGO = "mejora_hallazgo";
@@ -194,9 +193,10 @@ const COMO_SE_CERRO: Record<ResultadoCierre, string> = {
 
 /**
  * El aviso de un desenlace del hallazgo: el título con el código y el cuerpo con el título del hallazgo, que todos sus
- * destinatarios ven completo (los líderes del proceso, quien lo registró y Gerencia). Nunca a quien actuó, ni a quien reportó lo
- * que dio origen al hallazgo o se le sumó: su aviso de un final es el neutro de «Mis reportes» (`avisarAQuienesReportaron`, que
- * manda el motor), aunque lo reciba también por otra regla. Ningún texto escrito por una persona (ni la nota del arbitraje).
+ * destinatarios ven completo (los líderes del proceso, quien lo registró y Gerencia, spec §11.5, sin excepción); nunca a quien
+ * actuó. Quien reportó lo que dio origen al hallazgo o se le sumó recibe además el neutro de «Mis reportes»
+ * (`avisarAQuienesReportaron`, que manda el motor); si también es destinatario por su rol, recibe los dos. Ningún texto escrito
+ * por una persona (ni la nota del arbitraje).
  */
 async function avisarDelDesenlace(
   tx: TransactionSql,
@@ -205,7 +205,7 @@ async function avisarDelDesenlace(
   destinos: number[],
   actorId: number | null,
 ): Promise<void> {
-  const fuera = new Set<number | null>([actorId, ...(await quienesReportaron(tx, h.id))]);
+  const fuera = new Set<number | null>([actorId]);
   const [{ titulo }] = await tx`SELECT titulo FROM mejora_hallazgos WHERE id = ${h.id}`;
   await avisarDeMejora(
     tx,
