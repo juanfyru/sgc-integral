@@ -44,7 +44,7 @@ function CincoPorques({ contenido }: { contenido: ContenidoCincoPorques }) {
 
 function Ishikawa({ contenido }: { contenido: ContenidoIshikawa }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {CATEGORIAS_6M.map((cat: Categoria6M) => {
         const deLaCategoria = contenido.causas.filter((c) => c.categoria === cat);
         if (deLaCategoria.length === 0) return null;
@@ -72,7 +72,7 @@ function Ishikawa({ contenido }: { contenido: ContenidoIshikawa }) {
 
 function Otro({ contenido }: { contenido: ContenidoOtroMetodo }) {
   return (
-    <dl className="grid gap-2">
+    <dl className="grid grid-cols-1 gap-2">
       <Dato etiqueta="Método">{contenido.nombre}</Dato>
       <Dato etiqueta="Descripción">{contenido.descripcion}</Dato>
     </dl>
@@ -157,7 +157,7 @@ export function AnalisisEnLectura({
           </div>
         ) : null}
         {ronda.similares !== null || leidos !== null ? (
-          <dl className="grid gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
             {ronda.similares !== null ? (
               <Dato etiqueta="¿Hay no conformidades similares en otros procesos?">
                 {ronda.similares ? `Sí: ${ronda.similaresDetalle ?? ""}` : "No"}

@@ -131,7 +131,7 @@ export function CalendarioDeLaEntidad({
       <div className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold">Festivos de Colombia que calcula el sistema</h3>
         <p className="text-sm text-muted-foreground">Solo lectura: se calculan con la Ley 51 de 1983, sin consultar internet.</p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {festivos.map((a) => (
             <div key={a.anio}>
               <h4 className="text-sm font-medium">{a.anio}</h4>

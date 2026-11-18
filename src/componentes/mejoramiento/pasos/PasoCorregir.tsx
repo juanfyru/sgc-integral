@@ -32,7 +32,7 @@ export function PasoCorregir({
       <p id={id("aviso")} className="text-xs text-muted-foreground">
         {AVISO_SIN_PACIENTES}
       </p>
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">¿Requirió corrección o contención?</legend>
         <label className="flex items-center gap-2 text-sm">
           <input type="radio" name="requerida" value="si" required className="size-4" onChange={() => setRequerida("si")} />

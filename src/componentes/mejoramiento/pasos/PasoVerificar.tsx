@@ -103,7 +103,7 @@ export function PasoVerificar({
                     ))}
                   </div>
                   {decision === "devuelta" ? (
-                    <div className="grid min-w-0 gap-3 @md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                    <div className="grid grid-cols-1 min-w-0 gap-3 @md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
                       <Campo
                         etiqueta={`Nota para quien la ejecutó (al menos 10 caracteres)`}
                         nombre={`nota_${a.id}`}

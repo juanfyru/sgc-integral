@@ -14,7 +14,7 @@ export function PasoDecidir({ hallazgoId, hoy, accion }: { hallazgoId: number; h
   return (
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex flex-col gap-3">
       <input type="hidden" name="hallazgoId" value={hallazgoId} />
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">¿Requiere acción correctiva?</legend>
         <label className="flex items-center gap-2 text-sm">
           <input type="radio" name="requiere" value="si" required className="size-4" />

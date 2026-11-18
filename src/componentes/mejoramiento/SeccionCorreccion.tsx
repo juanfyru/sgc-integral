@@ -79,7 +79,7 @@ export function SeccionCorreccion({
         ) : null}
         {/* Sin corrección registrada, el resumen de la sección ya lo dice: el cuerpo no lo repite. */}
         {c.requerida === null ? null : (
-          <dl className="grid gap-3 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Dato etiqueta="¿Requirió corrección?">{c.requerida ? "Sí requirió corrección" : "No requiere corrección inmediata"}</Dato>
             {c.requerida && c.implementadaEn ? <Dato etiqueta="Fecha en que se implementó">{fechaDeDia(c.implementadaEn)}</Dato> : null}
             <div className="sm:col-span-2">
@@ -91,7 +91,7 @@ export function SeccionCorreccion({
         )}
         {children}
         {decision.accionRequerida !== null ? (
-          <dl className="grid gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
             <Dato etiqueta="¿Requiere acción correctiva?">
               {decision.accionRequerida ? (decision.decididaEn ? "Sí" : "Sí: es obligada") : "No"}
             </Dato>

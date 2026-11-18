@@ -29,7 +29,7 @@ export function DiagramaDeIshikawa({ contenido, efecto }: { contenido: Contenido
     );
   };
   return (
-    <div role="group" aria-label="Diagrama de causa y efecto" className="grid min-w-0 gap-2 sm:grid-cols-3">
+    <div role="group" aria-label="Diagrama de causa y efecto" className="grid grid-cols-1 min-w-0 gap-2 sm:grid-cols-3">
       {CATEGORIAS_6M.slice(0, 3).map(categoria)}
       <p className={`ficha-corto ficha-color-exacto break-words bg-marca-tinte p-2 text-center font-semibold sm:col-span-3 ${BORDE}`}>
         {`Efecto: ${efecto}`}

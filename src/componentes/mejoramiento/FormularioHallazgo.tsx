@@ -70,7 +70,7 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
   const esOcurrencia = relacion.startsWith("ocurrencia:");
 
   return (
-    <div className={edicion && !lateral ? "grid gap-6" : "grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"}>
+    <div className={edicion && !lateral ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"}>
       <form id="formulario-hallazgo" action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
         {edicion ? <input type="hidden" name="hallazgoId" value={edicion.hallazgoId} /> : null}
         {derivado && !edicion ? (
@@ -96,7 +96,7 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
           </p>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo etiqueta="Clase" nombre="clase">
             <select required value={clase} onChange={(e) => setClase(e.target.value)} className={claseControl}>
               <option value="">Elija la clase</option>
@@ -186,7 +186,7 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
             className={claseControl}
           />
         </Campo>
-        <fieldset className="flex flex-col gap-3 rounded-md border border-border p-3">
+        <fieldset className="flex min-w-0 flex-col gap-3 rounded-md border border-border p-3">
           <legend className="px-1 text-sm font-medium">{esNc ? "Requisito incumplido" : "Requisito incumplido (opcional)"}</legend>
           {esNc ? <p className="text-xs text-muted-foreground">Indique al menos uno: la cláusula, una norma o un documento interno.</p> : null}
         <Campo etiqueta="Cláusula o requisito" nombre="requisitoClausula" ayuda="Por ejemplo «ISO 9001: 8.5.1».">

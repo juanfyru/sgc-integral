@@ -141,7 +141,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
         <h2 id="carga-identificacion" className={TITULO}>
           1. Identificación
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo etiqueta="Clase" nombre="clase">
             <select required value={clase} onChange={(e) => setClase(e.target.value)} className={claseControl}>
               <option value="">Elija la clase</option>
@@ -237,7 +237,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
         <Campo etiqueta="Descripción, con la evidencia objetiva" nombre="descripcion" ayuda={AVISO_SIN_PACIENTES}>
           <textarea required minLength={10} maxLength={4000} rows={4} className={claseControl} />
         </Campo>
-        <fieldset className="flex flex-col gap-3 rounded-md border border-border p-3">
+        <fieldset className="flex min-w-0 flex-col gap-3 rounded-md border border-border p-3">
           <legend className="px-1 text-sm font-medium">{esNc ? "Requisito incumplido" : "Requisito incumplido (opcional)"}</legend>
           {esNc ? <p className="text-xs text-muted-foreground">Indique al menos uno: la cláusula, una norma o un documento interno.</p> : null}
           <Campo etiqueta="Cláusula o requisito" nombre="requisitoClausula" ayuda="Por ejemplo «ISO 9001: 8.5.1».">
@@ -268,7 +268,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
           <input type="text" maxLength={200} autoComplete="off" className={claseControl} />
         </Campo>
         {enlaces.indicadores.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo etiqueta="Indicador al que se refiere (opcional)" nombre="indicadorId">
               <select
                 value={indicadorId}
@@ -307,7 +307,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
           <h2 id="carga-correccion" className={TITULO}>
             2. Corrección
           </h2>
-          <fieldset className="flex flex-col gap-2">
+          <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="text-sm font-medium">¿Requirió corrección?</legend>
             {[
               ["si", "Sí requirió corrección"],
@@ -392,8 +392,8 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
           return (
             <fieldset key={i} className="flex min-w-0 flex-col gap-3 rounded-md border border-linea-suave p-3">
               <legend className="px-1 text-sm font-semibold">{`Acción ${etiqueta}`}</legend>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
-                <div className="flex flex-col gap-1">
+              <div className="grid grid-cols-1 min-w-0 gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+                <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor={`${clave}-tipo`} className="text-sm font-medium">
                     Tipo<span className="sr-only">{` de la acción ${etiqueta}`}</span>
                   </label>
@@ -424,7 +424,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
                   ))}
                 </fieldset>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <label htmlFor={`${clave}-descripcion`} className="text-sm font-medium">{`Qué se va a hacer (acción ${etiqueta})`}</label>
                 <textarea
                   id={`${clave}-descripcion`}
@@ -436,7 +436,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
                   className={claseControl}
                 />
               </div>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 min-w-0 gap-3 sm:grid-cols-3">
                 {(
                   [
                     ["recursos", "Recursos necesarios", 1000],
@@ -466,7 +466,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
                   const numero = `${etiqueta}.${k + 1}`;
                   const id = `${clave}-act-${k}`;
                   return (
-                    <li key={k} className="grid min-w-0 gap-2 rounded-md border border-linea-suave p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_9.5rem_9.5rem]">
+                    <li key={k} className="grid grid-cols-1 min-w-0 gap-2 rounded-md border border-linea-suave p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_9.5rem_9.5rem]">
                       <div className="flex min-w-0 flex-col gap-1">
                         <label htmlFor={`${id}-descripcion`} className="text-xs font-medium">{`Actividad ${numero}`}</label>
                         <input
@@ -647,7 +647,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
         <h2 id="carga-aprobacion" className={TITULO}>
           5. Aprobación en papel
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Campo etiqueta="Nombre de quien aprobó el plan" nombre="aprobacionNombre">
             <input type="text" required maxLength={150} autoComplete="off" className={claseControl} />
           </Campo>
@@ -658,7 +658,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
             <input type="date" required max={hoy} className={claseControl} />
           </Campo>
         </div>
-        <fieldset className="flex flex-col gap-2">
+        <fieldset className="flex min-w-0 flex-col gap-2">
           <legend className="text-sm font-medium">Qué rol lo aprobó</legend>
           {[
             ["gerencia", "Gerencia"],

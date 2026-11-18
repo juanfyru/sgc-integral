@@ -96,7 +96,7 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
                 </li>
               ))}
             </ul>
-            <fieldset className="flex flex-col gap-2">
+            <fieldset className="flex min-w-0 flex-col gap-2">
               <legend className="font-medium">¿Qué es lo que va a registrar?</legend>
               {parecidos.map((p) => (
                 <label key={p.id} className="flex items-start gap-2">

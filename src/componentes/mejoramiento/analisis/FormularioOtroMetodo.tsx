@@ -45,13 +45,13 @@ export function FormularioOtroMetodo({
       <input type="hidden" name="metodo" value="otro" />
       {analisis ? <input type="hidden" name="analisisId" value={analisis.id} /> : null}
       <input type="hidden" name="contenido" value={JSON.stringify({ nombre, descripcion })} />
-      <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 flex-col gap-1">
         <label htmlFor={`${idBase}-nombre`} className="text-sm font-medium">
           Nombre del método
         </label>
         <input id={`${idBase}-nombre`} type="text" maxLength={120} value={nombre} onChange={(e) => setNombre(e.target.value)} className={claseControl} />
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 flex-col gap-1">
         <label htmlFor={`${idBase}-descripcion`} className="text-sm font-medium">
           Descripción: cómo se hizo y qué concluyó
         </label>

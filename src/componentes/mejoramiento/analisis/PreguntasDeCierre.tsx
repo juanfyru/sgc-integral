@@ -40,7 +40,7 @@ export function PreguntasDeCierre({
         Preguntas de cierre
       </h3>
       <input type="hidden" name="hallazgoId" value={hallazgoId} />
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">¿Hay no conformidades similares en otros procesos?</legend>
         <label className="flex items-center gap-2 text-sm">
           <input type="radio" name="similares" value="si" required checked={similares === "si"} onChange={() => setSimilares("si")} className="size-4" />
@@ -51,7 +51,7 @@ export function PreguntasDeCierre({
           No
         </label>
         {similares === "si" ? (
-          <div className="flex flex-col gap-1">
+          <div className="flex min-w-0 flex-col gap-1">
             <label htmlFor="similares-detalle" className="text-sm font-medium">
               ¿Cuáles?
             </label>
@@ -67,7 +67,7 @@ export function PreguntasDeCierre({
           </div>
         ) : null}
       </fieldset>
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">¿Se requieren cambios en documentos, riesgos o controles?</legend>
         <label className="flex items-center gap-2 text-sm">
           <input type="radio" name="hayCambios" value="si" required checked={cambios === "si"} onChange={() => setCambios("si")} className="size-4" />
@@ -92,7 +92,7 @@ export function PreguntasDeCierre({
               <input type="checkbox" name="cambiosControles" value="si" defaultChecked={c?.controles ?? false} className="size-4" />
               Controles
             </label>
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-1">
               <label htmlFor="cambios-descripcion" className="text-sm font-medium">
                 Describa los cambios
               </label>

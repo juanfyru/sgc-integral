@@ -26,8 +26,10 @@ export function Campo({
     [ayuda ? `${id}-ayuda` : null, error ? `${id}-error` : null, tambienDescritoPor ?? null]
       .filter(Boolean)
       .join(" ") || undefined;
+  // `min-w-0`: en una rejilla o una fila flexible, el campo cede al ancho disponible (un `select` con una opción larga no
+  // desborda la página a 390 px).
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium">
         {etiqueta}
       </label>

@@ -49,14 +49,14 @@ export function FormularioPlazos({ config }: { config: ConfigMejora }) {
         className="flex flex-col gap-4"
       >
         <input type="hidden" name="bloque" value="plazos" />
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {PLAZOS.map((p) => (
             <Campo key={p.paso} etiqueta={`${p.etiqueta} (días hábiles)`} nombre={`plazo_${p.paso}`} id={`mej-plazo-${p.paso}`} ayuda={`${p.ayuda} De 1 a 60.`}>
               <input type="number" required min={1} max={60} step={1} defaultValue={valor(`plazo_${p.paso}`, config.plazos[p.paso])} className={CONTROL} />
             </Campo>
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Campo
             etiqueta="Seguimiento de una no conformidad de criticidad alta (días calendario)"
             nombre="recordatorioAltaDias"

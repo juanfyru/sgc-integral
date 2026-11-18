@@ -68,7 +68,7 @@ export function ErrorDeAnalisis({ estado }: { estado: EstadoAccion }) {
 /** El equipo y las observaciones, comunes a todo método (spec §9.1). */
 export function CamposComunes({ idBase, equipo, observaciones }: { idBase: string; equipo: string | null; observaciones: string | null }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Campo etiqueta="Equipo que hizo el análisis" nombre="equipo" id={`${idBase}-equipo`}>
         <input type="text" maxLength={500} defaultValue={equipo ?? ""} className={claseControl} />
       </Campo>

@@ -69,7 +69,7 @@ export function SeccionIdentificacion({
             Nota del {fechaDeDia(new Intl.DateTimeFormat("sv-SE", { timeZone: zona }).format(n.cuando))}: {n.nota}
           </p>
         ))}
-        <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+        <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Dato etiqueta="Clase">{ETIQUETA_CLASE[h.clase]}</Dato>
           <Dato etiqueta="Origen">{ETIQUETA_ORIGEN.get(h.origen) ?? h.origen}</Dato>
           {h.fuente ? <Dato etiqueta="Fuente">{h.fuente}</Dato> : null}

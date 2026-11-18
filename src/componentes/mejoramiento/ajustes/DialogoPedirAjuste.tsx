@@ -131,7 +131,7 @@ export function DialogoAjusteDelPlan({
             Pedir un ajuste del plan
           </p>
           <input type="hidden" name="hallazgoId" value={hallazgoId} />
-          <fieldset className="flex flex-col gap-2">
+          <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="mb-1 text-sm font-medium">Qué ajuste pide</legend>
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" name="tipo" value="agregar" checked={tipo === "agregar"} onChange={() => setTipo("agregar")} className="size-4" />

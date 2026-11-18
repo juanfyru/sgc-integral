@@ -2,7 +2,7 @@
  * Las pantallas de «Mejoramiento» de la 15A que no tocan la base (spec 15 §16.1 y §16.2, maquetas 1 a 3): la lista, el
  * recorrido, el formulario de registro y «Lo que sigue». Con datos de mentira.
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import type { FormEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -2588,5 +2588,60 @@ describe("un hallazgo ya en curso (spec §15)", () => {
     expect(html).toContain("Lo aprobó: Marta Ríos, Gerente");
     expect(html.match(/Ana Carga/g)).toHaveLength(2);
     expect(html).toContain("Adjuntó el formato firmado de la carga");
+  });
+});
+
+describe("los formularios del módulo caben a 390 px (recorrido de cierre, D1 y D8)", () => {
+  /** Las listas de clases de cada elemento del HTML. */
+  const clases = (html: string) => [...html.matchAll(/class="([^"]*)"/g)].map((m) => m[1].split(/\s+/));
+  /** Una rejilla sin plantilla de columnas: su columna implícita (`auto`) crece hasta la opción más larga de un `select`. */
+  const sinPlantilla = (cs: string[][]) => cs.filter((c) => c.includes("grid") && !c.some((t) => /^grid-cols-/.test(t))).map((c) => c.join(" "));
+
+  it("las tres pantallas que desbordaban: toda rejilla con su columna, todo grupo y todo campo ceden al ancho", () => {
+    const procesos = [{ id: 3, nombre: "Gestión de la Información y las Comunicaciones del hospital" }];
+    const largo = { id: 9, codigo: "SOG-DE-01", titulo: "Resolución 3100 de 2019: texto de trabajo con un título muy largo para la prueba" };
+    const pantallas = [
+      renderToStaticMarkup(<FormularioReporte accion={vi.fn(async () => null)} procesos={procesos} hoy="2026-11-18" />),
+      renderToStaticMarkup(<FormularioHallazgo accion={vi.fn(async () => null)} procesos={procesos} hoy="2026-11-18" diasParaAceptar={3} documentos={[largo]} />),
+      renderToStaticMarkup(
+        <FormularioCarga
+          accion={vi.fn(async () => null)}
+          procesos={procesos}
+          normas={[]}
+          documentos={[largo]}
+          usuarios={[]}
+          indicadores={[]}
+          enlaces={{ subprocesos: [], cerrados: [], indicadores: [], mediciones: [] }}
+          hoy="2026-11-18"
+        />,
+      ),
+    ];
+    for (const html of pantallas) {
+      expect(sinPlantilla(clases(html))).toEqual([]);
+      for (const f of html.match(/<fieldset[^>]*>/g) ?? []) expect(f).toMatch(/\bmin-w-0\b/);
+      // La envoltura de cada `Campo` (la que lleva la etiqueta y el control) cede en una rejilla o una fila.
+      const envolturas = [...html.matchAll(/<div class="([^"]*)"><label for=/g)].map((m) => m[1].split(" "));
+      expect(envolturas.length).toBeGreaterThan(0);
+      for (const e of envolturas) expect(e).toContain("min-w-0");
+    }
+  });
+
+  it("y en el código de todos los formularios y páginas del módulo", () => {
+    const raices = ["src/componentes/mejoramiento", "src/app/(app)/mejoramiento", "src/app/(app)/admin/(panel)/mejoramiento"];
+    const archivos = (dir: string): string[] =>
+      readdirSync(dir).flatMap((f) => {
+        const ruta = path.join(dir, f);
+        return statSync(ruta).isDirectory() ? archivos(ruta) : ruta.endsWith(".tsx") ? [ruta] : [];
+      });
+    const fuera: string[] = [];
+    for (const archivo of raices.flatMap((r) => archivos(path.resolve(r)))) {
+      const texto = readFileSync(archivo, "utf8");
+      for (const m of texto.matchAll(/["`]([^"`\n]*)["`]/g)) {
+        const t = m[1].split(/\s+/);
+        if (t.includes("grid") && !t.some((x) => /^grid-cols-/.test(x))) fuera.push(`${archivo}: ${m[1]}`);
+      }
+      for (const f of texto.match(/<fieldset\b[^>]*>/g) ?? []) if (!/\bmin-w-0\b/.test(f)) fuera.push(`${archivo}: ${f}`);
+    }
+    expect(fuera).toEqual([]);
   });
 });

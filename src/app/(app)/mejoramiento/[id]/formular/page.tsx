@@ -104,7 +104,7 @@ async function pestanaDelPlan(sesion: Awaited<ReturnType<typeof exigirSesion>>, 
           quitar={quitarAccionAccion}
         />
       </section>
-      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 min-w-0 gap-6 lg:grid-cols-2">
         <CriterioDeEficacia
           hallazgoId={h.id}
           clase={h.clase}
@@ -206,7 +206,7 @@ export default async function PaginaFormular({
       {verPlan ? (
         await pestanaDelPlan(sesion, h, ronda)
       ) : (
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="grid grid-cols-1 min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <section aria-labelledby="analisis-titulo" className="flex min-w-0 flex-col gap-3">
             <h2 id="analisis-titulo" className="font-display text-base font-semibold">
               Análisis de la causa raíz

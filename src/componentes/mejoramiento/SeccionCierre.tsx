@@ -56,7 +56,7 @@ export function SeccionCierre({
         {estado === "por_cerrar" ? (
           <p className="text-sm">La eficacia se evaluó «Eficaz»: el Administrador del SGC lo cierra con las lecciones aprendidas.</p>
         ) : (
-          <dl className="grid gap-3 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Dato etiqueta="Decisión">
               <Insignia variante={estado === "anulado" ? "sin-dato" : "bien"}>{etiqueta}</Insignia>
             </Dato>

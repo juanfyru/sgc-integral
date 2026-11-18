@@ -28,7 +28,7 @@ export function PasoArbitrar({
       <input type="hidden" name="hallazgoId" value={hallazgoId} />
       <Cita rotulo="Por qué se rechazó" texto={justificacion} />
       <Cita rotulo="Réplica de quien lo registró" texto={replica} />
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">El arbitraje confirma</legend>
         <label className="flex items-center gap-2 text-sm">
           <input type="radio" name="confirma" value="hallazgo" required className="size-4" />

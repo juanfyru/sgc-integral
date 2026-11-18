@@ -82,7 +82,7 @@ export function DialogoReclasificar({ datos: d, normas, documentos, cerrados, ac
               {estado.error}
             </p>
           ) : null}
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Campo etiqueta="Clase" nombre="clase" id="reclasificar-clase">
               <select required value={clase} onChange={(e) => setClase(e.target.value)} className={claseControl}>
                 {CLASES.map((c) => (
@@ -134,7 +134,7 @@ export function DialogoReclasificar({ datos: d, normas, documentos, cerrados, ac
           <Campo etiqueta="Título" nombre="titulo" id="reclasificar-titulo">
             <input type="text" required maxLength={150} defaultValue={texto("titulo", d.titulo)} autoComplete="off" className={claseControl} />
           </Campo>
-          <fieldset className="flex flex-col gap-3 rounded-md border border-border p-3">
+          <fieldset className="flex min-w-0 flex-col gap-3 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-medium">{esNc ? "Requisito incumplido (al menos uno)" : "Requisito incumplido (opcional)"}</legend>
             <Campo etiqueta="Cláusula o requisito" nombre="requisitoClausula" id="reclasificar-clausula">
               <input type="text" maxLength={200} defaultValue={texto("requisitoClausula", d.requisitoClausula ?? "")} autoComplete="off" className={claseControl} />

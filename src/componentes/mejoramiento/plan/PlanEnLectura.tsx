@@ -213,7 +213,7 @@ export function PlanEnLectura({
           );
         })}
         {criterio || ronda.fechaEvaluacion || evaluableDesde ? (
-          <dl className="grid gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
+          <dl className="grid grid-cols-1 gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
             {criterio ? <Dato etiqueta="Criterio de eficacia">{criterio}</Dato> : null}
             {ronda.fechaEvaluacion ? <Dato etiqueta="Fecha de evaluación">{fechaDeDia(ronda.fechaEvaluacion)}</Dato> : null}
             {evaluableDesde ? <Dato etiqueta="Con este plan, la eficacia se podría evaluar desde">{fechaLargaDeDia(evaluableDesde)}</Dato> : null}

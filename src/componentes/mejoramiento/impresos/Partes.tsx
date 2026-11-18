@@ -160,7 +160,7 @@ export function CasillaEnPapel({ rol, quien, cuando, zona, nota }: { rol: string
 /** Una fila de casillas de firma. */
 export function Firmas({ nombre, children }: { nombre: string; children: React.ReactNode }) {
   return (
-    <div role="group" aria-label={nombre} className="ficha-firmas ficha-corto grid gap-2 pt-1 sm:grid-cols-3">
+    <div role="group" aria-label={nombre} className="ficha-firmas ficha-corto grid grid-cols-1 gap-2 pt-1 sm:grid-cols-3">
       {children}
     </div>
   );

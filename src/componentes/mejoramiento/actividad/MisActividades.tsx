@@ -95,7 +95,7 @@ export function MisActividades({ actividades, hoy }: { actividades: readonly Act
           <h2 id="actividades-por-hacer" className="font-display text-base font-semibold">
             Por hacer
           </h2>
-          <ul className="grid list-none gap-3 lg:grid-cols-2">
+          <ul className="grid grid-cols-1 list-none gap-3 lg:grid-cols-2">
             {abiertas.map((a) => (
               <Tarjeta key={a.id} a={a} hoy={hoy} />
             ))}
@@ -107,7 +107,7 @@ export function MisActividades({ actividades, hoy }: { actividades: readonly Act
           <h2 id="actividades-cerradas" className="font-display text-base font-semibold">
             Terminadas o canceladas
           </h2>
-          <ul className="grid list-none gap-3 lg:grid-cols-2">
+          <ul className="grid grid-cols-1 list-none gap-3 lg:grid-cols-2">
             {cerradas.map((a) => (
               <Tarjeta key={a.id} a={a} hoy={hoy} />
             ))}

@@ -80,7 +80,7 @@ export function FormularioIshikawa({
       <p id={`${idBase}-aviso`} className="text-xs text-muted-foreground">
         {AVISO_SIN_PACIENTES} Marque como confirmada cada causa que la evidencia sostenga: es la que cuenta para completar el análisis.
       </p>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {CATEGORIAS_6M.map((cat) => (
           <fieldset key={cat} className="flex min-w-0 flex-col gap-2 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-semibold">{ETIQUETA_6M[cat]}</legend>

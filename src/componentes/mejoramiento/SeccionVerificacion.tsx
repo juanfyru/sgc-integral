@@ -115,7 +115,7 @@ export function SeccionVerificacion({
         </ul>
       ) : null}
       {v ? (
-        <dl className="grid gap-3 sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Dato etiqueta="Cómo se verificó">{enPalabras(v.metodos.map((m) => ETIQUETA_METODO_VERIFICACION[m]))}</Dato>
           <Dato etiqueta="Verificó">{`${v.por}, ${fechaYHora(v.en, zona)}`}</Dato>
           {v.nota ? (
@@ -176,7 +176,7 @@ export function SeccionEficacia({
   const v = e.visto;
   return (
     <Plegable id={id} titulo={titulo} resumen={`${eficaz ? "Eficaz" : "No eficaz"} · ${e.por}, ${fechaYHora(e.en, zona)}`} abierta={abierta}>
-      <dl className="grid gap-3 sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Dato etiqueta="Resultado">
           <Insignia variante={eficaz ? "bien" : "critico"}>{eficaz ? "Eficaz" : "No eficaz"}</Insignia>
         </Dato>

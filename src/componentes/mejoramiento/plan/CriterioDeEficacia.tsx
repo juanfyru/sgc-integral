@@ -64,7 +64,7 @@ export function CriterioDeEficacia({
         Criterio de eficacia
       </h3>
       <input type="hidden" name="hallazgoId" value={hallazgoId} />
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex min-w-0 flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Cómo se sabrá que las acciones fueron eficaces (uno o más)</legend>
         {CRITERIOS_EFICACIA.map((c) => (
           <label key={c} className="flex items-center gap-2 text-sm">

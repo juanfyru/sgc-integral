@@ -677,7 +677,7 @@ export default async function PaginaHallazgo({
       <Recorrido pasos={pasosConFechas(h, zona)} />
       {seccionCarga}
       {completo ? <BorradorDeLaEvaluacion key={`borrador-${clave}-${avisoCambio}`} hallazgoId={h.id} conAviso={avisoCambio} /> : null}
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-1 min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
           <SeccionIdentificacion hallazgo={h} zona={zona} abierta={ESPERA_ACEPTACION.has(h.estado)} notas={notas}>
             {completo ? (

@@ -119,8 +119,8 @@ export function TarjetaDeAccion({
       {accion.id !== null ? <input type="hidden" name="accionId" value={accion.id} /> : null}
       <input type="hidden" name="actividades" value={actividades} />
 
-      <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-1">
+      <div className="grid grid-cols-1 min-w-0 gap-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-1">
           <label htmlFor={`${clave}-tipo`} className="text-sm font-medium">
             Tipo<span className="sr-only">{` de la acción ${etiqueta}`}</span>
           </label>
@@ -150,7 +150,7 @@ export function TarjetaDeAccion({
         </fieldset>
       </div>
 
-      <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 flex-col gap-1">
         <label htmlFor={`${clave}-descripcion`} className="text-sm font-medium">
           {`Qué se va a hacer (acción ${etiqueta})`}
         </label>
@@ -164,7 +164,7 @@ export function TarjetaDeAccion({
           className={claseControl}
         />
       </div>
-      <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 min-w-0 gap-3 sm:grid-cols-3">
         <div className="flex min-w-0 flex-col gap-1">
           <label htmlFor={`${clave}-recursos`} className="text-sm font-medium">
             Recursos necesarios<span className="sr-only">{` de la acción ${etiqueta}`}</span>
@@ -201,7 +201,7 @@ export function TarjetaDeAccion({
             return (
               <li
                 key={f.id ?? `n${i}`}
-                className="grid min-w-0 gap-2 rounded-md border border-linea-suave p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,13rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_9.5rem_9.5rem_auto] lg:items-end"
+                className="grid grid-cols-1 min-w-0 gap-2 rounded-md border border-linea-suave p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,13rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,13rem)_9.5rem_9.5rem_auto] lg:items-end"
               >
                 <div className="flex min-w-0 flex-col gap-1">
                   <label htmlFor={`${id}-descripcion`} className="text-xs font-medium">
