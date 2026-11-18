@@ -308,7 +308,10 @@ describe("la lista", () => {
       expect(await turnoEnTexto(tx, h)).toBe("La líder del proceso");
       await tx`UPDATE usuarios SET activo = false WHERE id = ${b.lider.usuarioId}`;
       expect(await lideresDeProceso(b.procesoId, { sql: tx })).toEqual([]);
-      expect(await quienTieneElTurno(tx, h)).toContain(b.admin.usuarioId);
+      // Sin líder lo acepta el Admin SGC, salvo el que lo registró (revisión final, m2): los demás activos.
+      const turno = await quienTieneElTurno(tx, h);
+      expect(turno.length).toBeGreaterThan(0);
+      expect(turno).not.toContain(b.admin.usuarioId);
       expect(await turnoEnTexto(tx, h)).toBe("Administrador del SGC");
       expect(await turnoEnTexto(tx, { ...h, estado: "por_validar" })).toBe("Quien puede validar");
     });
