@@ -2,17 +2,18 @@
  * El SGC-FO-14, plan de mejoramiento (Fase 15B, anexo §5): lo que imprime, de un plan para uno de sus procesos (`fo14DePlan`) o
  * consolidado de un proceso en un año (`fo14Consolidado`). El encabezado del formato, el del plan, las filas del plan de acción
  * (`filasDePlanDeAccion`, la lectura común con el Excel para el ente) y «Aprobación y control». Lo imprime quien ve completos todos
- * sus hallazgos (§5.5, F15B-DC44): quien ve todo, o el líder de ese proceso (`procesosQueImprime`). Para los demás, y para un plan o
+ * sus hallazgos (§5.5, F15B-DC44): quien ve todo, o el líder de ese proceso (`procesosQueImprime`, en `src/lib/alcance.ts` con las
+ * demás reglas de visibilidad de los hallazgos: la parte de `vistaCompletaDeHallazgo` que no depende del hallazgo, porque el impreso
+ * tiene que salir entero, también cuando no trae ninguno). Para los demás, y para un plan o
  * un proceso que no existe, nulo: la página responde «no encontrado» igual en los dos casos. Imprimir no se audita, como los
  * impresos de la 15A.
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { filtroPlanes, type SujetoVisibilidad } from "@/lib/alcance";
+import { filtroPlanes, procesosQueImprime, type SujetoVisibilidad } from "@/lib/alcance";
 import { ETIQUETA_ORIGEN, ORIGENES } from "@/lib/mejoramiento/origenes";
 import { NO_CUENTAN_PARA_PLAN } from "@/lib/mejoramiento/planes";
 import type { Origen } from "@/lib/mejoramiento/tipos";
-import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { filasDePlanDeAccion, type FilaDePlanDeAccion } from "./filas-de-plan";
@@ -55,27 +56,7 @@ export type Fo14 = {
 
 const idValido = (id: number) => Number.isSafeInteger(id) && id > 0;
 
-/**
- * De `procesoIds`, los procesos cuyos SGC-FO-14 imprime la persona (anexo §5.5): con `mejora.ver_todo`, todos; el líder, los suyos
- * activos (la misma condición de `vistaCompletaDeHallazgo`); nadie más. Es una regla de la persona, no de los hallazgos: quien solo
- * registró uno de ese proceso no ve completos los demás, y un impreso vacío tampoco se le da a quien no lo vería lleno. La usan las
- * dos lecturas y los botones que llevan a ellas.
- */
-export async function procesosQueImprime(
-  sujeto: SujetoVisibilidad,
-  procesoIds: readonly number[],
-  opciones?: { sql?: Cliente },
-): Promise<number[]> {
-  if (puede(sujeto, "mejora.ver_todo")) return [...procesoIds];
-  if (sujeto.rol !== "lider_proceso" || procesoIds.length === 0) return [];
-  const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT up.proceso_id FROM usuario_procesos up
-    JOIN procesos p ON p.id = up.proceso_id AND p.activo
-    WHERE up.usuario_id = ${sujeto.usuarioId} AND up.proceso_id = ANY(${sql.array([...procesoIds])}::bigint[])`;
-  const suyos = new Set(filas.map((f) => Number(f.proceso_id)));
-  return procesoIds.filter((id) => suyos.has(id));
-}
-
+/** Quién imprime: la regla de `procesosQueImprime` (`src/lib/alcance.ts`), para un proceso. */
 async function imprimeElProceso(sql: Cliente, sujeto: SujetoVisibilidad, procesoId: number): Promise<boolean> {
   return (await procesosQueImprime(sujeto, [procesoId], { sql })).length === 1;
 }

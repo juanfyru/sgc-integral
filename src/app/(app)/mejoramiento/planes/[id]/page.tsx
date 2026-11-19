@@ -9,7 +9,7 @@ import { HistorialDelPlan } from "@/componentes/mejoramiento/planes/HistorialDel
 import { RespuestaAlEnte } from "@/componentes/mejoramiento/planes/RespuestaAlEnte";
 import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
-import { procesosQueImprime } from "@/db/consultas/mejoramiento/fo14";
+import { procesosQueImprime } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";

@@ -788,13 +788,16 @@ export async function sinResponsableDeDato(sql: Cliente, datoId: number): Promis
 // (`filtroPlanes`).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Los procesos activos que lidera la persona, para un `WHERE` sobre `mejora_hallazgos h`; `false` si no es líder. */
-function liderDelProcesoDelHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
+/**
+ * Los procesos activos que lidera la persona, para un `WHERE` sobre `mejora_hallazgos h` (o, con `procesoId`, sobre esa columna);
+ * `false` si no es líder.
+ */
+function liderDelProcesoDelHallazgo(sql: Cliente, sujeto: SujetoVisibilidad, procesoId: ReturnType<Cliente> = sql`h.proceso_id`) {
   if (sujeto.rol !== "lider_proceso") return sql`false`;
   return sql`EXISTS (
     SELECT 1 FROM usuario_procesos hz_up
     JOIN procesos hz_p ON hz_p.id = hz_up.proceso_id AND hz_p.activo
-    WHERE hz_up.usuario_id = ${sujeto.usuarioId} AND hz_up.proceso_id = h.proceso_id)`;
+    WHERE hz_up.usuario_id = ${sujeto.usuarioId} AND hz_up.proceso_id = ${procesoId})`;
 }
 
 const registroElHallazgo = (sql: Cliente, sujeto: SujetoVisibilidad) => sql`h.registrado_por = ${sujeto.usuarioId}`;
@@ -835,6 +838,26 @@ export function filtroHallazgos(sql: Cliente, sujeto: SujetoVisibilidad) {
 export function vistaCompletaDeHallazgo(sql: Cliente, sujeto: SujetoVisibilidad) {
   if (puede(sujeto, "mejora.ver_todo")) return sql`true`;
   return sql`(${liderDelProcesoDelHallazgo(sql, sujeto)} OR ${registroElHallazgo(sql, sujeto)})`;
+}
+
+/**
+ * De `procesoIds`, los procesos de los que la persona ve completos todos los hallazgos, sean cuantos sean (también ninguno): con
+ * `mejora.ver_todo`, todos; el líder, los suyos activos (la parte de `vistaCompletaDeHallazgo` que no depende del hallazgo); nadie
+ * más. Haber registrado uno no basta: no da los demás. Decide quién imprime un SGC-FO-14 (Fase 15B, anexo §5.5, F15B-DC44), en las
+ * dos lecturas (`fo14.ts`) y en los botones que llevan a ellas; un impreso vacío tampoco se le da a quien no lo vería lleno.
+ */
+export async function procesosQueImprime(
+  sujeto: SujetoVisibilidad,
+  procesoIds: readonly number[],
+  opciones?: { sql?: Cliente },
+): Promise<number[]> {
+  if (puede(sujeto, "mejora.ver_todo")) return [...procesoIds];
+  if (sujeto.rol !== "lider_proceso" || procesoIds.length === 0) return [];
+  const sql = opciones?.sql ?? obtenerSql();
+  const filas = await sql`SELECT x.id FROM unnest(${sql.array([...procesoIds])}::bigint[]) AS x(id)
+    WHERE ${liderDelProcesoDelHallazgo(sql, sujeto, sql`x.id`)}`;
+  const suyos = new Set(filas.map((f) => Number(f.id)));
+  return procesoIds.filter((id) => suyos.has(id));
 }
 
 /**

@@ -3,7 +3,8 @@
  * el encabezado del formato elegido. Contra la BD de desarrollo, dentro de una transacción que se revierte (el cliente de la app se
  * sustituye por ella). Lo que pinta cada impreso, sin base, en `tests/mejora-impresos.test.tsx`.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import type { TransactionSql } from "postgres";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -292,6 +293,17 @@ describe("el SGC-FO-14 impreso", () => {
     // El pie: quién lo imprimió y cuándo.
     expect(sin).toContain("Impreso el");
     expect(sin).toContain("por María Pérez");
+  });
+
+  it("se imprime en horizontal: la hoja lleva su página con nombre y solo esa página es apaisada", () => {
+    const html = pintar(fo14De("plan"));
+    expect(html).toMatch(/<article[^>]*class="ficha-impresa ficha-horizontal /);
+    const css = readFileSync(path.resolve(import.meta.dirname, "../src/app/globals.css"), "utf8");
+    expect(css).toMatch(/@page ficha-horizontal\s*\{[^}]*size:\s*landscape/);
+    expect(css).toMatch(/\.ficha-impresa\.ficha-horizontal\s*\{[^}]*page:\s*ficha-horizontal/);
+    // La de la ficha y los impresos de la 15A sigue sin girar.
+    expect(css).not.toMatch(/@page ficha\s*\{[^}]*landscape/);
+    expect(css).not.toMatch(/@page\s*\{[^}]*landscape/);
   });
 
   it("el consolidado dice «Consolidado del proceso» en el origen y en el código, y deja el objetivo en blanco", () => {

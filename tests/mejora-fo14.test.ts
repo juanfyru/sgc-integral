@@ -17,8 +17,9 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { guardarConfigMejora, obtenerConfigMejora } from "@/db/consultas/mejoramiento/config";
-import { CONSOLIDADO_DEL_PROCESO, fo14Consolidado, fo14DePlan, procesosQueImprime } from "@/db/consultas/mejoramiento/fo14";
+import { CONSOLIDADO_DEL_PROCESO, fo14Consolidado, fo14DePlan } from "@/db/consultas/mejoramiento/fo14";
 import { anularHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { procesosQueImprime } from "@/lib/alcance";
 import {
   baseDeMejora,
   c,
