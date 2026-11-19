@@ -402,6 +402,11 @@
    `CEX-IND-01`: lo ve `lider.cex` (le hace seguimiento) sin ver `GTH-IND-01`, y `consulta` no lo ve. El detalle está en «Qué
    probar y cómo (Fase 14C)», paso 0. **La base de desarrollo NO se resembró en la 14C**: la demo se sembró y se probó en la
    base aparte `sgc_f14c`.
+   **Desde la 15B** (`src/db/semillas/mejoramiento-demo.ts`, después de los indicadores): **25 indicadores** (`CEX-ID-004`, el de las
+   marcas), **20 hallazgos y 3 planes**, una verificación más en Urgencias con un hallazgo reabierto, la Ley 1438 que modifica la Ley
+   100 con dos impactos vencidos y escalados (`GES-PL-01` en atención) y dos trámites enlazados a una actividad. El detalle está en
+   «Qué probar y cómo (Fase 15B)», paso 0; las cifras de la 13B, la 13C y la 14 de los párrafos de arriba y de sus «Qué probar» son
+   las de antes.
    **Desde el complemento de la 14C** (la agenda, con `cambiarOperacion` y `ahora` inyectado): `CEX-ID-001` exige soporte
    desde el día 7 del mes de la siembra (o del anterior, en sus primeros diez días), activado a mitad del plazo de reporte
    del mes anterior a ese, que lo debe; el que lo precede, reportado y vencido, no. Es el único indicador de la demo con
@@ -512,8 +517,8 @@ bueno del usuario a las decisiones de abajo y su recorrido.
   eventos de un plan, las salidas, los enlaces y la clasificación). La demo toca lo de otros módulos, y sus tests lo cuentan: la
   guarda compartida (`SEMBRADO`, `tests/utiles/demo.ts`: tres verificaciones, dos hallazgos de verificación abiertos, dos cambios
   de norma y tres impactos pendientes), `tests/semilla-distribucion.test.ts` (mira la primera verificación de cada punto) y
-  `tests/semilla-vigencia.test.ts` (la Ley 100 modificada, su relación y su cambio, `GES-PL-01` en atención, y lo de la 13C por
-  su cambio). El capítulo 9 del manual gana las secciones 14 a 19, la 1.6 («Los archivos») y tres puntos más en la 13;
+  `tests/semilla-vigencia.test.ts` (la Ley 100 modificada, su relación y su cambio, `GES-PL-01` en atención por su impacto
+  pendiente, y lo de la 13C por su cambio). El capítulo 9 del manual gana las secciones 14 a 19, la 1.6 («Los archivos») y tres puntos más en la 13;
   `AGENTS.md` y `PLAN.md`.
 
 ### Qué probar y cómo (Fase 15B)
@@ -594,7 +599,8 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
 12. **El cambio documental.** En HZ-2026-007, actividad A1.1: SOL-2026-001 «Vale como evidencia de esta actividad.» y SOL-2026-002
     en revisión. Como `coordinadora.sgc`, **Pedir cambio documental** (la solicitud llega con la actividad y su advertencia) y
     **Enlazar un trámite** (SOL-2026-004 o SOL-2026-005). Como `jefe.urgencias`, en A1.2: «Pídale al líder del proceso o al
-    Administrador del SGC que lo solicite desde aquí». Como `lider.gth`, **Terminar** A1.1 sin archivo: vale SOL-2026-001.
+    Administrador del SGC que lo solicite desde aquí». Como `lider.gth`, registre en A1.1 un seguimiento al 100 % y **Terminar**
+    sin archivo: vale SOL-2026-001.
 13. **El cierre con documentos.** Como `coordinadora.sgc`, en HZ-2026-002 (**Por cerrar**), el cierre pide **Cómo se atendieron los
     cambios** («Ningún trámite enlazado terminó bien: diga cómo se atendieron los cambios.»). El otro caso (con un trámite
     publicado, sin justificación) no está en la demo: un hallazgo listo para cerrar ya no admite enlazar; lo cubre
@@ -605,8 +611,9 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
     recién sembrada, el primero de calidad, «3 hallazgos abiertos») y lleva a la lista filtrada.
 15. **La lista y los archivos.** **Hallazgos** muestra **Solo abiertos** (dieciséis); quite el filtro y busque HZ-2026-001 por su
     código, también con el filtro puesto. La demo no tiene segunda página: para verla, `crear-lista-t14.ts` del espacio de trabajo
-    añade cincuenta. En HZ-2026-010 (Por formular), suba un archivo al análisis, envíe el plan e intente quitarlo: no tiene
-    **Quitar**. Como `coordinadora.sgc`, **Retirar por datos personales** y vea el rastro en el historial.
+    añade cincuenta. En HZ-2026-012 (En revisión): como `coordinadora.sgc`, **Devolver con observaciones**; como `lider.cex`, suba un
+    archivo al análisis y reenvíe el plan: ese archivo ya no tiene **Quitar**. Como `coordinadora.sgc`, **Retirar por datos
+    personales** y vea el rastro en el historial del hallazgo.
 16. **Lo que vuelve.** Anule HZ-2026-020: la tarea «Decidir la acción de mejora de SGC-ID-002 …» vuelve (y con ella la salida **No
     requiere** del paso 7), y la fila del hallazgo de verificación vuelve a ofrecer **Abrir no conformidad**. Anule también la no
     conformidad del paso 10 y vea lo mismo. **Rechazarla** no se puede en la demo: un hallazgo de Atención Inmediata nace aceptado;
@@ -707,8 +714,8 @@ que son de proceso, como dónde corre la suite o quién revisa, no se repiten aq
     conforme:** la conformidad de los puntos que fotografía `SGC-ID-002` («de los dos puntos verificados, solo Farmacia») no cambia.
     Por eso la no conformidad que se abre desde él nace aceptada (Atención Inmediata no tiene líder). Práctica.
 30. **El impacto vencido y escalado de la demo** es la Ley 1438 de 2011, que modifica la Ley 100 de 1993 (una relación real), registrada
-    hace cuarenta días; la pasada de impactos de la 13C corre sola a los veinte. Deja `GES-PL-01` en atención en el semáforo; el impacto
-    de la 13C sigue en plazo. Práctica.
+    hace cuarenta días; la pasada de impactos de la 13C corre sola a los veinte. Deja `GES-PL-01` en atención en el semáforo (todo impacto
+    pendiente lo hace); el impacto de la 13C sigue en plazo. Práctica.
 
 ### Deuda técnica (Fase 15B)
 

@@ -80,7 +80,7 @@ describe("vigencia sembrada", () => {
 
     expect(filas).toHaveLength(34);
     expect(en("vencida")).toEqual(["AIN-FO-01", "ATE-DE-01", "GTH-PR-01"]);
-    // Desde la 15B, `GES-PL-01` también, por el impacto vencido de la Ley 1438 sobre la Ley 100 (`tests/semilla-mejoramiento.test.ts`).
+    // Desde la 15B, `GES-PL-01` también: tiene un impacto pendiente, el de la Ley 1438 sobre la Ley 100 (`tests/semilla-mejoramiento.test.ts`).
     expect(en("atencion")).toEqual(["GES-PL-01", "SGC-PR-01"]);
     expect(en("en_tramite")).toEqual(["CEX-CA-01", "CEX-GU-01", "GBS-PR-01", "GTH-PR-02"]);
     expect(en("al_dia")).toHaveLength(25);
