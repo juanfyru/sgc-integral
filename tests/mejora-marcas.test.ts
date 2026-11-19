@@ -214,6 +214,7 @@ describe("el pendiente", () => {
         esperaHasta: null,
         causa: ANALISIS_DE_LA_MARCA.causa,
         accionPropuesta: ANALISIS_DE_LA_MARCA.accionPropuesta,
+        analizadaEn: "2026-11-03",
       });
     }));
 

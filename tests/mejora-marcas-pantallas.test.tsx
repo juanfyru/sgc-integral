@@ -10,6 +10,7 @@ vi.mock("@/app/acciones-mejoramiento", () => ({
   resolverMarcaNoRequiereAccion: async () => null,
 }));
 
+import { YaDecidida } from "@/componentes/indicadores/medicion/TablaDelAnio";
 import { PanelDeMarcas } from "@/componentes/mejoramiento/marcas/PanelDeMarcas";
 import type { CandidatoDeMarca, MarcaDeMedicion } from "@/db/consultas/mejoramiento/marcas";
 import { ANCLA_DE_MARCAS } from "@/lib/mejoramiento/rutas";
@@ -23,6 +24,7 @@ const PENDIENTE: MarcaDeMedicion = {
   esperaHasta: null,
   causa: "Dos de cinco agendas estuvieron cerradas por incapacidad médica",
   accionPropuesta: "Definir un médico de reemplazo y abrir agenda extra",
+  analizadaEn: "2026-11-12",
 };
 const ESPERA: MarcaDeMedicion = {
   ...PENDIENTE,
@@ -49,6 +51,8 @@ describe("el panel de las marcas", () => {
     expect(html).toContain("Octubre de 2026");
     expect(html).toContain("Septiembre de 2026");
     expect(html).toContain("4,6 días frente a una meta de 3 días");
+    expect(html).toContain("Crítico");
+    expect(html).toContain("Análisis del líder");
     expect(html).toContain("Dos de cinco agendas estuvieron cerradas por incapacidad médica");
     expect(html).toContain("Definir un médico de reemplazo y abrir agenda extra");
     expect((html.match(/<li /g) ?? []).length).toBe(2);
@@ -71,9 +75,16 @@ describe("el panel de las marcas", () => {
     expect(con).toContain("No requiere acción de mejora");
     expect(con).toContain("No escriba nombres ni documentos de pacientes");
     const sin = pintar({ puede: { hallazgo: true, noRequiere: false } });
-    expect(sin).not.toContain("No requiere acción de mejora</summary>");
+    expect(sin).not.toContain("No requiere acción de mejora");
     expect(sin).not.toContain("Justificación");
     expect(sin).toContain("Abrir un hallazgo nuevo");
+  });
+
+  it("decide con dos gestos: una salida elegida y «Guardar la decisión»; ninguna sale con un solo clic", () => {
+    const html = pintar({ candidatos: CANDIDATOS });
+    expect((html.match(/type="radio"/g) ?? []).length).toBe(3);
+    expect((html.match(/Guardar la decisión/g) ?? []).length).toBe(1);
+    expect(html).not.toMatch(/<button[^>]*>Añadir como ocurrencia/);
   });
 
   it("«Abrir un hallazgo nuevo» enlaza a /mejoramiento/nuevo?medicion=<id>", () => {
@@ -82,13 +93,46 @@ describe("el panel de las marcas", () => {
 
   it("una medición que espera su análisis lo dice con su fecha y no ofrece ningún botón", () => {
     const html = pintar({ marcas: [ESPERA], candidatos: CANDIDATOS });
-    expect(html).toContain("La decisión se pedirá cuando tenga su análisis, o el 20 nov 2026 si no lo tiene.");
+    expect(html).toContain("Todavía no es un pendiente");
+    expect(html).toContain("La decisión se pedirá cuando tenga su análisis, o el 20 de noviembre de 2026 si no lo tiene.");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("Abrir un hallazgo nuevo");
     expect(html).not.toContain("Añadir como ocurrencia");
   });
 
+  it("un pendiente sin análisis lo dice (anexo §6.1) y el que lo tiene, no", () => {
+    const sinAnalisis = pintar({ marcas: [{ ...PENDIENTE, causa: null, accionPropuesta: null }] });
+    expect(sinAnalisis).toContain("Sin análisis: quien analiza el indicador todavía lo puede escribir.");
+    expect(pintar({})).not.toContain("Sin análisis:");
+  });
+
   it("sin marcas no hay panel", () => {
     expect(pintar({ marcas: [] })).toBe("");
+  });
+});
+
+describe("«Ya decidida» junto a un periodo (anexo §6.5)", () => {
+  const EN = new Date("2026-11-12T15:30:00Z");
+  it("con el hallazgo visible: «Hallazgo HZ-…» con su enlace", () => {
+    const html = renderToStaticMarkup(<YaDecidida salida={{ texto: "Hallazgo HZ-2026-014", enlace: "/mejoramiento/9", justificacion: null, por: "Ana", en: EN }} />);
+    expect(html).toContain("Ya decidida");
+    expect(html).toContain('href="/mejoramiento/9"');
+    expect(html).toContain("Hallazgo HZ-2026-014");
+  });
+
+  it("sin la entrada (quien no ve el hallazgo), la tabla no pinta nada: la medición no está en el mapa", () => {
+    const salidas = new Map<number, { texto: string; enlace: string | null; justificacion: string | null; por: string; en: Date }>();
+    expect(salidas.get(41)).toBeUndefined();
+  });
+
+  it("«No requiere acción de mejora» con su justificación, quién y cuándo, sin enlace", () => {
+    const html = renderToStaticMarkup(
+      <YaDecidida salida={{ texto: "No requiere acción de mejora", enlace: null, justificacion: "El cierre temporal de la sede explica el resultado", por: "María Pérez", en: EN }} />,
+    );
+    expect(html).toContain("No requiere acción de mejora");
+    expect(html).toContain("El cierre temporal de la sede explica el resultado");
+    expect(html).toContain("María Pérez");
+    expect(html).toContain("2026");
+    expect(html).not.toContain("<a ");
   });
 });

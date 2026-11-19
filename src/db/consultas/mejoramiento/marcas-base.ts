@@ -64,7 +64,7 @@ export const desdeLaMedicion = (sql: Cliente) => sql`mediciones m JOIN indicador
 
 /** Las columnas de una medición marcada (`desdeLaMedicion`) que leen `aMarcaLeida` y `estadoDeLaMarca`. */
 export const columnasDeMarca = (sql: Cliente) => sql`m.id, m.indicador_id, m.periodo, m.hasta, m.vence_en, m.estado, m.semaforo, m.cumple,
-  m.incumplimiento_repetido, m.analisis, m.causa, m.accion_propuesta, m.resultado_exacto, m.meta_aplicada, m.meta_max_aplicada,
+  m.incumplimiento_repetido, to_char(m.analizada_en, 'YYYY-MM-DD') AS analizada_dia, m.analisis, m.causa, m.accion_propuesta, m.resultado_exacto, m.meta_aplicada, m.meta_max_aplicada,
   i.codigo, i.proceso_id, coalesce(v.nombre, i.codigo) AS nombre, v.tendencia, v.semaforo_modo, v.umbral_atencion_pct, v.limite_critico,
   v.tolerancia, v.rangos, v.unidad_sufijo, v.decimales`;
 
@@ -79,6 +79,8 @@ export type MarcaLeida = MarcaSinDecidir & {
   /** La clave del periodo («2026-10»). */
   periodo: string;
   hasta: Date;
+  /** El día (`AAAA-MM-DD`, en la zona de la instalación) en que quien analiza escribió su análisis, si lo hizo. */
+  analizadaDia: string | null;
   /** Lo que la medición muestra: el resultado en texto (o nulo) y su meta en pocas palabras (o nula). */
   valor: string | null;
   frente: string | null;
@@ -111,6 +113,7 @@ export function aMarcaLeida(f: Record<string, unknown>): MarcaLeida {
     nombre: f.nombre as string,
     periodo: f.periodo as string,
     hasta: f.hasta as Date,
+    analizadaDia: (f.analizada_dia as string | null) ?? null,
     venceEn: f.vence_en as Date,
     cerrada: f.estado === "cerrada",
     semaforo,

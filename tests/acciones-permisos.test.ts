@@ -68,6 +68,19 @@ describe("los planes de mejoramiento y la clasificación de un hallazgo son de q
   }
 });
 
+describe("las dos salidas de la marca «Requiere acción de mejora» tienen cada una su permiso (anexo 15B, §6.2)", () => {
+  const src = readFileSync("src/app/acciones-mejoramiento.ts", "utf8");
+  for (const [nombre, permiso] of [
+    ["resolverMarcaConOcurrenciaAccion", "mejora.registrar"],
+    ["resolverMarcaNoRequiereAccion", "mejora.gestionar"],
+  ] as const) {
+    it(nombre, () => {
+      const accion = exportadas(src).find((a) => a.nombre === nombre);
+      expect(accion?.cuerpo).toContain(`mutacion(formData, "${permiso}"`);
+    });
+  }
+});
+
 describe("toda acción de cuenta exige sesión salvo ingresar", () => {
   const src = readFileSync("src/app/acciones-cuenta.ts", "utf8");
   for (const { nombre, cuerpo } of exportadas(src)) {

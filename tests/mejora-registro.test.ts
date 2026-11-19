@@ -901,7 +901,7 @@ describe("«A qué se refiere» de un hallazgo que cita una medición: su estado
       // Un recálculo le quita la marca y cambia el color: el enlace lo dice con el estado de hoy.
       await tx`UPDATE mediciones SET requiere_accion = false, semaforo = 'bien' WHERE id = ${mm.medicionId}`;
       const sin = await delIndicador();
-      expect(sin.visible && sin.nombre).toContain("Bien");
+      expect(sin.visible && sin.nombre).toContain("10 % frente a una meta de 90 % · Bien, no alcanza la meta");
       expect(sin.visible && sin.nombre).not.toContain("Requiere acción de mejora");
 
       // El indicador pasa a ser restringido de otro proceso: el líder ya no lo ve y no lee ni la cifra ni el color.

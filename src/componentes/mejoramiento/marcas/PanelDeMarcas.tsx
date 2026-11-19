@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { InsigniaSemaforo } from "@/componentes/indicadores/InsigniaSemaforo";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { CandidatoDeMarca, MarcaDeMedicion } from "@/db/consultas/mejoramiento/marcas";
 import { ANCLA_DE_MARCAS, rutaDeRegistro } from "@/lib/mejoramiento/rutas";
+import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { textoFecha } from "@/lib/vigencia/plazo";
-import { BotonDeOcurrencia } from "./BotonDeOcurrencia";
-import { FormularioNoRequiere } from "./FormularioNoRequiere";
+import { FormularioDeDecision } from "./FormularioDeDecision";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -36,60 +38,71 @@ export function PanelDeMarcas({
         Requiere acción de mejora
       </h2>
       <ul className="flex min-w-0 list-none flex-col gap-4">
-        {marcas.map((m) => (
-          <li key={m.medicionId} className="flex min-w-0 flex-col gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0">
-            <p className="break-words">
-              <b>{m.periodo}</b>
-              {` · ${m.resultado} `}
-              <Insignia variante="neutra">Requiere acción de mejora</Insignia>
-            </p>
-            {m.estado === "espera_analisis" ? (
-              <p className="text-muted-foreground">
-                {`La decisión se pedirá cuando tenga su análisis, o el ${m.esperaHasta ? textoFecha(m.esperaHasta, "UTC") : "día de su plazo"} si no lo tiene.`}
+        {marcas.map((m) => {
+          const conAnalisis = m.causa !== null || m.accionPropuesta !== null;
+          return (
+            <li key={m.medicionId} className="flex min-w-0 flex-col gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0">
+              <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 break-words">
+                <b>{m.periodo}</b>
+                {m.semaforo ? <InsigniaSemaforo semaforo={m.semaforo} /> : null}
+                <span>{m.resultado}</span>
+                <Insignia variante="neutra">Requiere acción de mejora</Insignia>
               </p>
-            ) : (
-              <>
-                {m.causa !== null || m.accionPropuesta !== null ? (
-                  <dl className="flex min-w-0 flex-col gap-1 rounded-md border border-border p-2">
-                    {m.causa !== null ? (
-                      <div>
-                        <dt className="font-medium">Causa</dt>
-                        <dd className="break-words">{m.causa}</dd>
-                      </div>
-                    ) : null}
-                    {m.accionPropuesta !== null ? (
-                      <div>
-                        <dt className="font-medium">Acción propuesta</dt>
-                        <dd className="break-words">{m.accionPropuesta}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
-                ) : null}
-                <div className="flex min-w-0 flex-col items-start gap-2">
-                  <p className="font-medium">{`Decidir la acción de mejora: ${m.periodo.toLowerCase()}`}</p>
-                  {puede.hallazgo
-                    ? candidatos.map((c, i) => (
-                        <div key={c.id} className="flex min-w-0 flex-col items-start gap-1">
-                          <BotonDeOcurrencia medicionId={m.medicionId} hallazgoId={c.id} codigo={c.codigo} periodo={m.periodo} />
-                          <p className="break-words text-muted-foreground">
-                            {i === 0 ? <Insignia variante="neutra">Sugerido</Insignia> : null}
-                            {` «${c.titulo}» · ${c.estado}.`}
-                          </p>
-                        </div>
-                      ))
-                    : null}
-                  {puede.hallazgo ? (
-                    <Link href={rutaDeRegistro({ medicion: String(m.medicionId) })} className={`rounded-sm font-medium text-marca underline-offset-2 hover:underline ${FOCO}`}>
-                      Abrir un hallazgo nuevo
-                      <span className="sr-only">{`: ${m.periodo}`}</span>
-                    </Link>
-                  ) : null}
-                  {puede.noRequiere ? <FormularioNoRequiere medicionId={m.medicionId} periodo={m.periodo} /> : null}
+              {m.estado === "espera_analisis" ? (
+                <div className="flex min-w-0 flex-col gap-1">
+                  <h3 className="font-medium">Todavía no es un pendiente</h3>
+                  <p className="text-muted-foreground">
+                    {`La decisión se pedirá cuando tenga su análisis, o el ${m.esperaHasta ? fechaLargaDeDia(m.esperaHasta) : "día de su plazo"} si no lo tiene.`}
+                  </p>
                 </div>
-              </>
-            )}
-          </li>
-        ))}
+              ) : (
+                <>
+                  {conAnalisis ? (
+                    <div className="flex min-w-0 flex-col gap-1 rounded-md border border-border p-2">
+                      <h3 className="font-medium">
+                        Análisis del líder
+                        {m.analizadaEn ? <span className="font-normal text-muted-foreground">{` · ${textoFecha(m.analizadaEn, "UTC")}`}</span> : null}
+                      </h3>
+                      <dl className="flex min-w-0 flex-col gap-1">
+                        {m.causa !== null ? (
+                          <div>
+                            <dt className="font-medium">Causa</dt>
+                            <dd className="break-words">{m.causa}</dd>
+                          </div>
+                        ) : null}
+                        {m.accionPropuesta !== null ? (
+                          <div>
+                            <dt className="font-medium">Acción propuesta</dt>
+                            <dd className="break-words">{m.accionPropuesta}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">Sin análisis: quien analiza el indicador todavía lo puede escribir.</p>
+                  )}
+                  <div className="flex min-w-0 flex-col items-start gap-2">
+                    <h3 className="font-medium">{`Decidir la acción de mejora: ${m.periodo.toLowerCase()}`}</h3>
+                    {(candidatos.length > 0 && puede.hallazgo) || puede.noRequiere ? (
+                      <FormularioDeDecision
+                        medicionId={m.medicionId}
+                        periodo={m.periodo}
+                        candidatos={puede.hallazgo ? candidatos : []}
+                        puedeNoRequerir={puede.noRequiere}
+                      />
+                    ) : null}
+                    {puede.hallazgo ? (
+                      <Link href={rutaDeRegistro({ medicion: String(m.medicionId) })} className={`${claseBoton("secundario", "sm")} ${FOCO}`}>
+                        Abrir un hallazgo nuevo
+                        <span className="sr-only">{`: ${m.periodo}`}</span>
+                      </Link>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

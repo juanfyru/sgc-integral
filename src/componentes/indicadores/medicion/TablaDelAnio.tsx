@@ -56,7 +56,7 @@ function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: Entrada
  * «Ya decidida» (anexo 15B §6.5): la salida en vigor de la marca junto a su periodo. «Hallazgo HZ-…» y «Ocurrencia de HZ-…» con su
  * enlace, que `salidasVisibles` solo da a quien ve ese hallazgo; «No requiere acción de mejora» con su justificación, quién y cuándo.
  */
-function YaDecidida({ salida }: { salida: SalidaDeMedicion }) {
+export function YaDecidida({ salida }: { salida: SalidaDeMedicion }) {
   return (
     <div className="mt-1 flex min-w-0 max-w-xs flex-col gap-0.5 text-xs">
       <span className="font-medium">Ya decidida</span>

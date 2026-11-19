@@ -61,6 +61,8 @@ export type MarcaDeMedicion = {
   esperaHasta: string | null;
   causa: string | null;
   accionPropuesta: string | null;
+  /** El día (`AAAA-MM-DD`) en que se escribió el análisis, o nulo. */
+  analizadaEn: string | null;
 };
 
 /** La salida en vigor de una medición, tal como la pinta la página del indicador (`salidasVisibles`). */
@@ -128,6 +130,7 @@ export async function marcasDelIndicador(
       esperaHasta: estado === "espera_analisis" ? fechaEnZona(m.venceEn, zona) : null,
       causa: m.causa,
       accionPropuesta: m.accionPropuesta,
+      analizadaEn: m.analizadaDia,
     };
   });
   const candidatos = puede.hallazgo && marcas.length > 0 ? await candidatosDe(sql, sesion, indicadorId) : [];

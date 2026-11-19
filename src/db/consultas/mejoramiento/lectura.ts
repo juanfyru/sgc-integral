@@ -22,7 +22,7 @@ import {
   vistaCompletaDeHallazgo,
 } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
-import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
+import { nombreDeEstado } from "@/lib/indicadores/tipos";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { leerCriterios, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
@@ -1209,7 +1209,7 @@ async function enlacesDe(
     const estadoDeHoy = hoy
       ? [
           hoy.frente ?? hoy.valor ?? "Sin resultado",
-          hoy.semaforo ? ETIQUETA_SEMAFORO[hoy.semaforo] : null,
+          hoy.semaforo ? nombreDeEstado(hoy.semaforo, hoy.cumple) : null,
           medicion?.requiere_accion === true ? "Requiere acción de mejora" : null,
         ]
           .filter(Boolean)
