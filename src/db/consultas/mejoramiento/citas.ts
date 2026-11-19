@@ -11,15 +11,17 @@
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, enAlcance, filtroHallazgos, type Alcance } from "@/lib/alcance";
+import { alcanceProcesos, filtroHallazgos, procesosQueImprime } from "@/lib/alcance";
 import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
 import { rutaDeListaFiltrada } from "@/lib/mejoramiento/filtro";
 import { rutaDeReportarSobre } from "@/lib/mejoramiento/reportes";
-import { rutaDeRegistro } from "@/lib/mejoramiento/rutas";
+import { rutaDelConsolidado, rutaDeRegistro } from "@/lib/mejoramiento/rutas";
 import { TERMINALES, type EstadoHallazgo, type ResultadoCierre } from "@/lib/mejoramiento/tipos";
 import { puede } from "@/lib/permisos";
+import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { procesoAdmiteRegistro } from "./donde-registra";
 import { fechasMinimasDe } from "./espera";
 
 /** Lo que muestra la página que lleva la sección. */
@@ -153,20 +155,10 @@ export async function hallazgosQueCitan(
 }
 
 /**
- * La regla del registro sobre el proceso elegido (la de `registrarHallazgo` y `revisarIdentificacion`): activo y en el alcance de
- * quien registra (`alcanceProcesos`: el líder, los suyos; los demás, todos). La comparten el botón de la sección y el prellenado del
- * registro (`procesoDondeRegistra`), que la página de registro ya exige con `mejora.registrar`.
- */
-export async function procesoAdmiteRegistro(sql: Cliente, alcance: Alcance, procesoId: number): Promise<boolean> {
-  if (!esId(procesoId)) return false;
-  const [p] = await sql`SELECT activo FROM procesos WHERE id = ${procesoId}`;
-  return p?.activo === true && enAlcance(alcance, procesoId);
-}
-
-/**
  * Si la persona puede registrar un hallazgo en ese proceso (anexo §10.2): con `mejora.registrar` (el permiso va primero:
- * `alcanceProcesos` le da todos a Consulta y a Gerencia) y con la regla del registro sobre el proceso (`procesoAdmiteRegistro`). El
- * Admin SGC y Control Interno, en cualquier proceso activo; el líder, en los suyos; Consulta y Gerencia, en ninguno.
+ * `alcanceProcesos` le da todos a Consulta y a Gerencia) y con la regla única de dónde se registra (`procesoAdmiteRegistro`, de
+ * `donde-registra.ts`: la que aplica el registro mismo). El Admin SGC y Control Interno, en cualquier proceso activo; el líder, en los
+ * suyos; Consulta y Gerencia, en ninguno.
  */
 export async function puedeRegistrarEn(sql: Cliente, sesion: SesionFlujo, procesoId: number): Promise<boolean> {
   if (!puede(sesion, "mejora.registrar")) return false;
@@ -185,6 +177,21 @@ export async function abiertosPorObjetivo(sesion: SesionFlujo, opciones?: { sql?
     WHERE c.objetivo_id IS NOT NULL AND h.estado NOT IN ${sql([...TERMINALES])} AND ${filtroHallazgos(sql, sesion)}
     GROUP BY c.objetivo_id`;
   return new Map(filas.map((f) => [Number(f.objetivo_id), Number(f.n)]));
+}
+
+/**
+ * «SGC-FO-14 del proceso» de la sección (anexo §10.1, la fila «un proceso (o un subproceso)»): el consolidado del proceso en el año en
+ * curso (en la zona de la instalación, con el `ahora` de quien llama), solo a quien lo imprime (anexo §5.5, `procesosQueImprime`:
+ * `mejora.ver_todo` o líder de ese proceso). Nulo para los demás. Lo usan la página del proceso y la de sus subprocesos.
+ */
+export async function consolidadoDelProceso(
+  sesion: SesionFlujo,
+  procesoId: number,
+  opciones?: { sql?: Cliente; ahora?: Date },
+): Promise<string | null> {
+  const imprime = await procesosQueImprime(sesion, [procesoId], { sql: opciones?.sql });
+  if (imprime.length === 0) return null;
+  return rutaDelConsolidado(procesoId, Number(fechaEnZona(opciones?.ahora ?? new Date(), zonaHoraria()).slice(0, 4)));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

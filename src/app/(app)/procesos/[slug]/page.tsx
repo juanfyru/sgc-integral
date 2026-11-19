@@ -13,7 +13,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { IndicadoresDelProceso } from "@/componentes/indicadores/IndicadoresDelProceso";
 import { ResumenVigencia } from "@/componentes/vigencia/ResumenVigencia";
 import { indicadoresDeProceso, sinTumbarLaPagina } from "@/db/consultas/indicadores/lista";
-import { seccionDeMejoramiento } from "@/db/consultas/mejoramiento/citas";
+import { consolidadoDelProceso, seccionDeMejoramiento } from "@/db/consultas/mejoramiento/citas";
 import { normasDeProceso } from "@/db/consultas/normograma/asociaciones";
 import { normasParaElegir } from "@/db/consultas/normograma/lectura";
 import {
@@ -21,11 +21,8 @@ import {
   obtenerDocumentosDeProceso,
   resumenVigenciaDeProceso,
 } from "@/db/consultas/procesos";
-import { alcanceProcesos, procesosQueImprime, puedeAsociarNorma } from "@/lib/alcance";
-import { rutaDelConsolidado } from "@/lib/mejoramiento/rutas";
+import { alcanceProcesos, puedeAsociarNorma } from "@/lib/alcance";
 import { exigirSesion } from "@/lib/paginas";
-import { fechaEnZona } from "@/lib/tramites/plazos";
-import { zonaHoraria } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +45,7 @@ export default async function VistaProceso({
   const tieneSubprocesos = proceso.subprocesos.length > 0;
   const incluirSubprocesos = tieneSubprocesos && parametroSubprocesos !== "0";
   const ahora = new Date();
-  const [documentos, vigencia, normas, alcance, indicadores, mejoramiento, imprime] = await Promise.all([
+  const [documentos, vigencia, normas, alcance, indicadores, mejoramiento, consolidado] = await Promise.all([
     obtenerDocumentosDeProceso(proceso.id, incluirSubprocesos, sesion),
     resumenVigenciaDeProceso(proceso.id, sesion),
     normasDeProceso(proceso.id, sesion),
@@ -57,10 +54,8 @@ export default async function VistaProceso({
     // «Mejoramiento» (Fase 15B, anexo §10.1): los hallazgos del proceso que la persona ve, «Abrir hallazgo» o «Reportar» con el proceso
     // puesto y, a quien lo imprime (anexo §5.5), el SGC-FO-14 consolidado del proceso en el año en curso. Lo decide Mejoramiento.
     seccionDeMejoramiento(sesion, { procesoId: proceso.id }, { procesoId: proceso.id, enlace: { proceso: proceso.slug } }, { ahora }),
-    procesosQueImprime(sesion, [proceso.id]),
+    consolidadoDelProceso(sesion, proceso.id, { ahora }),
   ]);
-  const consolidado =
-    imprime.length > 0 ? rutaDelConsolidado(proceso.id, Number(fechaEnZona(ahora, zonaHoraria()).slice(0, 4))) : null;
   // «Asociar norma» (spec 13C §10.3): quien tiene `normograma.procesos` sobre el proceso, con las normas que aún no aplican.
   // Una derogada ya no se asocia a un proceso nuevo (`asociarProceso` lo rechaza).
   const asociables = puedeAsociarNorma(sesion, proceso.id, alcance)

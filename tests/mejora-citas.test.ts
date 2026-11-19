@@ -5,7 +5,8 @@
  * objetivo. Review Focus 6: el rol Consulta no ve ni lista, ni conteo, ni un cero; solo «Reportar». Contra la BD de trabajo, dentro de
  * una transacción que se revierte.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it } from "vitest";
@@ -24,6 +25,7 @@ import type { ObjetivoLeido } from "@/db/consultas/indicadores/objetivos";
 import {
   abiertosPorObjetivo,
   CITA_UNA_MEDICION,
+  consolidadoDelProceso,
   COMO_CRITERIO_DE_EFICACIA,
   COMO_REQUISITO,
   ES_DEL_PROCESO,
@@ -35,14 +37,26 @@ import {
   seccionDeMejoramiento,
   type Cita,
 } from "@/db/consultas/mejoramiento/citas";
+import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
+import { ELIJA_UN_PROCESO_ACTIVO } from "@/db/consultas/mejoramiento/donde-registra";
+import { NO_EXISTE } from "@/db/consultas/mejoramiento/flujo";
 import { nombresDelFiltro, opcionesDelFiltro } from "@/db/consultas/mejoramiento/opciones";
 import { anularPlan } from "@/db/consultas/mejoramiento/planes";
-import { anularHallazgo, registrarHallazgo, type DatosDeHallazgo } from "@/db/consultas/mejoramiento/registro";
+import {
+  anularHallazgo,
+  editarHallazgo,
+  registrarHallazgo,
+  registrarOcurrencia,
+  type DatosDeHallazgo,
+} from "@/db/consultas/mejoramiento/registro";
+import { ErrorMejora } from "@/lib/mejoramiento/tipos";
+import { ErrorPermiso } from "@/lib/permisos";
 import { rutaDeRegistro } from "@/lib/mejoramiento/rutas";
 import { indicadorDePrueba, type IndicadorDePrueba } from "./utiles/indicadores";
 import {
   baseDeMejora,
   c,
+  datosDeCarga,
   datosDeHallazgo,
   objetivoDePrueba,
   otroProcesoConLider,
@@ -440,5 +454,77 @@ describe("los filtros de la lista: sus opciones, sus nombres y el formulario (an
     expect(sin).not.toContain("Desde otra página");
     expect(sin).not.toContain('name="plan"');
     expect(sin).not.toContain('name="objetivo"');
+  });
+});
+
+describe("ronda 1: una sola regla de dónde se registra y el SGC-FO-14 del subproceso", () => {
+  it("la regla vive en donde-registra.ts: el registro, el botón y el prellenado la importan; nadie la repite", () => {
+    const leer = (ruta: string) => readFileSync(path.resolve(import.meta.dirname, "..", "src", ruta), "utf8");
+    const registro = leer("db/consultas/mejoramiento/registro.ts");
+    expect(registro).toContain('from "./donde-registra"');
+    expect(registro).not.toMatch(/enAlcance\(/);
+    expect(registro).not.toMatch(/SELECT activo FROM procesos WHERE id = \$\{v\.procesoId\}/);
+    for (const ruta of ["db/consultas/mejoramiento/citas.ts", "db/consultas/mejoramiento/prellenado.ts"]) {
+      const texto = leer(ruta);
+      expect(texto, ruta).toMatch(/import \{[^}]*procesoAdmiteRegistro[^}]*\} from "\.\/donde-registra"/);
+      expect(texto, ruta).not.toMatch(/SELECT activo FROM procesos/);
+      expect(texto, ruta).not.toMatch(/enAlcance\(/);
+    }
+  });
+
+  it("el registro, la edición y la carga dicen lo mismo con la regla única: fuera del alcance, ErrorPermiso; inactivo, su mensaje", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const inactivo = await procesoNuevo(tx);
+      await tx`UPDATE procesos SET activo = false WHERE id = ${inactivo}`;
+      const o = c(AHORA, tx);
+      // El registro: el líder fuera de su alcance y cualquiera en un proceso inactivo.
+      await expect(registrarHallazgo(b.lider, datosDeHallazgo(otro.procesoId), o)).rejects.toBeInstanceOf(ErrorPermiso);
+      await expect(registrarHallazgo(b.control, datosDeHallazgo(inactivo), o)).rejects.toThrow(new ErrorMejora(ELIJA_UN_PROCESO_ACTIVO));
+      // La edición (de quien lo registró, «Por aceptar»): mover el hallazgo a un proceso que no admite, con los mismos mensajes.
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), o);
+      await expect(editarHallazgo(b.control, id, datosDeHallazgo(inactivo), o)).rejects.toThrow(new ErrorMejora(ELIJA_UN_PROCESO_ACTIVO));
+      // Quien lo registró pasa a ser líder de ese proceso (como en `tests/mejora-registro.test.ts`): moverlo fuera de su alcance, no.
+      await tx`UPDATE usuarios SET rol = 'lider_proceso' WHERE id = ${b.control.usuarioId}`;
+      await tx`INSERT INTO usuario_procesos (usuario_id, proceso_id) VALUES (${b.control.usuarioId}, ${b.procesoId})`;
+      const comoLider = { ...b.control, rol: "lider_proceso" as const };
+      await expect(editarHallazgo(comoLider, id, datosDeHallazgo(otro.procesoId), o)).rejects.toBeInstanceOf(ErrorPermiso);
+      // La carga (del Admin SGC): un proceso inactivo, el mismo mensaje.
+      await expect(cargarHallazgo(b.admin, datosDeCarga(inactivo, b.lider.usuarioId), o)).rejects.toThrow(new ErrorMejora(ELIJA_UN_PROCESO_ACTIVO));
+      // Una ocurrencia, solo el alcance: el líder de otro proceso no la añade (y no sabe que el hallazgo existe).
+      await expect(
+        registrarOcurrencia(otro.lider, { hallazgoId: id, fecha: "2026-11-12", descripcion: "Otra vez el formato sin diligenciar" }, o),
+      ).rejects.toThrow(new ErrorMejora(NO_EXISTE));
+    });
+  });
+
+  it("consolidadoDelProceso: quien imprime el SGC-FO-14 del proceso lo recibe (también desde un subproceso); el líder de otro proceso, no", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const [s] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden)
+        VALUES (${b.procesoId}, 'Subproceso del consolidado', ${`zz-sub-${Date.now()}`}, 99) RETURNING id`;
+      const esperado = `/mejoramiento/consolidado?proceso=${b.procesoId}&anio=2026`;
+      const o = { sql: tx, ahora };
+      for (const quien of [b.admin, b.control, b.gerencia, b.lider]) {
+        expect(await consolidadoDelProceso(quien, b.procesoId, o), quien.rol).toBe(esperado);
+      }
+      for (const quien of [otro.lider, b.consulta]) expect(await consolidadoDelProceso(quien, b.procesoId, o), quien.rol).toBeNull();
+
+      // La sección del subproceso con el consolidado de su proceso padre: el líder lo ve; el de otro proceso, no.
+      const [{ slug }] = await tx`SELECT slug FROM procesos WHERE id = ${b.procesoId}`;
+      const del = async (quien: SesionFlujo) =>
+        pintada(
+          await seccionDeMejoramiento(quien, { subprocesoId: Number(s.id) }, { procesoId: b.procesoId, enlace: { proceso: slug as string } }, o),
+          (await consolidadoDelProceso(quien, b.procesoId, o)) ?? undefined,
+        );
+      const delLider = await del(b.lider);
+      expect(delLider).toContain("SGC-FO-14 del proceso");
+      expect(delLider).toContain(`href="${esperado.replaceAll("&", "&amp;")}"`);
+      const delOtro = await del(otro.lider);
+      expect(delOtro).not.toContain("SGC-FO-14");
+      expect(delOtro).not.toContain("/mejoramiento/consolidado");
+    });
   });
 });

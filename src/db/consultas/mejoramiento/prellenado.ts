@@ -16,7 +16,7 @@ import { FIJOS_DE_VERIFICACION, fuenteDeImpacto, fuenteDeVerificacion, ORIGEN_DE
 import type { SobreQueSeReporta } from "@/lib/mejoramiento/reportes";
 import type { ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
 import { puede } from "@/lib/permisos";
-import { procesoAdmiteRegistro } from "./citas";
+import { procesoAdmiteRegistro } from "./donde-registra";
 import { impactoParaAbrir, type ClaseDeImpacto } from "./enganche-impacto";
 import { hallazgoParaAbrir } from "./enganche-verificacion";
 import { documentoEnlazable, indicadorEnlazable, type DocumentoEnlazable, type IndicadorEnlazable } from "./enlazables";

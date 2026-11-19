@@ -7,7 +7,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { alcanceProcesos, enAlcance, filtroAcceso, filtroIndicadores, puedeVerHallazgo } from "@/lib/alcance";
+import { filtroAcceso, filtroIndicadores, puedeVerHallazgo } from "@/lib/alcance";
 import {
   EsquemaAnulacion,
   EsquemaCambioDeProceso,
@@ -43,6 +43,7 @@ import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
 import { cargaPendiente } from "./carga-confirmada";
 import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
+import { ELIJA_UN_PROCESO_ACTIVO, enElAlcanceDeRegistro, exigirProcesoDondeRegistra } from "./donde-registra";
 import { impactoParaAbrir, type ClaseDeImpacto, type ImpactoParaAbrir } from "./enganche-impacto";
 import { hallazgoParaAbrir, procesosDelPunto } from "./enganche-verificacion";
 import { DATO_YA_NO_EXISTE } from "./legible";
@@ -131,7 +132,10 @@ export async function tomarCodigo(tx: TransactionSql, anio: number): Promise<{ c
 }
 
 /**
- * Lo que el esquema no puede saber: la fecha de hoy, el proceso y lo enlazado. Solo lecturas. También la carga (`carga.ts`).
+ * Lo que el esquema no puede saber: el proceso, la fecha de hoy y lo enlazado. Solo lecturas. También la carga (`carga.ts`) y la
+ * edición. El proceso, con la regla única de dónde se registra (`exigirProcesoDondeRegistra`, la misma del botón «Abrir hallazgo» y
+ * del prellenado): fuera del alcance de quien registra, `ErrorPermiso`; inactivo, «Elija un proceso activo». Va primero: antes que
+ * ninguna otra lectura de lo enviado.
  *
  * «A qué se refiere» (Fase 15B, anexo §10.3) pasa además por el alcance de quien registra, con la regla del módulo de cada cosa: el
  * documento, `filtroAcceso`; el indicador y el de la medición, `filtroIndicadores`. Para quien no lo ve, no existe: el mismo
@@ -146,9 +150,8 @@ export async function revisarIdentificacion(
   c: ContextoMejora,
   previos?: EnlacesPrevios,
 ): Promise<void> {
+  await exigirProcesoDondeRegistra(tx, sesion, v.procesoId);
   if (v.detectadoEn > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora("La fecha en que se detectó no puede ser futura");
-  const [proceso] = await tx`SELECT activo FROM procesos WHERE id = ${v.procesoId}`;
-  if (!proceso?.activo) throw new ErrorMejora("Elija un proceso activo");
   if (v.subprocesoId !== null) {
     const [s] = await tx`SELECT 1 FROM subprocesos WHERE id = ${v.subprocesoId} AND proceso_id = ${v.procesoId}`;
     if (!s) throw new ErrorMejora("El subproceso elegido no es de ese proceso");
@@ -306,10 +309,8 @@ export async function registrarHallazgo(
       const v: HallazgoValidado = delImpacto ? { ...conPanel, ...fijosDelImpacto(delImpacto) } : conPanel;
       if (v.derivadoDe !== null) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${v.derivadoDe} FOR KEY SHARE`;
       const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
-      if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
-        throw new ErrorPermiso();
-      }
       const c = await contextoDeMejora(tx, ahora);
+      // Dónde se registra (`exigirProcesoDondeRegistra`), antes que todo lo demás de la identificación.
       await revisarIdentificacion(tx, sesion, v, c);
       await exigirReincidencia(tx, v.reincidenteDe, v.procesoId);
       // Para quien no puede ver el hallazgo de origen, no existe (spec §6.3): la misma frase que para un id que no existe.
@@ -580,7 +581,7 @@ export async function registrarOcurrencia(
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       const h = await bloquearHallazgo(tx, o.hallazgoId);
-      if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), h.procesoId)) {
+      if (!(await enElAlcanceDeRegistro(sesion, h.procesoId, { sql: tx }))) {
         // Quien lo ve por otro camino (una actividad suya) no puede añadirle ocurrencias; quien no lo ve, no sabe que existe.
         throw (await puedeVerHallazgo(h.id, sesion, { sql: tx })) ? new ErrorPermiso() : new ErrorMejora(NO_EXISTE);
       }
@@ -658,9 +659,6 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
       if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
       const v = leido.data;
       if (h.verificacionHallazgoId !== null) exigirProcesoDelPunto(await procesosDelPunto(tx, h.verificacionHallazgoId), v.procesoId);
-      if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
-        throw new ErrorPermiso();
-      }
       const c = await contextoDeMejora(tx, ahora);
       const f = await leerFila(tx, h.id);
       const antes = identificacionDeFila(f);
@@ -869,7 +867,7 @@ export async function cambiarProceso(
       if (h.estado !== "por_aceptar") throw new ErrorMejora(YA_CAMBIO);
       if (h.procesoId === r.procesoId) throw new ErrorMejora("Elija un proceso distinto del actual");
       const [nuevo] = await tx`SELECT nombre, activo FROM procesos WHERE id = ${r.procesoId}`;
-      if (!nuevo?.activo) throw new ErrorMejora("Elija un proceso activo");
+      if (!nuevo?.activo) throw new ErrorMejora(ELIJA_UN_PROCESO_ACTIVO);
       const c = await contextoDeMejora(tx, ahora);
       const [viejo] = await tx`SELECT p.nombre, h.titulo, h.subproceso_id, h.reincidente_de
         FROM mejora_hallazgos h JOIN procesos p ON p.id = h.proceso_id WHERE h.id = ${h.id}`;
