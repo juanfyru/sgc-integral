@@ -20,6 +20,13 @@ export const NO_ESTA_EN_UN_PLAN = "El hallazgo no está en un plan";
 export const FALTA_LA_FECHA_DEL_ENTE = "Escriba la fecha límite del ente";
 export const SIN_CAMBIOS_EN_EL_PLAN = "No cambió ningún dato del plan";
 
+/** La respuesta al ente desde el plan (§3.8). */
+export const SIN_LISTOS = "Ningún hallazgo del plan espera respuesta";
+export const LISTOS_CAMBIARON = "Cambiaron los hallazgos listos para responder: revise la lista";
+export const OFICIO_DE_OTRA = "Ese archivo ya es el oficio de otra respuesta";
+export const OFICIO_AJENO_AL_PLAN = "Elija el oficio entre los archivos del plan";
+export const RESPONDA_DESDE_EL_PLAN = "Este hallazgo está en un plan: registre la respuesta desde el plan";
+
 /** Los estados de un hallazgo que no cuentan para un plan: no entran y, si se quedan en él, dejan de contar (F15B-DC6). */
 export const NO_CUENTAN_PARA_PLAN: readonly EstadoHallazgo[] = ["rechazado", "anulado"];
 

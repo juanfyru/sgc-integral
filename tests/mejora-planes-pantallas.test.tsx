@@ -1,12 +1,17 @@
 /**
  * Las pantallas de los planes de mejoramiento que no tocan la base (Fase 15B, Tarea 4; anexo §3.4 a §3.6 y §3.9, maquetas 1 y 2):
  * la pestaña «Planes», el encabezado y los hallazgos de la página del plan, su historial y la sección «Clasificación» de un
- * hallazgo. Con datos de mentira.
+ * hallazgo; y (Tarea 5, anexo §3.7 y §3.8) la respuesta al ente y los archivos del plan, y la respuesta al ente de un hallazgo
+ * que está en un plan. Con datos de mentira.
  */
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { SeccionClasificacion } from "@/componentes/mejoramiento/SeccionClasificacion";
+import { SeccionRespuestaAlEnte } from "@/componentes/mejoramiento/SeccionRespuestaAlEnte";
+import { ArchivosDelPlan } from "@/componentes/mejoramiento/planes/ArchivosDelPlan";
+import { RespuestaAlEnte } from "@/componentes/mejoramiento/planes/RespuestaAlEnte";
+import type { RespuestaDelPlan } from "@/db/consultas/mejoramiento/respuesta-plan";
 import { DatosDelPlan } from "@/componentes/mejoramiento/planes/DatosDelPlan";
 import { EncabezadoDelPlan } from "@/componentes/mejoramiento/planes/EncabezadoDelPlan";
 import { HallazgosDelPlan } from "@/componentes/mejoramiento/planes/HallazgosDelPlan";
@@ -18,6 +23,12 @@ import { SIN_AJUSTES } from "@/lib/dias-habiles";
 import { EsquemaFormularioCambiarDePlan, EsquemaFormularioPonerEnPlan } from "@/lib/esquemas/mejoramiento";
 import { parsearFormulario } from "@/lib/validacion";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
+
+// La zona de carga de los archivos del plan pide el enrutador del cliente.
+vi.mock("next/navigation", async (importar) => ({
+  ...(await importar<typeof import("next/navigation")>()),
+  useRouter: () => ({ refresh: () => {}, push: () => {} }),
+}));
 
 // 18 de noviembre de 2026 (miércoles), 10:00 en Bogotá.
 const AHORA = new Date("2026-11-18T15:00:00Z");
@@ -83,6 +94,8 @@ const detalle = (extra: Partial<DetalleDePlan> = {}): DetalleDePlan => ({
     { tipo: "entra", en: new Date("2026-11-18T15:00:00Z"), por: "Control Interno de ejemplo", hallazgo: "HZ-2026-011", texto: "añadió HZ-2026-011" },
     { tipo: "creado", en: new Date("2026-10-05T15:00:00Z"), por: "María Fernanda Perdomo", hallazgo: null, texto: "creó el plan" },
   ],
+  archivos: null,
+  respuesta: null,
   puede: { gestionar: true, verTodo: true, responder: true },
   ...extra,
 });
@@ -328,5 +341,100 @@ describe("SeccionClasificacion", () => {
       ),
     );
     expect(suelto).not.toContain("Poner en un plan");
+  });
+});
+
+describe("la respuesta al ente y los archivos del plan (Tarea 5, anexo §3.7 y §3.8)", () => {
+  const respuesta = (extra: Partial<RespuestaDelPlan> = {}): RespuestaDelPlan => ({
+    listos: [
+      { id: 19, codigo: "HZ-2026-019", fechaLimiteEnte: "2026-12-11" },
+      { id: 22, codigo: "HZ-2026-022", fechaLimiteEnte: "2026-12-30" },
+    ],
+    faltan: [
+      { id: 20, codigo: "HZ-2026-020", estado: "En revisión" },
+      { id: 21, codigo: "HZ-2026-021", estado: "En aprobación" },
+    ],
+    respuestas: [],
+    vence: "2026-12-11",
+    desde: "2026-11-17",
+    oficios: [{ id: 70, nombre: "Oficio de respuesta.pdf" }],
+    ...extra,
+  });
+  const pintar = (r: RespuestaDelPlan, x: { responder?: boolean; cambio?: boolean } = {}) =>
+    renderToStaticMarkup(
+      <RespuestaAlEnte planId={2} respuesta={r} responder={x.responder ?? true} hoy="2026-11-18" contexto={CONTEXTO} cambio={x.cambio ?? false} accion={accion} />,
+    );
+
+  it("dice cuándo vence, cuáles están listos y a cuáles les falta su plan de acción, con su estado; el formulario envía lo que mostró", () => {
+    const html = pintar(respuesta());
+    const texto = sinEtiquetas(html);
+    expect(texto).toContain("Vence el 11 de diciembre de 2026 · quedan 16 días hábiles.");
+    expect(texto).toContain("Listos para responder (2): HZ-2026-019 y HZ-2026-022.");
+    expect(texto).toContain("Les falta aprobar su plan de acción (2): HZ-2026-020 (En revisión) y HZ-2026-021 (En aprobación).");
+    expect(html).toContain('id="respuesta-al-ente"');
+    expect(html).toContain('href="/mejoramiento/19"');
+    expect(html.match(/name="vistos"/g)).toHaveLength(2);
+    expect(html).toContain('name="vistos" value="19"');
+    expect(html).toContain('name="vistos" value="22"');
+    expect(html).toMatch(/type="radio"[^>]*name="oficioId" checked="" value="70"/);
+    expect(html).toMatch(/type="date"[^>]*min="2026-11-17"[^>]*max="2026-11-18"/);
+    expect(texto).toContain("Registrar la respuesta");
+    expect(texto).not.toContain("Cambiaron los hallazgos listos");
+  });
+
+  it("sin oficio, enlaza «Archivos del plan»; sin el permiso, sin formulario; con `cambio`, el aviso de revisar la lista", () => {
+    const sinOficio = pintar(respuesta({ oficios: [] }));
+    expect(sinEtiquetas(sinOficio)).toContain("Adjunte el oficio de respuesta: súbalo en «Archivos del plan».");
+    expect(sinOficio).toContain('href="#archivos-del-plan"');
+    expect(sinOficio).not.toContain('name="vistos"');
+    expect(pintar(respuesta(), { responder: false })).not.toContain("<form");
+    const conAviso = pintar(respuesta(), { cambio: true });
+    expect(conAviso).toMatch(/role="alert"[^>]*>Cambiaron los hallazgos listos para responder: revise la lista</);
+  });
+
+  it("las respuestas registradas, con su oficio y sus hallazgos; sin listos, sin formulario", () => {
+    const html = pintar(
+      respuesta({
+        listos: [],
+        vence: null,
+        desde: null,
+        respuestas: [{ id: 5, enviadaEn: "2026-11-18", por: "María Fernanda Perdomo", oficio: { id: 70, nombre: "Oficio de respuesta.pdf" }, hallazgos: ["HZ-2026-019", "HZ-2026-022"] }],
+      }),
+    );
+    const texto = sinEtiquetas(html);
+    expect(texto).toContain("Ningún hallazgo del plan espera respuesta.");
+    expect(texto).toContain(`Enviada el ${fechaDeDia("2026-11-18")} · la registró María Fernanda Perdomo.`);
+    expect(texto).toContain("Incluyó HZ-2026-019 y HZ-2026-022.");
+    expect(html).toContain('href="/mejoramiento/archivos/70/Oficio%20de%20respuesta.pdf"');
+    expect(html).not.toContain("<form");
+    expect(texto).not.toContain("Vence el");
+  });
+
+  it("los archivos del plan: cada uno, una descarga; la zona de carga a quien puede subir", () => {
+    const archivos = { lista: [{ id: 70, nombre: "Informe final de auditoría.pdf", rol: "evidencia", tamano: 1800, mime: "application/pdf" }], quitables: [70], puedeSubir: true };
+    const html = renderToStaticMarkup(<ArchivosDelPlan planId={2} archivos={archivos} />);
+    expect(html).toContain('id="archivos-del-plan"');
+    expect(html).toContain('href="/mejoramiento/archivos/70/Informe%20final%20de%20auditor%C3%ADa.pdf"');
+    expect(sinEtiquetas(html)).toContain("Quitar");
+    expect(sinEtiquetas(html)).toContain("Solo los abren el Administrador del SGC, Gerencia y Control Interno");
+    const sinSubir = renderToStaticMarkup(<ArchivosDelPlan planId={2} archivos={{ lista: [], quitables: [], puedeSubir: false }} />);
+    expect(sinEtiquetas(sinSubir)).toContain("El plan no tiene archivos.");
+    expect(sinSubir).not.toContain("25 MB");
+  });
+
+  it("en un hallazgo que está en un plan, la respuesta se registra desde el plan: con enlace a quien lo ve, sin él a los demás", () => {
+    const pintarSeccion = (href: string | null) =>
+      renderToStaticMarkup(
+        <SeccionRespuestaAlEnte fechaLimite="2026-12-11" respuesta={null} terminado={false} oficio={null} desdeElPlan={{ codigo: "PM-2026-02", href }}>
+          <form>el formulario de la 15A</form>
+        </SeccionRespuestaAlEnte>,
+      );
+    const conEnlace = pintarSeccion("/mejoramiento/planes/2");
+    expect(sinEtiquetas(conEnlace)).toContain("La respuesta se registra desde el plan PM-2026-02.");
+    expect(conEnlace).toContain('href="/mejoramiento/planes/2"');
+    expect(conEnlace).not.toContain("el formulario de la 15A");
+    const sinEnlace = pintarSeccion(null);
+    expect(sinEtiquetas(sinEnlace)).toContain("La respuesta se registra desde el plan PM-2026-02.");
+    expect(sinEnlace).not.toContain("href=");
   });
 });

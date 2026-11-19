@@ -61,6 +61,7 @@ export type { AjusteDeDetalle } from "./ajustes-lectura";
 import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
 import { cargaConfirmada, cargaResuelta } from "./carga-confirmada";
 import { indicadoresDeEficacia } from "./indicador-de-eficacia";
+import { respuestaDesdeUnPlan, type OficioDelPlan } from "./respuesta-plan";
 import { tareasConSuHallazgo } from "./tareas";
 import { venceLaActividad } from "./vence-actividad";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
@@ -802,8 +803,12 @@ export type DetalleDeHallazgo = {
   reincidenteDe: { id: number; codigo: string; titulo: string } | { visible: false } | null;
   marcas: string[];
   fechaLimiteEnte: string | null;
-  /** La respuesta al ente de un hallazgo externo (spec §13.4): el día en que se envió y quién la registró; nula sin registrar. */
-  respuestaAlEnte: { enviadaEn: string; por: string } | null;
+  /**
+   * La respuesta al ente de un hallazgo externo (spec §13.4): el día en que se envió y quién la registró; nula sin registrar. Si se
+   * registró desde un plan (anexo 15B §3.8), `delPlan`: el oficio es un archivo del plan, con su nombre y su enlace solo para quien
+   * abre los archivos del plan (quien ve todo); para los demás, nulo. Sin `delPlan`, el oficio es un archivo del hallazgo.
+   */
+  respuestaAlEnte: { enviadaEn: string; por: string; delPlan?: { oficio: OficioDelPlan | null } } | null;
   vence: Date | null;
   correccion: {
     requerida: boolean | null;
@@ -1482,6 +1487,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   const confirmada = f.cargado !== true || (await cargaConfirmada(sql, h.id));
   const clasificado = (await clasificacionDe(sql, [h.id])).get(h.id);
   const conEnlace = clasificado?.planId != null && (await puedeVerPlan(clasificado.planId, sesion, { sql }));
+  const delPlan = f.respuesta_ente ? await respuestaDesdeUnPlan(sql, sesion, h.id) : null;
   const ocurrencias = completo
     ? await sql`SELECT o.id, o.descripcion, o.origen, o.reporte_id, to_char(o.fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS quien
         FROM mejora_ocurrencias o JOIN usuarios u ON u.id = o.registrado_por
@@ -1525,7 +1531,9 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       algunaActividadVencida: confirmada && actividades.some((a) => a.fin_original !== null && !["terminada", "cancelada"].includes(a.estado as string) && (a.vence as string) < fechaEnZona(ahora, zonaHoraria())),
     }),
     fechaLimiteEnte: (f.limite_ente as string | null) ?? null,
-    respuestaAlEnte: f.respuesta_ente ? { enviadaEn: f.respuesta_ente as string, por: (f.respondio as string | null) ?? "" } : null,
+    respuestaAlEnte: f.respuesta_ente
+      ? { enviadaEn: f.respuesta_ente as string, por: (f.respondio as string | null) ?? "", ...(delPlan ? { delPlan } : {}) }
+      : null,
     vence: esTerminal(h.estado) ? null : ((f.vence_en as Date | null) ?? null),
     correccion: {
       requerida: h.correccionRequerida,

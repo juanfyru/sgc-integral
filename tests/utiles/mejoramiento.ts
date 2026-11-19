@@ -503,6 +503,36 @@ export async function evidenciaDeActividad(tx: TransactionSql, actividadId: numb
   return Number(id);
 }
 
+/**
+ * Un archivo de un plan de mejoramiento (Fase 15B, anexo §3.7: el oficio de una respuesta al ente, el informe del ente…), subido como
+ * `usuarioId` por el camino del dominio (`registrarArchivo`); con `ahora`, a esa hora (la de su evento `archivo`).
+ */
+export async function archivoDelPlan(
+  tx: TransactionSql,
+  planId: number,
+  usuarioId: number,
+  x?: { nombre?: string; ahora?: string },
+): Promise<number> {
+  archivos += 1;
+  const { id } = await registrarArchivo(
+    {
+      versionId: null,
+      rol: "evidencia",
+      ruta: `mejoramiento/planes/${planId}/${Date.now()}-${archivos}-oficio.pdf`,
+      nombreOriginal: x?.nombre ?? `oficio-del-plan-${archivos}.pdf`,
+      extension: "pdf",
+      mime: "application/pdf",
+      tamanoBytes: 10,
+      hashSha256: "b".repeat(64),
+      contexto: "mejora_plan",
+      contextoId: planId,
+    },
+    usuarioId,
+    { sql: tx, ...(x?.ahora ? { ahora: new Date(x.ahora) } : {}) },
+  );
+  return Number(id);
+}
+
 /** La sesión de un usuario por su id: la de la base si es uno de ellos; si no, la que se lee de la BD. */
 async function sesionPorId(tx: TransactionSql, b: BaseDeMejora, usuarioId: number): Promise<SesionFlujo> {
   const deLaBase = [b.admin, b.control, b.gerencia, b.lider, b.consulta].find((s) => s.usuarioId === usuarioId);

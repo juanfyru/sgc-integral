@@ -109,7 +109,7 @@ import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import { cuentaParaElPlan } from "@/lib/mejoramiento/planes";
 import { fechaDelAjustePasada, razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
-import { rutaDeFormular, rutaDeImprimir } from "@/lib/mejoramiento/rutas";
+import { rutaDeFormular, rutaDeImprimir, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
 import { ErrorMejora, estaAbierta, SE_AJUSTA_EN, TERMINALES } from "@/lib/mejoramiento/tipos";
 import { DESDE } from "@/lib/mejoramiento/transiciones";
@@ -442,10 +442,14 @@ export default async function PaginaHallazgo({
   // La respuesta al ente de un hallazgo externo (spec §13.4), a quien lo ve completo, desde que el plan de la ronda en vigor se
   // aprobó (o ya registrada): la registra el Admin SGC eligiendo el oficio entre los archivos del hallazgo subidos después de esa
   // aprobación (`oficiosPosibles`, la regla del acto, que el servidor repite) y la fecha de envío, entre esa aprobación y hoy.
-  // Registrada, el oficio es el del evento.
+  // Registrada, el oficio es el del evento. Un hallazgo que está en un plan se responde desde el plan (anexo 15B §3.8): la sección lo
+  // dice, con enlace al plan solo a quien lo ve, y no ofrece ni la zona de carga ni el formulario; registrada desde el plan, el oficio
+  // es un archivo del plan, que solo abre quien ve todo (a los demás, la fecha y quién la registró).
   const planEnVigorAprobado = rondaEnCurso?.estadoPlan === "aprobado";
   const conRespuestaAlEnte = completo && esExterno(h.origen) && (h.respuestaAlEnte !== null || planEnVigorAprobado);
-  const registraRespuesta = conRespuestaAlEnte && gestiona && h.respuestaAlEnte === null && planEnVigorAprobado;
+  const enUnPlan = h.clasificacion.plan;
+  const registraRespuesta = conRespuestaAlEnte && gestiona && h.respuestaAlEnte === null && planEnVigorAprobado && enUnPlan === null;
+  const delPlan = h.respuestaAlEnte?.delPlan ?? null;
   const oficioRegistrado = (() => {
     const d = h.eventos.findLast((e) => e.tipo === "respuesta_ente")?.detalle;
     const id = typeof d === "object" && d !== null ? (d as Record<string, unknown>).oficioId : null;
@@ -459,14 +463,23 @@ export default async function PaginaHallazgo({
       fechaLimite={h.fechaLimiteEnte}
       respuesta={h.respuestaAlEnte}
       terminado={terminado}
+      desdeElPlan={enUnPlan ? { codigo: enUnPlan.codigo, href: enUnPlan.enlace ? rutaDePlan(enUnPlan.id) : null } : null}
       oficio={
-        <ArchivosDe
-          archivos={oficio}
-          quitables={registraRespuesta ? quitables.filter((id) => oficio.some((a) => a.id === id)) : []}
-          direccionDeSubida={registraRespuesta && puedeSubirEvidencia ? `/api/mejoramiento/hallazgos/${h.id}/archivos` : null}
-          nombre="Zona de carga del oficio de respuesta al ente"
-          vacio={h.respuestaAlEnte ? "Sin el oficio adjunto." : "Aún no hay un archivo subido después de aprobar el plan."}
-        />
+        delPlan ? (
+          delPlan.oficio ? (
+            <ArchivosDe archivos={[delPlan.oficio]} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Se registró desde el plan: el oficio está entre los archivos del plan.</p>
+          )
+        ) : (
+          <ArchivosDe
+            archivos={oficio}
+            quitables={registraRespuesta ? quitables.filter((id) => oficio.some((a) => a.id === id)) : []}
+            direccionDeSubida={registraRespuesta && puedeSubirEvidencia ? `/api/mejoramiento/hallazgos/${h.id}/archivos` : null}
+            nombre="Zona de carga del oficio de respuesta al ente"
+            vacio={h.respuestaAlEnte ? "Sin el oficio adjunto." : "Aún no hay un archivo subido después de aprobar el plan."}
+          />
+        )
       }
     >
       {registraRespuesta && aprobacion ? (

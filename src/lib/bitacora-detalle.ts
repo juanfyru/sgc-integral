@@ -1195,11 +1195,15 @@ export function describirEvento(e: EventoAuditoria): string {
     }
     case "mejora_reporte_descartado":
       return `Descartó ${elReporte(d, e.entidadId)}`;
-    // ── Mejoramiento (15A): la respuesta al ente de un hallazgo externo (la fecha de envío; el oficio son los ids del detalle)
+    // ── Mejoramiento (15A): la respuesta al ente de un hallazgo externo (la fecha de envío; el oficio son los ids del detalle). Desde
+    // la 15B, la que se registra desde el plan lleva el código del plan (anexo §3.8).
     case "mejora_respuesta_ente": {
       const codigo = texto(d.codigo);
       const enviada = dia(d.enviadaEn);
-      return `Registró la respuesta al ente ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${enviada ? `, enviada el ${enviada}` : ""}`;
+      const plan = texto(d.plan);
+      return `Registró la respuesta al ente ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}${enviada ? `, enviada el ${enviada}` : ""}${
+        plan ? `, desde el plan ${plan}` : ""
+      }`;
     }
     // ── Mejoramiento (15A): el formato firmado de un hallazgo cargado, que confirma su carga (spec §15). El archivo es su propia fila
     case "mejora_carga_confirmada": {

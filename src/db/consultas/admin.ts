@@ -17,7 +17,7 @@ import {
 } from "./codigos";
 import { exigirHallazgoNoCerrado, exigirVerificacionAbierta } from "./distribucion/verificacion-abierta";
 import { bloquearParaSoporteDeConstancia, dejarSoporteDeConstanciaSubido } from "./indicadores/constancias-soporte";
-import { CONTEXTOS_DE_MEJORA, exigirDestinoAbierto } from "./mejoramiento/archivos";
+import { alRegistrarArchivoDeMejora, CONTEXTOS_DE_MEJORA, exigirDestinoAbierto } from "./mejoramiento/archivos";
 import { bloquearParaSoporteDeDato, dejarSoporteDeDatoSubido } from "./indicadores/datos-soporte";
 import { bloquearParaSoporte, dejarSoporteSubido } from "./indicadores/soportes";
 import { exigirLoteSinArchivo } from "./indicadores/lote-importacion";
@@ -815,6 +815,13 @@ export async function registrarArchivo(
             contexto: datos.contexto, contextoId: datos.contextoId, rol: datos.rol, nombre: datos.nombreOriginal,
           },
         });
+        // El de un plan de mejoramiento deja su línea en el historial del plan (Fase 15B, anexo §3.7).
+        if (CONTEXTOS_DE_MEJORA.includes(datos.contexto)) {
+          await alRegistrarArchivoDeMejora(tx, {
+            contexto: datos.contexto, contextoId: datos.contextoId, archivoId: Number(evidencia.id), nombre: datos.nombreOriginal,
+            usuarioId, ahora: opciones?.ahora ?? new Date(),
+          });
+        }
         if (datos.contexto === "medicion") {
           await dejarSoporteSubido(tx, { medicionId: datos.contextoId, usuarioId, nombre: datos.nombreOriginal, ahora: new Date() });
         }

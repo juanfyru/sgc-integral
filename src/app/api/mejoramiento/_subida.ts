@@ -6,7 +6,7 @@ import { puede, type Permiso } from "@/lib/permisos";
 import { recibirArchivo } from "@/lib/recepcion-archivo";
 import { sesionDePeticion } from "@/lib/sesion-actual";
 
-// 30 subidas por minuto y usuario, entre las cuatro rutas del módulo (instancia única, en memoria).
+// 30 subidas por minuto y usuario, entre las cinco rutas del módulo (instancia única, en memoria).
 const permitirSubida = crearLimitador({ limite: 30, ventanaMs: 60_000 });
 
 const CARPETAS = {
@@ -14,6 +14,7 @@ const CARPETAS = {
   mejora_ronda: "rondas",
   mejora_actividad: "actividades",
   mejora_reporte: "reportes",
+  mejora_plan: "planes",
 } as const;
 
 function error(estado: number, mensaje: string) {
@@ -21,11 +22,11 @@ function error(estado: number, mensaje: string) {
 }
 
 /**
- * Lo común de las cuatro subidas de mejoramiento (spec 15 §12.2), en el orden de las demás: sesión 401, permiso de la
- * matriz 403, origen 403, límite 429, identificador 404, `autorizarSubida` (404, 403 o 409) y `recibirArchivo`. El permiso
- * de la matriz solo cierra la puerta a lo que no es del módulo; la regla de quién sube qué es `autorizarSubida`. El rol del
- * archivo viaja en `?rol=` y se valida contra la lista del destino (el hallazgo, por omisión `evidencia`; la ronda lo
- * exige). Va fuera del `matcher` del proxy: este handler exige la sesión.
+ * Lo común de las cinco subidas de mejoramiento (spec 15 §12.2; la del plan, anexo 15B §3.7), en el orden de las demás: sesión
+ * 401, permiso de la matriz 403, origen 403, límite 429, identificador 404, `autorizarSubida` (404, 403 o 409) y
+ * `recibirArchivo`. El permiso de la matriz solo cierra la puerta a lo que no es del módulo; la regla de quién sube qué es
+ * `autorizarSubida`. El rol del archivo viaja en `?rol=` y se valida contra la lista del destino (el hallazgo, por omisión
+ * `evidencia`; la ronda lo exige; el plan solo lleva `evidencia`). Va fuera del `matcher` del proxy: este handler exige la sesión.
  */
 export async function subirAMejora(
   peticion: NextRequest,

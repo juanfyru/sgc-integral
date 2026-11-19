@@ -333,6 +333,11 @@ const acta = z
 /** Un acto sobre el hallazgo que no lleva más datos: aceptar, retirar y validar. */
 export const EsquemaPasoDelHallazgo = z.object({ hallazgoId: idDeHallazgo }).strict();
 
+/** El oficio de una respuesta al ente, elegido entre los archivos que pueden serlo (los mira el dominio). */
+const oficioDeLaRespuesta = z
+  .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "Elija el oficio de respuesta" })
+  .transform(Number);
+
 /**
  * La respuesta al ente de un hallazgo externo (spec §13.4): la fecha en que se envió y el oficio. Sus bordes (hoy y la aprobación
  * del plan) y que el oficio sea de los que se pueden elegir los mira el dominio.
@@ -342,9 +347,7 @@ export const EsquemaRespuestaAlEnte = z
     hallazgoId: idDeHallazgo,
     enviadaEn: fechaDelDia("Escriba la fecha en que se envió la respuesta al ente"),
     // El oficio: uno de los archivos del hallazgo subidos después de aprobar el plan (lo comprueba el dominio).
-    oficioId: z
-      .union([z.number().int().positive(), z.string().regex(/^\d{1,15}$/)], { error: "Elija el oficio de respuesta" })
-      .transform(Number),
+    oficioId: oficioDeLaRespuesta,
   })
   .strict();
 
@@ -1531,6 +1534,27 @@ export const EsquemaFormularioCambiarDePlan = z
   .object({ hallazgoId: idDeHallazgo, planId: idDePlan, motivo: motivoDelPlan, conObjetivo: marca })
   .strict()
   .transform((d) => ({ ...d, conObjetivo: d.conObjetivo === "si" }));
+
+/** Los hallazgos que el formulario de la respuesta mostró como listos (anexo §3.8): sin repetir y de menor a mayor. */
+const hallazgosVistos = z
+  .array(idDeHallazgo, { error: "La lista de hallazgos no es válida" })
+  .max(500, "La lista de hallazgos no es válida")
+  .transform((ids) => [...new Set(ids)].sort((a, b) => a - b));
+
+const camposDeLaRespuestaDelPlan = {
+  planId: idDePlan,
+  enviadaEn: fechaDelDia("Escriba la fecha en que se envió la respuesta al ente"),
+  // El oficio: un archivo del plan que no es ya el de otra respuesta (lo comprueba el dominio).
+  oficioId: oficioDeLaRespuesta,
+};
+
+/** La respuesta al ente desde el plan (anexo §3.8): la fecha, el oficio y la lista que se vio. Sus reglas las mira el dominio. */
+export const EsquemaRespuestaDelPlan = z.object({ ...camposDeLaRespuestaDelPlan, vistos: hallazgosVistos }).strict();
+
+/** El formulario de la respuesta desde el plan: un `vistos` por hallazgo que mostró como listo (ninguno, si no mostró ninguno). */
+export const EsquemaFormularioRespuestaDelPlan = z
+  .object({ ...camposDeLaRespuestaDelPlan, vistos: variosValores("La lista de hallazgos no es válida").pipe(hallazgosVistos) })
+  .strict();
 
 /** El objetivo de un hallazgo: uno del maestro, o ninguno (lo quita). */
 export const EsquemaObjetivoDelHallazgo = z

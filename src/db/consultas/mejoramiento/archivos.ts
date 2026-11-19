@@ -1,11 +1,13 @@
 /**
  * Los archivos del módulo de mejoramiento (spec 15 §6.3 y §12.2): filas de `archivos` con contexto `mejora_hallazgo`,
- * `mejora_ronda`, `mejora_actividad` o `mejora_reporte`, siempre con `version_id` nulo. El control de acceso de un archivo
- * es el de su dueño: quién lo sube (`autorizarSubida`), quién lo abre (`puedeAbrirArchivoDeMejora`, `src/lib/alcance.ts`) y
- * quién lo quita (`quitarArchivoDeMejora`). Quien no puede abrir un archivo recibe «no existe», nunca «sin permiso».
+ * `mejora_ronda`, `mejora_actividad`, `mejora_reporte` o, desde la 15B, `mejora_plan` (los de un plan de mejoramiento, anexo
+ * §3.7), siempre con `version_id` nulo. El control de acceso de un archivo es el de su dueño: quién lo sube (`autorizarSubida`),
+ * quién lo abre (`puedeAbrirArchivoDeMejora`, `src/lib/alcance.ts`) y quién lo quita (`quitarArchivoDeMejora`). Quien no puede
+ * abrir un archivo recibe «no existe», nunca «sin permiso».
  *
  * Módulo liviano: lo importa `registrarArchivo` (`admin.ts`); no importa `lectura`. El primer formato firmado de un hallazgo
- * cargado confirma su carga (`confirmarCarga`, de `carga-confirmada.ts`, liviano también).
+ * cargado confirma su carga (`confirmarCarga`, de `carga-confirmada.ts`, liviano también); subir y quitar un archivo de un plan
+ * dejan su línea en el historial del plan (`dejarEventoDePlan`, de `planes.ts`, liviano también).
  */
 import { unlink } from "node:fs/promises";
 import type { TransactionSql } from "postgres";
@@ -17,27 +19,36 @@ import { resolverRutaAlmacen } from "@/lib/almacen";
 import { MAXIMO_POR_REPORTE } from "@/lib/mejoramiento/reportes";
 import { ErrorMejora, TERMINALES } from "@/lib/mejoramiento/tipos";
 import type { ArchivoServible } from "@/lib/servir-archivo";
+import { PLAN_ANULADO } from "@/lib/mejoramiento/planes";
+import { puede } from "@/lib/permisos";
 import { confirmarCarga } from "./carga-confirmada";
 import { legible } from "./legible";
+import { dejarEventoDePlan } from "./planes";
 import { actuaPorElProceso } from "./proceso";
 
 export type DestinoDeMejora =
   | { contexto: "mejora_hallazgo"; id: number; rol: "evidencia" | "correccion" | "carga" }
   | { contexto: "mejora_ronda"; id: number; rol: "analisis" | "verificacion" }
   | { contexto: "mejora_actividad"; id: number }
-  | { contexto: "mejora_reporte"; id: number };
+  | { contexto: "mejora_reporte"; id: number }
+  | { contexto: "mejora_plan"; id: number };
 
 const CARPETAS_POR_CONTEXTO = {
   mejora_hallazgo: "hallazgos",
   mejora_ronda: "rondas",
   mejora_actividad: "actividades",
   mejora_reporte: "reportes",
+  mejora_plan: "planes",
 } as const;
 
-/** Los roles de archivo que admite cada destino, para validar `?rol=` antes de recibir el cuerpo. */
+/**
+ * Los roles de archivo que admite cada destino que distingue alguno: el hallazgo y la ronda los validan en `?rol=` antes de
+ * recibir el cuerpo; el plan solo admite `evidencia` (anexo §3.7), que `registrarArchivo` vuelve a comprobar.
+ */
 export const ROLES_POR_DESTINO = {
   mejora_hallazgo: ["evidencia", "correccion", "carga"],
   mejora_ronda: ["analisis", "verificacion"],
+  mejora_plan: ["evidencia"],
 } as const;
 
 // El tope de archivos de un reporte vive en `src/lib/mejoramiento/reportes.ts` (lo pinta también el formulario de reportar).
@@ -49,7 +60,7 @@ const SIN_DUENO = "Ya no existe a qué adjuntar el archivo";
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol">;
 type Resultado = { ok: true; carpeta: string } | { ok: false; estado: 403 | 404 | 409; error: string };
 
-/** Lo que hace falta del dueño de un archivo, de su hallazgo y, si lo hay, de su ronda, actividad o reporte. */
+/** Lo que hace falta del dueño de un archivo, de su hallazgo y, si lo hay, de su ronda, actividad o reporte; o del plan. */
 type Dueno = {
   hallazgoId: number | null;
   procesoId: number | null;
@@ -63,14 +74,16 @@ type Dueno = {
   reportadoPor: number | null;
   estadoReporte: string | null;
   archivos: number;
+  /** De un plan: si está anulado (no admite archivos ni deja quitarlos). */
+  planAnulado: boolean;
 };
 
 const SIN_NADA: Dueno = {
   hallazgoId: null, procesoId: null, estado: null, ronda: null, cargado: false, registradoPor: null, rondaNumero: null,
-  responsableId: null, estadoActividad: null, reportadoPor: null, estadoReporte: null, archivos: 0,
+  responsableId: null, estadoActividad: null, reportadoPor: null, estadoReporte: null, archivos: 0, planAnulado: false,
 };
 
-/** Los cuatro contextos de `archivos` de este módulo. */
+/** Los cinco contextos de `archivos` de este módulo. */
 export const CONTEXTOS_DE_MEJORA: string[] = Object.keys(CARPETAS_POR_CONTEXTO);
 
 const esId = (n: number) => Number.isSafeInteger(n) && n > 0;
@@ -79,7 +92,9 @@ const esId = (n: number) => Number.isSafeInteger(n) && n > 0;
  * Lee el dueño. Con `bloquear`, el hallazgo `FOR SHARE` (choca con el `FOR UPDATE` de `transicionarHallazgo`: el estado que
  * se lee es el que rige al escribir la fila) o, en un reporte, el reporte `FOR UPDATE`, y los archivos del reporte se cuentan
  * en otra sentencia, después del candado: en READ COMMITTED cada sentencia toma su propia foto, así quien esperó el candado
- * cuenta el archivo que la otra subida acaba de confirmar (dos subidas a la vez respetan el tope).
+ * cuenta el archivo que la otra subida acaba de confirmar (dos subidas a la vez respetan el tope). En un plan, el plan `FOR
+ * SHARE`: choca con el `FOR UPDATE` de anularlo y de registrar su respuesta al ente, así lo que se lee después (si está anulado,
+ * si el archivo ya es el oficio de una respuesta) es lo que rige al escribir.
  */
 async function cargarDueno(sql: Cliente, contexto: string, id: number, bloquear: boolean): Promise<Dueno | null> {
   if (!esId(id)) return null;
@@ -102,6 +117,8 @@ async function cargarDueno(sql: Cliente, contexto: string, id: number, bloquear:
       const [n] = await sql`SELECT count(*) AS n FROM archivos WHERE contexto = 'mejora_reporte' AND contexto_id = ${id}`;
       f = { ...f, archivos: n.n };
     }
+  } else if (contexto === "mejora_plan") {
+    [f] = await sql`SELECT p.anulado_en IS NOT NULL AS plan_anulado FROM mejora_planes p WHERE p.id = ${id} ${candado("SHARE", "p")}`;
   } else {
     return null;
   }
@@ -121,6 +138,7 @@ async function cargarDueno(sql: Cliente, contexto: string, id: number, bloquear:
     reportadoPor: num(f.reportado_por),
     estadoReporte: (f.estado_reporte as string | undefined) ?? null,
     archivos: num(f.archivos) ?? 0,
+    planAnulado: f.plan_anulado === true,
   };
 }
 
@@ -139,11 +157,15 @@ async function esQuienSube(sql: Cliente, p: Persona, d: DestinoDeMejora, f: Duen
       return f.responsableId === p.usuarioId;
     case "mejora_reporte":
       return f.reportadoPor === p.usuarioId;
+    case "mejora_plan":
+      // Quienes crean y llenan el plan (anexo §3.2 y §3.7).
+      return puede(p, "mejora.planes");
   }
 }
 
 /** La frase de por qué el destino ya no admite el archivo, o `null` si sigue abierto («Mientras» de la tabla). */
 function cerrado(d: DestinoDeMejora, f: Dueno): string | null {
+  if (d.contexto === "mejora_plan") return f.planAnulado ? PLAN_ANULADO : null;
   if (d.contexto === "mejora_reporte") {
     if (f.estadoReporte !== "recibido") return "El reporte ya se clasificó: no admite más archivos";
     return f.archivos >= MAXIMO_POR_REPORTE ? `Un reporte admite como mucho ${MAXIMO_POR_REPORTE} archivos` : null;
@@ -276,6 +298,13 @@ async function porQueNoSeQuita(sql: Cliente, sesion: SesionFlujo, a: ArchivoPorQ
   if (!f) return NO_EXISTE;
   const destino = { contexto: a.contexto, id: a.contextoId, rol: a.rol } as DestinoDeMejora;
   const esReporte = a.contexto === "mejora_reporte";
+  // Un plan anulado no admite cambios, tampoco del Admin SGC; y el oficio de una respuesta al ente registrada desde el plan
+  // (anexo §3.8) ya es evidencia: nadie lo quita. Se dice aquí, antes de que la llave de `mejora_plan_respuestas` dé un 23503.
+  if (a.contexto === "mejora_plan") {
+    if (f.planAnulado) return PLAN_ANULADO;
+    const [oficio] = await sql`SELECT 1 FROM mejora_plan_respuestas WHERE archivo_id = ${a.id}`;
+    if (oficio) return OFICIO_REGISTRADO;
+  }
   if (a.contexto === "mejora_ronda" && f.rondaNumero !== f.ronda) return RONDA_CONGELADA;
   if (!esReporte && (TERMINALES as readonly string[]).includes(f.estado ?? "")) {
     return "El hallazgo ya terminó: sus archivos no se quitan";
@@ -336,22 +365,43 @@ export async function archivosQuitables(
 }
 
 /**
+ * Lo que sigue a registrar un archivo de mejoramiento, en la misma transacción (`registrarArchivo`, después del `INSERT` y de su
+ * bitácora): el de un plan deja su línea `archivo` en el historial del plan, con el archivo y quién (anexo §3.7). Los demás
+ * dueños no llevan nada más.
+ */
+export async function alRegistrarArchivoDeMejora(
+  tx: TransactionSql,
+  a: { contexto: string; contextoId: number; archivoId: number; nombre: string; usuarioId: number; ahora: Date },
+): Promise<void> {
+  if (a.contexto !== "mejora_plan") return;
+  await dejarEventoDePlan(tx, {
+    planId: a.contextoId,
+    tipo: "archivo",
+    detalle: { archivoId: a.archivoId, nombre: a.nombre },
+    usuarioId: a.usuarioId,
+    ahora: a.ahora,
+  });
+}
+
+/**
  * Quita un archivo: quien lo subió, mientras su paso sigue abierto, o el Admin SGC mientras el hallazgo no termine (un
- * reporte, mientras esté recibido); en un hallazgo terminado, nadie. La evidencia de la corrección, solo mientras está «Por
- * corregir», la de una actividad, solo mientras está abierta o en proceso, y la de la verificación, solo hasta verificar (la que se
- * sube en la espera, hasta registrar la evaluación), y el oficio de una respuesta al ente ya registrada y el formato firmado de una
- * carga, nunca: después, tampoco el Admin SGC. Quien no abre el archivo recibe «no existe». Borra la
- * fila y deja `eliminar_archivo` en la bitácora; el archivo del almacén se borra después de confirmar y uno ya ausente no
- * es un error.
+ * reporte, mientras esté recibido; un plan, mientras no esté anulado); en un hallazgo terminado o un plan anulado, nadie. La
+ * evidencia de la corrección, solo mientras está «Por corregir», la de una actividad, solo mientras está abierta o en proceso, y
+ * la de la verificación, solo hasta verificar (la que se sube en la espera, hasta registrar la evaluación), y el oficio de una
+ * respuesta al ente ya registrada (del hallazgo o del plan) y el formato firmado de una carga, nunca: después, tampoco el Admin
+ * SGC. Quien no abre el archivo recibe «no existe». Borra la fila y deja `eliminar_archivo` en la bitácora (el de un plan, además,
+ * su línea `archivo_quitado` en el historial del plan, a la hora de `opciones.ahora`); el archivo del almacén se borra después de
+ * confirmar y uno ya ausente no es un error.
  */
 export async function quitarArchivoDeMejora(
   sesion: SesionFlujo,
   archivoId: number,
-  opciones?: { sql?: Cliente },
+  opciones?: { sql?: Cliente; ahora?: Date },
 ): Promise<void> {
   if (!esId(archivoId)) throw new ErrorMejora(NO_EXISTE);
+  const ahora = opciones?.ahora ?? new Date();
   const ruta = await legible(enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-    // Orden de candados: el dueño (el hallazgo, o el reporte) primero y la fila de `archivos` después, como al subir.
+    // Orden de candados: el dueño (el hallazgo, el reporte o el plan) primero y la fila de `archivos` después, como al subir.
     const [a] = await tx`SELECT id, ruta, nombre_original, contexto, contexto_id, rol FROM archivos
       WHERE id = ${archivoId} AND version_id IS NULL AND contexto = ANY(${CONTEXTOS_DE_MEJORA})`;
     if (!a || !(await puedeAbrirArchivoDeMejora({ contexto: a.contexto, contextoId: Number(a.contexto_id) }, sesion, { sql: tx }))) {
@@ -370,6 +420,15 @@ export async function quitarArchivoDeMejora(
       entidadId: archivoId,
       detalle: { contexto: a.contexto, contextoId, rol: a.rol, nombre: a.nombre_original },
     });
+    if (a.contexto === "mejora_plan") {
+      await dejarEventoDePlan(tx, {
+        planId: contextoId,
+        tipo: "archivo_quitado",
+        detalle: { archivoId, nombre: a.nombre_original },
+        usuarioId: sesion.usuarioId,
+        ahora,
+      });
+    }
     return a.ruta as string;
   }));
   const absoluta = resolverRutaAlmacen(ruta);

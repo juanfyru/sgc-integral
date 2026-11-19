@@ -917,15 +917,16 @@ export async function puedeVerActividad(
   return (await participacionEnActividad(actividadId, sujeto, opciones)) !== null;
 }
 
-/** Los cuatro contextos de `archivos` que cuelgan de lo de mejoramiento (spec 15 §12.2). */
-const CONTEXTOS_DE_MEJORA = ["mejora_hallazgo", "mejora_ronda", "mejora_actividad", "mejora_reporte"];
+/** Los cinco contextos de `archivos` que cuelgan de lo de mejoramiento (spec 15 §12.2; el del plan, anexo 15B §3.7). */
+const CONTEXTOS_DE_MEJORA = ["mejora_hallazgo", "mejora_ronda", "mejora_actividad", "mejora_reporte", "mejora_plan"];
 
 /**
  * Quién abre un archivo de mejoramiento (spec 15 §6.3 y §12.2): los de un hallazgo y de una ronda, quien lo ve completo;
  * los de una actividad, esos y su responsable o quien registró un seguimiento en esa actividad; los de un reporte, quien
  * reportó, quien tiene `mejora.ver_todo` y, convertido en un hallazgo o sumado a uno como ocurrencia (§7.5: la ocurrencia lleva
- * su evidencia), quien ve completo ese hallazgo. Los demás, y un contexto o un dueño que no existen, `false`: la ruta responde
- * 404.
+ * su evidencia), quien ve completo ese hallazgo; los de un plan de mejoramiento (anexo 15B §3.7: el informe del ente nombra
+ * hallazgos de varios procesos), solo quien tiene `mejora.ver_todo`, tampoco el líder de uno de sus hallazgos. Los demás, y un
+ * contexto o un dueño que no existen, `false`: la ruta responde 404.
  */
 export async function puedeAbrirArchivoDeMejora(
   archivo: { contexto: string; contextoId: number },
@@ -936,6 +937,11 @@ export async function puedeAbrirArchivoDeMejora(
     return false;
   }
   const sql = opciones?.sql ?? obtenerSql();
+  if (archivo.contexto === "mejora_plan") {
+    if (!puede(sujeto, "mejora.ver_todo")) return false;
+    const [p] = await sql`SELECT 1 FROM mejora_planes WHERE id = ${archivo.contextoId}`;
+    return p !== undefined;
+  }
   if (archivo.contexto === "mejora_reporte") {
     const [r] = await sql`SELECT reportado_por, estado, hallazgo_id FROM mejora_reportes WHERE id = ${archivo.contextoId}`;
     if (!r) return false;

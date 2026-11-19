@@ -21,23 +21,26 @@ import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejorami
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
+import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { decidirAccionCorrectiva, rechazarHallazgo, registrarCorreccion, sostenerHallazgo } from "@/db/consultas/mejoramiento/recorrido";
 import { anularHallazgo, registrarHallazgo, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
+import { registrarRespuestaDelPlan } from "@/db/consultas/mejoramiento/respuesta-plan";
 import { tareasConSuHallazgo, tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
 import { datosDeEvaluacion, evaluarEficacia, fechaMinimaDe, huellaDeLoVisto, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { venceLaEvaluacion } from "@/lib/mejoramiento/eficacia";
 import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
-import { rutaDeActividad, rutaDeFormular, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { RUTA_PLANES, rutaDeActividad, rutaDeFormular, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { agruparTareas, misTareas, type Tarea } from "@/lib/tareas";
 import { finDeFecha } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import {
+  archivoDelPlan,
   baseDeMejora,
   c,
   datosDeCarga,
@@ -48,6 +51,7 @@ import {
   HORA_DE_ESCENA,
   hallazgoEn,
   otroProcesoConLider,
+  planDeMejoraDePrueba,
   planDePrueba,
   terminarTodas,
   type BaseDeMejora,
@@ -574,6 +578,63 @@ describe("la respuesta al ente", () => {
     }));
 });
 
+describe("la respuesta al ente desde el plan (Fase 15B, anexo §3.8)", () => {
+  it("mej-ente-plan: una por plan, del Admin SGC, que vence en la menor fecha del ente de los listos; sus hallazgos no dan mej-ente", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const o = c(AHORA, tx);
+      const plan = await planDeMejoraDePrueba(
+        tx,
+        b.control,
+        { nombre: "Visita de la Superintendencia Nacional de Salud", origen: "ente_control", fechaLimiteEnte: "2026-12-30" },
+        AHORA,
+      );
+      const ente = (fechaLimiteEnte: string) => ({ origen: "ente_control" as const, fuente: "Superintendencia Nacional de Salud", fechaLimiteEnte });
+      const h1 = await hallazgoEn(tx, b, "en_ejecucion", ente("2026-12-30"));
+      const h2 = await hallazgoEn(tx, b, "en_ejecucion", ente("2026-12-20"));
+      // Sin el plan de acción aprobado todavía no está listo: no adelanta el vencimiento de la tarea.
+      const h3 = await hallazgoEn(tx, b, "en_aprobacion", ente("2026-12-10"));
+      const suelto = await externo(tx, b, "en_ejecucion");
+      await ponerEnPlan(b.control, { planId: plan.id, hallazgoIds: [h1.id, h2.id, h3.id] }, o);
+
+      const esperada: Tarea = {
+        id: `mej-ente-plan:${plan.id}`,
+        modulo: "planes",
+        titulo: `Registrar la respuesta al ente del plan ${plan.codigo}`,
+        detalle: "Visita de la Superintendencia Nacional de Salud",
+        vence: finDeFecha("2026-12-20", zona),
+        enlace: `${rutaDePlan(plan.id)}#respuesta-al-ente`,
+      };
+      const delAdmin = await tareasDe(b.admin, tx);
+      expect(delAdmin.filter((t) => t.id === esperada.id)).toEqual([esperada]);
+      for (const h of [h1, h2, h3]) expect(delAdmin.find((t) => t.id === `mej-ente:${h.id}`)).toBeUndefined();
+      // Un hallazgo externo suelto sigue dando la suya.
+      expect(delAdmin.find((t) => t.id === `mej-ente:${suelto.id}`)).toMatchObject({ titulo: `Registrar la respuesta al ente de ${suelto.codigo}` });
+      // La tarea es del plan, no de un hallazgo: no cuenta en «Esperan su decisión».
+      const conSuHallazgo = await tareasConSuHallazgo(b.admin, { sql: tx, ahora: new Date(AHORA) });
+      expect(conSuHallazgo.find((t) => t.tarea.id === esperada.id)?.hallazgoId).toBeNull();
+      for (const otro of [b.control, b.gerencia, b.lider]) expect(await laDe(otro, tx, esperada.id)).toBeUndefined();
+
+      // Respondidos los dos listos, la tarea desaparece (H3 todavía no está listo).
+      const oficioId = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      await registrarRespuestaDelPlan(b.admin, { planId: plan.id, enviadaEn: "2026-11-18", oficioId, vistos: [h1.id, h2.id] }, o);
+      expect(await laDe(b.admin, tx, esperada.id)).toBeUndefined();
+      // Cuando H3 está listo vuelve, con su fecha.
+      await aprobarPlan(b.gerencia, { hallazgoId: h3.id, credenciales: { clave: "ok" } }, o);
+      expect(await laDe(b.admin, tx, esperada.id)).toEqual({ ...esperada, vence: finDeFecha("2026-12-10", zona) });
+    }));
+
+  it("un plan cuyos listos no tienen fecha del ente no da la tarea, y su hallazgo tampoco da la suya", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const plan = await planDeMejoraDePrueba(tx, b.control, { origen: "auditoria_externa" }, AHORA);
+      const h = await hallazgoEn(tx, b, "en_ejecucion", { origen: "auditoria_externa", fuente: "Auditoría externa de la EPS" });
+      await ponerEnPlan(b.control, { planId: plan.id, hallazgoIds: [h.id] }, c(AHORA, tx));
+      expect(await laDe(b.admin, tx, `mej-ente-plan:${plan.id}`)).toBeUndefined();
+      expect(await laDe(b.admin, tx, `mej-ente:${h.id}`)).toBeUndefined();
+    }));
+});
+
 describe("«Mis tareas» agrupa las de mejoramiento por fuente", () => {
   const de = (paso: string, n: number, titulo = `Tarea ${n}`): Tarea => ({
     id: `mej-${paso}:${n}`,
@@ -610,6 +671,16 @@ describe("«Mis tareas» agrupa las de mejoramiento por fuente", () => {
   it("con cinco de cada fuente no agrupa nada", () => {
     const tareas = ["aceptar", "actividad", "clasificar", "ente"].flatMap((p) => [1, 2, 3, 4, 5].map((n) => de(p, n)));
     expect(agruparTareas(tareas, 5, AHORA_G)).toEqual(tareas);
+  });
+
+  it("las respuestas al ente de los planes van a la pestaña «Planes»; no se mezclan con las de un hallazgo", () => {
+    expect(agruparTareas(seis("ente-plan"), 5, AHORA_G)[0]).toMatchObject({
+      id: "mejora-ente-plan",
+      titulo: "6 respuestas al ente de planes por registrar",
+      enlace: RUTA_PLANES,
+    });
+    const mezcladas = [...[1, 2, 3].map((n) => de("ente", n)), ...[4, 5, 6].map((n) => de("ente-plan", n))];
+    expect(agruparTareas(mezcladas, 5, AHORA_G)).toEqual(mezcladas);
   });
 
   it("las cargas sin su formato firmado van a la lista de «Esperan su decisión»", () => {

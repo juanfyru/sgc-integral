@@ -23,10 +23,11 @@ vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
 vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion: async () => ({ ip: "10.0.0.1", userAgent: "prueba" }) }));
 
 import type { TransactionSql } from "postgres";
-import { registrarRespuestaAlEnteAccion } from "@/app/acciones-mejoramiento";
+import { registrarRespuestaAlEnteAccion, registrarRespuestaDelPlanAccion } from "@/app/acciones-mejoramiento";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { baseDeMejora, evidenciaDelHallazgo, hallazgoEn } from "./utiles/mejoramiento";
+import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
+import { archivoDelPlan, baseDeMejora, c, evidenciaDelHallazgo, hallazgoEn, planDeMejoraDePrueba } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -39,9 +40,9 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-function formulario(campos: Record<string, string>) {
+function formulario(campos: Record<string, string | string[]>) {
   const datos = new FormData();
-  for (const [campo, valor] of Object.entries(campos)) datos.append(campo, valor);
+  for (const [campo, valor] of Object.entries(campos)) for (const v of Array.isArray(valor) ? valor : [valor]) datos.append(campo, v);
   return datos;
 }
 
@@ -91,5 +92,36 @@ describe("registrarRespuestaAlEnteAccion", () => {
       expect(await registrar(b.admin, campos)).toBe(`REDIRECT:/mejoramiento/${h.id}`);
       const [f] = await tx`SELECT to_char(respuesta_ente_en, 'YYYY-MM-DD') AS en, respuesta_ente_por FROM mejora_hallazgos WHERE id = ${h.id}`;
       expect(f).toEqual({ en: ENVIADA, respuesta_ente_por: b.admin.usuarioId });
+    }));
+});
+
+describe("registrarRespuestaDelPlanAccion (Fase 15B, anexo §3.8)", () => {
+  it("el Admin SGC la registra con lo que vio y vuelve al plan; si la lista cambió, vuelve al plan a revisarla y no escribe nada", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ente = { origen: "ente_control" as const, fuente: "Superintendencia Nacional de Salud", fechaLimiteEnte: "2026-12-30" };
+      const plan = await planDeMejoraDePrueba(tx, b.control, { origen: "ente_control", fechaLimiteEnte: "2026-12-30" });
+      const h1 = await hallazgoEn(tx, b, "en_ejecucion", ente);
+      const h2 = await hallazgoEn(tx, b, "en_ejecucion", ente);
+      await ponerEnPlan(b.control, { planId: plan.id, hallazgoIds: [h1.id, h2.id] }, c(ENVIADA + "T15:00:00Z", tx));
+      const oficioId = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      const registrar = (quien: SesionFlujo, campos: Record<string, string | string[]>) =>
+        como(tx, quien, () => destino(registrarRespuestaDelPlanAccion(null, formulario(campos))));
+      const campos = { planId: String(plan.id), enviadaEn: ENVIADA, oficioId: String(oficioId), vistos: [String(h1.id), String(h2.id)] };
+
+      expect(await registrar(b.control, campos)).toMatchObject({ ok: false, error: "Sin permiso para esta acción" });
+      expect(await registrar(b.admin, { ...campos, nota: "un campo que el formulario no manda" })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("nota"),
+      });
+      expect(await registrar(b.admin, { ...campos, oficioId: "" })).toMatchObject({ ok: false, error: "Elija el oficio de respuesta" });
+      // La lista que vio la persona ya no es la de los listos: vuelve al plan, al bloque de la respuesta, con el aviso.
+      expect(await registrar(b.admin, { ...campos, vistos: String(h1.id) })).toBe(`REDIRECT:/mejoramiento/planes/${plan.id}?respuesta=cambio#respuesta-al-ente`);
+      const sinRespuesta = await tx`SELECT count(*)::int AS n FROM mejora_hallazgos WHERE id IN (${h1.id}, ${h2.id}) AND respuesta_ente_en IS NOT NULL`;
+      expect(sinRespuesta[0].n).toBe(0);
+
+      expect(await registrar(b.admin, campos)).toBe(`REDIRECT:/mejoramiento/planes/${plan.id}#respuesta-al-ente`);
+      const respondidos = await tx`SELECT count(*)::int AS n FROM mejora_hallazgos WHERE id IN (${h1.id}, ${h2.id}) AND respuesta_ente_en IS NOT NULL`;
+      expect(respondidos[0].n).toBe(2);
     }));
 });

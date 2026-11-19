@@ -19,6 +19,12 @@ export const RUTA_NUEVO_PLAN = "/mejoramiento/planes/nuevo";
 /** La página de un plan de mejoramiento. */
 export const rutaDePlan = (id: number) => `/mejoramiento/planes/${id}`;
 
+/** El bloque «Respuesta al ente» de la página del plan (anexo §3.8): adonde llevan su tarea y su formulario. */
+export const ANCLA_RESPUESTA_AL_ENTE = "respuesta-al-ente";
+
+/** El bloque «Archivos del plan» (anexo §3.7): donde se sube el oficio antes de elegirlo en la respuesta. */
+export const ANCLA_ARCHIVOS_DEL_PLAN = "archivos-del-plan";
+
 /** El formulario para editar un plan. */
 export const rutaDeEditarPlan = (id: number) => `/mejoramiento/planes/${id}/editar`;
 

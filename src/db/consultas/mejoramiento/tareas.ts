@@ -16,7 +16,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
 import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
-import { rutaDeActividad, rutaDeFormular, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { ANCLA_RESPUESTA_AL_ENTE, rutaDeActividad, rutaDeFormular, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { PREFIJO_REASIGNAR } from "@/lib/mejoramiento/textos";
 import { TERMINALES, type EstadoHallazgo, type HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { puede } from "@/lib/permisos";
@@ -29,6 +29,7 @@ import { cargaResuelta } from "./carga-confirmada";
 import { contextoDeMejora } from "./config";
 import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
 import { aBase } from "./flujo";
+import { esperaRespuesta } from "./respuesta-plan";
 import { venceLaActividad } from "./vence-actividad";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -225,10 +226,12 @@ async function deLosAjustes(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora
 
 /**
  * Lo del Admin SGC que no es un paso del hallazgo: clasificar cada reporte recibido, registrar la respuesta al ente de cada
- * hallazgo externo con fecha del ente, con el plan de la ronda en vigor aprobado y sin respuesta (spec §13.4: vence al final de
- * la fecha del ente; la misma condición que `registrarRespuestaAlEnte`), y adjuntar el formato firmado de cada hallazgo cargado
- * sin terminar que todavía no lo tiene (spec §15: hasta entonces su plan no llega a nadie; `cargaResuelta`). Esta última no
- * vence: ninguna norma le fija plazo, y la pasada de vencimientos no la mira.
+ * hallazgo externo con fecha del ente que la espera (`esperaRespuesta`: sin terminar, con el plan de la ronda en vigor aprobado y
+ * sin respuesta; spec §13.4: vence al final de la fecha del ente) y no está en un plan, la de cada plan con algún hallazgo que la
+ * espera con fecha del ente (anexo 15B §3.8: una por plan, que vence en la más próxima de esas fechas; sus hallazgos no dan la
+ * suya), y adjuntar el formato firmado de cada hallazgo cargado sin terminar que todavía no lo tiene (spec §15: hasta entonces su
+ * plan no llega a nadie; `cargaResuelta`). Esta última no vence: ninguna norma le fija plazo, y la pasada de vencimientos no la
+ * mira. La del plan es del plan, no de un hallazgo (`hallazgoId` nulo): no cuenta en «Esperan su decisión».
  */
 async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> {
   if (!puede(s, "mejora.gestionar")) return [];
@@ -236,10 +239,18 @@ async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> 
   const externos = await sql`
     SELECT h.id, h.codigo, h.titulo, to_char(h.fecha_limite_ente, 'YYYY-MM-DD') AS limite
     FROM mejora_hallazgos h
-    WHERE h.estado NOT IN ${sql([...TERMINALES])} AND h.origen IN ('auditoria_externa', 'ente_control')
-      AND h.fecha_limite_ente IS NOT NULL AND h.respuesta_ente_en IS NULL
-      AND EXISTS (SELECT 1 FROM mejora_rondas r WHERE r.hallazgo_id = h.id AND r.numero = h.ronda AND r.estado_plan = 'aprobado')
+    WHERE ${esperaRespuesta(sql)} AND h.fecha_limite_ente IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM mejora_clasificacion tc WHERE tc.hallazgo_id = h.id AND tc.plan_id IS NOT NULL)
     ORDER BY h.id`;
+  // Una sola consulta para todos los planes, agrupada por plan.
+  const planes = await sql`
+    SELECT p.id, p.codigo, p.nombre, to_char(min(h.fecha_limite_ente), 'YYYY-MM-DD') AS limite
+    FROM mejora_planes p
+    JOIN mejora_clasificacion tc ON tc.plan_id = p.id
+    JOIN mejora_hallazgos h ON h.id = tc.hallazgo_id
+    WHERE p.anulado_en IS NULL AND ${esperaRespuesta(sql)} AND h.fecha_limite_ente IS NOT NULL
+    GROUP BY p.id, p.codigo, p.nombre
+    ORDER BY p.id`;
   const sinEscaneo = await sql`
     SELECT h.id, h.codigo, h.titulo FROM mejora_hallazgos h
     WHERE h.cargado AND h.estado NOT IN ${sql([...TERMINALES])} AND NOT ${cargaResuelta(sql)}
@@ -278,6 +289,17 @@ async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> 
         enlace: rutaDeHallazgo(Number(f.id)),
       },
       hallazgoId: Number(f.id),
+    })),
+    ...planes.map((f) => ({
+      tarea: {
+        id: `mej-ente-plan:${f.id}`,
+        modulo: "planes" as const,
+        titulo: `Registrar la respuesta al ente del plan ${f.codigo as string}`,
+        detalle: f.nombre as string,
+        vence: finDeFecha(f.limite as string, zona),
+        enlace: `${rutaDePlan(Number(f.id))}#${ANCLA_RESPUESTA_AL_ENTE}`,
+      },
+      hallazgoId: null,
     })),
   ];
 }

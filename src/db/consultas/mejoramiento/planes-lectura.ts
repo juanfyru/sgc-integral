@@ -14,8 +14,11 @@ import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
 import { avanceDePlan, cuentaParaElPlan, estadoDePlan, NO_CUENTAN_PARA_PLAN, type EstadoDePlan } from "@/lib/mejoramiento/planes";
 import { TERMINALES, type EstadoHallazgo, type Origen, type ResultadoCierre } from "@/lib/mejoramiento/tipos";
 import { puede, requerirPermiso } from "@/lib/permisos";
+import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
+import { archivosDe, archivosQuitables, autorizarSubida, type ArchivoDeMejora } from "./archivos";
 import { evaluablesDesde } from "./espera";
 import { filasDeLaLista, hechosDeLaLista, type FilaDeHallazgo } from "./lectura";
+import { respuestaDelPlan, type RespuestaDelPlan } from "./respuesta-plan";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
 
@@ -55,6 +58,14 @@ export type DetalleDePlan = PlanDeLaLista & {
   anuladoMotivo: string | null;
   grupos: Array<{ procesoId: number; proceso: string; filas: FilaDelPlan[] }>;
   historial: EventoDelPlan[];
+  /**
+   * «Archivos del plan» (anexo §3.7), solo a quien ve todo (los abre solo él); para los demás, nulo y sin bloque. `quitables`, los
+   * que la persona puede quitar hoy; `puedeSubir`, si puede subir (`mejora.planes` en un plan que no está anulado). El servidor
+   * vuelve a comprobar cada subida y cada quitada.
+   */
+  archivos: { lista: ArchivoDeMejora[]; quitables: number[]; puedeSubir: boolean } | null;
+  /** «Respuesta al ente» (anexo §3.8), solo a quien ve todo y si el plan tiene algún hallazgo de origen externo (`respuestaDelPlan`). */
+  respuesta: RespuestaDelPlan | null;
   /**
    * `gestionar`: `mejora.planes` en un plan que no está anulado (editar, añadir, sacar, anular); `verTodo`: `mejora.ver_todo` (el
    * Excel del ente, los archivos y la respuesta); `responder`: `mejora.gestionar` en un plan que no está anulado (la respuesta al
@@ -209,12 +220,28 @@ function textoDelEvento(tipo: string, d: Record<string, unknown>, hallazgo: stri
       const hacia = idDe(d.haciaPlanId);
       return conMotivo(hacia !== null ? `pasó ${h}${otroPlan(hacia, "al")}` : `sacó ${h}`);
     }
-    case "archivo":
-      return "adjuntó un archivo al plan";
-    case "archivo_quitado":
-      return "quitó un archivo del plan";
-    case "respuesta":
-      return "registró la respuesta al ente";
+    // Los archivos y la respuesta al ente solo los lee quien ve todo (`DEL_PLAN_PARA_TODOS` no los incluye): el nombre del archivo
+    // no es texto libre.
+    case "archivo": {
+      const nombre = textoDe(d.nombre);
+      return nombre ? `adjuntó el archivo «${nombre}» al plan` : "adjuntó un archivo al plan";
+    }
+    case "archivo_quitado": {
+      const nombre = textoDe(d.nombre);
+      return nombre ? `quitó el archivo «${nombre}» del plan` : "quitó un archivo del plan";
+    }
+    case "respuesta": {
+      const codigos = Array.isArray(d.hallazgos) ? d.hallazgos.flatMap((c) => (typeof c === "string" && c !== "" ? [c] : [])) : [];
+      const enviada = typeof d.enviadaEn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d.enviadaEn) ? d.enviadaEn : null;
+      const oficio = textoDe(d.oficio);
+      return [
+        `registró la respuesta al ente${codigos.length > 0 ? ` de ${enumerar(codigos)}` : ""}`,
+        enviada ? `enviada el ${fechaLargaDeDia(enviada)}` : null,
+        oficio ? `con el oficio «${oficio}»` : null,
+      ]
+        .filter((p) => p !== null)
+        .join(", ");
+    }
     default:
       return "registró un cambio en el plan";
   }
@@ -294,6 +321,17 @@ export async function leerPlan(sesion: SesionFlujo, id: number, opciones?: Opcio
 
   const anulado = p.anulado === true;
   const objetivo = (p.objetivo as string | null) ?? null;
+  // Los archivos y la respuesta al ente, solo a quien ve todo (§3.6): a los demás, ni el bloque.
+  const verTodo = puede(sesion, "mejora.ver_todo");
+  const dueno = { contexto: "mejora_plan", contextoId: id } as const;
+  const lista = verTodo ? await archivosDe(sql, sesion, dueno) : [];
+  const archivos = verTodo
+    ? {
+        lista,
+        quitables: await archivosQuitables(sql, sesion, lista, dueno),
+        puedeSubir: (await autorizarSubida(sesion, { contexto: "mejora_plan", id }, { sql })).ok,
+      }
+    : null;
   return {
     ...aPlanDeLaLista(p, cifras),
     objetivoTexto: (p.objetivo_texto as string | null) ?? null,
@@ -303,9 +341,11 @@ export async function leerPlan(sesion: SesionFlujo, id: number, opciones?: Opcio
     anuladoMotivo: (p.anulado_motivo as string | null) ?? null,
     grupos: ordenados,
     historial: await historialDe(sql, sesion, id),
+    archivos,
+    respuesta: await respuestaDelPlan(sesion, id, { sql, ahora }),
     puede: {
       gestionar: !anulado && puede(sesion, "mejora.planes"),
-      verTodo: puede(sesion, "mejora.ver_todo"),
+      verTodo,
       responder: !anulado && puede(sesion, "mejora.gestionar"),
     },
   };

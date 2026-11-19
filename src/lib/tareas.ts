@@ -17,6 +17,7 @@ import { esResponsableTecnico } from "@/db/consultas/vigencia/externos";
 import { tareasDeRevision } from "@/db/consultas/vigencia/revision-anual/tareas";
 import { vigenciaDePersona, type VigenciaDePersona } from "@/db/consultas/vigencia/tareas";
 import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
+import { RUTA_PLANES } from "@/lib/mejoramiento/rutas";
 import { PREFIJO_REASIGNAR } from "@/lib/mejoramiento/textos";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
@@ -118,8 +119,9 @@ const indicadoresPor = (que: string) => (miembros: Tarea[], ahora: Date) => {
  * revisión pendiente, y las fichas por aprobar; no las observaciones ni las fichas devueltas (`ficha-devuelta:` no empieza
  * por `ficha:`). De mejoramiento (spec 15 §14.1) se agrupa cada fuente `mej-…:`: los reportes por clasificar, que llevan a
  * «Reportes recibidos»; las actividades, que llevan a «Mis actividades» si todas son de quien mira y, con alguna por reasignar
- * (de un responsable inactivo, que «Mis actividades» no muestra), a la lista de los hallazgos que esperan su decisión; y cada
- * paso de los hallazgos (`pasoDeMejora`).
+ * (de un responsable inactivo, que «Mis actividades» no muestra), a la lista de los hallazgos que esperan su decisión; cada
+ * paso de los hallazgos (`pasoDeMejora`); y las respuestas al ente de los planes (Fase 15B, `mej-ente-plan:`), que llevan a la
+ * pestaña «Planes».
  */
 const GRUPOS: readonly Grupo[] = [
   // Una lectura vence siempre después de pedirse: el detalle de la 13B no cambia.
@@ -219,6 +221,15 @@ const GRUPOS: readonly Grupo[] = [
   pasoDeMejora("cerrar", "hallazgos por cerrar", "por_cerrar"),
   pasoDeMejora("ente", "respuestas al ente por registrar", null, femenino),
   pasoDeMejora("escaneo", "cargas sin su formato firmado", null, femenino),
+  // Una por plan (anexo 15B §3.8): no empieza por `mej-ente:`, así que no se mezcla con las de un hallazgo suelto.
+  {
+    prefijo: "mej-ente-plan:",
+    id: "mejora-ente-plan",
+    modulo: "planes",
+    titulo: (m) => `${m.length} respuestas al ente de planes por registrar`,
+    detalle: femenino,
+    enlace: () => RUTA_PLANES,
+  },
 ];
 
 function unir(g: Grupo, miembros: Tarea[], ahora: Date): Tarea {

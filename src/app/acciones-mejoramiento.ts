@@ -38,6 +38,7 @@ import {
   registrarRespuestaAlEnte,
 } from "@/db/consultas/mejoramiento/registro";
 import { descartarReporte, enviarReporte, hallazgoPorCodigo, sumarReporte } from "@/db/consultas/mejoramiento/reportes";
+import { registrarRespuestaDelPlan } from "@/db/consultas/mejoramiento/respuesta-plan";
 import { cerrarHallazgo, evaluarEficacia, LO_VISTO_CAMBIO, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
@@ -67,6 +68,7 @@ import {
   EsquemaFormularioFirmaDelPlan,
   EsquemaFormularioPonerEnPlan,
   EsquemaFormularioPreguntas,
+  EsquemaFormularioRespuestaDelPlan,
   EsquemaFormularioResponderEscalada,
   EsquemaFormularioRevisarPlan,
   EsquemaFormularioSumarReporte,
@@ -92,7 +94,8 @@ import {
   idsDeLaVerificacion,
 } from "@/lib/esquemas/mejoramiento";
 import { RUTA_REPORTES_RECIBIDOS, rutaDeReportar } from "@/lib/mejoramiento/reportes";
-import { rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
+import { LISTOS_CAMBIARON } from "@/lib/mejoramiento/planes";
+import { ANCLA_RESPUESTA_AL_ENTE, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -737,5 +740,26 @@ export async function cambiarDePlanAccion(_previo: EstadoAccion, formData: FormD
 export async function ponerObjetivoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
     await ponerObjetivo(sesion, parsearFormulario(datos, EsquemaObjetivoDelHallazgo));
+  });
+}
+
+/**
+ * El Admin SGC registra la respuesta al ente desde el plan (anexo §3.8): la fecha de envío, el oficio (un archivo del plan) y los
+ * hallazgos que el formulario mostró como listos (`vistos`), que `registrarRespuestaDelPlan` compara con los de verdad con todo
+ * bloqueado. Si cambiaron, no se escribió nada: vuelve al bloque de la respuesta con la lista nueva y el aviso de que la revise
+ * (Review Focus 4, como «lo visto cambió» de la evaluación de la eficacia).
+ */
+export async function registrarRespuestaDelPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaFormularioRespuestaDelPlan);
+    try {
+      await registrarRespuestaDelPlan(sesion, d);
+    } catch (err) {
+      if (err instanceof ErrorMejora && err.message === LISTOS_CAMBIARON) {
+        return `${rutaDePlan(d.planId)}?respuesta=cambio#${ANCLA_RESPUESTA_AL_ENTE}`;
+      }
+      throw err;
+    }
+    return `${rutaDePlan(d.planId)}#${ANCLA_RESPUESTA_AL_ENTE}`;
   });
 }

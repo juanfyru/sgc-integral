@@ -22,7 +22,7 @@ import { esExterno } from "@/lib/mejoramiento/origenes";
 import { formularAntesDe, venceEn } from "@/lib/mejoramiento/plazos";
 import { destinoDeReclasificacion, type Perfil } from "@/lib/mejoramiento/reclasificar";
 import { aceptadoVaA } from "@/lib/mejoramiento/reglas";
-import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
+import { RESPONDA_DESDE_EL_PLAN } from "@/lib/mejoramiento/planes";
 import { AJUSTE_POR_ANULACION } from "@/lib/mejoramiento/textos";
 import { ErrorMejora, TERMINALES, type Clase, type Criticidad, type HallazgoBase, type Origen } from "@/lib/mejoramiento/tipos";
 import { DESDE, YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
@@ -35,6 +35,7 @@ import { cargaPendiente } from "./carga-confirmada";
 import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
 import { DATO_YA_NO_EXISTE } from "./legible";
 import { bloquearReporteRecibido, dejarClasificado } from "./reportes-base";
+import { ENVIO_FUTURO, envioAntesDeAprobar, planQueResponde } from "./respuesta-plan";
 
 /** Los campos de la identificación (spec §7.1). Los ids y las fechas también llegan como texto del formulario. */
 export type DatosDeHallazgo = {
@@ -740,9 +741,8 @@ export const OFICIO_AJENO = "Elija el oficio entre los archivos del hallazgo sub
 export const SOLO_EXTERNO = "Solo un hallazgo de origen externo lleva respuesta al ente";
 export const PLAN_SIN_APROBAR = "El plan todavía no está aprobado: la respuesta al ente se registra después de aprobarlo";
 export const YA_RESPONDIDO = "Ya se registró la respuesta al ente";
-export const ENVIO_FUTURO = "La fecha de envío no puede ser futura";
-export const envioAntesDeAprobar = (dia: string) =>
-  `La fecha de envío no puede ser anterior a la aprobación del plan, el ${fechaLargaDeDia(dia)}`;
+// Los bordes de la fecha de envío son los mismos desde el plan (anexo 15B §3.8): viven en `respuesta-plan.ts`.
+export { ENVIO_FUTURO, envioAntesDeAprobar };
 
 /**
  * La aprobación del plan de la ronda en vigor (la del hallazgo): el día, en la zona de la instalación, en que se aprobó (en uno
@@ -786,7 +786,9 @@ export async function oficiosPosibles(sql: Cliente, hallazgoId: number): Promise
  * oficio, uno de los archivos del hallazgo subidos después de esa aprobación (`oficiosPosibles`), comprobado dentro de la
  * transacción. Una sola vez. Deja la fecha y quién en el hallazgo, el evento `respuesta_ente` y su bitácora, con la fecha y el id
  * del oficio, sin texto libre; desde entonces el oficio no se quita. Cumple la tarea «Registrar la respuesta al ente». No avisa:
- * no le pasa el turno a nadie.
+ * no le pasa el turno a nadie. Un hallazgo que está en un plan se responde desde el plan (anexo 15B §3.8,
+ * `registrarRespuestaDelPlan`): aquí se rechaza con `RESPONDA_DESDE_EL_PLAN`, mirado con el hallazgo ya bloqueado (quien lo pone
+ * en un plan o lo saca lo bloquea después del plan y espera este candado).
  */
 export async function registrarRespuestaAlEnte(
   sesion: SesionFlujo,
@@ -807,6 +809,7 @@ export async function registrarRespuestaAlEnte(
       if (!esExterno(h.origen)) throw new ErrorMejora(SOLO_EXTERNO);
       const [f] = await tx`SELECT respuesta_ente_en FROM mejora_hallazgos WHERE id = ${h.id}`;
       if (f.respuesta_ente_en !== null) throw new ErrorMejora(YA_RESPONDIDO);
+      if (await planQueResponde(tx, h.id)) throw new ErrorMejora(RESPONDA_DESDE_EL_PLAN);
       const c = await contextoDeMejora(tx, ahora);
       const aprobacion = await aprobacionEnVigor(tx, h.id, c.zona);
       if (!aprobacion) throw new ErrorMejora(PLAN_SIN_APROBAR);

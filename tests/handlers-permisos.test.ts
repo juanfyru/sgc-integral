@@ -44,6 +44,12 @@ import { POST as subirArchivoExterno } from "@/app/api/externos/[versionId]/arch
 import { DELETE as quitarArchivoNorma } from "@/app/api/normas/[id]/archivos/[archivoId]/route";
 import { POST as subirArchivoNorma } from "@/app/api/normas/[id]/archivos/route";
 import { POST as subirFotoHallazgo } from "@/app/api/hallazgos/[id]/archivos/route";
+import { POST as subirArchivoDePlan } from "@/app/api/mejoramiento/planes/[id]/archivos/route";
+import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
+import { anularPlan } from "@/db/consultas/mejoramiento/planes";
+import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { c, datosDeHallazgo, planDeMejoraDePrueba } from "./utiles/mejoramiento";
+import { procesoNuevo } from "./utiles/mixto";
 import { GET as verFotoHallazgo } from "@/app/(app)/distribucion/verificaciones/hallazgos/[id]/archivos/[archivoId]/[[...nombre]]/route";
 import { GET as excelAcuses } from "@/app/(app)/distribucion/acuses/excel/route";
 import { GET as excelCopias } from "@/app/(app)/distribucion/copias/excel/route";
@@ -948,6 +954,81 @@ describe("foto de la corrección de un hallazgo: /api/hallazgos/[id]/archivos", 
 
         await tx`UPDATE hallazgos SET estado = 'cerrado', cerrado_en = now(), cerrado_por = ${responsable.usuarioId}, nota_cierre = 'Listo' WHERE id = ${id}`;
         expect((await subir(cookie(responsable.token), id)).status).toBe(409);
+      } finally {
+        enCurso.sql = null;
+        if (almacenPrevio === undefined) delete process.env.ALMACEN_RUTA;
+        else process.env.ALMACEN_RUTA = almacenPrevio;
+        rmSync(almacen, { recursive: true, force: true });
+      }
+    }));
+});
+
+describe("archivos de un plan de mejoramiento: /api/mejoramiento/planes/[id]/archivos (Fase 15B, anexo §3.7)", () => {
+  const PLAN = "999999999";
+  const subir = (cabeceras: Record<string, string> = {}, id = PLAN, bytes = pngDePrueba(8, 8)) =>
+    subirArchivoDePlan(
+      new NextRequest(`http://sgc.local/api/mejoramiento/planes/${id}/archivos`, {
+        method: "POST",
+        body: bytes as BodyInit,
+        duplex: "half",
+        headers: {
+          host: "sgc.local",
+          origin: "http://sgc.local",
+          "x-nombre-archivo": encodeURIComponent("informe.png"),
+          "content-length": String(bytes.byteLength),
+          ...cabeceras,
+        },
+      } as ConstructorParameters<typeof NextRequest>[1]),
+      { params: Promise.resolve({ id }) },
+    );
+
+  it("401 sin sesión; 403 sin el permiso de los planes (Consulta, Gerencia); 403 con un Origin ajeno; 404 a un plan que no existe o a un id que no es un número", async () => {
+    expect((await subir()).status).toBe(401);
+    for (const token of [tokenConsulta, tokenGerencia]) expect((await subir(cookie(token))).status).toBe(403);
+    const ajeno = await subir({ ...cookie(tokenCi), origin: "https://malo.com" });
+    expect(ajeno.status).toBe(403);
+    expect(await ajeno.json()).toEqual({ error: "Origen no permitido" });
+    expect((await subir(cookie(tokenCi))).status).toBe(404);
+    expect((await subir(cookie(tokenCi), "abc")).status).toBe(404);
+    expect((await subir(cookie(tokenCi), "99999999999999999999")).status).toBe(404);
+  });
+
+  it("la sube Control Interno, con su evento en el plan; al líder de un hallazgo del plan, 403 como a todo plan; anulado, 409", () =>
+    revertida(sql(), async (tx) => {
+      const almacenPrevio = process.env.ALMACEN_RUTA;
+      const almacen = mkdtempSync(path.join(tmpdir(), "sgc-plan-archivo-"));
+      process.env.ALMACEN_RUTA = almacen;
+      enCurso.sql = tx;
+      try {
+        const conSesion = async (rol: "control_interno" | "lider_proceso", procesos?: number[]) => {
+          const u = await usuarioDePrueba(tx, { rol, ...(procesos ? { procesos } : {}) });
+          await tx`UPDATE usuarios SET acepto_datos_en = now(), totp_activo = true WHERE id = ${u.usuarioId}`;
+          return { ...u, token: (await crearSesion(u.usuarioId, { ip: null, userAgent: null })).token };
+        };
+        const procesoId = await procesoNuevo(tx);
+        const control = await conSesion("control_interno");
+        const lider = await conSesion("lider_proceso", [procesoId]);
+        const plan = await planDeMejoraDePrueba(tx, control);
+        const h = await registrarHallazgo(control, datosDeHallazgo(procesoId), c("2026-11-17T15:00:00Z", tx));
+        await ponerEnPlan(control, { planId: plan.id, hallazgoIds: [h.id] }, c("2026-11-17T15:00:00Z", tx));
+        const id = String(plan.id);
+
+        // El líder ve el plan, pero no tiene el permiso de los planes: la misma respuesta que ante cualquier plan.
+        expect((await subir(cookie(lider.token), id)).status).toBe(403);
+        expect((await subir(cookie(lider.token), PLAN)).status).toBe(403);
+        const subida = await subir(cookie(control.token), id);
+        expect(subida.status).toBe(201);
+        const { id: archivoId } = (await subida.json()) as { id: number };
+        const [fila] = await tx`SELECT contexto, contexto_id, rol, ruta, mime FROM archivos WHERE id = ${archivoId}`;
+        expect(fila).toEqual({ contexto: "mejora_plan", contexto_id: plan.id, rol: "evidencia", ruta: `mejoramiento/planes/${id}/informe.png`, mime: "image/png" });
+        const [evento] = await tx`SELECT tipo, detalle, usuario_id FROM mejora_plan_eventos WHERE plan_id = ${plan.id} AND tipo = 'archivo'`;
+        expect(evento).toEqual({ tipo: "archivo", detalle: { archivoId, nombre: "informe.png" }, usuario_id: control.usuarioId });
+
+        const vacio = await planDeMejoraDePrueba(tx, control, { nombre: "Plan que se anula por un error de registro" });
+        await anularPlan(control, { planId: vacio.id, motivo: "Se creó dos veces por un error" }, c("2026-11-17T15:00:00Z", tx));
+        const anulado = await subir(cookie(control.token), String(vacio.id));
+        expect(anulado.status).toBe(409);
+        expect(await anulado.json()).toEqual({ error: "El plan está anulado" });
       } finally {
         enCurso.sql = null;
         if (almacenPrevio === undefined) delete process.env.ALMACEN_RUTA;
