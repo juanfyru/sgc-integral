@@ -10,6 +10,7 @@ import {
   guardarCausas,
   laVezPasada,
   puedeFormular,
+  puntoDePartidaDeLaMedicion,
   quitarAnalisis,
   responderPreguntas,
 } from "@/db/consultas/mejoramiento/analisis";
@@ -19,7 +20,8 @@ import { analisisCompleto, leerContenido } from "@/lib/mejoramiento/analisis";
 import { parsearFormulario } from "@/lib/validacion";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
-import { baseDeMejora, c, hallazgoEn, otroProcesoConLider } from "./utiles/mejoramiento";
+import { ANALISIS_DE_LA_MARCA, baseDeMejora, c, hallazgoEn, medicionMarcada, otroProcesoConLider } from "./utiles/mejoramiento";
+import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -321,5 +323,35 @@ describe("la vez pasada de un reincidente", () => {
         causas: ["No hay lista de chequeo"],
         acciones: ["Crear la lista de chequeo"],
       });
+    }));
+});
+
+describe("el punto de partida de la medición (anexo 15B §6.5)", () => {
+  it("trae la causa y la acción propuesta del análisis para quien formula; nulo sin medición, sin análisis o sin ver el indicador", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const mm = await medicionMarcada(tx, { ahora: "2026-11-03T15:00:00Z", analizada: true, procesoId: b.procesoId });
+      const h = await hallazgoEn(tx, b, "por_formular", { origen: "indicador", fuente: null, detectadoEn: "2026-11-04", indicadorId: mm.ind.id, medicionId: mm.medicionId });
+      const o = { sql: tx, ahora: new Date(AHORA) };
+      expect(await puntoDePartidaDeLaMedicion(b.lider, h.id, o)).toEqual({
+        periodo: "octubre de 2026",
+        causa: ANALISIS_DE_LA_MARCA.causa,
+        accionPropuesta: ANALISIS_DE_LA_MARCA.accionPropuesta,
+      });
+
+      // Un hallazgo sin medición no tiene punto de partida.
+      const sinMedicion = await hallazgoEn(tx, b, "por_formular");
+      expect(await puntoDePartidaDeLaMedicion(b.lider, sinMedicion.id, o)).toBeNull();
+
+      // Una medición sin análisis tampoco.
+      const sinAnalisis = await medicionMarcada(tx, { ahora: "2026-11-03T15:00:00Z", procesoId: b.procesoId });
+      const h2 = await hallazgoEn(tx, b, "por_formular", { origen: "indicador", fuente: null, detectadoEn: "2026-11-04", indicadorId: sinAnalisis.ind.id, medicionId: sinAnalisis.medicionId });
+      expect(await puntoDePartidaDeLaMedicion(b.lider, h2.id, o)).toBeNull();
+
+      // Quien no ve el indicador (restringido de otro proceso) no lo lee.
+      const otro = await procesoNuevo(tx);
+      await tx`UPDATE indicadores SET nivel_acceso = 'restringido', proceso_id = ${otro} WHERE id = ${mm.ind.id}`;
+      expect(await puntoDePartidaDeLaMedicion(b.lider, h.id, o)).toBeNull();
+      expect(await puntoDePartidaDeLaMedicion(b.control, h.id, o)).not.toBeNull();
     }));
 });

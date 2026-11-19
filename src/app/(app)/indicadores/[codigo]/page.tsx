@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileSpreadsheet, Printer } from "lucide-react";
 import { MenuAdministrar } from "@/componentes/indicadores/admin/MenuAdministrar";
+import { PanelDeMarcas } from "@/componentes/mejoramiento/marcas/PanelDeMarcas";
 import { AvisoDeImpacto } from "@/componentes/indicadores/AvisoDeImpacto";
 import { PestanasDeIndicador, Recuadro, type PestanaDeIndicador } from "@/componentes/indicadores/vistas/comun";
 import { ESTADO_VERSION, VistaFicha } from "@/componentes/indicadores/vistas/VistaFicha";
@@ -20,6 +21,7 @@ import { proximaPorReportar } from "@/db/consultas/indicadores/lectura";
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { resumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
+import { marcasDelIndicador, salidasVisibles } from "@/db/consultas/mejoramiento/marcas";
 import { puedeMedir } from "@/lib/alcance";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
 import { ETIQUETA_PERIODICIDAD, type Periodicidad } from "@/lib/indicadores/tipos";
@@ -128,11 +130,15 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const codigo = indicador.codigo;
   // «Revisión por cambio normativo» (anexo 14B, §9), en todas las vistas, a quien ve el indicador.
   const impactos = ve ? await impactosPendientesDe(sesion, indicador.id) : [];
+  // «Requiere acción de mejora» (Fase 15B, anexo §6.5): el panel, solo a quien puede dar alguna salida, y la salida de cada periodo ya
+  // decidido, a quien ve el indicador. Mejoramiento las decide; las consultas de Indicadores no lo importan.
+  const marcas = ve ? await marcasDelIndicador(sesion, indicador.id, { ahora }) : null;
+  const salidas = ve && vista === "resultados" ? await salidasVisibles(sesion, indicador.id) : null;
   const contexto: ContextoDeVista = { sesion, indicador, ve, versiones, vigente, ficha, administra, ahora };
   // La vista elegida lee lo suyo; «Resultados» abre antes los periodos que hayan terminado (F14-DC12).
   const cuerpo =
     vista === "resultados" ? (
-      <VistaResultados {...await datosDeResultados(contexto, sp, { anio, primerAnio, anioEnCurso })} />
+      <VistaResultados {...await datosDeResultados(contexto, sp, { anio, primerAnio, anioEnCurso })} salidas={salidas} />
     ) : vista === "observaciones" && obs ? (
       <VistaObservaciones {...await datosDeObservaciones(contexto, sp, obs)} />
     ) : vista === "reportes" && ente ? (
@@ -220,6 +226,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         conReportes={conReportes}
       />
       <AvisoDeImpacto impactos={impactos} administra={administra} activo={indicador.estado === "activo"} />
+      {marcas ? <PanelDeMarcas marcas={marcas.marcas} candidatos={marcas.candidatos} puede={marcas.puede} /> : null}
       {baja ? (
         <Recuadro>
           <p>{`${indicador.estado === "retirado" ? "Retirado" : "Descartado"} el ${fechaYHora(baja.en)}${baja.por ? ` por ${baja.por}` : ""}.`}</p>

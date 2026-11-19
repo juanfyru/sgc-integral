@@ -34,6 +34,7 @@ import {
   datosDeCarga,
   datosDeHallazgo,
   hallazgoEn,
+  medicionMarcada,
   objetivoDePrueba,
   otroProcesoConLider,
   planDeMejoraDePrueba,
@@ -879,3 +880,37 @@ describe("a qué se refiere: el alcance de quien registra (Fase 15B, anexo §10.
     });
   });
 });
+
+describe("«A qué se refiere» de un hallazgo que cita una medición: su estado de hoy (anexo 15B §6.6)", () => {
+  it("quien ve el indicador lee el resultado y el color actuales, y la marca solo mientras la lleva; quien no, «un indicador»", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const mm = await medicionMarcada(tx, { ahora: "2026-11-03T15:00:00Z", procesoId: b.procesoId });
+      const { id } = await registrarHallazgo(
+        b.control,
+        datosDeHallazgo(b.procesoId, { origen: "indicador", fuente: null, detectadoEn: "2026-11-04", indicadorId: mm.ind.id, medicionId: mm.medicionId }),
+        c(AHORA, tx),
+      );
+      const o = { sql: tx, ahora: new Date(AHORA) };
+      const delIndicador = async () => (await leerHallazgo(b.control, id, o))!.enlaces.find((e) => e.clase === "indicador")!;
+
+      const con = await delIndicador();
+      expect(con).toMatchObject({ visible: true, rotulo: "Indicador" });
+      expect(con.visible && con.nombre).toContain("octubre de 2026 · 10 % frente a una meta de 90 % · Crítico · Requiere acción de mejora");
+
+      // Un recálculo le quita la marca y cambia el color: el enlace lo dice con el estado de hoy.
+      await tx`UPDATE mediciones SET requiere_accion = false, semaforo = 'bien' WHERE id = ${mm.medicionId}`;
+      const sin = await delIndicador();
+      expect(sin.visible && sin.nombre).toContain("Bien");
+      expect(sin.visible && sin.nombre).not.toContain("Requiere acción de mejora");
+
+      // El indicador pasa a ser restringido de otro proceso: el líder ya no lo ve y no lee ni la cifra ni el color.
+      const otro = await procesoNuevo(tx);
+      await tx`UPDATE indicadores SET nivel_acceso = 'restringido', proceso_id = ${otro} WHERE id = ${mm.ind.id}`;
+      const yaNo = (await leerHallazgo(b.lider, id, o))!;
+      expect(yaNo.enlaces).toContainEqual({ visible: false, clase: "indicador", rotulo: "Indicador" });
+      expect(JSON.stringify(yaNo)).not.toContain("10 %");
+    });
+  });
+});
+

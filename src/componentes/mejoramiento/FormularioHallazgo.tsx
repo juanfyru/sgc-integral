@@ -23,7 +23,7 @@ type Props = {
   normas?: ReadonlyArray<{ id: number; nombre: string; titulo: string }>;
   documentos?: ReadonlyArray<{ id: number; codigo: string; titulo: string }>;
   /** «A qué se refiere» (Fase 15B): los indicadores activos o retirados que ve y sus mediciones con resultado. */
-  indicadores?: ReadonlyArray<{ id: number; codigo: string; nombre: string }>;
+  indicadores?: ReadonlyArray<{ id: number; codigo: string; nombre: string; restringido?: boolean }>;
   mediciones?: ReadonlyArray<{ id: number; indicadorId: number; etiqueta: string }>;
   /** Los objetivos activos del maestro (`objetivosActivos`). */
   objetivos?: ReadonlyArray<{ id: number; etiqueta: string }>;

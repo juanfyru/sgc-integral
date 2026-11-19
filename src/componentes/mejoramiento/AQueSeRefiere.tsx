@@ -64,7 +64,7 @@ type Props = {
   /** Los documentos vigentes que la persona ve (`documentosVigentesVisibles`). */
   documentos: ReadonlyArray<{ id: number; codigo: string; titulo: string }>;
   /** Los indicadores activos o retirados que la persona ve y las mediciones con resultado de cada uno (`indicadoresConMediciones`). */
-  indicadores: ReadonlyArray<{ id: number; codigo: string; nombre: string }>;
+  indicadores: ReadonlyArray<{ id: number; codigo: string; nombre: string; restringido?: boolean }>;
   mediciones: ReadonlyArray<{ id: number; indicadorId: number; etiqueta: string }>;
   /** El documento al empezar (el control no lleva estado). */
   documentoId: string;
@@ -75,6 +75,10 @@ type Props = {
   /** Los campos fijos del prellenado, con su valor (`fijosEnTexto`). */
   fijos: Record<string, string>;
 };
+
+/** Lo que se avisa al elegir un indicador restringido (anexo 15B §10.3): la descripción la leerán los responsables de las actividades. */
+export const AVISO_INDICADOR_RESTRINGIDO =
+  "Este indicador es restringido: lo que escriba en la descripción lo leerán los responsables de las actividades.";
 
 const etiquetaDeDocumento = (d: { codigo: string; titulo: string }) => `${d.codigo} · ${d.titulo}`;
 const etiquetaDeIndicador = (i: { codigo: string; nombre: string }) => `${i.codigo} · ${i.nombre}`;
@@ -89,6 +93,7 @@ export function AQueSeRefiere({ documentos, indicadores, mediciones, documentoId
   const documento = documentos.find((d) => String(d.id) === fijos.documentoId);
   const indicador = indicadores.find((i) => String(i.id) === fijos.indicadorId);
   const medicion = mediciones.find((m) => String(m.id) === fijos.medicionId);
+  const elegido = indicadores.find((i) => String(i.id) === (fijo("indicadorId") ? fijos.indicadorId : indicadorId));
   return (
     <fieldset className="flex min-w-0 flex-col gap-3 rounded-md border border-border p-3">
       <legend className="px-1 text-sm font-medium">A qué se refiere (opcional)</legend>
@@ -144,6 +149,11 @@ export function AQueSeRefiere({ documentos, indicadores, mediciones, documentoId
             </Campo>
           ) : null}
         </div>
+      ) : null}
+      {elegido?.restringido ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {AVISO_INDICADOR_RESTRINGIDO}
+        </p>
       ) : null}
     </fieldset>
   );

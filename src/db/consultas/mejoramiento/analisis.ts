@@ -10,7 +10,7 @@ import type { TransactionSql } from "postgres";
 import type { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { puedeVerHallazgo } from "@/lib/alcance";
+import { filtroIndicadores, puedeVerHallazgo } from "@/lib/alcance";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { EsquemaCausas, EsquemaGuardarAnalisis, EsquemaPreguntasDeCierre, EsquemaQuitarAnalisis } from "@/lib/esquemas/mejoramiento";
 import { leerContenido } from "@/lib/mejoramiento/analisis";
@@ -20,6 +20,7 @@ import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import { actuaPorElProceso } from "./avisos";
 import { bloquearHallazgo, dejarEvento, legible, NO_EXISTE } from "./flujo";
 import { ENTIDAD_HALLAZGO } from "./avisos";
+import { aMarcaLeida, columnasDeMarca, desdeLaMedicion, etiquetaDelPeriodo } from "./marcas-base";
 
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
 
@@ -257,4 +258,24 @@ export async function laVezPasada(
     sql`SELECT descripcion FROM mejora_acciones WHERE ronda_id = ${r.id} ORDER BY orden, id`,
   ]);
   return { codigo: h.codigo as string, causas: causas.map((f) => f.texto as string), acciones: acciones.map((f) => f.descripcion as string) };
+}
+
+/**
+ * «Lo que dijo el análisis del indicador» (anexo 15B §6.5): la causa y la acción propuesta que quien mide dejó en la medición que el
+ * hallazgo cita, para quien formula, en solo lectura. Nulo si el hallazgo no cita una medición, si la medición no tiene análisis o si
+ * la persona no ve el indicador. El hallazgo ya lo decidió quien llama (la página de formular); aquí solo se lee.
+ */
+export async function puntoDePartidaDeLaMedicion(
+  sesion: SesionFlujo,
+  hallazgoId: number,
+  opciones?: { sql?: Cliente; ahora?: Date },
+): Promise<{ periodo: string; causa: string | null; accionPropuesta: string | null } | null> {
+  if (!Number.isSafeInteger(hallazgoId) || hallazgoId <= 0) return null;
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT ${columnasDeMarca(sql)} FROM mejora_hallazgos h JOIN ${desdeLaMedicion(sql)} ON m.id = h.medicion_id
+    WHERE h.id = ${hallazgoId} AND ${filtroIndicadores(sql, sesion)}`;
+  if (!f) return null;
+  const m = aMarcaLeida(f);
+  if (m.causa === null && m.accionPropuesta === null) return null;
+  return { periodo: etiquetaDelPeriodo(m), causa: m.causa, accionPropuesta: m.accionPropuesta };
 }

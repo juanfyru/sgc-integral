@@ -22,6 +22,7 @@ import {
   vistaCompletaDeHallazgo,
 } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import { ETIQUETA_SEMAFORO } from "@/lib/indicadores/tipos";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { leerCriterios, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
@@ -52,6 +53,7 @@ import {
 import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { aMarcaLeida, columnasDeMarca, desdeLaMedicion } from "./marcas-base";
 import { avanceDeAccion, avanceDeHallazgo } from "./actividades";
 import { quienDecideAjustes } from "./ajustes";
 import { clasificacionDe } from "./clasificacion";
@@ -1199,8 +1201,20 @@ async function enlacesDe(
   const indicadores = [x.indicadorId, x.indicadorEficaciaId].filter((i): i is number => i !== null);
   if (indicadores.length > 0) {
     const de = await indicadoresDeEficacia(sql, indicadores);
-    const [medicion] = x.medicionId === null ? [] : await sql`SELECT periodo FROM mediciones WHERE id = ${x.medicionId}`;
+    const [medicion] = x.medicionId === null ? [] : await sql`SELECT ${columnasDeMarca(sql)}, m.requiere_accion FROM ${desdeLaMedicion(sql)} WHERE m.id = ${x.medicionId}`;
     const periodo = medicion ? (periodoDe(medicion.periodo as string, zonaHoraria())?.etiqueta ?? (medicion.periodo as string)) : null;
+    // La medición con su estado de hoy (anexo §6.6), solo a quien ve el indicador: su resultado y su color actuales y, si todavía la
+    // lleva, la marca (un recálculo pudo quitársela).
+    const hoy = medicion ? aMarcaLeida(medicion) : null;
+    const estadoDeHoy = hoy
+      ? [
+          hoy.frente ?? hoy.valor ?? "Sin resultado",
+          hoy.semaforo ? ETIQUETA_SEMAFORO[hoy.semaforo] : null,
+          medicion?.requiere_accion === true ? "Requiere acción de mejora" : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
     for (const [rotulo, indId] of [
       ["Indicador", x.indicadorId],
       ["Indicador de eficacia", x.indicadorEficaciaId === x.indicadorId ? null : x.indicadorEficaciaId],
@@ -1208,9 +1222,10 @@ async function enlacesDe(
       const ind = indId === null ? undefined : de.get(indId);
       if (indId === null || !ind) continue;
       const conPeriodo = rotulo === "Indicador" && periodo ? ` · ${periodo}` : "";
+      const conEstado = x.visibles.has(indId) && rotulo === "Indicador" && Number(medicion?.indicador_id) === indId && estadoDeHoy ? ` · ${estadoDeHoy}` : "";
       enlaces.push(
         x.visibles.has(indId)
-          ? { visible: true, clase: "indicador", rotulo, codigo: ind.codigo, nombre: `${ind.nombre}${conPeriodo}`, href: rutaDeIndicador(ind.codigo) }
+          ? { visible: true, clase: "indicador", rotulo, codigo: ind.codigo, nombre: `${ind.nombre}${conPeriodo}${conEstado}`, href: rutaDeIndicador(ind.codigo) }
           : { visible: false, clase: "indicador", rotulo },
       );
     }

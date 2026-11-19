@@ -79,7 +79,8 @@ export async function usuariosActivos(opciones?: { sql?: Cliente }): Promise<Usu
 
 /** Un indicador que se puede enlazar en «A qué se refiere» y las mediciones con resultado de cada uno (`indicadoresConMediciones`). */
 export type IndicadoresConMediciones = {
-  indicadores: Array<{ id: number; codigo: string; nombre: string }>;
+  /** `restringido`: el indicador es de acceso restringido (el registro lo avisa, anexo §10.3). */
+  indicadores: Array<{ id: number; codigo: string; nombre: string; restringido?: boolean }>;
   /** Las mediciones con resultado de cada indicador, de la más reciente a la más antigua (hasta 24 por indicador). */
   mediciones: Array<{ id: number; indicadorId: number; etiqueta: string }>;
 };
@@ -93,7 +94,8 @@ export async function indicadoresConMediciones(sesion: SesionFlujo, opciones?: {
   const sql = opciones?.sql ?? obtenerSql();
   const zona = zonaHoraria();
   const indicadores = await sql`SELECT i.id, i.codigo, coalesce((SELECT iv.nombre FROM indicador_versiones iv
-      WHERE iv.indicador_id = i.id AND iv.estado = 'aprobada' ORDER BY iv.numero DESC LIMIT 1), i.codigo) AS nombre
+      WHERE iv.indicador_id = i.id AND iv.estado = 'aprobada' ORDER BY iv.numero DESC LIMIT 1), i.codigo) AS nombre,
+      i.nivel_acceso = 'restringido' AS restringido
     FROM indicadores i WHERE i.estado IN ('activo', 'retirado') AND ${filtroIndicadores(sql, sesion)}
     ORDER BY i.codigo, i.id`;
   const ids = indicadores.map((f) => Number(f.id));
@@ -104,7 +106,7 @@ export async function indicadoresConMediciones(sesion: SesionFlujo, opciones?: {
         WHERE n <= 24 ORDER BY indicador_id, n`
     : [];
   return {
-    indicadores: indicadores.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, nombre: f.nombre as string })),
+    indicadores: indicadores.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, nombre: f.nombre as string, restringido: f.restringido === true })),
     mediciones: mediciones.map((f) => ({
       id: Number(f.id),
       indicadorId: Number(f.indicador_id),

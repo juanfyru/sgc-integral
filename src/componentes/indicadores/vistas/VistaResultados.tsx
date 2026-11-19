@@ -17,6 +17,7 @@ import type { Soporte } from "@/db/consultas/indicadores/soportes";
 import type { SoporteDeDatoEnPantalla } from "@/lib/indicadores/soportes";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { VALOR_OCULTO, type Periodicidad } from "@/lib/indicadores/tipos";
+import type { SalidaDeMedicion } from "@/db/consultas/mejoramiento/marcas";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { ENLACE, FOCO } from "./comun";
 import { DesglosePorCategoria, type DatosDeDesglose } from "./DesglosePorCategoria";
@@ -63,6 +64,8 @@ export type DatosDeResultados = {
   };
   /** «Por {dimensión}» de un desagregado (anexo 14C, §5.6), con el periodo elegido (`?desglose=`); `null` si no se desagrega. */
   desglose: DatosDeDesglose | null;
+  /** La salida en vigor de la marca «Requiere acción de mejora» de cada medición (Fase 15B, anexo §6.5); la página la lee de Mejoramiento. */
+  salidas?: ReadonlyMap<number, SalidaDeMedicion> | null;
 };
 
 const CAJA = "flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3";
@@ -261,6 +264,7 @@ export function VistaResultados(d: DatosDeResultados) {
             historial={d.cierre.historial}
             reaperturas={d.cierre.reaperturas}
             periodosSinCumplir={d.periodosSinCumplir}
+            salidas={d.salidas ?? null}
           />
         )}
       </section>

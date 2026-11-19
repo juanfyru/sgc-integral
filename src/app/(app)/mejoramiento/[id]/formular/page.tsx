@@ -13,6 +13,7 @@ import {
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
 import { CausasRaiz } from "@/componentes/mejoramiento/analisis/CausasRaiz";
+import { PuntoDePartida } from "@/componentes/mejoramiento/analisis/PuntoDePartida";
 import { LaVezPasada } from "@/componentes/mejoramiento/analisis/LaVezPasada";
 import { PestanasDeMetodo } from "@/componentes/mejoramiento/analisis/PestanasDeMetodo";
 import { PreguntasDeCierre } from "@/componentes/mejoramiento/analisis/PreguntasDeCierre";
@@ -24,7 +25,7 @@ import { FaltasDelPlan } from "@/componentes/mejoramiento/plan/PlanEnLectura";
 import type { AccionDelFormulario } from "@/componentes/mejoramiento/plan/TarjetaDeAccion";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
-import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
+import { laVezPasada, puedeFormular, puntoDePartidaDeLaMedicion } from "@/db/consultas/mejoramiento/analisis";
 import { saltaLaRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
@@ -170,6 +171,7 @@ export default async function PaginaFormular({
   const puedeSubir = (await autorizarSubida(sesion, { contexto: "mejora_ronda", id: ronda.id, rol: "analisis" })).ok;
   const quitables = await archivosQuitables(sql, sesion, analisis, dueno);
   const anterior = h.reincidenteDe && "id" in h.reincidenteDe ? await laVezPasada(sql, h.id) : null;
+  const partida = await puntoDePartidaDeLaMedicion(sesion, h.id);
   const opcional = h.clase !== "no_conformidad";
   const verPlan = pestana === "plan";
 
@@ -240,6 +242,7 @@ export default async function PaginaFormular({
             />
           </section>
           <div className="flex min-w-0 flex-col gap-4">
+            {partida ? <PuntoDePartida {...partida} /> : null}
             {anterior ? <LaVezPasada codigo={anterior.codigo} causas={anterior.causas} acciones={anterior.acciones} /> : null}
             <CausasRaiz key={`causas-${ronda.causas.map((c) => c.id).join("-")}`} hallazgoId={h.id} causas={ronda.causas} guardar={guardarCausasAccion} />
             <PreguntasDeCierre

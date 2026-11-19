@@ -12,6 +12,7 @@ import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } fr
 import { aprobarPlan, devolverPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
+import { resolverConOcurrencia, resolverNoRequiere } from "@/db/consultas/mejoramiento/marcas";
 import { cambiarDePlan, ponerEnPlan, ponerObjetivo, sacarDelPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { guardarAccion, guardarCriterio, quitarAccion } from "@/db/consultas/mejoramiento/plan";
 import { anularPlan, crearPlan, editarPlan } from "@/db/consultas/mejoramiento/planes";
@@ -82,6 +83,8 @@ import {
   EsquemaQuitarAnalisis,
   EsquemaReasignar,
   EsquemaRechazo,
+  EsquemaMarcaConOcurrencia,
+  EsquemaMarcaNoRequiere,
   EsquemaReclasificacion,
   EsquemaReporte,
   EsquemaRespuestaAlEnte,
@@ -766,5 +769,22 @@ export async function registrarRespuestaDelPlanAccion(_previo: EstadoAccion, for
       throw err;
     }
     return `${rutaDePlan(d.planId)}#${ANCLA_RESPUESTA_AL_ENTE}`;
+  });
+}
+
+/**
+ * Resuelve el pendiente «Requiere acción de mejora» de una medición como una ocurrencia más de un hallazgo abierto que cita el
+ * indicador (anexo 15B §6.2). No navega: la página del indicador se vuelve a pintar con la medición ya decidida.
+ */
+export async function resolverMarcaConOcurrenciaAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
+    await resolverConOcurrencia(sesion, parsearFormulario(datos, EsquemaMarcaConOcurrencia));
+  });
+}
+
+/** Resuelve el pendiente con «No requiere acción de mejora» y su justificación (anexo 15B §6.2); solo el Admin SGC. */
+export async function resolverMarcaNoRequiereAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    await resolverNoRequiere(sesion, parsearFormulario(datos, EsquemaMarcaNoRequiere));
   });
 }

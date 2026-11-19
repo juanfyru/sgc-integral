@@ -63,6 +63,9 @@ export type MarcaDeMedicion = {
   accionPropuesta: string | null;
 };
 
+/** La salida en vigor de una medición, tal como la pinta la página del indicador (`salidasVisibles`). */
+export type SalidaDeMedicion = { texto: string; enlace: string | null; justificacion: string | null; por: string; en: Date };
+
 /** Un hallazgo que sirve para la ocurrencia: el más reciente primero. `estado` es su etiqueta («En ejecución»). */
 export type CandidatoDeMarca = { id: number; codigo: string; titulo: string; estado: string };
 
@@ -157,8 +160,8 @@ export async function salidasVisibles(
   sesion: SesionFlujo,
   indicadorId: number,
   opciones?: Opciones,
-): Promise<Map<number, { texto: string; enlace: string | null; justificacion: string | null; por: string; en: Date }>> {
-  const salida = new Map<number, { texto: string; enlace: string | null; justificacion: string | null; por: string; en: Date }>();
+): Promise<Map<number, SalidaDeMedicion>> {
+  const salida = new Map<number, SalidaDeMedicion>();
   if (!idValido(indicadorId)) return salida;
   const sql = opciones?.sql ?? obtenerSql();
   const [i] = await sql`SELECT 1 FROM indicadores i WHERE i.id = ${indicadorId} AND ${filtroIndicadores(sql, sesion)}`;

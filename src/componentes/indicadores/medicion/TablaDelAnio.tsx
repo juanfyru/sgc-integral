@@ -5,7 +5,8 @@ import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, celdaNumerica, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { FilaDelAnio } from "@/db/consultas/indicadores/lectura";
 import type { Soporte } from "@/db/consultas/indicadores/soportes";
-import { analisisDeFila, estadoEnTexto, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
+import type { SalidaDeMedicion } from "@/db/consultas/mejoramiento/marcas";
+import { analisisDeFila, estadoEnTexto, fechaYHora, marcasDeFila } from "@/lib/indicadores/ficha-en-texto";
 import { textoDeEspera, textoDeFoto } from "@/lib/indicadores/fotos";
 import type { EntradaDeHistorial } from "@/lib/indicadores/historial";
 import { textoAcumulaDesde } from "@/lib/indicadores/resultados";
@@ -48,6 +49,27 @@ function Historial({ etiqueta, entradas }: { etiqueta: string; entradas: Entrada
         ))}
       </ol>
     </details>
+  );
+}
+
+/**
+ * «Ya decidida» (anexo 15B §6.5): la salida en vigor de la marca junto a su periodo. «Hallazgo HZ-…» y «Ocurrencia de HZ-…» con su
+ * enlace, que `salidasVisibles` solo da a quien ve ese hallazgo; «No requiere acción de mejora» con su justificación, quién y cuándo.
+ */
+function YaDecidida({ salida }: { salida: SalidaDeMedicion }) {
+  return (
+    <div className="mt-1 flex min-w-0 max-w-xs flex-col gap-0.5 text-xs">
+      <span className="font-medium">Ya decidida</span>
+      {salida.enlace ? (
+        <Link href={salida.enlace} className={ENLACE}>
+          {salida.texto}
+        </Link>
+      ) : (
+        <span>{salida.texto}</span>
+      )}
+      {salida.justificacion ? <span className="break-words">{`Por qué: ${salida.justificacion}`}</span> : null}
+      {salida.justificacion ? <span className="text-muted-foreground">{`${salida.por} · ${fechaYHora(salida.en)}`}</span> : null}
+    </div>
   );
 }
 
@@ -183,6 +205,7 @@ export function TablaDelAnio({
   historial = null,
   reaperturas = null,
   periodosSinCumplir = 3,
+  salidas = null,
 }: {
   filas: FilaDelAnio[];
   variables: { letra: string; nombre: string }[];
@@ -206,6 +229,8 @@ export function TablaDelAnio({
   reaperturas?: Map<number, ReaperturaEnTexto> | null;
   /** El parámetro del incumplimiento repetido (spec §10.3), para la marca «3 periodos sin cumplir». */
   periodosSinCumplir?: number;
+  /** La salida en vigor de la marca de cada medición, ya filtrada por lo que la persona ve (`salidasVisibles`, Fase 15B). */
+  salidas?: ReadonlyMap<number, SalidaDeMedicion> | null;
 }) {
   const conAcciones = puedeMedir || puedeAnalizar || puedeReabrir || puedeCerrarDeNuevo || puedeVolverACalcular || puedeActualizarCategorias;
   const zona = zonaHoraria();
@@ -273,6 +298,7 @@ export function TablaDelAnio({
             <td className={celda}>{f.cumple === null ? "—" : f.cumple ? "Sí" : "No"}</td>
             <td className={celda}>
               <Estado f={f} historial={f.medicionId === null ? null : (historial?.get(f.medicionId) ?? null)} periodosSinCumplir={periodosSinCumplir} />
+              {f.medicionId !== null && salidas?.get(f.medicionId) ? <YaDecidida salida={salidas.get(f.medicionId)!} /> : null}
             </td>
             <td className={`${celda} min-w-48`}>
               <Analisis f={f} />
