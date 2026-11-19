@@ -527,6 +527,24 @@ describe("frases con el detalle real", () => {
     expect(e("mejora_marca", {})).toBe("Decidió la acción de mejora de la medición de un indicador");
     expect(nombreDeAccion("mejora_marca")).toBe("Decidió la acción de mejora de una medición");
   });
+  it("el trámite de una actividad (15B): el número del trámite, la actividad y el hallazgo; nunca la justificación", () => {
+    const enlace = { codigo: "HZ-2026-019", hallazgoId: 40, actividad: "A1.2", actividadId: 77, tramiteId: 9, numero: "SOL-2026-012" };
+    expect(e("mejora_tramite_enlazado", { ...enlace, origen: "pedido" })).toBe(
+      "Pidió el trámite SOL-2026-012 desde la actividad A1.2 del hallazgo HZ-2026-019",
+    );
+    expect(e("mejora_tramite_enlazado", { ...enlace, origen: "enlazado", justificacion: "Lo que escribió" })).toBe(
+      "Enlazó el trámite SOL-2026-012 a la actividad A1.2 del hallazgo HZ-2026-019",
+    );
+    expect(e("mejora_tramite_desenlazado", enlace)).toBe("Quitó el trámite SOL-2026-012 de la actividad A1.2 del hallazgo HZ-2026-019");
+    expect(e("mejora_tramite_enlazado", {})).toBe("Enlazó un trámite a una actividad de un hallazgo");
+    expect(e("mejora_tramite_desenlazado", {})).toBe("Quitó un trámite de una actividad de un hallazgo");
+    expect(nombreDeAccion("mejora_tramite_enlazado")).toBe("Enlazó un trámite a una actividad de un plan de acción");
+    expect(nombreDeAccion("mejora_tramite_desenlazado")).toBe("Quitó el enlace de un trámite con una actividad");
+    // La solicitud que nace de una actividad lo dice.
+    expect(e("tramite_solicitar", { numero: "SOL-2026-012", codigo: null, tipo: "crear", motivo: "no_conformidad", hacia: "aceptacion", actividadId: 77 })).toContain(
+      "desde una actividad de mejoramiento",
+    );
+  });
 });
 
 /**
@@ -623,6 +641,9 @@ const ACCIONES_ARMADAS = [
   "mejora_seguimiento",
   "mejora_actividad_terminada",
   "mejora_actividad_reasignada",
+  // mejoramiento/tramites-enlace.ts: `auditarEnlace(tx, …, accion, …)`, por SQL (el módulo es liviano y no importa `admin.ts`).
+  "mejora_tramite_enlazado",
+  "mejora_tramite_desenlazado",
   "activar_cargo",
   "desactivar_cargo",
 ];

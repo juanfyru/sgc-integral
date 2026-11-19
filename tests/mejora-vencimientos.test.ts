@@ -40,14 +40,19 @@ import { verificarImplementacion } from "@/db/consultas/mejoramiento/verificacio
 import { revisarVencimientos } from "@/db/consultas/vencimientos";
 import { silenciarDistribucion } from "./utiles/distribucion";
 import { silenciarIndicadores } from "./utiles/indicadores";
+import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
+import { anularHallazgo } from "@/db/consultas/mejoramiento/registro";
 import {
   baseDeMejora,
   c,
+  datosDeCarga,
+  escaneoDeLaCarga,
   evidenciaDeCorreccion,
   HORA_DE_ESCENA,
   hallazgoEn,
   silenciarMejoramiento,
   terminarTodas,
+  tramiteEnlazado,
 } from "./utiles/mejoramiento";
 import { silenciarImpactos } from "./utiles/normograma";
 import { revertida } from "./utiles/transaccion";
@@ -487,6 +492,73 @@ describe("«Con algo vencido» de un hallazgo en espera (ronda 1, punto 7)", () 
       };
       expect(await lista("2027-01-22T15:00:00Z")).toEqual({ cifra: 0, filtro: [] });
       expect(await lista("2027-01-25T15:00:00Z")).toEqual({ cifra: 1, filtro: [h.id] });
+    }));
+});
+
+describe("el trámite enlazado que termina (Fase 15B, anexo §9.5)", () => {
+  const PASA = "2026-11-19T15:00:00Z";
+  const terminados = (tx: TransactionSql, hallazgoId: number) =>
+    tx`SELECT detalle, usuario_id FROM mejora_eventos WHERE hallazgo_id = ${hallazgoId} AND tipo = 'tramite_terminado' ORDER BY id`;
+  const marcas = (tx: TransactionSql, actividadId: number) =>
+    tx`SELECT tramite_id, avisado_en FROM mejora_actividad_tramites WHERE actividad_id = ${actividadId} ORDER BY id`;
+
+  it("avisa una vez a su responsable, con un texto si terminó bien y otro si no; deja el evento y marca el enlace", () =>
+    revertida(sql, async (tx) => {
+      await silenciarTodo(tx);
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId });
+      const actividadId = await actividadDe(tx, h.id);
+      const bien = await tramiteEnlazado(tx, { actividadId, usuarioId: b.lider.usuarioId, etapa: "publicado", terminoEn: "2026-11-18T15:00:00Z" });
+      const mal = await tramiteEnlazado(tx, { actividadId, usuarioId: b.lider.usuarioId, etapa: "cancelado", terminoEn: "2026-11-18T16:00:00Z" });
+      await tramiteEnlazado(tx, { actividadId, usuarioId: b.lider.usuarioId, etapa: "aprobacion" });
+      expect(await pasada(tx, PASA)).toEqual({ avisados: 2, escalados: 0 });
+      const recibidos = await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", actividadId);
+      expect(recibidos.map((a) => Number(a.usuario_id))).toEqual([responsable.usuarioId, responsable.usuarioId]);
+      expect(recibidos.every((a) => a.enlace === `/mejoramiento/actividades/${actividadId}`)).toBe(true);
+      expect(new Set(recibidos.map((a) => a.titulo)).size).toBe(2);
+      // Ni el título del hallazgo ni la descripción de la actividad nombran el documento del trámite.
+      for (const a of recibidos) expect(`${a.titulo} ${a.cuerpo}`).not.toContain("Formato de prueba del turno");
+      const eventos = await terminados(tx, h.id);
+      expect(eventos.map((e) => (e.detalle as { tramiteId: number }).tramiteId)).toEqual([bien.tramiteId, mal.tramiteId]);
+      expect(eventos.every((e) => e.usuario_id === null)).toBe(true);
+      const filas = await marcas(tx, actividadId);
+      expect(filas.map((f) => f.avisado_en !== null)).toEqual([true, true, false]);
+      // Lo hace el sistema: sin bitácora. Y la segunda pasada no avisa.
+      expect(await pasada(tx, "2026-11-20T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+      expect(await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", actividadId)).toHaveLength(2);
+      expect(await terminados(tx, h.id)).toHaveLength(2);
+    }));
+
+  it("con el hallazgo terminado no avisa ni toca el enlace; con una carga sin su formato, tampoco, hasta que llega", () =>
+    revertida(sql, async (tx) => {
+      await silenciarTodo(tx);
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId });
+      const actividadId = await actividadDe(tx, h.id);
+      const { tramiteId } = await tramiteEnlazado(tx, { actividadId, usuarioId: b.lider.usuarioId, etapa: "aprobacion" });
+      await anularHallazgo(b.admin, { hallazgoId: h.id, justificacion: "Se registró dos veces el mismo hecho" }, c(HORA_DE_ESCENA, tx));
+      await tx`UPDATE tramites SET etapa = 'publicado', cerrado_en = ${new Date("2026-11-18T15:00:00Z")} WHERE id = ${tramiteId}`;
+      expect(await pasada(tx, PASA)).toEqual({ avisados: 0, escalados: 0 });
+      expect((await marcas(tx, actividadId))[0].avisado_en).toBeNull();
+      expect(await terminados(tx, h.id)).toHaveLength(0);
+      expect(await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", actividadId)).toHaveLength(0);
+
+      const { id: cargado } = await cargarHallazgo(b.admin, datosDeCarga(b.procesoId, responsable.usuarioId), c(HORA_DE_ESCENA, tx));
+      const [deCarga] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${cargado} AND estado <> 'terminada' ORDER BY id LIMIT 1`;
+      const enCarga = Number(deCarga.id);
+      await tramiteEnlazado(tx, { actividadId: enCarga, usuarioId: b.admin.usuarioId, etapa: "publicado", terminoEn: "2026-11-18T15:00:00Z" });
+      expect(await pasada(tx, PASA)).toEqual({ avisados: 0, escalados: 0 });
+      expect((await marcas(tx, enCarga))[0].avisado_en).toBeNull();
+      expect(await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", enCarga)).toHaveLength(0);
+      // Con el formato firmado, la pasada siguiente sí avisa.
+      await escaneoDeLaCarga(tx, cargado, b.admin.usuarioId, PASA);
+      await pasada(tx, "2026-11-20T15:00:00Z");
+      expect((await marcas(tx, enCarga))[0].avisado_en).not.toBeNull();
+      expect((await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", enCarga)).map((a) => Number(a.usuario_id))).toEqual([
+        responsable.usuarioId,
+      ]);
     }));
 });
 

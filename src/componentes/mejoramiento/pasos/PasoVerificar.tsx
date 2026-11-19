@@ -20,6 +20,11 @@ export type ActividadPorVerificar = {
   terminadaEn: string | null;
   /** Sus archivos de evidencia, que quien verifica abre aquí; nulo si quien mira no los ve. */
   archivos: ArchivoParaLista[] | null;
+  /**
+   * Sus trámites documentales con el estado de cada uno (Fase 15B, anexo §9.4), ya pintados por la página (`ListaDeTramites`, que los
+   * nombra solo a quien los ve); nulo si no tiene.
+   */
+  tramites?: React.ReactNode;
 };
 
 type Decision = "conforme" | "devuelta";
@@ -79,6 +84,12 @@ export function PasoVerificar({
                     <div className="flex min-w-0 flex-col gap-1">
                       <p className="text-xs font-medium text-muted-foreground">Evidencia</p>
                       <ArchivosDe archivos={a.archivos} vacio="Sin evidencia adjunta." />
+                    </div>
+                  ) : null}
+                  {a.tramites ? (
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <p className="text-xs font-medium text-muted-foreground">Trámites documentales</p>
+                      {a.tramites}
                     </div>
                   ) : null}
                   <div className="flex flex-wrap gap-x-4 gap-y-1">

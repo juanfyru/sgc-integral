@@ -41,6 +41,7 @@ import {
 } from "@/db/consultas/mejoramiento/registro";
 import { descartarReporte, enviarReporte, hallazgoPorCodigo, sumarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { registrarRespuestaDelPlan } from "@/db/consultas/mejoramiento/respuesta-plan";
+import { enlazarTramite, quitarEnlace } from "@/db/consultas/mejoramiento/tramites-enlace";
 import { cerrarHallazgo, evaluarEficacia, LO_VISTO_CAMBIO, verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
 import { contextoDePeticion } from "@/lib/contexto-peticion";
 import {
@@ -55,6 +56,7 @@ import {
   EsquemaDevolucion,
   EsquemaDevolverPlan,
   EsquemaEdicionDePlan,
+  EsquemaEnlazarTramite,
   EsquemaEscalar,
   EsquemaFormularioAccion,
   EsquemaFormularioAjuste,
@@ -82,6 +84,7 @@ import {
   EsquemaPlan,
   EsquemaQuitarAccion,
   EsquemaQuitarAnalisis,
+  EsquemaQuitarEnlace,
   EsquemaReasignar,
   EsquemaRechazo,
   EsquemaMarcaConOcurrencia,
@@ -101,7 +104,7 @@ import { RUTA_REPORTES_RECIBIDOS, rutaDeReportar } from "@/lib/mejoramiento/repo
 import { FIJOS_DE_VERIFICACION, OCURRENCIA_DESDE_UN_IMPACTO, OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
 import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { LISTOS_CAMBIARON } from "@/lib/mejoramiento/planes";
-import { ANCLA_RESPUESTA_AL_ENTE, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
+import { ANCLA_RESPUESTA_AL_ENTE, rutaDeActividad, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -815,5 +818,27 @@ export async function resolverMarcaConOcurrenciaAccion(_previo: EstadoAccion, fo
 export async function resolverMarcaNoRequiereAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
     await resolverNoRequiere(sesion, parsearFormulario(datos, EsquemaMarcaNoRequiere));
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El cambio documental desde una actividad (Fase 15B, anexo §9.3). Con `tramites.solicitar`, el permiso de pedir un trámite; que la
+// persona vea la actividad y el trámite, que la actividad lo admita y quién quita un enlace lo comprueba el dominio en su transacción.
+// Pedir el trámite es `crearSolicitudAccion` (`acciones-tramites.ts`), con el campo oculto `actividadId`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Enlaza a una actividad un trámite que ya existe, desde el selector, y vuelve a la actividad. */
+export async function enlazarTramiteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.solicitar", async (_usuarioId, datos, sesion) => {
+    const d = parsearFormulario(datos, EsquemaEnlazarTramite);
+    await enlazarTramite(sesion, d);
+    return rutaDeActividad(d.actividadId);
+  });
+}
+
+/** Quita el enlace de un trámite puesto después (quien lo puso o el Admin SGC). No navega: la actividad se vuelve a pintar. */
+export async function quitarEnlaceDeTramiteAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "tramites.solicitar", async (_usuarioId, datos, sesion) => {
+    await quitarEnlace(sesion, parsearFormulario(datos, EsquemaQuitarEnlace));
   });
 }

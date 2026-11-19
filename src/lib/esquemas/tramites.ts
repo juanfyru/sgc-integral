@@ -19,6 +19,8 @@ export const EsquemaSolicitud = z
     // La revisión anual abierta y el impacto normativo de los que nace (spec 13C §9.3 y §10.5); `crearSolicitud` los valida.
     revisionAnualId: id.optional(),
     impactoId: id.optional(),
+    // La actividad de un plan de acción de la que nace (Fase 15B, anexo §9.2); `crearSolicitud` la valida en su transacción.
+    actividadId: id.optional(),
   })
   .strict();
 

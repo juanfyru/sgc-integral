@@ -45,6 +45,7 @@ import { contextoDeMejora, type ContextoMejora } from "./config";
 import { evaluableDesde } from "./espera";
 import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "./flujo";
 import { etiquetaDeAccion, etiquetaDeActividad } from "./plan";
+import { admiteTramite, tramitesDeActividades, tramitesQueValen, type TramiteEnlazado } from "./tramites-enlace";
 import { venceLaActividad } from "./vence-actividad";
 
 type Persona = Pick<SesionFlujo, "usuarioId" | "rol" | "verHistorial">;
@@ -260,27 +261,34 @@ export async function registrarSeguimiento(
 
 /**
  * Lo que había en la actividad cuando la verificación la devolvió por última vez (spec §11.4): los archivos y el último
- * seguimiento, guardados en la nota de su evento `verificar_implementacion`. Lo que se registre o suba después tiene un id
- * mayor: el id dice «después» sin depender de dos relojes, como la evidencia de la corrección. Sin ese evento, nada.
+ * seguimiento, guardados en la nota de su evento `verificar_implementacion`, y cuándo fue (`en`). Lo que se registre o suba después
+ * tiene un id mayor: el id dice «después» sin depender de dos relojes, como la evidencia de la corrección. Un trámite enlazado no
+ * tiene id que comparar con el evento: vale el que terminó después de la devolución (`en`, Fase 15B, anexo §9.4). Sin ese evento,
+ * nada.
  */
-async function loDeLaDevolucion(tx: TransactionSql, h: Pick<HallazgoBase, "id">, actividadId: number): Promise<{ archivos: number[]; seguimiento: number }> {
-  const [e] = await tx`SELECT detalle->'notas' AS notas FROM mejora_eventos
-    WHERE hallazgo_id = ${h.id} AND tipo = 'verificar_implementacion' AND detalle->'notas' @> ${tx.json([{ actividadId }] as never)}
+async function loDeLaDevolucion(
+  sql: Cliente,
+  h: Pick<HallazgoBase, "id">,
+  actividadId: number,
+): Promise<{ archivos: number[]; seguimiento: number; en: Date | null }> {
+  const [e] = await sql`SELECT detalle->'notas' AS notas, ocurrio_en FROM mejora_eventos
+    WHERE hallazgo_id = ${h.id} AND tipo = 'verificar_implementacion' AND detalle->'notas' @> ${sql.json([{ actividadId }] as never)}
     ORDER BY id DESC LIMIT 1`;
   const nota = Array.isArray(e?.notas)
     ? (e.notas as Array<{ actividadId?: unknown; archivos?: unknown; seguimiento?: unknown }>).find((n) => n.actividadId === actividadId)
     : undefined;
   const archivos = Array.isArray(nota?.archivos) ? nota.archivos.map(Number).filter(Number.isSafeInteger) : [];
-  return { archivos, seguimiento: typeof nota?.seguimiento === "number" ? nota.seguimiento : 0 };
+  return { archivos, seguimiento: typeof nota?.seguimiento === "number" ? nota.seguimiento : 0, en: (e?.ocurrio_en as Date | undefined) ?? null };
 }
 
 /**
- * El responsable termina su actividad: con el avance en 100 y al menos un archivo de evidencia de esa actividad, contado
- * dentro de la transacción (una subida en curso espera al hallazgo bloqueado, o ya está confirmada y se cuenta). Guarda
- * cuándo terminó de verdad y quién, y borra la verificación de una vuelta anterior. Una actividad devuelta en la verificación
- * no se termina con lo mismo: pide además un seguimiento y un archivo posteriores a la devolución (`loDeLaDevolucion`). Si no
- * queda ninguna actividad abierta en la ronda en curso (leídas y bloqueadas después del hallazgo: dos responsables que
- * terminan a la vez van en fila), el hallazgo pasa a «Por verificar» por `transicionarHallazgo`.
+ * El responsable termina su actividad: con el avance en 100 y al menos un archivo de evidencia de esa actividad o un trámite
+ * enlazado que terminó bien (Fase 15B, anexo §9.4: basta uno, como basta un archivo), contados dentro de la transacción (una subida
+ * en curso espera al hallazgo bloqueado, o ya está confirmada y se cuenta). Guarda cuándo terminó de verdad y quién, y borra la
+ * verificación de una vuelta anterior. Una actividad devuelta en la verificación no se termina con lo mismo: pide además un
+ * seguimiento posterior a la devolución y un archivo o un trámite que terminó bien después de ella (`loDeLaDevolucion`). Si no queda
+ * ninguna actividad abierta en la ronda en curso (leídas y bloqueadas después del hallazgo: dos responsables que terminan a la vez
+ * van en fila), el hallazgo pasa a «Por verificar» por `transicionarHallazgo`.
  */
 export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: number }, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.ejecutar");
@@ -293,15 +301,17 @@ export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: n
     const [{ n }] = await tx`SELECT count(*)::int AS n FROM archivos
       WHERE contexto = 'mejora_actividad' AND contexto_id = ${a.id} AND version_id IS NULL`;
     const archivos = Number(n);
-    if (archivos === 0) throw new ErrorMejora(SIN_EVIDENCIA_PARA_TERMINAR);
-    // Una devuelta no se termina con lo mismo (spec §11.4, PC-05): un seguimiento y un archivo posteriores a la devolución.
+    const tramites = await tramitesQueValen(tx, a.id, null);
+    if (archivos === 0 && tramites === 0) throw new ErrorMejora(SIN_EVIDENCIA_PARA_TERMINAR);
+    // Una devuelta no se termina con lo mismo (spec §11.4, PC-05): un seguimiento posterior a la devolución, y un archivo o un trámite
+    // que terminó bien después de ella.
     if (a.verificacion === "devuelta") {
       const antes = await loDeLaDevolucion(tx, h, a.id);
       const [seguimiento] = await tx`SELECT 1 FROM mejora_seguimientos WHERE actividad_id = ${a.id} AND id > ${antes.seguimiento} LIMIT 1`;
       if (!seguimiento) throw new ErrorMejora(SEGUIMIENTO_TRAS_LA_DEVOLUCION);
       const [nuevo] = await tx`SELECT 1 FROM archivos
         WHERE contexto = 'mejora_actividad' AND contexto_id = ${a.id} AND version_id IS NULL AND id > ${Math.max(0, ...antes.archivos)} LIMIT 1`;
-      if (!nuevo) throw new ErrorMejora(EVIDENCIA_TRAS_LA_DEVOLUCION);
+      if (!nuevo && (await tramitesQueValen(tx, a.id, antes.en)) === 0) throw new ErrorMejora(EVIDENCIA_TRAS_LA_DEVOLUCION);
     }
     await tx`UPDATE mejora_actividades
       SET estado = 'terminada', terminada_en = ${c.ahora}, terminada_por = ${sesion.usuarioId},
@@ -317,11 +327,15 @@ export async function terminarActividad(sesion: SesionFlujo, d: { actividadId: n
       hallazgoId: h.id,
       ronda: h.ronda,
       tipo: "actividad_terminada",
-      detalle: { actividadId: a.id, actividad: a.etiqueta, archivos },
+      detalle: { actividadId: a.id, actividad: a.etiqueta, archivos, ...(tramites > 0 ? { tramites } : {}) },
       usuarioId: sesion.usuarioId,
       ocurrioEn: c.ahora,
     });
-    await auditarActividad(tx, sesion, h, a, "mejora_actividad_terminada", { archivos, ...(completa ? { ultima: true } : {}) });
+    await auditarActividad(tx, sesion, h, a, "mejora_actividad_terminada", {
+      archivos,
+      ...(tramites > 0 ? { tramites } : {}),
+      ...(completa ? { ultima: true } : {}),
+    });
     if (completa) {
       await transicionarHallazgo(tx, sesion, h, "completar", { detalle: { actividadId: a.id, actividad: a.etiqueta } }, c);
     }
@@ -469,6 +483,23 @@ export type DetalleDeActividad = {
   gerenciaEn: Date | null;
   /** Los ajustes de esta actividad (spec §10.6), con su causa y su decisión: la página del hallazgo no se los da a su responsable. */
   ajustes: AjusteDeDetalle[];
+  /**
+   * Los trámites documentales enlazados (Fase 15B, anexo §9), en el orden en que se enlazaron: cada uno nombrado solo a quien lo ve
+   * (`tramitesDeActividades`).
+   */
+  tramites: TramiteEnlazado[];
+  /**
+   * Si un trámite enlazado ya vale como evidencia para terminarla (anexo §9.4, la regla de `terminarActividad`): terminó bien y, si la
+   * verificación la devolvió, después de la devolución.
+   */
+  tramiteQueVale: boolean;
+  /** Cuándo la devolvió la verificación por última vez (un trámite que terminó antes ya no vale), o nulo si no está devuelta. */
+  devueltaEn: Date | null;
+  /**
+   * El cambio documental (anexo §9.2): `admite`, la actividad admite que se le pida o se le enlace un trámite (`admiteTramite`);
+   * `puedePedir`, además quien mira tiene `tramites.solicitar` (ya la ve: si no, no tendría esta lectura).
+   */
+  cambioDocumental: { admite: boolean; puedePedir: boolean };
 };
 
 const fechaHoy = (ahora: Date) => fechaEnZona(ahora, zonaHoraria());
@@ -501,7 +532,8 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     WHERE a.id = ${id}`;
   if (!f) return null;
   const hallazgoId = Number(f.hallazgo_id);
-  const [seguimientos, archivos, ajustes, deLaActividad] = await Promise.all([
+  const devuelta = f.verificacion === "devuelta";
+  const [seguimientos, archivos, ajustes, deLaActividad, enlazados, devolucion] = await Promise.all([
     sql`SELECT s.id, to_char(s.fecha, 'YYYY-MM-DD') AS fecha, s.realizado, s.avance, s.barreras, s.creado_en, u.nombre AS quien
       FROM mejora_seguimientos s JOIN usuarios u ON u.id = s.registrado_por
       WHERE s.actividad_id = ${id} ORDER BY s.fecha DESC, s.id DESC`,
@@ -509,7 +541,12 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     sql`SELECT id, tipo, pedido_en, datos->>'finNuevo' AS fin_nuevo
       FROM mejora_ajustes WHERE actividad_id = ${id} AND estado = 'pendiente' ORDER BY id DESC LIMIT 1`,
     leerAjustes(sql, { actividadId: id }),
+    tramitesDeActividades(sql, sesion, [id]),
+    devuelta ? loDeLaDevolucion(sql, { id: hallazgoId }, id) : null,
   ]);
+  const devueltaEn = devolucion?.en ?? null;
+  const tramites = enlazados.get(id) ?? [];
+  const tramiteQueVale = tramites.length > 0 && (await tramitesQueValen(sql, id, devueltaEn)) > 0;
   const estado = f.estado as EstadoActividad;
   const estadoHallazgo = f.hallazgo_estado as EstadoHallazgo;
   const ronda = Number(f.ronda);
@@ -517,8 +554,8 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
   // En una carga sin su formato firmado la actividad no se sigue, no se termina, no se ajusta ni vence (spec §15).
   const entregada = f.entregada === true;
   const abierta = estadoHallazgo === "en_ejecucion" && deLaRonda;
+  const admiteDocumental = admiteTramite({ aprobada: f.fin_original !== null, estado, hallazgoEstado: estadoHallazgo, entregada });
   const esResponsable = Number(f.responsable_id) === sesion.usuarioId;
-  const devuelta = f.verificacion === "devuelta";
   // El último registrado (por id), como lo compara `registrarSeguimiento`; la lista va por fecha.
   const ultimo = seguimientos.reduce<(typeof seguimientos)[number] | null>((m, s) => (m === null || Number(s.id) > Number(m.id) ? s : m), null);
   const fin = f.fin as string;
@@ -593,6 +630,10 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     puedePedirAjuste,
     gerenciaEn: (f.gerencia_en as Date | null) ?? null,
     ajustes: deLaActividad.map(sinLaFila),
+    tramites,
+    tramiteQueVale,
+    devueltaEn,
+    cambioDocumental: { admite: admiteDocumental, puedePedir: admiteDocumental && puede(sesion, "tramites.solicitar") },
   };
 }
 

@@ -5,10 +5,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { datosParaSolicitar, sesionActual, guardarConfigDocumental } = vi.hoisted(() => ({
+const { datosParaSolicitar, sesionActual, guardarConfigDocumental, datosParaPedir } = vi.hoisted(() => ({
   datosParaSolicitar: vi.fn(),
   sesionActual: vi.fn(),
   guardarConfigDocumental: vi.fn(),
+  datosParaPedir: vi.fn(),
 }));
 
 vi.mock("@/app/acciones-cuenta", () => ({ ingresar: vi.fn() }));
@@ -16,6 +17,7 @@ vi.mock("@/app/acciones-tramites", () => ({ crearSolicitudAccion: vi.fn() }));
 vi.mock("@/lib/paginas", () => ({ exigirPermiso: async () => ({ usuarioId: 1 }) }));
 vi.mock("@/lib/sesion-actual", () => ({ sesionActual }));
 vi.mock("@/db/consultas/tramites", () => ({ datosParaSolicitar }));
+vi.mock("@/db/consultas/mejoramiento/tramites-enlace", () => ({ datosParaPedir }));
 vi.mock("@/componentes/cascaron/PantallaCentrada", () => ({
   PantallaCentrada: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
@@ -169,5 +171,55 @@ describe("/tramites/nueva", () => {
   it("sin documento en la dirección no hay aviso", async () => {
     expect(await pagina()).not.toContain(AVISO);
     expect(await pagina("   ")).not.toContain(AVISO);
+  });
+});
+
+describe("/tramites/nueva desde una actividad (anexo 15B §9.2; Review Focus 5)", () => {
+  const AVISO = "No puede pedir un cambio sobre ese documento";
+  const LEERAN = "Lo que escriba aquí lo leerán quienes participan en el trámite";
+  const pagina = async (consulta: Record<string, string>) =>
+    renderToStaticMarkup(await PaginaNuevaSolicitud({ searchParams: Promise.resolve(consulta) }));
+
+  beforeEach(() => {
+    datosParaPedir.mockReset();
+    datosParaSolicitar.mockResolvedValue({
+      procesos: [{ id: 1, nombre: "Gestión del Talento Humano", sigla: "GTH", subprocesos: [] }],
+      tipos: [],
+      documentos: [{ id: 5, codigo: "GTH-PR-01", titulo: "Ingreso", conTramite: false }],
+    });
+  });
+
+  it("una actividad que admite el pedido llega con su campo oculto, el aviso, el documento que cita, el motivo y la justificación", async () => {
+    datosParaPedir.mockResolvedValue({ actividadId: 12, documentoCodigo: "GTH-PR-01", motivo: "no_conformidad", justificacion: "Actualizar el procedimiento de ingreso" });
+    const html = await pagina({ actividad: "12" });
+    expect(datosParaPedir).toHaveBeenCalledWith({ usuarioId: 1 }, 12);
+    expect(html).toMatch(/<input type="hidden" name="actividadId" value="12"\/>/);
+    expect(html).toContain(LEERAN);
+    expect(html).toMatch(/<option value="5" selected=""/);
+    expect(html).toMatch(/value="modificar"[^>]*checked=""|checked=""[^>]*value="modificar"/);
+    expect(html).toMatch(/<option[^>]*value="no_conformidad"[^>]*selected=""|<option[^>]*selected=""[^>]*value="no_conformidad"/);
+    expect(html).toContain(">Actualizar el procedimiento de ingreso</textarea>");
+    expect(html).not.toContain(AVISO);
+  });
+
+  it("el documento que cita la actividad y no es de sus procesos no se elige ni se avisa: queda la creación", async () => {
+    datosParaPedir.mockResolvedValue({ actividadId: 12, documentoCodigo: "CEX-CA-01", motivo: "mejora", justificacion: "Crear el formato de la actividad" });
+    const html = await pagina({ actividad: "12" });
+    expect(html).toMatch(/<input type="hidden" name="actividadId" value="12"\/>/);
+    expect(html).not.toContain(AVISO);
+    expect(html).not.toContain("CEX-CA-01");
+    expect(html).toMatch(/value="crear"[^>]*checked=""|checked=""[^>]*value="crear"/);
+  });
+
+  it("una actividad que no admite el pedido (terminada, ajena o forzada) se ignora sin decir por qué", async () => {
+    datosParaPedir.mockResolvedValue(null);
+    const html = await pagina({ actividad: "12" });
+    expect(html).not.toContain('name="actividadId"');
+    expect(html).not.toContain("actividad de mejoramiento");
+    expect(html).not.toContain(LEERAN);
+    // Lo que no es un id ni se consulta.
+    datosParaPedir.mockClear();
+    await pagina({ actividad: "doce" });
+    expect(datosParaPedir).not.toHaveBeenCalled();
   });
 });

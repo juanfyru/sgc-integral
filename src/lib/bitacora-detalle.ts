@@ -1238,6 +1238,18 @@ export function describirEvento(e: EventoAuditoria): string {
       }
       return `Decidió la acción de mejora de ${medicion}`;
     }
+    // ── Mejoramiento (15B): el trámite documental de una actividad (anexo §9). El número del trámite, la etiqueta y el código; nunca
+    // su justificación ni la descripción de la actividad
+    case "mejora_tramite_enlazado":
+    case "mejora_tramite_desenlazado": {
+      const numero = texto(d.numero);
+      const actividad = texto(d.actividad);
+      const codigo = texto(d.codigo);
+      const tramite = numero ? `el trámite ${numero}` : "un trámite";
+      const cual = `${actividad ? `la actividad ${actividad}` : "una actividad"} ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+      if (e.accion === "mejora_tramite_desenlazado") return `Quitó ${tramite} de ${cual}`;
+      return d.origen === "pedido" ? `Pidió ${tramite} desde ${cual}` : `Enlazó ${tramite} a ${cual}`;
+    }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1559,7 +1571,11 @@ export function describirEvento(e: EventoAuditoria): string {
       ])}`;
   }
 
-  if (e.accion.startsWith("tramite_")) return describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);
+  if (e.accion.startsWith("tramite_")) {
+    const frase = describirTramite(e.accion, texto(d.numero) ?? "?", cod, d.observacion);
+    // La solicitud pedida desde una actividad de un plan de acción (Fase 15B, anexo §9.2) lo dice.
+    return e.accion === "tramite_solicitar" && typeof d.actividadId === "number" ? `${frase}, desde una actividad de mejoramiento` : frase;
+  }
 
   if (e.accion.startsWith("mejora_")) {
     const accion = e.accion.slice("mejora_".length);
@@ -1732,6 +1748,8 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_plan_respuesta: "Registró la respuesta al ente de un plan de mejoramiento",
   mejora_objetivo: "Cambió el objetivo de un hallazgo",
   mejora_marca: "Decidió la acción de mejora de una medición",
+  mejora_tramite_enlazado: "Enlazó un trámite a una actividad de un plan de acción",
+  mejora_tramite_desenlazado: "Quitó el enlace de un trámite con una actividad",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

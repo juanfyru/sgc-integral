@@ -37,6 +37,7 @@ import {
   verificarImplementacionAccion,
 } from "@/app/acciones-mejoramiento";
 import { ArchivosDe } from "@/componentes/mejoramiento/ArchivosDe";
+import { ListaDeTramites, TramitesDelCierre } from "@/componentes/mejoramiento/actividad/CambioDocumental";
 import { DialogoReasignar } from "@/componentes/mejoramiento/actividad/DialogoReasignar";
 import { AjustesDelPlan, fraseDeAjusteDeDetalle, lineasDeLoQueSeAnade } from "@/componentes/mejoramiento/ajustes/AjustesDelPlan";
 import { DialogoAjusteDelPlan } from "@/componentes/mejoramiento/ajustes/DialogoPedirAjuste";
@@ -101,10 +102,11 @@ import {
 import { planesParaClasificar } from "@/db/consultas/mejoramiento/planes-lectura";
 import { parecidosDeOtrosProcesos } from "@/db/consultas/mejoramiento/parecidos";
 import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
+import { tramitesDeActividades, tramitesQueTerminaronBien } from "@/db/consultas/mejoramiento/tramites-enlace";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
 import { aprobacionEnVigor, oficiosPosibles } from "@/db/consultas/mejoramiento/registro";
 import { datosDeEvaluacion, huellaDeLoVisto } from "@/db/consultas/mejoramiento/verificacion";
-import { leerCambios } from "@/lib/mejoramiento/analisis";
+import { exigeComoSeAtendieron, leerCambios } from "@/lib/mejoramiento/analisis";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
 import { esExterno } from "@/lib/mejoramiento/origenes";
@@ -506,22 +508,27 @@ export default async function PaginaHallazgo({
       />
     ) : null;
   const verifica = completo && sigue.paso === "verificar" && sigue.puede && rondaEnCurso !== null;
-  // Cada actividad terminada con su evidencia nombrada (sus archivos, que quien verifica abre; maqueta 7).
-  const porVerificar = verifica
-    ? await Promise.all(
-        rondaEnCurso.acciones.flatMap((a) =>
-          a.actividades
-            .filter((x) => x.finOriginal !== null && x.estado === "terminada")
-            .map(async (x) => ({
-              id: x.id,
-              etiqueta: `A${a.orden}.${x.orden}`,
-              descripcion: x.descripcion,
-              terminadaEn: x.terminadaEn ? fechaEnZona(x.terminadaEn, zona) : null,
-              archivos: await archivosDe(sqlArchivos, sesion, { contexto: "mejora_actividad", contextoId: x.id }),
-            })),
-        ),
+  // Cada actividad terminada con su evidencia nombrada (sus archivos, que quien verifica abre; maqueta 7) y sus trámites documentales
+  // con el estado de cada uno (Fase 15B, anexo §9.4), nombrados solo a quien los ve; los trámites, en una sola lectura.
+  const terminadas = verifica
+    ? rondaEnCurso.acciones.flatMap((a) =>
+        a.actividades.filter((x) => x.finOriginal !== null && x.estado === "terminada").map((x) => ({ x, etiqueta: `A${a.orden}.${x.orden}` })),
       )
     : [];
+  const tramitesPorVerificar = verifica ? await tramitesDeActividades(sqlArchivos, sesion, terminadas.map((t) => t.x.id)) : new Map();
+  const porVerificar = await Promise.all(
+    terminadas.map(async ({ x, etiqueta }) => {
+      const tramites = tramitesPorVerificar.get(x.id) ?? [];
+      return {
+        id: x.id,
+        etiqueta,
+        descripcion: x.descripcion,
+        terminadaEn: x.terminadaEn ? fechaEnZona(x.terminadaEn, zona) : null,
+        archivos: await archivosDe(sqlArchivos, sesion, { contexto: "mejora_actividad", contextoId: x.id }),
+        tramites: tramites.length > 0 ? <ListaDeTramites tramites={tramites} zona={zona} /> : null,
+      };
+    }),
+  );
   const evalua = completo && sigue.paso === "evaluar" && sigue.puede;
   // Lo que se muestra para evaluar, y su huella, de exactamente lo que se pinta: se firma lo que se vio.
   // Si el hallazgo cambió entre la lectura y aquí (otra persona evaluó a la vez), no hay formulario: la página ya no lo ofrece.
@@ -532,6 +539,16 @@ export default async function PaginaHallazgo({
       })
     : null;
   const cierra = completo && sigue.paso === "cerrar" && sigue.puede;
+  // Lo que comprueba el cierre con los trámites de la ronda (Fase 15B, anexo §9.6): solo para quien cierra (el Admin SGC, que ve todo
+  // trámite), al cerrar o al evaluar «eficaz» y cerrar en el mismo acto.
+  const cierraAlEvaluar = datosEval !== null && puede(sesion, "mejora.gestionar");
+  const cambiosDelCierre = cambiosPedidos(rondaEnCurso?.cambios);
+  const tramitesDelCierre = (cierra || cierraAlEvaluar) && cambiosDelCierre !== null ? await tramitesQueTerminaronBien(sqlArchivos, h.id, h.ronda) : [];
+  const exigeCambios = exigeComoSeAtendieron(rondaEnCurso?.cambios ?? null, tramitesDelCierre.length);
+  const notaDelCierre =
+    cambiosDelCierre !== null && (cierra || cierraAlEvaluar) ? (
+      <TramitesDelCierre cambios={cambiosDelCierre} tramites={tramitesDelCierre} exige={exigeCambios} />
+    ) : null;
   const pasoVerificar = verifica ? (
     <PasoVerificar
       key={`paso-${clave}`}
@@ -555,6 +572,8 @@ export default async function PaginaHallazgo({
       hoy={hoy}
       cierra={puede(sesion, "mejora.gestionar")}
       pideCambios={cambiosPedidos(rondaEnCurso?.cambios) !== null}
+      cambiosOpcionales={!exigeCambios}
+      notaDelCierre={notaDelCierre}
       pideCodigo={sesion.totpActivo}
       accion={evaluarEficaciaAccion}
       derivar={puede(sesion, "mejora.registrar") ? `/mejoramiento/nuevo?derivado=${h.id}` : null}
@@ -568,6 +587,7 @@ export default async function PaginaHallazgo({
       key={`paso-${clave}`}
       hallazgoId={h.id}
       cambios={cambiosPedidos(rondaEnCurso?.cambios)}
+      opcional={!exigeCambios}
       pideCodigo={sesion.totpActivo}
       accion={cerrarHallazgoAccion}
     />
@@ -873,6 +893,7 @@ export default async function PaginaHallazgo({
               validacion={h.correccion.validadaPor && h.correccion.validadaEn ? { por: h.correccion.validadaPor, en: h.correccion.validadaEn } : null}
               abierta
               zona={zona}
+              tramites={pasoCerrar ? notaDelCierre : null}
             >
               {pasoCerrar ? <div className="border-t border-linea-suave pt-3">{pasoCerrar}</div> : null}
             </SeccionCierre>

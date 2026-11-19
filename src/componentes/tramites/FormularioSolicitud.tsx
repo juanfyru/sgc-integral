@@ -6,6 +6,8 @@ import { crearSolicitudAccion } from "@/app/acciones-tramites";
 import { Boton, claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { DatosParaSolicitar } from "@/db/consultas/tramites";
+import { LO_LEERAN_EN_EL_TRAMITE } from "@/lib/mejoramiento/enganches";
+import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 import {
   ETIQUETA_MOTIVO,
   ETIQUETA_TIPO_SOLICITUD,
@@ -22,6 +24,12 @@ type RevisionDeOrigen = { id: number; anio: number };
 type ImpactoDeOrigen = { id: number; norma: string; proceso: string; deProceso: boolean };
 
 /**
+ * La actividad de un plan de acción desde la que se pide (Fase 15B, anexo §9.2), ya validada por la página (`datosParaPedir`): su id
+ * y la justificación con que llega (la descripción de la actividad, editable).
+ */
+type ActividadDeOrigen = { id: number; justificacion: string };
+
+/**
  * Los valores iniciales llegan de la dirección (`/tramites/nueva?documento=…&tipo=…&motivo=…`), ya validados por la
  * página; la revisión anual y el impacto de los que nace la solicitud viajan como campos ocultos mientras la solicitud
  * siga siendo la que los trajo (`ocultosDeSolicitud`).
@@ -33,17 +41,25 @@ type Props = DatosParaSolicitar & {
   procesoInicialId?: number;
   revisionAnual?: RevisionDeOrigen;
   impacto?: ImpactoDeOrigen;
+  actividad?: ActividadDeOrigen;
 };
 
 /**
  * Qué viaja oculto con lo que la persona tiene elegido: la revisión, con un documento (modificar o eliminar: es su
  * decisión en la campaña); el impacto de un documento, mientras el documento es el inicial, y el de un proceso, mientras
- * se crea en el proceso inicial. Si no, el envío quedaría enlazado a algo que no atiende o condenado a fallar.
+ * se crea en el proceso inicial. Si no, el envío quedaría enlazado a algo que no atiende o condenado a fallar. La actividad de
+ * mejoramiento viaja siempre: sirven los tres tipos de trámite, sobre cualquier documento o proceso (anexo 15B §9.2).
  */
 export function ocultosDeSolicitud(
   actual: { tipo: TipoSolicitud; documentoId: string; procesoId: string },
-  inicial: { documentoInicialId?: number; procesoInicialId?: number; revisionAnual?: RevisionDeOrigen; impacto?: ImpactoDeOrigen },
-): { revisionAnualId: number | null; impactoId: number | null } {
+  inicial: {
+    documentoInicialId?: number;
+    procesoInicialId?: number;
+    revisionAnual?: RevisionDeOrigen;
+    impacto?: ImpactoDeOrigen;
+    actividad?: ActividadDeOrigen;
+  },
+): { revisionAnualId: number | null; impactoId: number | null; actividadId: number | null } {
   const conDocumento = actual.tipo !== "crear" && actual.documentoId !== "";
   const { impacto } = inicial;
   const impactoVigente = impacto
@@ -54,6 +70,7 @@ export function ocultosDeSolicitud(
   return {
     revisionAnualId: inicial.revisionAnual && conDocumento ? inicial.revisionAnual.id : null,
     impactoId: impacto && impactoVigente ? impacto.id : null,
+    actividadId: inicial.actividad?.id ?? null,
   };
 }
 
@@ -81,6 +98,7 @@ export function FormularioSolicitud({
   procesoInicialId,
   revisionAnual,
   impacto,
+  actividad,
 }: Props) {
   const [estado, enviar, pendiente] = useActionState(crearSolicitudAccion, null);
   const enviado = (campo: string): string | undefined => {
@@ -95,10 +113,10 @@ export function FormularioSolicitud({
   // Sin JavaScript, el formulario vuelve con lo enviado (`enviado`); con él, el estado ya lo conserva.
   const [documentoId, setDocumentoId] = useState(enviado("documentoId") ?? (documentoInicialId !== undefined ? String(documentoInicialId) : ""));
   const [justificacion, setJustificacion] = useState(
-    enviado("justificacion") ?? (revisionAnual ? fraseDeRevision(revisionAnual.anio, tipoDeInicio) : ""),
+    enviado("justificacion") ?? (revisionAnual ? fraseDeRevision(revisionAnual.anio, tipoDeInicio) : (actividad?.justificacion ?? "")),
   );
   const subprocesos = procesos.find((p) => String(p.id) === procesoId)?.subprocesos ?? [];
-  const ocultos = ocultosDeSolicitud({ tipo, documentoId, procesoId }, { documentoInicialId, procesoInicialId, revisionAnual, impacto });
+  const ocultos = ocultosDeSolicitud({ tipo, documentoId, procesoId }, { documentoInicialId, procesoInicialId, revisionAnual, impacto, actividad });
   const cambiarTipo = (nuevo: TipoSolicitud) => {
     setJustificacion((actual) => justificacionTrasCambio(actual, revisionAnual?.anio, tipo, nuevo));
     setTipo(nuevo);
@@ -121,6 +139,14 @@ export function FormularioSolicitud({
           <input type="hidden" name="revisionAnualId" value={ocultos.revisionAnualId} />
           <p role="note" className={NOTA}>
             {`Esta solicitud nace de la revisión anual ${revisionAnual.anio}: al enviarla queda como la decisión del documento en la revisión.`}
+          </p>
+        </>
+      ) : null}
+      {ocultos.actividadId !== null ? (
+        <>
+          <input type="hidden" name="actividadId" value={ocultos.actividadId} />
+          <p role="note" className={NOTA}>
+            Esta solicitud atiende una actividad de mejoramiento: al enviarla, el trámite queda enlazado a ella.
           </p>
         </>
       ) : null}
@@ -207,7 +233,15 @@ export function FormularioSolicitud({
           ))}
         </select>
       </Campo>
-      <Campo etiqueta="Justificación" nombre="justificacion" ayuda="Entre 10 y 2000 caracteres.">
+      <Campo
+        etiqueta="Justificación"
+        nombre="justificacion"
+        ayuda={
+          ocultos.actividadId !== null
+            ? `Entre 10 y 2000 caracteres. ${LO_LEERAN_EN_EL_TRAMITE}. ${AVISO_SIN_PACIENTES}`
+            : "Entre 10 y 2000 caracteres."
+        }
+      >
         <textarea
           required
           minLength={10}

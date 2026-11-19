@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { DetalleTramite, OrigenTramite } from "@/db/consultas/tramites";
+import { ATIENDE_UNA_ACTIVIDAD } from "@/lib/mejoramiento/enganches";
 import { ETIQUETA_MOTIVO, ETIQUETA_TIPO_SOLICITUD } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
@@ -42,8 +43,19 @@ function Origen({ origen }: { origen: OrigenTramite }) {
   );
 }
 
-/** `origen`: de dónde nació la solicitud (`origenDeTramite`), bajo el motivo. */
-export function BloqueSolicitud({ tramite: t, origen = null }: { tramite: DetalleTramite; origen?: OrigenTramite | null }) {
+/**
+ * `origen`: de dónde nació la solicitud (`origenDeTramite`), bajo el motivo. `actividad`: la página de la actividad de mejoramiento
+ * que atiende (Fase 15B, anexo §9.7), solo para quien la ve (`actividadDelTramite`); nula si no atiende ninguna o no la ve.
+ */
+export function BloqueSolicitud({
+  tramite: t,
+  origen = null,
+  actividad = null,
+}: {
+  tramite: DetalleTramite;
+  origen?: OrigenTramite | null;
+  actividad?: string | null;
+}) {
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "long", timeZone: zonaHoraria() });
   return (
     <section aria-labelledby="titulo-solicitud" className="rounded-xl border border-border bg-card p-4 shadow-xs">
@@ -60,6 +72,13 @@ export function BloqueSolicitud({ tramite: t, origen = null }: { tramite: Detall
           {origen ? (
             <span className="block text-xs text-muted-foreground">
               <Origen origen={origen} />
+            </span>
+          ) : null}
+          {actividad ? (
+            <span className="block text-xs text-muted-foreground">
+              <Link href={actividad} className={`rounded underline underline-offset-2 ${FOCO}`}>
+                {ATIENDE_UNA_ACTIVIDAD}
+              </Link>
             </span>
           ) : null}
         </Fila>

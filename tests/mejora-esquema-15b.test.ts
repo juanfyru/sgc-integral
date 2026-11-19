@@ -241,6 +241,26 @@ describe.skipIf(!process.env.DATABASE_URL_MIGRADOR)("esquema de la migración 00
       ).toBe("42501");
     }));
 
+  it("el enlace de un hallazgo terminado no se cambia ni se borra, y su actividad es de su hallazgo", () =>
+    revertida(sql, async (tx) => {
+      const b = await base(tx);
+      const h = await hallazgo(tx, b);
+      const a1 = await actividadDe(tx, b, h);
+      const otro = await hallazgo(tx, b);
+      const { tramiteId } = await tramiteEn(tx, "visto_bueno");
+      // Una actividad de otro hallazgo: la llave compuesta lo rechaza.
+      expect(
+        await codigo(tx, () => tx`INSERT INTO mejora_actividad_tramites (hallazgo_id, actividad_id, tramite_id, origen, enlazado_por, enlazado_en)
+          VALUES (${otro}, ${a1}, ${tramiteId}, 'enlazado', ${b.usuarioId}, ${AHORA})`),
+      ).toBe("23503");
+      const [e] = await tx`INSERT INTO mejora_actividad_tramites (hallazgo_id, actividad_id, tramite_id, origen, enlazado_por, enlazado_en)
+        VALUES (${h}, ${a1}, ${tramiteId}, 'enlazado', ${b.usuarioId}, ${AHORA}) RETURNING id`;
+      await tx`UPDATE mejora_hallazgos SET estado = 'cerrado' WHERE id = ${h}`;
+      expect(await codigo(tx, () => tx`UPDATE mejora_actividad_tramites SET avisado_en = ${AHORA} WHERE id = ${e.id}`)).toBe("42501");
+      expect(await codigo(tx, () => tx`DELETE FROM mejora_actividad_tramites WHERE id = ${e.id}`)).toBe("42501");
+      expect(await tx`SELECT avisado_en FROM mejora_actividad_tramites WHERE id = ${e.id}`).toEqual([{ avisado_en: null }]);
+    }));
+
   describe("un origen, a lo sumo un hallazgo que cuente", () => {
     const casos: Array<[string, "verificacionHallazgoId" | "impactoId" | "impactoIndicadorId", (tx: TransactionSql, b: Base) => Promise<number>]> = [
       ["verificacion_hallazgo_id", "verificacionHallazgoId", verificacionDeDistribucion],

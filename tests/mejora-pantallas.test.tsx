@@ -1248,6 +1248,10 @@ describe("las actividades (maqueta 6)", () => {
     puedePedirAjuste: false,
     gerenciaEn: null,
     ajustes: [],
+    tramites: [],
+    tramiteQueVale: false,
+    devueltaEn: null,
+    cambioDocumental: { admite: true, puedePedir: false },
     ...extra,
   });
 
@@ -1696,6 +1700,7 @@ describe("los ajustes al plan y la escalada a Gerencia (maquetas 2 y 6)", () => 
       hallazgo: { id: 14, codigo: "HZ-2026-014", titulo: "Dos turnos sin registro", proceso: "Farmacia", estado: "en_ejecucion", etiqueta: "En ejecución", ronda: 1, ve: "actividad" },
       seguimientos: [], archivos: [], esResponsable: true, puedeSeguir: true, puedeReasignar: false, avanceMinimo: 0,
       ajustePendiente: null, puedePedirAjuste: true, gerenciaEn: null, ajustes: [],
+      tramites: [], tramiteQueVale: false, devueltaEn: null, cambioDocumental: { admite: true, puedePedir: false },
     };
     const pagina = (a: DetalleDeActividad) =>
       renderToStaticMarkup(

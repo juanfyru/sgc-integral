@@ -236,8 +236,24 @@ export async function hallazgoEn(
   cambios?: Partial<DatosDeHallazgo>,
   plan?: Parameters<typeof planDePrueba>[3],
 ): Promise<HallazgoBase> {
-  const o = c(HORA_DE_ESCENA, tx);
-  const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, cambios), o);
+  const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, cambios), c(HORA_DE_ESCENA, tx));
+  return llevarHasta(tx, b, id, estado, plan);
+}
+
+/**
+ * Lleva un hallazgo que ya existe hasta `estado` con los pasos de `hallazgoEn` (el mismo camino; sus pasos a `ahora`, por omisión
+ * `HORA_DE_ESCENA`): sirve para seguir uno después de hacerle algo a mitad de camino (enlazarle un trámite a una actividad,
+ * abrirle la ronda 2). Solo hacia adelante; lanza si el camino no lleva a `estado`.
+ */
+export async function llevarHasta(
+  tx: TransactionSql,
+  b: BaseDeMejora,
+  id: number,
+  estado: EstadoDeEscena,
+  plan?: Parameters<typeof planDePrueba>[3],
+  ahora: string = HORA_DE_ESCENA,
+): Promise<HallazgoBase> {
+  const o = c(ahora, tx);
   for (let paso = 0; paso < 16; paso++) {
     const h = await bloquearHallazgo(tx, id);
     if (h.estado === estado) return h;
@@ -309,7 +325,7 @@ export async function hallazgoEn(
         await aprobarPlan(b.gerencia, { hallazgoId: id, credenciales: { clave: "ok" } }, o);
         break;
       case "en_ejecucion":
-        await terminarTodas(tx, b, id, HORA_DE_ESCENA);
+        await terminarTodas(tx, b, id, ahora);
         break;
       case "por_verificar": {
         const terminadas = await tx`SELECT a.id FROM mejora_actividades a
@@ -432,6 +448,46 @@ export async function silenciarMejoramiento(tx: TransactionSql): Promise<void> {
     WHERE hallazgo_id IN (${abiertos}) AND estado = 'pendiente' AND aviso_vencido_en IS NULL`;
   await tx`UPDATE mejora_reportes SET aviso_vencido_en = coalesce(aviso_vencido_en, now()), escalado_en = coalesce(escalado_en, now())
     WHERE estado = 'recibido' AND (aviso_vencido_en IS NULL OR escalado_en IS NULL)`;
+  // El trámite enlazado a una actividad que ya terminó, o que termine con el test (Fase 15B, anexo §9.5).
+  await tx`UPDATE mejora_actividad_tramites SET avisado_en = coalesce(avisado_en, now())
+    WHERE hallazgo_id IN (${abiertos}) AND avisado_en IS NULL`;
+}
+
+let tramitesDePrueba = 0;
+
+/**
+ * Un trámite por SQL en `etapa` (una de las finales lleva `cerrado_en`, `terminoEn`) y su enlace con la actividad (Fase 15B, anexo
+ * §9), `enlazado` por omisión, puesto por `usuarioId` a `ahora`. Del año 1997, que ningún trámite de verdad usa. Solo dentro de
+ * `revertida`; el hallazgo de la actividad no puede haber terminado (el trigger lo rechaza).
+ */
+export async function tramiteEnlazado(
+  tx: TransactionSql,
+  d: {
+    actividadId: number;
+    usuarioId: number;
+    etapa: string;
+    terminoEn?: string;
+    creadoEn?: string;
+    origen?: "pedido" | "enlazado";
+    ahora?: string;
+    documentoId?: number;
+  },
+): Promise<{ tramiteId: number; enlaceId: number }> {
+  tramitesDePrueba += 1;
+  const consecutivo = (Date.now() % 1_000_000) * 100 + tramitesDePrueba;
+  const [a] = await tx`SELECT a.hallazgo_id, h.proceso_id FROM mejora_actividades a JOIN mejora_hallazgos h ON h.id = a.hallazgo_id
+    WHERE a.id = ${d.actividadId}`;
+  const final = ["publicado", "eliminado", "rechazado", "cancelado"].includes(d.etapa);
+  const [t] = await tx`INSERT INTO tramites (numero, anio, consecutivo, tipo, motivo, justificacion, solicitante_id, proceso_id, documento_id,
+      titulo_propuesto, etapa, cerrado_en, creado_en)
+    VALUES (${`SOL-1997-${consecutivo}`}, 1997, ${consecutivo}, ${d.documentoId ? "modificar" : "crear"}, 'no_conformidad',
+      'Trámite de prueba de una actividad', ${d.usuarioId}, ${a.proceso_id}, ${d.documentoId ?? null}, 'Formato de prueba del turno',
+      ${d.etapa}, ${final ? new Date(d.terminoEn ?? HORA_DE_ESCENA) : null}, ${new Date(d.creadoEn ?? HORA_DE_ESCENA)})
+    RETURNING id`;
+  const [e] = await tx`INSERT INTO mejora_actividad_tramites (hallazgo_id, actividad_id, tramite_id, origen, enlazado_por, enlazado_en)
+    VALUES (${a.hallazgo_id}, ${d.actividadId}, ${t.id}, ${d.origen ?? "enlazado"}, ${d.usuarioId}, ${new Date(d.ahora ?? HORA_DE_ESCENA)})
+    RETURNING id`;
+  return { tramiteId: Number(t.id), enlaceId: Number(e.id) };
 }
 
 /**

@@ -16,6 +16,11 @@
  *    mayor entre su inicio, el día en que se registró su último seguimiento y el del último recordatorio; marca `recordatorio_en`.
  * 5. La eficacia por evaluar: el hallazgo en espera que llegó a su fecha mínima, a quienes pueden verificar; marca
  *    `aviso_evaluar_en`. Vencida su evaluación, es un paso vencido (1).
+ * 6. El trámite enlazado que terminó (Fase 15B, anexo §9.5): el motor del trámite no llama a Mejoramiento, así que la pasada lee el
+ *    estado de cada enlace de un hallazgo sin terminar cuyo trámite llegó a un estado final y todavía no se avisó: avisa al
+ *    responsable de la actividad (`mejora.tramite_terminado`, un texto si terminó bien y otro si no, sin nombrar el documento, que
+ *    quizá no ve), deja el evento `tramite_terminado` en el hallazgo y marca `avisado_en`. De un hallazgo terminado no hace nada (ni
+ *    avisa ni marca: el enlace ya no cambia).
  *
  * Un hallazgo cargado sin su formato firmado (spec §15) no entra a ningún paso: ni el suyo, ni sus actividades, que todavía no
  * llegaron a sus responsables (`cargaResuelta`). Con el formato, la pasada siguiente lo ve como a cualquier otro.
@@ -47,15 +52,16 @@ import { rutaDeActividad, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { TERMINALES, type HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { cuenta } from "@/lib/plural";
 import { estadoPlazo, finDeFecha, fechaEnZona } from "@/lib/tramites/plazos";
-import { textoResponsables } from "@/lib/tramites/tipos";
+import { ETAPAS_FINALES, textoResponsables } from "@/lib/tramites/tipos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { quienDecideAjustes } from "./ajustes";
 import { ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO, lideresOAdmins, queLeToca, quienTieneElTurno, revisoresDe } from "./avisos";
 import { cargaResuelta } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
-import { aBase, hallazgoBase } from "./flujo";
+import { aBase, dejarEvento, hallazgoBase } from "./flujo";
 import { etiquetaDeActividad } from "./plan";
+import { terminoBien } from "./tramites-enlace";
 import { venceLaActividad } from "./vence-actividad";
 
 type Contexto = { sql: Cliente; ahora: Date; zona: string; hoy: string; escalamientoDias: number; mejora: ContextoMejora };
@@ -510,9 +516,119 @@ const RECORDATORIO: PasoDeVencimiento<DeActividad, null, Contexto> = {
   marcar: (tx, ids, ahora) => tx`UPDATE mejora_actividades SET recordatorio_en = ${ahora} WHERE id = ANY(${ids})`,
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// El trámite enlazado que terminó (Fase 15B, anexo §9.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+type DeEnlace = {
+  id: number;
+  grupo: number;
+  hallazgoId: number;
+  codigo: string;
+  ronda: number;
+  actividadId: number;
+  etiqueta: string;
+  responsableId: number;
+  activo: boolean;
+  /** La actividad sigue abierta: solo entonces el aviso le sirve a su responsable. */
+  abierta: boolean;
+  tramiteId: number;
+  etapa: string;
+};
+
+/**
+ * Los enlaces sin avisar cuyo trámite llegó a un estado final, de un hallazgo sin terminar, de una actividad de un plan aprobado y,
+ * si es una carga, con su formato firmado (nada llega antes a su responsable); con `ids`, solo esos y bloqueados (el hallazgo `FOR
+ * SHARE` y el enlace `FOR UPDATE`, los dos `SKIP LOCKED`, como las actividades).
+ */
+async function leerEnlaces(sql: Cliente, ids?: number[]): Promise<DeEnlace[]> {
+  const filas = await sql`SELECT e.id, e.hallazgo_id, e.actividad_id, e.tramite_id, t.etapa, a.orden, a.estado, a.responsable_id, u.activo,
+      ac.orden AS accion_orden, h.codigo, h.ronda
+    FROM mejora_actividad_tramites e
+    JOIN tramites t ON t.id = e.tramite_id
+    JOIN mejora_actividades a ON a.id = e.actividad_id
+    JOIN mejora_acciones ac ON ac.id = a.accion_id
+    JOIN mejora_hallazgos h ON h.id = e.hallazgo_id
+    JOIN usuarios u ON u.id = a.responsable_id
+    WHERE e.avisado_en IS NULL AND t.etapa = ANY(${[...ETAPAS_FINALES]}) AND h.estado NOT IN ${sql([...TERMINALES])}
+      AND a.fin_original IS NOT NULL AND ${cargaResuelta(sql)}
+      ${ids ? sql`AND e.id = ANY(${ids})` : sql``}
+    ORDER BY e.id
+    ${ids ? sql`FOR SHARE OF h SKIP LOCKED FOR UPDATE OF e SKIP LOCKED` : sql``}`;
+  return filas.map((f) => ({
+    id: Number(f.id),
+    grupo: Number(f.id),
+    hallazgoId: Number(f.hallazgo_id),
+    codigo: f.codigo as string,
+    ronda: Number(f.ronda),
+    actividadId: Number(f.actividad_id),
+    etiqueta: etiquetaDeActividad(Number(f.accion_orden), Number(f.orden)),
+    responsableId: Number(f.responsable_id),
+    activo: f.activo === true,
+    abierta: f.estado === "abierta" || f.estado === "en_proceso",
+    tramiteId: Number(f.tramite_id),
+    etapa: f.etapa as string,
+  }));
+}
+
+/** El aviso del trámite que terminó: si quedó publicado, eliminado o terminó sin publicarse, sin nombrar el documento. */
+function avisoDelTramite(f: DeEnlace): { titulo: string; cuerpo: string } {
+  const cual = `El trámite de la actividad ${f.etiqueta} de ${f.codigo}`;
+  if (terminoBien(f.etapa)) {
+    return {
+      titulo: f.etapa === "publicado" ? `${cual} quedó publicado` : `${cual} terminó con el documento eliminado`,
+      cuerpo: "Vale como evidencia: con el avance en 100 %, ya puede terminar la actividad.",
+    };
+  }
+  return { titulo: `${cual} terminó sin publicarse`, cuerpo: `Quedó ${f.etapa === "rechazado" ? "rechazado" : "cancelado"}: no vale como evidencia de la actividad.` };
+}
+
+/**
+ * El paso del trámite que terminó. A quién avisar sale de la fila (no hay nada que buscar antes del candado): el responsable de la
+ * actividad abierta, si está activo. Si está inactivo, la fila espera sin marca: reasignada la actividad, la pasada siguiente avisa a
+ * quien la tenga (`para`, como las actividades). De una actividad que ya terminó o se canceló queda el evento y la marca, sin aviso:
+ * esos no cuentan como avisados. Lo hace el sistema: sin bitácora.
+ */
+const TRAMITE_TERMINADO: PasoDeVencimiento<DeEnlace, string, Contexto> = {
+  leer: (sql, _c, ids) => leerEnlaces(sql, ids),
+  resolver: async (_c, candidatas) =>
+    new Map(candidatas.filter((f) => f.activo || !f.abierta).map((f) => [f.grupo, `${f.responsableId}:${f.activo}:${f.abierta}`])),
+  avisar: async (tx, filas, resueltos, c) => {
+    const avisadas: number[] = [];
+    const sinAviso: number[] = [];
+    for (const f of filas) {
+      if (resueltos.get(f.grupo) !== `${f.responsableId}:${f.activo}:${f.abierta}`) continue;
+      await dejarEvento(tx, {
+        hallazgoId: f.hallazgoId,
+        ronda: f.ronda,
+        tipo: "tramite_terminado",
+        detalle: { actividadId: f.actividadId, actividad: f.etiqueta, tramiteId: f.tramiteId, etapa: f.etapa },
+        usuarioId: null,
+        ocurrioEn: c.ahora,
+      });
+      if (!f.abierta) {
+        sinAviso.push(f.id);
+        continue;
+      }
+      const aviso = avisoDelTramite(f);
+      await avisarA(
+        tx,
+        { tipo: "mejora.tramite_terminado", titulo: aviso.titulo, enlace: rutaDeActividad(f.actividadId), entidad: ENTIDAD_ACTIVIDAD, entidadId: f.actividadId },
+        [{ usuarioId: f.responsableId, cuerpo: aviso.cuerpo }],
+      );
+      avisadas.push(f.id);
+    }
+    // Lo que solo dejó su evento también queda marcado, sin contarse como avisado.
+    if (sinAviso.length > 0) await tx`UPDATE mejora_actividad_tramites SET avisado_en = ${c.ahora} WHERE id = ANY(${sinAviso})`;
+    return avisadas;
+  },
+  marcar: (tx, ids, ahora) => tx`UPDATE mejora_actividad_tramites SET avisado_en = ${ahora} WHERE id = ANY(${ids})`,
+};
+
 /**
  * La pasada de mejoramiento (spec §14.3): los pasos, los reportes y los ajustes vencidos, las actividades vencidas, los
- * escalamientos, los recordatorios y las eficacias por evaluar. Un paso que falla se registra y los demás siguen.
+ * escalamientos, los recordatorios, las eficacias por evaluar y los trámites enlazados que terminaron (Fase 15B, anexo §9.5). Un paso
+ * que falla se registra y los demás siguen.
  */
 export async function revisarVencimientosDeMejoramiento(opciones: { sql: Cliente; ahora: Date; config: ConfigDocumental }): Promise<Resultado> {
   const { sql, ahora } = opciones;
@@ -536,6 +652,7 @@ export async function revisarVencimientosDeMejoramiento(opciones: { sql: Cliente
     ["el escalamiento de las actividades", "escalados", () => correrPaso(c, ACTIVIDAD_ESCALADA)],
     ["los recordatorios de seguimiento", "avisados", () => correrPaso(c, RECORDATORIO)],
     ["las eficacias por evaluar", "avisados", () => correrPaso(c, POR_EVALUAR)],
+    ["los trámites enlazados que terminaron", "avisados", () => correrPaso(c, TRAMITE_TERMINADO)],
   ];
   for (const [nombre, clave, correr] of pasos) {
     try {

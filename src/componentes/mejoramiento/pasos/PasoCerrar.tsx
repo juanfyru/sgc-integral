@@ -10,17 +10,21 @@ import type { AccionDelPaso } from "./Partes";
  * «Por cerrar», para el Administrador del SGC (spec 15 §11.5, PC-10): las lecciones aprendidas (al menos diez caracteres) y, si
  * la segunda pregunta del análisis pidió cambios en documentos, riesgos o controles (`cambios` los nombra), cómo se atendió cada
  * uno; firma «Cerró». Al cerrar se avisa a los líderes del proceso, a quien lo registró y a Gerencia. Los campos viajan con la firma
- * (`ocultos`): no están en un formulario, así que el mínimo lo dice la etiqueta y lo valida el servidor.
+ * (`ocultos`): no están en un formulario, así que el mínimo lo dice la etiqueta y lo valida el servidor. Cuando solo pidió documentos
+ * y la ronda tiene un trámite enlazado que terminó bien (Fase 15B, anexo §9.6), decir cómo se atendieron es opcional (`opcional`).
  */
 export function PasoCerrar({
   hallazgoId,
   cambios,
+  opcional = false,
   pideCodigo,
   accion,
 }: {
   hallazgoId: number;
   /** Los cambios que pidió el análisis («documentos, matriz de riesgos»), o nulo si no pidió ninguno. */
   cambios: string | null;
+  /** El cierre no exige decir cómo se atendieron (`exigeComoSeAtendieron`): los trámites de la ronda atienden los documentos. */
+  opcional?: boolean;
   pideCodigo: boolean;
   accion: AccionDelPaso;
 }) {
@@ -36,7 +40,7 @@ export function PasoCerrar({
       </Campo>
       {cambios ? (
         <Campo
-          etiqueta={`Cómo se atendieron los cambios que pidió el análisis (${cambios})`}
+          etiqueta={`Cómo se atendieron los cambios que pidió el análisis (${cambios})${opcional ? " · opcional" : ""}`}
           nombre="cambiosAtendidos"
           id={id("cambios")}
           ayuda={AVISO_SIN_PACIENTES}

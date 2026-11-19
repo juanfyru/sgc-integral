@@ -8,6 +8,12 @@ export const rutaDeHallazgo = (id: number) => `/mejoramiento/${id}`;
 /** La página de una actividad (la ejecuta su responsable). */
 export const rutaDeActividad = (id: number) => `/mejoramiento/actividades/${id}`;
 
+/** El selector de trámites para enlazar a una actividad (Fase 15B, anexo §9.3). */
+export const rutaDeEnlazarTramite = (actividadId: number) => `/mejoramiento/actividades/${actividadId}/enlazar`;
+
+/** La solicitud de un trámite documental pedida desde una actividad (Fase 15B, anexo §9.2). */
+export const rutaDePedirTramite = (actividadId: number) => `/tramites/nueva?actividad=${actividadId}`;
+
 /** La página donde se formula la causa raíz y el plan de un hallazgo. */
 export const rutaDeFormular = (id: number) => `/mejoramiento/${id}/formular`;
 

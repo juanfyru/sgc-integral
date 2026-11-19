@@ -19,11 +19,15 @@ import { BarraDeAvance, EstadoDeLaActividad } from "./MisActividades";
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 const CAJA = "flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4";
 
-/** Lo que le falta a la actividad para terminarse (spec §10.4), en frases que completan «Para terminar hace falta…». */
+/**
+ * Lo que le falta a la actividad para terminarse (spec §10.4), en frases que completan «Para terminar hace falta…»: el avance y la
+ * evidencia, que puede ser un archivo o un trámite enlazado que terminó bien (Fase 15B, anexo §9.4, `tramiteQueVale`).
+ */
 function loQueFalta(a: DetalleDeActividad): string[] {
+  const sinEvidencia = a.archivos.length === 0 && !a.tramiteQueVale;
   return [
     a.avance !== 100 ? "el avance en 100 %" : null,
-    a.archivos.length === 0 ? "al menos un archivo de evidencia" : null,
+    sinEvidencia ? (a.tramites.length > 0 ? "al menos un archivo de evidencia o un trámite enlazado que termine bien" : "al menos un archivo de evidencia") : null,
   ].filter((x): x is string => x !== null);
 }
 
@@ -54,6 +58,7 @@ export function PaginaDeActividad({
   subida,
   quitables,
   acciones,
+  cambioDocumental,
 }: {
   actividad: DetalleDeActividad;
   hoy: string;
@@ -63,6 +68,8 @@ export function PaginaDeActividad({
   subida: string | null;
   quitables: number[];
   acciones: { seguimiento: AccionDelPaso; terminar: AccionDelPaso; reasignar: AccionDelPaso; pedirAjuste: AccionDelPaso };
+  /** «Cambio documental» (Fase 15B, anexo §9, maqueta 7), que la página arma con su acción; va después de la evidencia. */
+  cambioDocumental?: React.ReactNode;
 }) {
   const zona = zonaHoraria();
   const ultimo = a.seguimientos[0] ?? null;
@@ -179,6 +186,8 @@ export function PaginaDeActividad({
             />
           </section>
         ) : null}
+
+        {cambioDocumental}
 
         {a.puedePedirAjuste ? (
           <div className="flex">

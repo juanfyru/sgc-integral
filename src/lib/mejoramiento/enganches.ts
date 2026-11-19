@@ -95,3 +95,34 @@ export const ETIQUETA_ESTADO_DE_VERIFICACION: Record<string, string> = {
   por_validar: "Por validar",
   cerrado: "Cerrado",
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El cambio documental desde una actividad (anexo §9): el enlace de una actividad del plan aprobado con un trámite documental.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La solicitud que llega con una actividad que ya no la admite (terminada, cancelada, de un borrador, de un hallazgo terminado, de
+ * una carga sin su formato, que la persona no ve o que no existe): se rechaza entera, con el mismo mensaje para toda causa (§9.2).
+ */
+export const ACTIVIDAD_NO_ADMITE = "No se pudo enlazar la solicitud a la actividad: vuelva a la actividad y pídala de nuevo";
+
+/**
+ * El trámite que no se puede enlazar (§9.3): ya enlazado a una actividad, rechazado o cancelado, pedido antes de que se detectara el
+ * hallazgo o que la persona no ve. El mismo mensaje para todo: no dice que otra actividad, que quizá no ve, ya lo tiene.
+ */
+export const TRAMITE_NO_SIRVE = "Ese trámite no se puede enlazar a esta actividad";
+
+/** El enlace que no existe o que la persona no ve (su actividad): para ella, no existe. */
+export const ENLACE_NO_EXISTE = "El enlace no existe";
+
+/** El enlace que no se quita (§9.3): uno pedido desde la actividad, de otra persona, o con la actividad terminada o cancelada. */
+export const ENLACE_NO_SE_QUITA = "Este enlace no se puede quitar";
+
+/** El aviso del formulario de la solicitud que nace de una actividad (§9.2): el texto del hallazgo no se copia. */
+export const LO_LEERAN_EN_EL_TRAMITE = "Lo que escriba aquí lo leerán quienes participan en el trámite";
+
+/** Lo que la página de la actividad le dice a quien la ve y no puede pedir el trámite (§9.2). */
+export const PIDALO_AL_LIDER = "Pídale al líder del proceso o al Administrador del SGC que lo solicite desde aquí";
+
+/** La línea de la página del trámite que atiende una actividad, a quien ve esa actividad (§9.7). */
+export const ATIENDE_UNA_ACTIVIDAD = "Atiende una actividad de mejoramiento";

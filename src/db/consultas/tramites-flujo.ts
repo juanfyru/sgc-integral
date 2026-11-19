@@ -7,6 +7,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerConfigDocumental, type ConfigDocumental } from "@/db/consultas/config-documental";
 import { registrarFirma } from "@/db/consultas/firmas";
+import { enlazarAlCrear, validarActividadParaTramite } from "@/db/consultas/mejoramiento/tramites-enlace";
 import { resolverImpacto } from "@/db/consultas/normograma/impactos";
 import { alSolicitar, revisionAbiertaBloqueada } from "@/db/consultas/vigencia/revision-anual/registro";
 import { alcanceProcesos, enAlcance } from "@/lib/alcance";
@@ -104,6 +105,11 @@ export type DatosSolicitud = {
   revisionAnualId?: number;
   /** La solicitud atiende un impacto normativo, que queda resuelto con ella (spec 13C §10.5). */
   impactoId?: number;
+  /**
+   * La solicitud se pide desde una actividad de un plan de acción (Fase 15B, anexo §9.2): queda enlazada a ella. El único punto donde
+   * el motor del trámite conoce a Mejoramiento.
+   */
+  actividadId?: number | null;
 };
 
 export type EntradaTransicion = {
@@ -202,6 +208,10 @@ export async function crearSolicitud(
   const config = await obtenerConfigDocumental({ sql });
 
   return enTransaccion(sql, async (tx) => {
+    // La actividad de la que nace (Fase 15B, anexo §9.2) se valida antes de insertar nada y antes del candado del consecutivo (así un
+    // hallazgo tomado no detiene las demás solicitudes): si ya no admite el pedido, la solicitud se rechaza entera, con un solo mensaje.
+    const actividadId = datos.actividadId ?? null;
+    const actividad = actividadId === null ? null : await validarActividadParaTramite(tx, sesion, actividadId);
     const destino =
       datos.tipo === "crear" ? await destinoDeCreacion(tx, datos) : await destinoDeDocumento(tx, datos.documentoId);
     if (!enAlcance(await alcanceProcesos(sesion, { sql: tx }), destino.procesoId))
@@ -253,6 +263,9 @@ export async function crearSolicitud(
     if (datos.impactoId !== undefined) {
       await resolverImpacto(sesion, { impactoId: datos.impactoId, resolucion: "solicitud", tramiteId }, { sql: tx, ahora });
     }
+    if (actividad !== null && actividadId !== null) {
+      await enlazarAlCrear(tx, { actividadId, hallazgoId: actividad.hallazgoId, tramiteId, usuarioId: sesion.usuarioId, ahora });
+    }
 
     const { codigo, texto } = await rotuloDeTramite(tx, { tipo: datos.tipo, ...destino });
     await registrarAuditoria(tx, {
@@ -271,6 +284,7 @@ export async function crearSolicitud(
         motivo: datos.motivo,
         ...(datos.revisionAnualId === undefined ? {} : { revisionAnualId: datos.revisionAnualId }),
         ...(datos.impactoId === undefined ? {} : { impactoId: datos.impactoId }),
+        ...(actividadId === null ? {} : { actividadId }),
       },
     });
     await enviarAvisos(tx, tramiteId, sesion.usuarioId, [

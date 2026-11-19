@@ -37,6 +37,8 @@ export function PasoEvaluar({
   hoy,
   cierra,
   pideCambios,
+  cambiosOpcionales = false,
+  notaDelCierre = null,
   pideCodigo,
   accion,
   derivar,
@@ -57,6 +59,13 @@ export function PasoEvaluar({
   cierra: boolean;
   /** El análisis pidió cambios en documentos, riesgos o controles: el cierre pide decir cómo se atendieron. */
   pideCambios: boolean;
+  /**
+   * Decir cómo se atendieron es opcional (Fase 15B, anexo §9.6): solo pidió documentos y la ronda tiene un trámite enlazado que
+   * terminó bien (`exigeComoSeAtendieron`).
+   */
+  cambiosOpcionales?: boolean;
+  /** Lo que comprueba el cierre con los trámites de la ronda (`TramitesDelCierre`), si quien evalúa cierra. */
+  notaDelCierre?: React.ReactNode;
   pideCodigo: boolean;
   accion: AccionDelPaso;
   /** «Registrar un hallazgo distinto» (`/mejoramiento/nuevo?derivado=<id>`), a quien puede registrar; nulo si no. */
@@ -254,6 +263,7 @@ export function PasoEvaluar({
       {cierra ? (
         <div className="flex min-w-0 flex-col gap-3 rounded-md border border-linea-suave p-3">
           <p className="text-sm">Si registra «Eficaz», con la misma firma cierra el hallazgo: escriba lo que se aprendió.</p>
+          {notaDelCierre}
           <Campo etiqueta="Lecciones aprendidas (al menos 10 caracteres)" nombre="lecciones" id={id("lecciones")} ayuda={AVISO_SIN_PACIENTES}>
             <textarea
               value={lecciones}
@@ -265,7 +275,7 @@ export function PasoEvaluar({
           </Campo>
           {pideCambios ? (
             <Campo
-              etiqueta="Cómo se atendieron los cambios en documentos, riesgos o controles"
+              etiqueta={`Cómo se atendieron los cambios en documentos, riesgos o controles${cambiosOpcionales ? " · opcional" : ""}`}
               nombre="cambiosAtendidos"
               id={id("cambios")}
               ayuda={AVISO_SIN_PACIENTES}

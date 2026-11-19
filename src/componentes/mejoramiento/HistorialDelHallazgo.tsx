@@ -89,7 +89,14 @@ const FRASE: Record<string, string> = {
   reasignada: "Reasignó una actividad",
   respuesta_ente: "Registró la respuesta al ente",
   carga_confirmada: "Adjuntó el formato firmado de la carga",
+  // El cambio documental de una actividad (Fase 15B, anexo §9): sin el número ni el documento del trámite, que no todos ven.
+  tramite_enlazado: "Enlazó un trámite documental a una actividad",
+  tramite_desenlazado: "Quitó un trámite documental de una actividad",
+  tramite_terminado: "Terminó un trámite documental de una actividad",
 };
+
+/** Cómo terminó un trámite documental, en minúscula, para la frase de su evento. */
+const FINAL_DEL_TRAMITE: Record<string, string> = { publicado: "publicado", eliminado: "eliminado", rechazado: "rechazado", cancelado: "cancelado" };
 
 /** La etiqueta de una actividad («A1.2») tal como la trae un evento, o nada si no tiene esa forma. */
 const etiquetaValida = (v: unknown): string | null => (typeof v === "string" && /^A\d+\.\d+$/.test(v) ? v : null);
@@ -139,6 +146,17 @@ function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string
     // En uno que añade, la actividad que se pidió todavía no existe: el pedido y la negativa nombran la acción, no la actividad.
     const que = queSeAjusta(d, e.tipo === "ajustar" || d.tipo !== "agregar" ? etiqueta : null);
     return que ? `${VERBO_DEL_AJUSTE[e.tipo]} ${que}` : FRASE[e.tipo];
+  }
+  // El trámite documental de una actividad (Fase 15B, anexo §9.7): la actividad por su etiqueta y cómo terminó, nunca qué trámite.
+  if (e.tipo === "tramite_enlazado" || e.tipo === "tramite_desenlazado" || e.tipo === "tramite_terminado") {
+    const etiqueta = etiquetaValida(d.actividad) ?? (typeof d.actividadId === "number" ? etiquetaValida(etiquetas[d.actividadId]) : null);
+    if (!etiqueta) return FRASE[e.tipo];
+    if (e.tipo === "tramite_desenlazado") return `Quitó un trámite documental de la actividad ${etiqueta}`;
+    if (e.tipo === "tramite_enlazado") {
+      return d.origen === "pedido" ? `Pidió un trámite documental desde la actividad ${etiqueta}` : `Enlazó un trámite documental a la actividad ${etiqueta}`;
+    }
+    const final = typeof d.etapa === "string" && Object.hasOwn(FINAL_DEL_TRAMITE, d.etapa) ? `: ${FINAL_DEL_TRAMITE[d.etapa]}` : "";
+    return `Terminó un trámite documental de la actividad ${etiqueta}${final}`;
   }
   // La respuesta al ente dice cuándo se envió (spec §13.4); el oficio son sus archivos.
   if (e.tipo === "respuesta_ente" && typeof d.enviadaEn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d.enviadaEn)) {

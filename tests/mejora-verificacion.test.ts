@@ -51,8 +51,10 @@ import {
   hallazgoEn,
   HORA_DE_ESCENA,
   LECCIONES_DE_ESCENA,
+  llevarHasta,
   planDePrueba,
   terminarTodas,
+  tramiteEnlazado,
   type BaseDeMejora,
 } from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
@@ -966,6 +968,109 @@ describe("evaluarEficacia", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // El indicador enlazado y lo congelado (spec §11.2 a §11.4, §12.2)
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe("lo que comprueba el cierre con los trámites de la ronda (Fase 15B, anexo §9.6)", () => {
+  const CIERRA = "2027-02-08T15:00:00Z";
+  const SIN_ATENDER = "Diga cómo se atendieron los cambios que el análisis pidió";
+  type Cambios = { documentos: boolean; riesgos: boolean; controles: boolean };
+  const marcar = (tx: TransactionSql, hallazgoId: number, cambios: Cambios, ronda = 1) =>
+    tx`UPDATE mejora_rondas SET cambios = ${tx.json(cambios)} WHERE hallazgo_id = ${hallazgoId} AND numero = ${ronda}`;
+  /** Un trámite en `etapa`, enlazado por SQL a la primera actividad del hallazgo. */
+  const conTramite = async (tx: TransactionSql, b: BaseDeMejora, hallazgoId: number, etapa = "publicado") => {
+    const [a] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${hallazgoId} ORDER BY id LIMIT 1`;
+    return tramiteEnlazado(tx, { actividadId: Number(a.id), usuarioId: b.lider.usuarioId, etapa, terminoEn: VERIFICA });
+  };
+  const SOLO_DOCUMENTOS = { documentos: true, riesgos: false, controles: false };
+
+  it("solo «documentos» y la ronda tiene un trámite que terminó bien: cierra sin decir cómo, y el evento del cierre guarda los trámites", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const { tramiteId } = await conTramite(tx, b, h.id);
+      await marcar(tx, h.id, SOLO_DOCUMENTOS);
+      await evaluar(tx, b.control, h.id, LA_MINIMA);
+      await cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, credenciales: CLAVE }, c(CIERRA, tx));
+      const [f] = await tx`SELECT estado, cambios_atendidos FROM mejora_hallazgos WHERE id = ${h.id}`;
+      expect(f).toMatchObject({ estado: "cerrado", cambios_atendidos: null });
+      const [cierre] = await eventosDe(tx, h.id, "cerrar");
+      expect((cierre.detalle as { tramites?: unknown }).tramites).toEqual([{ tramiteId, documento: null }]);
+    }));
+
+  it("lo mismo cuando el Admin SGC evalúa «eficaz» y cierra en el mismo acto", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      const { tramiteId } = await conTramite(tx, b, h.id, "eliminado");
+      await marcar(tx, h.id, SOLO_DOCUMENTOS);
+      await evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES });
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("cerrado");
+      const [evento] = await eventosDe(tx, h.id, "evaluar_eficaz");
+      expect((evento.detalle as { tramites?: unknown }).tramites).toEqual([{ tramiteId, documento: null }]);
+    }));
+
+  it("solo «documentos» sin ningún trámite que terminara bien (uno en curso o cancelado no cuenta): lo pide", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      await conTramite(tx, b, h.id, "aprobacion");
+      await conTramite(tx, b, h.id, "cancelado");
+      await marcar(tx, h.id, SOLO_DOCUMENTOS);
+      await expect(evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES })).rejects.toThrow(SIN_ATENDER);
+      await evaluar(tx, b.control, h.id, LA_MINIMA);
+      await expect(cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, credenciales: CLAVE }, c(CIERRA, tx))).rejects.toThrow(SIN_ATENDER);
+    }));
+
+  for (const [nombre, cambios] of [
+    ["la matriz de riesgos", { documentos: true, riesgos: true, controles: false }],
+    ["los controles", { documentos: false, riesgos: false, controles: true }],
+  ] as const) {
+    it(`${nombre}, con o sin trámite: lo pide`, () =>
+      revertida(sql, async (tx) => {
+        const b = await baseDeMejora(tx);
+        const h = await enEspera(tx, b);
+        await marcar(tx, h.id, cambios);
+        await expect(evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES })).rejects.toThrow(SIN_ATENDER);
+        await conTramite(tx, b, h.id);
+        await expect(evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES })).rejects.toThrow(SIN_ATENDER);
+        await evaluar(tx, b.control, h.id, LA_MINIMA);
+        await expect(cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, credenciales: CLAVE }, c(CIERRA, tx))).rejects.toThrow(SIN_ATENDER);
+        await cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, cambiosAtendidos: "Se actualizó lo que pidió el análisis", credenciales: CLAVE }, c(CIERRA, tx));
+        expect((await bloquearHallazgo(tx, h.id)).estado).toBe("cerrado");
+      }));
+  }
+
+  it("sin nada marcado no lo pide", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      await marcar(tx, h.id, { documentos: false, riesgos: false, controles: false });
+      await evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES });
+      expect((await bloquearHallazgo(tx, h.id)).estado).toBe("cerrado");
+      const [evento] = await eventosDe(tx, h.id, "evaluar_eficaz");
+      expect(evento.detalle).not.toHaveProperty("tramites");
+    }));
+
+  it("un trámite de una actividad de otra ronda no cuenta", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await enEspera(tx, b);
+      // El de la ronda 1 terminó bien; la ronda 1 no fue eficaz y la 2 pide documentos.
+      await conTramite(tx, b, h.id);
+      await evaluar(tx, b.control, h.id, "2026-12-10T15:00:00Z", {
+        resultado: "no_eficaz",
+        hasta: "2026-12-10",
+        justificacion: "El hecho se repitió en el turno de noche del 9 de diciembre",
+      });
+      expect(await bloquearHallazgo(tx, h.id)).toMatchObject({ estado: "por_formular", ronda: 2 });
+      const porCerrar = await llevarHasta(tx, b, h.id, "por_cerrar", undefined, "2026-12-11T15:00:00Z");
+      expect(porCerrar.ronda).toBe(2);
+      await marcar(tx, h.id, SOLO_DOCUMENTOS, 2);
+      const [r] = await tx`SELECT evaluada_en FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = 2`;
+      await expect(
+        cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, credenciales: CLAVE }, c((r.evaluada_en as Date).toISOString(), tx)),
+      ).rejects.toThrow(SIN_ATENDER);
+    }));
+});
 
 describe("el indicador enlazado", () => {
   it("mensual: desde el 1 de marzo; retirado, dos meses y no se marca; trimestral, se recalcula", () =>

@@ -3,6 +3,7 @@ import { ClipboardList } from "lucide-react";
 import { FormularioSolicitud } from "@/componentes/tramites/FormularioSolicitud";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
+import { datosParaPedir } from "@/db/consultas/mejoramiento/tramites-enlace";
 import { impactoPendiente } from "@/db/consultas/normograma/impactos";
 import { datosParaSolicitar } from "@/db/consultas/tramites";
 import { indiceDeRevisiones } from "@/db/consultas/vigencia/revision-anual";
@@ -20,7 +21,11 @@ const idDe = (v: string | string[] | undefined): number | undefined => (typeof v
  * `motivo` y `proceso` como valores iniciales; `revision` (la revisión anual abierta, sobre un documento, con la
  * justificación prellenada) e `impacto` (un impacto pendiente que la persona ve, de ese documento o, en una creación, de
  * ese proceso) como campos ocultos que `crearSolicitud` vuelve a validar, con su nota. Un valor que no existe, que la persona no ve o que no es de sus procesos se
- * ignora, sin decir cuál de las tres cosas pasó.
+ * ignora, sin decir cuál de las tres cosas pasó. `actividad` (Fase 15B, anexo §9.2) es la actividad de un plan de acción desde la que
+ * se pide (`datosParaPedir`): llega con el documento que su hallazgo cita, si es de los que la persona puede pedir (y entonces
+ * «modificar»), el motivo por la clase del hallazgo y la descripción de la actividad como justificación, con su campo oculto y el aviso
+ * de que lo escrito lo leerán quienes participan en el trámite; una que la persona no ve o que no admite el pedido se ignora, sin
+ * decir por qué.
  */
 export default async function PaginaNuevaSolicitud({
   searchParams,
@@ -32,13 +37,18 @@ export default async function PaginaNuevaSolicitud({
   const datos = await datosParaSolicitar(sesion);
   const codigo = typeof consulta.documento === "string" ? consulta.documento.trim().toUpperCase() : "";
   const pedido = datos.documentos.find((d) => d.codigo === codigo);
-  const elegido = pedido?.conTramite ? undefined : pedido;
+  // La actividad de mejoramiento: su documento se propone en silencio, solo si es uno que la persona puede pedir y sin otro trámite
+  // abierto; el aviso de «no puede pedir» es de lo que llegó en `?documento=`.
+  const actividadPedida = idDe(consulta.actividad);
+  const deActividad = actividadPedida === undefined ? null : await datosParaPedir(sesion, actividadPedida);
+  const citado = deActividad?.documentoCodigo ? datos.documentos.find((d) => d.codigo === deActividad.documentoCodigo && !d.conTramite) : undefined;
+  const elegido = pedido?.conTramite ? undefined : (pedido ?? (codigo ? undefined : citado));
   const sinProcesos = datos.procesos.length === 0 && datos.documentos.length === 0;
 
   // Con un documento, la solicitud es sobre él: modificarlo o eliminarlo; sin él, el tipo pedido.
   const tipoPedido = TIPOS_SOLICITUD.find((t) => t === consulta.tipo);
   const tipoInicial = elegido ? (tipoPedido === "eliminar" ? "eliminar" : "modificar") : tipoPedido;
-  const motivoInicial = MOTIVOS.find((m) => m === consulta.motivo);
+  const motivoInicial = MOTIVOS.find((m) => m === consulta.motivo) ?? deActividad?.motivo;
   const procesoPedido = idDe(consulta.proceso);
   const procesoInicialId = datos.procesos.find((p) => p.id === procesoPedido)?.id;
 
@@ -92,6 +102,7 @@ export default async function PaginaNuevaSolicitud({
           procesoInicialId={procesoInicialId}
           revisionAnual={revision ? { id: revision.id, anio: revision.anio } : undefined}
           impacto={impacto ? { id: impacto.id, norma: impacto.norma, proceso: impacto.proceso, deProceso: impacto.documentoId === null } : undefined}
+          actividad={deActividad ? { id: deActividad.actividadId, justificacion: deActividad.justificacion } : undefined}
         />
       )}
     </div>

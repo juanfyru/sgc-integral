@@ -1608,3 +1608,15 @@ export const EsquemaMarcaNoRequiere = z
       .max(1000, "La justificación no puede pasar de 1000 caracteres"),
   })
   .strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El cambio documental desde una actividad (Fase 15B, anexo §9.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Enlazar a una actividad un trámite que ya existe (el botón de cada trámite del selector). */
+export const EsquemaEnlazarTramite = z
+  .object({ actividadId: idDeActividad, tramiteId: idRequerido("El trámite elegido no es válido") })
+  .strict();
+
+/** Quitar el enlace de un trámite con una actividad. */
+export const EsquemaQuitarEnlace = z.object({ enlaceId: idRequerido("El enlace no es válido") }).strict();

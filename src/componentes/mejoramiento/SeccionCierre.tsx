@@ -26,6 +26,7 @@ export function SeccionCierre({
   validacion,
   abierta,
   zona,
+  tramites = null,
   children,
 }: {
   /** El ancla del formulario de cerrar («Ir a cerrar»). */
@@ -38,6 +39,11 @@ export function SeccionCierre({
   validacion: { por: string; en: Date } | null;
   abierta: boolean;
   zona: string;
+  /**
+   * Por cerrar, lo que comprueba el cierre con los trámites de la ronda (Fase 15B, anexo §9.6, `TramitesDelCierre`), antes del
+   * formulario; solo para quien cierra.
+   */
+  tramites?: React.ReactNode;
   /** Por cerrar, el formulario del Admin SGC (a todo el ancho). */
   children?: React.ReactNode;
 }) {
@@ -54,7 +60,10 @@ export function SeccionCierre({
       </summary>
       <div className="flex flex-col gap-4 border-t border-linea-suave px-4 py-3">
         {estado === "por_cerrar" ? (
-          <p className="text-sm">La eficacia se evaluó «Eficaz»: el Administrador del SGC lo cierra con las lecciones aprendidas.</p>
+          <>
+            <p className="text-sm">La eficacia se evaluó «Eficaz»: el Administrador del SGC lo cierra con las lecciones aprendidas.</p>
+            {tramites}
+          </>
         ) : (
           <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Dato etiqueta="Decisión">

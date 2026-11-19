@@ -141,3 +141,27 @@ export function leerCambios(crudo: unknown): CambiosDeCierre | null | undefined 
   const leido = EsquemaCambios.safeParse(crudo);
   return leido.success ? leido.data : undefined;
 }
+
+/** Las marcas de la segunda pregunta del análisis tal como estén guardadas: lo que no es un `true` no cuenta. */
+function marcasDeCambios(crudo: unknown): { documentos: boolean; riesgos: boolean; controles: boolean } {
+  const c = typeof crudo === "object" && crudo !== null ? (crudo as Record<string, unknown>) : {};
+  return { documentos: c.documentos === true, riesgos: c.riesgos === true, controles: c.controles === true };
+}
+
+/** Si la segunda pregunta del análisis pidió cambios en documentos, riesgos o controles (spec 15 §9.3 y §11.5). */
+export function pideCambios(crudo: unknown): boolean {
+  const m = marcasDeCambios(crudo);
+  return m.documentos || m.riesgos || m.controles;
+}
+
+/**
+ * Si el cierre exige decir cómo se atendieron los cambios (spec 15 §11.5; Fase 15B, anexo §9.6): con la matriz de riesgos o los
+ * controles marcados, siempre; con solo documentos, cuando la ronda que se cierra no tiene ningún trámite enlazado que terminó bien
+ * (`tramitesQueTerminaronBien`: entonces la pantalla los lista y el evento del cierre los guarda); sin nada marcado, nunca. Una sola
+ * regla para el cierre, la evaluación que cierra y sus pantallas.
+ */
+export function exigeComoSeAtendieron(crudo: unknown, tramitesQueTerminaronBien: number): boolean {
+  const m = marcasDeCambios(crudo);
+  if (m.riesgos || m.controles) return true;
+  return m.documentos && tramitesQueTerminaronBien === 0;
+}

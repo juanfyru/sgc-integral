@@ -11,10 +11,12 @@ import {
   avanceDeAccion,
   avanceDeHallazgo,
   contarMisActividades,
+  EVIDENCIA_TRAS_LA_DEVOLUCION,
   leerActividad,
   misActividades,
   reasignarActividad,
   registrarSeguimiento,
+  SIN_EVIDENCIA_PARA_TERMINAR,
   terminarActividad,
 } from "@/db/consultas/mejoramiento/actividades";
 import { archivosDe } from "@/db/consultas/mejoramiento/archivos";
@@ -24,7 +26,8 @@ import { participacionEnHallazgo } from "@/lib/alcance";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
-import { baseDeMejora, c, evidenciaDeActividad, hallazgoEn, otroProcesoConLider, type BaseDeMejora } from "./utiles/mejoramiento";
+import { verificarImplementacion } from "@/db/consultas/mejoramiento/verificacion";
+import { baseDeMejora, c, evidenciaDeActividad, hallazgoEn, otroProcesoConLider, tramiteEnlazado, type BaseDeMejora } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 
@@ -234,6 +237,79 @@ describe("terminarActividad", () => {
         ["terminada", 100],
         ["terminada", 100],
       ]);
+    }));
+});
+
+describe("terminar con un trámite que terminó bien (Fase 15B, anexo §9.4)", () => {
+  /** El avance en 100 y, sin ningún archivo, un trámite enlazado en `etapa`. */
+  async function conTramite(tx: TransactionSql, etapa: string) {
+    const r = await enEjecucion(tx);
+    const [a] = r.ids;
+    await registrarSeguimiento(r.responsable, seguimiento(a, 100), c(AHORA, tx));
+    const t = await tramiteEnlazado(tx, { actividadId: a, usuarioId: r.b.lider.usuarioId, etapa, terminoEn: AHORA });
+    return { ...r, a, ...t };
+  }
+
+  it("sin archivos y con un trámite enlazado publicado, termina; el evento y la bitácora cuentan el trámite", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, h, a } = await conTramite(tx, "publicado");
+      await terminarActividad(responsable, { actividadId: a }, c(AHORA, tx));
+      expect(await filaDe(tx, a)).toMatchObject({ estado: "terminada", terminada_por: responsable.usuarioId });
+      const [e] = await tx`SELECT detalle FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'actividad_terminada'`;
+      expect(e.detalle).toEqual({ actividadId: a, actividad: "A1.1", archivos: 0, tramites: 1 });
+      expect((await leerActividad(responsable, a, c(AHORA, tx)))?.estado).toBe("terminada");
+    }));
+
+  it("uno eliminado también vale", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, a } = await conTramite(tx, "eliminado");
+      await terminarActividad(responsable, { actividadId: a }, c(AHORA, tx));
+      expect((await filaDe(tx, a)).estado).toBe("terminada");
+    }));
+
+  for (const etapa of ["aprobacion", "cancelado", "rechazado"]) {
+    it(`uno ${etapa === "aprobacion" ? "en curso" : etapa} no vale: SIN_EVIDENCIA_PARA_TERMINAR`, () =>
+      revertida(sql, async (tx) => {
+        const { responsable, a } = await conTramite(tx, etapa);
+        await expect(terminarActividad(responsable, { actividadId: a }, c(AHORA, tx))).rejects.toThrow(SIN_EVIDENCIA_PARA_TERMINAR);
+        expect((await filaDe(tx, a)).estado).toBe("en_proceso");
+      }));
+  }
+
+  it("lo que falta para terminar lo dice la lectura: con el trámite publicado, ya no falta evidencia", () =>
+    revertida(sql, async (tx) => {
+      const { responsable, a, tramiteId } = await conTramite(tx, "aprobacion");
+      expect((await leerActividad(responsable, a, c(AHORA, tx)))?.tramiteQueVale).toBe(false);
+      await tx`UPDATE tramites SET etapa = 'publicado', cerrado_en = ${new Date(AHORA)} WHERE id = ${tramiteId}`;
+      expect((await leerActividad(responsable, a, c(AHORA, tx)))?.tramiteQueVale).toBe(true);
+    }));
+
+  it("en una actividad devuelta vale un trámite que terminó bien después de la devolución, no uno anterior", () =>
+    revertida(sql, async (tx) => {
+      const { b, responsable, h, ids } = await enEjecucion(tx);
+      const [a] = ids;
+      await lista(tx, responsable, a);
+      await terminarActividad(responsable, { actividadId: a }, c(AHORA, tx));
+      // Publicado el 19, antes de la devolución del 20.
+      await tramiteEnlazado(tx, { actividadId: a, usuarioId: b.lider.usuarioId, etapa: "publicado", terminoEn: "2026-11-19T15:00:00Z" });
+      await verificarImplementacion(
+        b.control,
+        {
+          hallazgoId: h.id,
+          actividades: [{ id: a, conforme: false, nota: "Falta el registro firmado del turno de noche", corregirAntesDe: "2026-12-18" }],
+          metodos: ["evidencias"],
+        },
+        c("2026-11-20T15:00:00Z", tx),
+      );
+      const LUEGO = c("2026-11-23T15:00:00Z", tx);
+      await registrarSeguimiento(responsable, seguimiento(a, 100, { fecha: "2026-11-23" }), LUEGO);
+      await expect(terminarActividad(responsable, { actividadId: a }, LUEGO)).rejects.toThrow(EVIDENCIA_TRAS_LA_DEVOLUCION);
+      expect((await leerActividad(responsable, a, LUEGO))?.tramiteQueVale).toBe(false);
+      // Uno publicado el 21, después de la devolución, sí.
+      await tramiteEnlazado(tx, { actividadId: a, usuarioId: b.lider.usuarioId, etapa: "publicado", terminoEn: "2026-11-21T15:00:00Z" });
+      expect((await leerActividad(responsable, a, LUEGO))?.tramiteQueVale).toBe(true);
+      await terminarActividad(responsable, { actividadId: a }, LUEGO);
+      expect((await filaDe(tx, a)).estado).toBe("terminada");
     }));
 });
 

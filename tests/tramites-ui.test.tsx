@@ -494,18 +494,38 @@ describe("FormularioSolicitud", () => {
     const delDocumento = { id: 9, norma: "N", proceso: "P", deProceso: false };
     const deProceso = { id: 7, norma: "N", proceso: "P", deProceso: true };
     const inicial = { documentoInicialId: 3, revisionAnual, impacto: delDocumento };
-    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "3", procesoId: "" }, inicial)).toEqual({ revisionAnualId: 12, impactoId: 9 });
-    expect(ocultosDeSolicitud({ tipo: "eliminar", documentoId: "3", procesoId: "" }, inicial)).toEqual({ revisionAnualId: 12, impactoId: 9 });
+    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "3", procesoId: "" }, inicial)).toEqual({ revisionAnualId: 12, impactoId: 9, actividadId: null });
+    expect(ocultosDeSolicitud({ tipo: "eliminar", documentoId: "3", procesoId: "" }, inicial)).toEqual({ revisionAnualId: 12, impactoId: 9, actividadId: null });
     // Otro documento: la revisión sigue (es su decisión), el impacto no (es del documento inicial).
-    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "5", procesoId: "" }, inicial)).toEqual({ revisionAnualId: 12, impactoId: null });
+    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "5", procesoId: "" }, inicial)).toEqual({ revisionAnualId: 12, impactoId: null, actividadId: null });
     // Sin documento o creando, ninguno de los dos.
-    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "", procesoId: "" }, inicial)).toEqual({ revisionAnualId: null, impactoId: null });
-    expect(ocultosDeSolicitud({ tipo: "crear", documentoId: "3", procesoId: "1" }, inicial)).toEqual({ revisionAnualId: null, impactoId: null });
+    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "", procesoId: "" }, inicial)).toEqual({ revisionAnualId: null, impactoId: null, actividadId: null });
+    expect(ocultosDeSolicitud({ tipo: "crear", documentoId: "3", procesoId: "1" }, inicial)).toEqual({ revisionAnualId: null, impactoId: null, actividadId: null });
     // El impacto de un proceso: solo creando en ese proceso.
     const proceso = { procesoInicialId: 2, impacto: deProceso };
-    expect(ocultosDeSolicitud({ tipo: "crear", documentoId: "", procesoId: "2" }, proceso)).toEqual({ revisionAnualId: null, impactoId: 7 });
-    expect(ocultosDeSolicitud({ tipo: "crear", documentoId: "", procesoId: "1" }, proceso)).toEqual({ revisionAnualId: null, impactoId: null });
-    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "3", procesoId: "2" }, proceso)).toEqual({ revisionAnualId: null, impactoId: null });
+    expect(ocultosDeSolicitud({ tipo: "crear", documentoId: "", procesoId: "2" }, proceso)).toEqual({ revisionAnualId: null, impactoId: 7, actividadId: null });
+    expect(ocultosDeSolicitud({ tipo: "crear", documentoId: "", procesoId: "1" }, proceso)).toEqual({ revisionAnualId: null, impactoId: null, actividadId: null });
+    expect(ocultosDeSolicitud({ tipo: "modificar", documentoId: "3", procesoId: "2" }, proceso)).toEqual({ revisionAnualId: null, impactoId: null, actividadId: null });
+  });
+  it("la actividad de mejoramiento viaja siempre, con cualquier tipo, documento o proceso (anexo 15B §9.2)", () => {
+    const actividad = { id: 31, justificacion: "Actualizar el procedimiento de ingreso" };
+    for (const actual of [
+      { tipo: "crear" as const, documentoId: "", procesoId: "1" },
+      { tipo: "modificar" as const, documentoId: "3", procesoId: "" },
+      { tipo: "eliminar" as const, documentoId: "5", procesoId: "" },
+    ]) {
+      expect(ocultosDeSolicitud(actual, { actividad }).actividadId).toBe(31);
+    }
+    const h = renderToStaticMarkup(
+      <FormularioSolicitud procesos={procesos} tipos={tipos} documentos={documentos} documentoInicialId={3} motivoInicial="no_conformidad" actividad={actividad} />,
+    );
+    expect(h).toMatch(/<input type="hidden" name="actividadId" value="31"\/>/);
+    expect(h).toContain("Esta solicitud atiende una actividad de mejoramiento");
+    expect(h).toContain("Lo que escriba aquí lo leerán quienes participan en el trámite");
+    expect(h).toMatch(/<textarea[^>]*name="justificacion"[^>]*>Actualizar el procedimiento de ingreso<\/textarea>/);
+    const sin = renderToStaticMarkup(<FormularioSolicitud procesos={procesos} tipos={tipos} documentos={documentos} />);
+    expect(sin).not.toContain('name="actividadId"');
+    expect(sin).not.toContain("Lo que escriba aquí lo leerán");
   });
   it("la justificación prellenada sigue al tipo mientras nadie la toca; lo escrito se respeta", () => {
     expect(fraseDeRevision(2026, "modificar")).toBe("Decisión de la revisión anual 2026: el documento debe actualizarse.");

@@ -26,6 +26,7 @@ import {
   type EvaluacionValidada,
 } from "@/lib/esquemas/mejoramiento";
 import type { CredencialesFirma } from "@/lib/firma";
+import { exigeComoSeAtendieron, pideCambios } from "@/lib/mejoramiento/analisis";
 import { leerCriterios, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import { huellaDeCierre, huellaDeContenido, huellaDeEvaluacion } from "@/lib/mejoramiento/huellas";
@@ -43,6 +44,7 @@ import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, hallazgoBase, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 import { evaluableDesde, evaluablesDesde, fechaMinimaDe, fechasMinimasDe, type FechaMinima, type IndicadorDeLaEspera } from "./espera";
 import { etiquetaDeActividad } from "./plan";
+import { tramitesQueTerminaronBien } from "./tramites-enlace";
 
 export { METODOS_DE_VERIFICACION };
 // La fecha mínima vive en `espera.ts` (liviano: lo importan también la lista, la actividad y los parecidos); aquí sigue a la vista.
@@ -117,17 +119,17 @@ async function rondaEnCurso(sql: Cliente, h: Pick<HallazgoBase, "id" | "ronda">,
   };
 }
 
-/** Si la segunda pregunta del análisis pidió cambios en documentos, riesgos o controles (spec §9.3 y §11.5). */
-function pideCambios(cambios: unknown): boolean {
-  if (typeof cambios !== "object" || cambios === null) return false;
-  const c = cambios as Record<string, unknown>;
-  return c.documentos === true || c.riesgos === true || c.controles === true;
-}
+/** Un trámite que terminó bien enlazado a una actividad de la ronda que se cierra (Fase 15B, anexo §9.6). */
+type TramiteDelCierre = { tramiteId: number; documento: string | null };
 
-/** Lo que el cierre exige (spec §11.5): las lecciones y, si el análisis pidió cambios, cómo se atendieron. */
-function exigirLoDelCierre(lecciones: string | null, cambiosAtendidos: string | null, cambios: unknown): void {
+/**
+ * Lo que el cierre exige (spec §11.5; Fase 15B, anexo §9.6): las lecciones y, si el análisis pidió cambios, cómo se atendieron, salvo
+ * cuando solo pidió documentos y la ronda que se cierra tiene un trámite enlazado que terminó bien (`exigeComoSeAtendieron`, la regla
+ * de la pantalla). `tramites` son los de esa ronda (`tramitesQueTerminaronBien`).
+ */
+function exigirLoDelCierre(lecciones: string | null, cambiosAtendidos: string | null, cambios: unknown, tramites: readonly TramiteDelCierre[]): void {
   if (!lecciones) throw new ErrorMejora(SIN_LECCIONES);
-  if (pideCambios(cambios) && !cambiosAtendidos) throw new ErrorMejora(CAMBIOS_SIN_ATENDER);
+  if (exigeComoSeAtendieron(cambios, tramites.length) && !cambiosAtendidos) throw new ErrorMejora(CAMBIOS_SIN_ATENDER);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -433,8 +435,8 @@ type Evaluacion = {
   };
   huella: string;
   ocurrencias: number;
-  /** Si el mismo acto cierra (evalúa «eficaz» el Admin SGC): lo del cierre y su huella. */
-  cierre: { lecciones: string; cambiosAtendidos: string | null; huella: string } | null;
+  /** Si el mismo acto cierra (evalúa «eficaz» el Admin SGC): lo del cierre, los trámites de la ronda que terminaron bien y su huella. */
+  cierre: { lecciones: string; cambiosAtendidos: string | null; tramites: TramiteDelCierre[]; huella: string } | null;
 };
 
 /**
@@ -466,7 +468,8 @@ async function validarEvaluacion(
     throw new ErrorMejora(ocurrenciasSinConfirmar(datos.ocurrencias.length));
   }
   const cierra = eficaz && puede(sesion, "mejora.gestionar");
-  if (cierra) exigirLoDelCierre(v.lecciones, v.cambiosAtendidos, ronda.cambios);
+  const tramites = cierra ? await tramitesQueTerminaronBien(sql, h.id, h.ronda) : [];
+  if (cierra) exigirLoDelCierre(v.lecciones, v.cambiosAtendidos, ronda.cambios, tramites);
 
   const visto = { r, minima: datos.minima, indicadorId, indicador: datos.indicador, ocurrencias: datos.ocurrencias };
   const huella = huellaDeEvaluacion({
@@ -482,7 +485,12 @@ async function validarEvaluacion(
   if (cierra) {
     const lecciones = v.lecciones!;
     const cambiosAtendidos = pideCambios(ronda.cambios) ? v.cambiosAtendidos : null;
-    cierre = { lecciones, cambiosAtendidos, huella: huellaDeCierre({ huellaDeLaEvaluacion: huella, resultado: "eficaz", lecciones, cambiosAtendidos }) };
+    cierre = {
+      lecciones,
+      cambiosAtendidos,
+      tramites,
+      huella: huellaDeCierre({ huellaDeLaEvaluacion: huella, resultado: "eficaz", lecciones, cambiosAtendidos }),
+    };
   }
   return { h, ronda, visto, huella, ocurrencias: datos.ocurrencias.length, cierre };
 }
@@ -563,6 +571,8 @@ export async function evaluarEficacia(
             justificacion: v.justificacion,
             visto: e.visto,
             ...(e.cierre ? { lecciones: e.cierre.lecciones, cambiosAtendidos: e.cierre.cambiosAtendidos } : {}),
+            // Los trámites que atendieron los cambios en documentos (Fase 15B, anexo §9.6): el evento del cierre los guarda.
+            ...(e.cierre && e.cierre.tramites.length > 0 ? { tramites: e.cierre.tramites } : {}),
           },
           nuevaRonda: !eficaz,
         },
@@ -585,7 +595,13 @@ async function firmaDeLaEvaluacion(sql: Cliente, h: Pick<HallazgoBase, "id" | "r
   return { firmaId: Number(f.id), huella: f.hash_sha256 as string };
 }
 
-type Cierre = { h: HallazgoBase; evaluacion: { firmaId: number; huella: string }; cambiosAtendidos: string | null; huella: string };
+type Cierre = {
+  h: HallazgoBase;
+  evaluacion: { firmaId: number; huella: string };
+  cambiosAtendidos: string | null;
+  tramites: TramiteDelCierre[];
+  huella: string;
+};
 
 /** Lo que debe cumplirse para cerrar, sin escribir nada: «Por cerrar», las lecciones y los cambios atendidos. */
 async function validarCierre(sql: Cliente, sesion: Persona, v: CierreValidado): Promise<Cierre> {
@@ -593,20 +609,23 @@ async function validarCierre(sql: Cliente, sesion: Persona, v: CierreValidado): 
   const h = await existente(sql, v.hallazgoId);
   if (h.estado !== "por_cerrar") throw new ErrorMejora(YA_CAMBIO);
   const ronda = await rondaEnCurso(sql, h);
-  exigirLoDelCierre(v.lecciones, v.cambiosAtendidos, ronda.cambios);
+  const tramites = await tramitesQueTerminaronBien(sql, h.id, h.ronda);
+  exigirLoDelCierre(v.lecciones, v.cambiosAtendidos, ronda.cambios, tramites);
   const evaluacion = await firmaDeLaEvaluacion(sql, h);
   const cambiosAtendidos = pideCambios(ronda.cambios) ? v.cambiosAtendidos : null;
   return {
     h,
     evaluacion,
     cambiosAtendidos,
+    tramites,
     huella: huellaDeCierre({ huellaDeLaEvaluacion: evaluacion.huella, resultado: "eficaz", lecciones: v.lecciones, cambiosAtendidos }),
   };
 }
 
 /**
  * El Admin SGC cierra un hallazgo eficaz (spec §11.5) con la firma «Cerró»: las lecciones aprendidas (al menos diez
- * caracteres) y, si la segunda pregunta del análisis pidió cambios en documentos, riesgos o controles, cómo se atendieron. Todo
+ * caracteres) y, si la segunda pregunta del análisis pidió cambios en documentos, riesgos o controles, cómo se atendieron (no, si
+ * solo pidió documentos y la ronda tiene un trámite enlazado que terminó bien: Fase 15B, anexo §9.6). Todo
  * lo del cierre se escribe antes de la transición a «Cerrado»; avisa a los líderes del proceso, a quien lo registró y a Gerencia.
  */
 export async function cerrarHallazgo(
@@ -651,7 +670,15 @@ export async function cerrarHallazgo(
         sesion,
         h,
         "cerrar",
-        { detalle: { huella: k.huella }, soloEnElEvento: { lecciones: v.lecciones, cambiosAtendidos: k.cambiosAtendidos } },
+        {
+          detalle: { huella: k.huella },
+          soloEnElEvento: {
+            lecciones: v.lecciones,
+            cambiosAtendidos: k.cambiosAtendidos,
+            // Los trámites que atendieron los cambios en documentos (Fase 15B, anexo §9.6): el evento del cierre los guarda.
+            ...(k.tramites.length > 0 ? { tramites: k.tramites } : {}),
+          },
+        },
         c,
       );
       await avisarDelCierre(tx, h, "eficaz", sesion.usuarioId);

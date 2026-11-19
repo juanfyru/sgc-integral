@@ -97,3 +97,29 @@ describe("lo que admin.ts importa de mejoramiento", () => {
     expect(ruta ? ruta.join(" → ") : null).toBeNull();
   });
 });
+
+describe("el enlace de una actividad con un trámite (Fase 15B, anexo §9) es liviano", () => {
+  const ENLACE = path.join(SRC, "db", "consultas", "mejoramiento", "tramites-enlace.ts");
+  const FLUJO_DEL_TRAMITE = path.join(SRC, "db", "consultas", "tramites-flujo.ts");
+
+  it("no importa flujo.ts, lectura.ts, actividades.ts, admin.ts ni tramites-flujo.ts", () => {
+    const directos = (grafo().get(ENLACE) ?? []).map((d) => path.relative(SRC, d).replaceAll("\\", "/"));
+    expect(directos.length).toBeGreaterThan(0);
+    for (const prohibido of [
+      "db/consultas/mejoramiento/flujo.ts",
+      "db/consultas/mejoramiento/lectura.ts",
+      "db/consultas/mejoramiento/actividades.ts",
+      "db/consultas/admin.ts",
+      "db/consultas/tramites-flujo.ts",
+    ]) {
+      expect(directos).not.toContain(prohibido);
+    }
+  });
+
+  it("no llega, por ningún camino, a tramites-flujo.ts: crearSolicitud lo importa y cerraría un ciclo", () => {
+    const g = grafo();
+    expect(g.get(FLUJO_DEL_TRAMITE) ?? []).toContain(ENLACE);
+    const ruta = camino(g, ENLACE, [FLUJO_DEL_TRAMITE], "");
+    expect(ruta ? ruta.join(" → ") : null).toBeNull();
+  });
+});
