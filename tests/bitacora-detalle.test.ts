@@ -1446,3 +1446,13 @@ describe("el Excel de los hallazgos de mejoramiento (15A, Tarea 21)", () => {
     expect(nombreDeAccion("mejora_exporto_hallazgos")).toBe("Emitió la matriz de hallazgos de mejoramiento");
   });
 });
+
+describe("el Excel para el ente de un plan de mejoramiento (15B, Tarea 6)", () => {
+  it("dice el código del plan, sin texto libre", () => {
+    const frase = (detalle: Record<string, unknown>) =>
+      describirEvento({ accion: "mejora_exporto_plan_ente", entidad: "mejora_plan", entidadId: 7, detalle });
+    expect(frase({ codigo: "PM-2026-01", hallazgos: 3 })).toBe("Emitió el Excel para el ente del plan de mejoramiento PM-2026-01");
+    expect(frase({})).toBe("Emitió el Excel para el ente del plan de mejoramiento");
+    expect(nombreDeAccion("mejora_exporto_plan_ente")).toBe("Emitió el Excel para el ente de un plan de mejoramiento");
+  });
+});

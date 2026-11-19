@@ -1501,6 +1501,10 @@ export function describirEvento(e: EventoAuditoria): string {
     // ── Mejoramiento (15A): el Excel de la lista (la matriz del SGC-FO-28), con sus filtros
     case "mejora_exporto_hallazgos":
       return `Emitió la matriz de hallazgos de mejoramiento${entreParentesis(filtrosDeMejora(d.filtros))}`;
+    case "mejora_exporto_plan_ente": {
+      const codigo = typeof d.codigo === "string" ? d.codigo : null;
+      return `Emitió el Excel para el ente del plan de mejoramiento${codigo ? ` ${codigo}` : ""}`;
+    }
     case "exporto_resultados_indicadores": {
       const anio = numero(d.anio);
       return `Emitió los resultados de los indicadores${anio === null ? "" : ` de ${anio}`}${entreParentesis(filtrosDeLista(d.filtros))}`;
@@ -1700,6 +1704,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_respuesta_ente: "Registró la respuesta al ente de un hallazgo",
   mejora_carga_confirmada: "Adjuntó el formato firmado de la carga de un hallazgo",
   mejora_exporto_hallazgos: "Emitió la matriz de hallazgos de mejoramiento",
+  mejora_exporto_plan_ente: "Emitió el Excel para el ente de un plan de mejoramiento",
   mejora_plan_crear: "Creó un plan de mejoramiento",
   mejora_plan_editar: "Editó un plan de mejoramiento",
   mejora_plan_anular: "Anuló un plan de mejoramiento",
