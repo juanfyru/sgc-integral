@@ -530,6 +530,69 @@ describe("el trámite enlazado que termina (Fase 15B, anexo §9.5)", () => {
       expect(await terminados(tx, h.id)).toHaveLength(2);
     }));
 
+  it("con el responsable inactivo avisa a los líderes del proceso, para reasignarla, una sola vez; sin líder, a los Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      await silenciarTodo(tx);
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId });
+      const actividadId = await actividadDe(tx, h.id);
+      const { tramiteId } = await tramiteEnlazado(tx, { actividadId, usuarioId: b.lider.usuarioId, etapa: "publicado", terminoEn: "2026-11-18T15:00:00Z" });
+      await tx`UPDATE usuarios SET activo = false WHERE id = ${responsable.usuarioId}`;
+      expect(await pasada(tx, PASA)).toEqual({ avisados: 1, escalados: 0 });
+      const [aviso, ...mas] = await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", actividadId);
+      expect(mas).toHaveLength(0);
+      expect(Number(aviso.usuario_id)).toBe(b.lider.usuarioId);
+      expect(aviso.titulo).toBe(`El trámite de la actividad A1.1 de ${h.codigo} quedó publicado y su responsable ya no está activo`);
+      expect(aviso.cuerpo).toContain("Reasígnela.");
+      expect(aviso.enlace).toBe(`/mejoramiento/${h.id}`);
+      expect(`${aviso.titulo} ${aviso.cuerpo}`).not.toContain("Formato de prueba del turno");
+      const eventos = await terminados(tx, h.id);
+      expect(eventos.map((e) => (e.detalle as { tramiteId: number }).tramiteId)).toEqual([tramiteId]);
+      expect((await marcas(tx, actividadId))[0].avisado_en).not.toBeNull();
+      expect(await pasada(tx, "2026-11-20T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+      expect(await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", actividadId)).toHaveLength(1);
+      expect(await terminados(tx, h.id)).toHaveLength(1);
+
+      // Sin líder activo en el proceso, a los Admin SGC activos.
+      const segundo = await usuarioDePrueba(tx, { rol: "consulta" });
+      const otro = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: segundo.usuarioId });
+      const otraActividad = await actividadDe(tx, otro.id);
+      await tramiteEnlazado(tx, { actividadId: otraActividad, usuarioId: b.admin.usuarioId, etapa: "cancelado", terminoEn: "2026-11-18T15:00:00Z" });
+      await tx`UPDATE usuarios SET activo = false WHERE id IN (${segundo.usuarioId}, ${b.lider.usuarioId})`;
+      await pasada(tx, "2026-11-21T15:00:00Z");
+      const admins = (await tx`SELECT id FROM usuarios WHERE rol = 'admin_sgc' AND activo ORDER BY id`).map((f) => Number(f.id));
+      const recibidos = await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", otraActividad);
+      expect(recibidos.map((a) => Number(a.usuario_id))).toEqual(admins);
+      expect(recibidos.map((a) => Number(a.usuario_id))).toContain(b.admin.usuarioId);
+      expect(recibidos.every((a) => a.titulo === `El trámite de la actividad A1.1 de ${otro.codigo} terminó sin publicarse y su responsable ya no está activo`)).toBe(true);
+    }));
+
+  it("con la actividad ya terminada o cancelada deja el evento y la marca, sin aviso y sin contarse como avisada", () =>
+    revertida(sql, async (tx) => {
+      await silenciarTodo(tx);
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { responsableId: responsable.usuarioId, actividades: 3 });
+      const [terminada, cancelada] = (await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id} ORDER BY id`).map((f) => Number(f.id));
+      await tx`UPDATE mejora_actividades SET estado = 'terminada', avance = 100, terminada_en = ${new Date(HORA_DE_ESCENA)}, terminada_por = ${responsable.usuarioId}
+        WHERE id = ${terminada}`;
+      await tx`UPDATE mejora_actividades SET estado = 'cancelada', cancelada_en = ${new Date(HORA_DE_ESCENA)} WHERE id = ${cancelada}`;
+      const deLaTerminada = await tramiteEnlazado(tx, { actividadId: terminada, usuarioId: b.lider.usuarioId, etapa: "publicado", terminoEn: "2026-11-18T15:00:00Z" });
+      const deLaCancelada = await tramiteEnlazado(tx, { actividadId: cancelada, usuarioId: b.lider.usuarioId, etapa: "rechazado", terminoEn: "2026-11-18T15:00:00Z" });
+      expect(await pasada(tx, PASA)).toEqual({ avisados: 0, escalados: 0 });
+      for (const actividadId of [terminada, cancelada]) {
+        expect(await avisos(tx, "mejora.tramite_terminado", "mejora_actividad", actividadId)).toHaveLength(0);
+        expect((await marcas(tx, actividadId))[0].avisado_en).not.toBeNull();
+      }
+      expect((await terminados(tx, h.id)).map((e) => (e.detalle as { tramiteId: number }).tramiteId)).toEqual([
+        deLaTerminada.tramiteId,
+        deLaCancelada.tramiteId,
+      ]);
+      expect(await pasada(tx, "2026-11-20T15:00:00Z")).toEqual({ avisados: 0, escalados: 0 });
+      expect(await terminados(tx, h.id)).toHaveLength(2);
+    }));
+
   it("con el hallazgo terminado no avisa ni toca el enlace; con una carga sin su formato, tampoco, hasta que llega", () =>
     revertida(sql, async (tx) => {
       await silenciarTodo(tx);

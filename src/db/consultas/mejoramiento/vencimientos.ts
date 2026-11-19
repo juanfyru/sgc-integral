@@ -18,9 +18,10 @@
  *    `aviso_evaluar_en`. Vencida su evaluación, es un paso vencido (1).
  * 6. El trámite enlazado que terminó (Fase 15B, anexo §9.5): el motor del trámite no llama a Mejoramiento, así que la pasada lee el
  *    estado de cada enlace de un hallazgo sin terminar cuyo trámite llegó a un estado final y todavía no se avisó: avisa al
- *    responsable de la actividad (`mejora.tramite_terminado`, un texto si terminó bien y otro si no, sin nombrar el documento, que
- *    quizá no ve), deja el evento `tramite_terminado` en el hallazgo y marca `avisado_en`. De un hallazgo terminado no hace nada (ni
- *    avisa ni marca: el enlace ya no cambia).
+ *    responsable de la actividad abierta o, si está inactivo, a quien actúa por el proceso (`lideresOAdmins`, para que la
+ *    reasigne, como la actividad vencida) (`mejora.tramite_terminado`, un texto si terminó bien y otro si no, sin nombrar el
+ *    documento, que quizá no ve), deja el evento `tramite_terminado` en el hallazgo y marca `avisado_en`. De un hallazgo terminado
+ *    no hace nada (ni avisa ni marca: el enlace ya no cambia).
  *
  * Un hallazgo cargado sin su formato firmado (spec §15) no entra a ningún paso: ni el suyo, ni sus actividades, que todavía no
  * llegaron a sus responsables (`cargaResuelta`). Con el formato, la pasada siguiente lo ve como a cualquier otro.
@@ -526,6 +527,7 @@ type DeEnlace = {
   hallazgoId: number;
   codigo: string;
   ronda: number;
+  procesoId: number;
   actividadId: number;
   etiqueta: string;
   responsableId: number;
@@ -543,7 +545,7 @@ type DeEnlace = {
  */
 async function leerEnlaces(sql: Cliente, ids?: number[]): Promise<DeEnlace[]> {
   const filas = await sql`SELECT e.id, e.hallazgo_id, e.actividad_id, e.tramite_id, t.etapa, a.orden, a.estado, a.responsable_id, u.activo,
-      ac.orden AS accion_orden, h.codigo, h.ronda
+      ac.orden AS accion_orden, h.codigo, h.ronda, h.proceso_id
     FROM mejora_actividad_tramites e
     JOIN tramites t ON t.id = e.tramite_id
     JOIN mejora_actividades a ON a.id = e.actividad_id
@@ -561,6 +563,7 @@ async function leerEnlaces(sql: Cliente, ids?: number[]): Promise<DeEnlace[]> {
     hallazgoId: Number(f.hallazgo_id),
     codigo: f.codigo as string,
     ronda: Number(f.ronda),
+    procesoId: Number(f.proceso_id),
     actividadId: Number(f.actividad_id),
     etiqueta: etiquetaDeActividad(Number(f.accion_orden), Number(f.orden)),
     responsableId: Number(f.responsable_id),
@@ -571,33 +574,58 @@ async function leerEnlaces(sql: Cliente, ids?: number[]): Promise<DeEnlace[]> {
   }));
 }
 
-/** El aviso del trámite que terminó: si quedó publicado, eliminado o terminó sin publicarse, sin nombrar el documento. */
-function avisoDelTramite(f: DeEnlace): { titulo: string; cuerpo: string } {
+/**
+ * El aviso del trámite que terminó: si quedó publicado, eliminado o terminó sin publicarse, sin nombrar el documento. Con el
+ * responsable inactivo va a quien actúa por el proceso y le pide reasignar la actividad (como el de la actividad vencida).
+ */
+function avisoDelTramite(f: DeEnlace): { titulo: string; cuerpo: string; enlace: string } {
   const cual = `El trámite de la actividad ${f.etiqueta} de ${f.codigo}`;
-  if (terminoBien(f.etapa)) {
+  const bien = terminoBien(f.etapa);
+  const como = bien
+    ? f.etapa === "publicado"
+      ? `${cual} quedó publicado`
+      : `${cual} terminó con el documento eliminado`
+    : `${cual} terminó sin publicarse`;
+  const quedo = bien ? null : `Quedó ${f.etapa === "rechazado" ? "rechazado" : "cancelado"}: no vale como evidencia de la actividad.`;
+  if (!f.activo) {
     return {
-      titulo: f.etapa === "publicado" ? `${cual} quedó publicado` : `${cual} terminó con el documento eliminado`,
-      cuerpo: "Vale como evidencia: con el avance en 100 %, ya puede terminar la actividad.",
+      titulo: `${como} y su responsable ya no está activo`,
+      cuerpo: `${quedo ?? "Vale como evidencia para terminar la actividad."} Reasígnela.`,
+      enlace: rutaDeHallazgo(f.hallazgoId),
     };
   }
-  return { titulo: `${cual} terminó sin publicarse`, cuerpo: `Quedó ${f.etapa === "rechazado" ? "rechazado" : "cancelado"}: no vale como evidencia de la actividad.` };
+  return {
+    titulo: como,
+    cuerpo: quedo ?? "Vale como evidencia: con el avance en 100 %, ya puede terminar la actividad.",
+    enlace: rutaDeActividad(f.actividadId),
+  };
 }
 
+/** Para quién se resolvió un enlace: el responsable de su actividad, si estaba activo y si la actividad seguía abierta. */
+const paraDelEnlace = (f: Pick<DeEnlace, "responsableId" | "activo" | "abierta">) => `${f.responsableId}:${f.activo}:${f.abierta}`;
+
 /**
- * El paso del trámite que terminó. A quién avisar sale de la fila (no hay nada que buscar antes del candado): el responsable de la
- * actividad abierta, si está activo. Si está inactivo, la fila espera sin marca: reasignada la actividad, la pasada siguiente avisa a
- * quien la tenga (`para`, como las actividades). De una actividad que ya terminó o se canceló queda el evento y la marca, sin aviso:
- * esos no cuentan como avisados. Lo hace el sistema: sin bitácora.
+ * El paso del trámite que terminó. A quién avisar se busca antes del candado (`resolverCada`): el responsable de la actividad abierta
+ * o, si está inactivo, quien actúa por el proceso (los líderes activos o, sin ninguno, los Admin SGC: `lideresOAdmins`), con `para`:
+ * si bajo el candado la actividad tiene otro responsable, cambió si está activo o dejó de estar abierta, lo resuelto no se usa y la
+ * fila espera la pasada siguiente (como las actividades). De una actividad que ya terminó o se canceló queda el evento y la marca,
+ * sin aviso: esos no cuentan como avisados. Una abierta sin nadie a quien avisar espera sin evento ni marca. Lo hace el sistema: sin
+ * bitácora.
  */
-const TRAMITE_TERMINADO: PasoDeVencimiento<DeEnlace, string, Contexto> = {
+const TRAMITE_TERMINADO: PasoDeVencimiento<DeEnlace, Resuelto, Contexto> = {
   leer: (sql, _c, ids) => leerEnlaces(sql, ids),
-  resolver: async (_c, candidatas) =>
-    new Map(candidatas.filter((f) => f.activo || !f.abierta).map((f) => [f.grupo, `${f.responsableId}:${f.activo}:${f.abierta}`])),
+  resolver: (c, candidatas) =>
+    resolverCada(c, candidatas, "el trámite enlazado", async (tx, fila) => {
+      const destinos = !fila.abierta ? [] : fila.activo ? [fila.responsableId] : await lideresOAdmins(tx, fila.procesoId);
+      return { estado: null, ronda: null, destinos, texto: "", jefes: new Map(), para: paraDelEnlace(fila) };
+    }),
   avisar: async (tx, filas, resueltos, c) => {
     const avisadas: number[] = [];
     const sinAviso: number[] = [];
     for (const f of filas) {
-      if (resueltos.get(f.grupo) !== `${f.responsableId}:${f.activo}:${f.abierta}`) continue;
+      const r = resueltos.get(f.grupo);
+      if (r === undefined || r.para !== paraDelEnlace(f)) continue;
+      if (f.abierta && r.destinos.length === 0) continue;
       await dejarEvento(tx, {
         hallazgoId: f.hallazgoId,
         ronda: f.ronda,
@@ -613,8 +641,8 @@ const TRAMITE_TERMINADO: PasoDeVencimiento<DeEnlace, string, Contexto> = {
       const aviso = avisoDelTramite(f);
       await avisarA(
         tx,
-        { tipo: "mejora.tramite_terminado", titulo: aviso.titulo, enlace: rutaDeActividad(f.actividadId), entidad: ENTIDAD_ACTIVIDAD, entidadId: f.actividadId },
-        [{ usuarioId: f.responsableId, cuerpo: aviso.cuerpo }],
+        { tipo: "mejora.tramite_terminado", titulo: aviso.titulo, enlace: aviso.enlace, entidad: ENTIDAD_ACTIVIDAD, entidadId: f.actividadId },
+        r.destinos.map((usuarioId) => ({ usuarioId, cuerpo: aviso.cuerpo })),
       );
       avisadas.push(f.id);
     }
