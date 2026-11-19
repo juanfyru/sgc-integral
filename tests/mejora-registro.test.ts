@@ -40,6 +40,7 @@ import {
   planDeMejoraDePrueba,
 } from "./utiles/mejoramiento";
 import { medicionDe, procesoNuevo } from "./utiles/mixto";
+import { normaDePrueba } from "./utiles/normograma";
 import { contada } from "./utiles/sentencias";
 import { revertida } from "./utiles/transaccion";
 import { documentoLibre, tipoLibre, TIPO_LIBRE } from "./utiles/tramites";
@@ -914,3 +915,45 @@ describe("«A qué se refiere» de un hallazgo que cita una medición: su estado
   });
 });
 
+
+describe("los filtros de la lista que llegan de otras páginas y de la clasificación (Fase 15B, anexo §10.6)", () => {
+  it("por plan, por objetivo, por documento (las dos maneras), por indicador (los tres modos), por norma y por subproceso", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const p = await planDeMejoraDePrueba(tx, b.control);
+      const objetivo = await objetivoDePrueba(tx);
+      const d = await documentoDe(tx, b.procesoId);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const medicionId = await medicionConResultado(tx, ind);
+      const norma = await normaDePrueba(tx, b.admin);
+      const [s] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden)
+        VALUES (${b.procesoId}, 'Subproceso de prueba', ${`zz-sub-${Date.now()}`}, 99) RETURNING id`;
+      const registrar = async (cambios: Parameters<typeof datosDeHallazgo>[1]) =>
+        (await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, cambios), c(AHORA, tx))).id;
+
+      const enPlan = await registrar({ planId: p.id });
+      const conObjetivo = await registrar({ objetivoId: objetivo.id });
+      const refiereDoc = await registrar({ documentoId: d.id });
+      const requisitoDoc = await registrar({ requisitoDocumentoId: d.id });
+      const refiereInd = await registrar({ indicadorId: ind.id });
+      const porMedicion = await registrar({ medicionId });
+      const porEficacia = await registrar({});
+      await tx`UPDATE mejora_rondas SET indicador_eficacia_id = ${ind.id} WHERE hallazgo_id = ${porEficacia}`;
+      const conNorma = await registrar({ requisitoNormaId: norma.id });
+      const delSubproceso = await registrar({ subprocesoId: Number(s.id) });
+      await registrar({});
+
+      const ids = async (filtro: Parameters<typeof listarHallazgos>[1]) =>
+        (await listarHallazgos(b.control, { procesoId: b.procesoId, ...filtro }, { sql: tx, ahora })).filas.map((f) => f.id).sort();
+      expect(await ids({ plan: p.id })).toEqual([enPlan]);
+      expect(await ids({ objetivo: objetivo.id })).toEqual([conObjetivo]);
+      expect(await ids({ documento: d.id })).toEqual([refiereDoc, requisitoDoc].sort());
+      expect(await ids({ indicador: ind.id })).toEqual([refiereInd, porMedicion, porEficacia].sort());
+      expect(await ids({ norma: norma.id })).toEqual([conNorma]);
+      expect(await ids({ subproceso: Number(s.id) })).toEqual([delSubproceso]);
+      // Siguen pasando por `filtroHallazgos`: el líder de otro proceso no recibe nada.
+      const ajeno = (await otroProcesoConLider(tx)).lider;
+      expect((await listarHallazgos(ajeno, { documento: d.id }, { sql: tx, ahora })).filas).toEqual([]);
+    });
+  });
+});

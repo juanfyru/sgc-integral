@@ -26,6 +26,7 @@ import {
   sostenerHallazgo,
   validarCorreccion,
 } from "@/db/consultas/mejoramiento/recorrido";
+import { enlaceDelReporte, prellenadoDelReporte } from "@/db/consultas/mejoramiento/prellenado";
 import { anularHallazgo, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import {
   AVISO_CERRADO,
@@ -56,7 +57,9 @@ import {
   otroProcesoConLider,
   type BaseDeMejora,
 } from "./utiles/mejoramiento";
-import { usuarioDePrueba } from "./utiles/tramites";
+import { indicadorDePrueba } from "./utiles/indicadores";
+import { procesoNuevo } from "./utiles/mixto";
+import { documentoLibre, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -651,6 +654,101 @@ describe("ronda 1 de la revisión", () => {
       expect(await puedeAbrirArchivoDeMejora(delReporte, await usuarioDePrueba(tx, { rol: "consulta" }), { sql: tx })).toBe(false);
       const leido = await leerHallazgo(b.lider, h.id, { sql: tx });
       expect(leido?.ocurrencias.map((x) => [x.origen, x.reporteId])).toEqual([["reporte", reporteId]]);
+    });
+  });
+});
+
+describe("sobre qué se reporta, desde la sección «Mejoramiento» de otra página (Fase 15B, anexo §10.2)", () => {
+  /** Un documento con versión vigente del proceso `procesoId`. */
+  async function documentoDe(tx: TransactionSql, procesoId: number, nivel: "general" | "restringido" = "general") {
+    await tipoLibre(tx);
+    const [{ sigla }] = await tx`SELECT sigla FROM procesos WHERE id = ${procesoId}`;
+    const d = await documentoLibre(tx, { proceso: sigla as string, tipo: TIPO_LIBRE });
+    if (nivel === "restringido") await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${d.id}`;
+    return d;
+  }
+  const base = { descripcion: LO_QUE_VIO, vistoEn: "2026-11-09" };
+
+  it("un documento que quien reporta ve se guarda; uno restringido que no ve, nulo y sin error; «Reportes recibidos» lo trae", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const quien = await funcionaria(tx);
+      const otro = await procesoNuevo(tx);
+      const visible = await documentoDe(tx, b.procesoId);
+      const restringido = await documentoDe(tx, otro, "restringido");
+      const o = c(HORA_DE_ESCENA, tx);
+
+      const con = await enviarReporte(quien, { ...base, documentoId: visible.id }, o);
+      expect(Number((await reporteDe(tx, con.id)).documento_id)).toBe(visible.id);
+      const sin = await enviarReporte(quien, { ...base, documentoId: restringido.id }, o);
+      expect((await reporteDe(tx, sin.id)).documento_id).toBeNull();
+      const noExiste = await enviarReporte(quien, { ...base, documentoId: 0x7fffffff }, o);
+      expect((await reporteDe(tx, noExiste.id)).documento_id).toBeNull();
+      // El id va a la bitácora solo si se guardó; el título del documento, nunca.
+      const [enviado] = await bitacoraDe(tx, con.id);
+      expect(enviado.detalle).toMatchObject({ documentoId: visible.id });
+      expect((await bitacoraDe(tx, sin.id))[0].detalle).not.toHaveProperty("documentoId");
+
+      const recibidos = await reportesRecibidos(b.admin, { sql: tx, ahora: new Date(HORA_DE_ESCENA) });
+      expect(recibidos.find((r) => r.id === con.id)).toMatchObject({
+        documento: { id: visible.id, codigo: visible.codigo, titulo: visible.titulo },
+        indicador: null,
+      });
+      expect(recibidos.find((r) => r.id === sin.id)).toMatchObject({ documento: null });
+    });
+  });
+
+  it("un indicador: el que ve se guarda; uno restringido de otro proceso, nulo y sin error", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      const general = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const restringido = await indicadorDePrueba(tx, { procesoId: otro, nivelAcceso: "restringido" });
+      const o = c(HORA_DE_ESCENA, tx);
+      const con = await enviarReporte(b.consulta, { ...base, indicadorId: general.id }, o);
+      expect(Number((await reporteDe(tx, con.id)).indicador_id)).toBe(general.id);
+      const sin = await enviarReporte(b.consulta, { ...base, indicadorId: restringido.id }, o);
+      expect((await reporteDe(tx, sin.id)).indicador_id).toBeNull();
+      const leido = await leerReporte(b.admin, con.id, { sql: tx });
+      expect(leido?.control?.indicador).toMatchObject({ id: general.id, codigo: general.codigo });
+    });
+  });
+
+  it("al convertir, el prellenado del reporte trae el documento y el proceso del documento (el del reporte, si lo dijo)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      const d = await documentoDe(tx, b.procesoId);
+      const o = c(HORA_DE_ESCENA, tx);
+      const { id } = await enviarReporte(b.consulta, { ...base, documentoId: d.id }, o);
+      const leido = await leerReporte(b.admin, id, { sql: tx });
+      expect(leido?.control?.documento).toMatchObject({ id: d.id, codigo: d.codigo });
+      const deLaConversion = (procesoId: number | null) =>
+        prellenadoDelReporte(b.admin, { procesoId, documentoId: leido?.control?.documento?.id ?? null, indicadorId: null }, { sql: tx });
+      expect((await deLaConversion(null)).valores).toEqual({ documentoId: d.id, procesoId: b.procesoId });
+      // Quien reportó dijo otro proceso: manda el suyo.
+      expect((await deLaConversion(otro)).valores).toEqual({ documentoId: d.id, procesoId: otro });
+    });
+  });
+
+  it("la página de reportar resuelve el enlace con la visibilidad de cada módulo e ignora sin decir por qué lo que no se ve", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      const visible = await documentoDe(tx, b.procesoId);
+      const restringido = await documentoDe(tx, otro, "restringido");
+      const ind = await indicadorDePrueba(tx, { procesoId: otro });
+      const [{ slug }] = await tx`SELECT slug FROM procesos WHERE id = ${b.procesoId}`;
+      const o = { sql: tx };
+      expect(await enlaceDelReporte(b.consulta, { documento: visible.codigo }, o)).toEqual({
+        documento: { id: visible.id, codigo: visible.codigo, titulo: visible.titulo },
+        indicador: null,
+        procesoId: b.procesoId,
+      });
+      expect(await enlaceDelReporte(b.consulta, { documento: restringido.codigo }, o)).toEqual({ documento: null, indicador: null, procesoId: null });
+      expect((await enlaceDelReporte(b.consulta, { indicador: ind.codigo }, o)).procesoId).toBe(otro);
+      expect(await enlaceDelReporte(b.consulta, { proceso: slug as string }, o)).toEqual({ documento: null, indicador: null, procesoId: b.procesoId });
+      expect(await enlaceDelReporte(b.consulta, { proceso: "no-existe-este-proceso" }, o)).toEqual({ documento: null, indicador: null, procesoId: null });
     });
   });
 });

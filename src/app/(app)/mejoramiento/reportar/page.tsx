@@ -11,9 +11,10 @@ import { obtenerSql } from "@/db/cliente";
 import { archivosDe, archivosQuitables, autorizarSubida, MAXIMO_POR_REPORTE } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { procesosActivos } from "@/db/consultas/mejoramiento/opciones";
+import { enlaceDelReporte } from "@/db/consultas/mejoramiento/prellenado";
 import { leerReporte } from "@/db/consultas/mejoramiento/reportes";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
-import { RUTA_MIS_REPORTES, rutaDeReportar } from "@/lib/mejoramiento/reportes";
+import { PARAMETROS_DEL_REPORTE, RUTA_MIS_REPORTES, rutaDeReportar, type SobreQueSeReporta } from "@/lib/mejoramiento/reportes";
 import { AVISO_SIN_PACIENTES } from "@/lib/mejoramiento/textos";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -32,10 +33,15 @@ const MIGAS = [
  * «Reportar» (spec 15 §7.3 y §16.1), para toda sesión: qué vio, cuándo, en qué proceso y la referencia del caso, con el aviso de
  * los datos de pacientes. Enviado, la acción trae aquí con `?reporte=<id>`: el reporte propio, con su etiqueta y hasta tres
  * archivos de evidencia mientras siga «Recibido». Un `reporte` que no es de quien mira se ignora sin decir por qué.
+ *
+ * Desde la sección «Mejoramiento» de otra página (Fase 15B, anexo §10.2) llega con `?documento=` o `?indicador=` (su código) o
+ * `?proceso=` (su slug): `enlaceDelReporte` lo resuelve con la regla de visibilidad de cada módulo e ignora sin decir por qué lo que la
+ * persona no ve; `enviarReporte` lo vuelve a mirar dentro de su transacción.
  */
 export default async function PaginaReportar({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sesion = await exigirSesion();
-  const pedido = (await searchParams).reporte;
+  const parametros = await searchParams;
+  const pedido = parametros.reporte;
   const reporteId = typeof pedido === "string" && /^\d{1,15}$/.test(pedido) ? Number(pedido) : null;
   const leido = reporteId === null ? null : await leerReporte(sesion, reporteId);
   const sql = obtenerSql();
@@ -98,7 +104,11 @@ export default async function PaginaReportar({ searchParams }: { searchParams: P
     );
   }
 
-  const procesos = await procesosActivos({ sql });
+  // Un parámetro repetido no es ninguno.
+  const sobre: SobreQueSeReporta = Object.fromEntries(
+    PARAMETROS_DEL_REPORTE.flatMap((k) => (typeof parametros[k] === "string" ? [[k, parametros[k]]] : [])),
+  );
+  const [procesos, enlace] = await Promise.all([procesosActivos({ sql }), enlaceDelReporte(sesion, sobre, { sql })]);
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <EncabezadoPagina
@@ -106,7 +116,13 @@ export default async function PaginaReportar({ searchParams }: { searchParams: P
         titulo="Reportar una posible no conformidad"
         descripcion="Cuente lo que vio. El Administrador del SGC lo revisa y le avisa en qué terminó; su nombre no se muestra a los líderes de proceso."
       />
-      <FormularioReporte accion={enviarReporteAccion} procesos={procesos} hoy={fechaEnZona(ahora, contexto.zona)} />
+      <FormularioReporte
+        accion={enviarReporteAccion}
+        procesos={procesos}
+        hoy={fechaEnZona(ahora, contexto.zona)}
+        enlace={enlace}
+        procesoInicial={enlace.procesoId}
+      />
     </div>
   );
 }

@@ -40,10 +40,13 @@ import {
   escaneoDeLaCarga,
   hallazgoEn,
   HORA_DE_ESCENA,
+  objetivoDePrueba,
   otroProcesoConLider,
+  planDeMejoraDePrueba,
 } from "./utiles/mejoramiento";
+import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
-import { usuarioDePrueba } from "./utiles/tramites";
+import { documentoLibre, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./utiles/tramites";
 
 const sql = obtenerSql();
 
@@ -55,7 +58,10 @@ afterAll(async () => {
 const META: MetaHoja = { hospital: "Entidad Zeta de Prueba", generadoEn: "2026-11-18 10:00", detalle: "Todos los hallazgos" };
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-/** Las columnas del libro, en orden: el código y la ronda, y las diecisiete de la matriz con «Fin original» junto a «Fecha límite». */
+/**
+ * Las columnas del libro, en orden: el código y la ronda, y las diecisiete de la matriz con «Fin original» junto a «Fecha límite»; al
+ * final, «Plan» y «Objetivo» (Fase 15B).
+ */
 const COLUMNAS = [
   "Código",
   "Ronda",
@@ -77,6 +83,9 @@ const COLUMNAS = [
   "Evaluación de eficacia y criterio",
   "Observaciones o causa del retraso",
   "Decisión de la Alta Dirección",
+  // Fase 15B (anexo §10.6): la clasificación, al final.
+  "Plan",
+  "Objetivo",
 ];
 
 /** La hoja «Hallazgos» como filas de texto: la cabecera y las de datos debajo. */
@@ -133,6 +142,8 @@ const filaDe = (extra: Partial<FilaDeExcel>): FilaDeExcel => ({
   actividad: actividadDe({}),
   eficacia: { resultado: null, criterios: ["no_recurrencia"], criterioOtro: null },
   cierre: null,
+  plan: null,
+  objetivo: null,
   ...extra,
 });
 
@@ -178,6 +189,18 @@ describe("construirExcelDeHallazgos", () => {
     expect(sin[col("Descripción del hallazgo")]).toContain("Neveras sin registro");
   });
 
+  it("«Plan» y «Objetivo» son las dos últimas columnas, con lo que trae cada fila (vacías sin clasificación)", async () => {
+    const { cabecera, filas: datos } = await leerHoja(
+      await construirExcelDeHallazgos(
+        [filaDe({ plan: "PM-2026-01 Auditoría interna de calidad", objetivo: "Mejorar la oportunidad de la atención" }), filaDe({})],
+        META,
+      ),
+    );
+    expect(cabecera.slice(-2)).toEqual(["Plan", "Objetivo"]);
+    expect(datos[0].slice(-2)).toEqual(["PM-2026-01 Auditoría interna de calidad", "Mejorar la oportunidad de la atención"]);
+    expect(datos[1].slice(-2)).toEqual(["", ""]);
+  });
+
   it("un título =1+1 sale neutralizado", async () => {
     const { filas: datos, todo } = await leerHoja(
       await construirExcelDeHallazgos([filaDe({ titulo: "=1+1", actividad: actividadDe({ accion: "+SUMA(A1)", descripcion: "@hoy" }) })], META),
@@ -220,6 +243,32 @@ describe("filasParaExcel", () => {
       expect(filtradas.map((f) => f.codigo)).toEqual([porAceptar.codigo]);
       const porTexto = await filasParaExcel(b.admin, { procesoId: b.procesoId, q: "neveras" }, o);
       expect(porTexto.map((f) => f.codigo)).toEqual([porAceptar.codigo]);
+    }));
+
+  it("cada fila lleva el plan («código nombre») y el enunciado del objetivo del hallazgo (Fase 15B)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const plan = await planDeMejoraDePrueba(tx, b.control);
+      const objetivo = await objetivoDePrueba(tx);
+      const enPlan = await registrarHallazgo(
+        b.control,
+        datosDeHallazgo(b.procesoId, { planId: plan.id, objetivoId: objetivo.id }),
+        c(HORA_DE_ESCENA, tx),
+      );
+      const suelto = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(HORA_DE_ESCENA, tx));
+      const filas = await filasParaExcel(b.admin, { procesoId: b.procesoId }, { sql: tx, ahora: new Date(HORA_DE_ESCENA) });
+      expect(filas.find((f) => f.codigo === enPlan.codigo)).toMatchObject({
+        plan: `${plan.codigo} Auditoría interna de calidad de noviembre`,
+        objetivo: objetivo.enunciado,
+      });
+      expect(filas.find((f) => f.codigo === suelto.codigo)).toMatchObject({ plan: null, objetivo: null });
+      // El filtro por plan y por objetivo de la lista llega al Excel.
+      expect((await filasParaExcel(b.admin, { plan: plan.id }, { sql: tx, ahora: new Date(HORA_DE_ESCENA) })).map((f) => f.codigo)).toEqual([
+        enPlan.codigo,
+      ]);
+      expect(
+        (await filasParaExcel(b.admin, { objetivo: objetivo.id }, { sql: tx, ahora: new Date(HORA_DE_ESCENA) })).map((f) => f.codigo),
+      ).toEqual([enPlan.codigo]);
     }));
 
   it("respeta filtroHallazgos: el líder de otro proceso no recibe nada", () =>
@@ -365,5 +414,27 @@ describe("GET /mejoramiento/excel", () => {
           detalle: { filtros: { procesoId: b.procesoId, clase: "no_conformidad", estado: "por_aceptar" } },
         },
       ]);
+    }));
+
+  it("la línea de filtros nombra el documento que la persona ve y no el que no ve, aunque el id llegue en la dirección (Fase 15B)", () =>
+    enTransaccion(async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      await tipoLibre(tx);
+      const [{ sigla }] = await tx`SELECT sigla FROM procesos WHERE id = ${otro}`;
+      const restringido = await documentoLibre(tx, { proceso: sigla as string, tipo: TIPO_LIBRE, titulo: "Protocolo reservado de prueba" });
+      await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${restringido.id}`;
+      await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { documentoId: restringido.id }), c(HORA_DE_ESCENA, tx));
+
+      const delLider = await leerHoja(await (await pedir(await conToken(tx, b.lider.usuarioId), `?documento=${restringido.id}`)).arrayBuffer());
+      expect(delLider.todo).toContain("Documento: no disponible");
+      expect(delLider.todo).not.toContain("Protocolo reservado de prueba");
+      expect(delLider.todo).not.toContain(restringido.codigo);
+      // Control Interno ve los restringidos: la línea lo nombra, y la fila sale.
+      const delControl = await leerHoja(await (await pedir(await conToken(tx, b.control.usuarioId), `?documento=${restringido.id}`)).arrayBuffer());
+      expect(delControl.todo).toContain(`Documento: ${restringido.codigo} Protocolo reservado de prueba`);
+      expect(delControl.filas).toHaveLength(1);
+      const [rastro] = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${b.control.usuarioId} AND accion = 'mejora_exporto_hallazgos'`;
+      expect(rastro.detalle).toEqual({ filtros: { documento: restringido.id } });
     }));
 });

@@ -14,7 +14,7 @@ import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { contarMisActividades } from "@/db/consultas/mejoramiento/actividades";
 import { listarHallazgos, veAlgunHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { veAlgunPlan } from "@/db/consultas/mejoramiento/planes-lectura";
-import { procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
+import { nombresDelFiltro, opcionesDelFiltro, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { contarReportesPorClasificar } from "@/db/consultas/mejoramiento/reportes";
 import { procesosQueImprime } from "@/lib/alcance";
 import { rutaDeReportar } from "@/lib/mejoramiento/reportes";
@@ -54,13 +54,16 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
   }
   const filtro = filtroDeConsulta(await searchParams);
   const ahora = new Date();
-  const [{ filas, cifras }, procesos, contexto, porClasificar, vePlanes, imprime] = await Promise.all([
+  const [{ filas, cifras }, procesos, contexto, porClasificar, vePlanes, imprime, deLaClasificacion, nombres] = await Promise.all([
     listarHallazgos(sesion, filtro, { ahora }),
     procesosDelAlcance(sesion),
     contextoDeMejora(obtenerSql(), ahora),
     contarReportesPorClasificar(sesion),
     veAlgunPlan(sesion),
     filtro.procesoId === undefined ? Promise.resolve([]) : procesosQueImprime(sesion, [filtro.procesoId]),
+    // El plan y el objetivo, a la vista; lo que llega por «Ver todos» de otra página, por su nombre (Fase 15B, anexo §10.6).
+    opcionesDelFiltro(sesion, { objetivo: filtro.objetivo }),
+    nombresDelFiltro(sesion, filtro),
   ]);
   const registra = puede(sesion, "mejora.registrar");
   // El Excel lleva los filtros puestos (spec §16.3); es una descarga auditada: un enlace simple, sin precarga.
@@ -131,7 +134,13 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
             />
             <CifraEnlazada href="/mejoramiento?estado=reabiertos" etiqueta="Reabiertos" valor={cifras.reabiertos} />
           </section>
-          <FiltrosDeHallazgos filtro={filtro} procesos={procesos} />
+          <FiltrosDeHallazgos
+            filtro={filtro}
+            procesos={procesos}
+            planes={deLaClasificacion.planes}
+            objetivos={deLaClasificacion.objetivos}
+            nombres={nombres}
+          />
           <ListaDeHallazgos filas={filas} contexto={contexto} />
         </>
       ) : (

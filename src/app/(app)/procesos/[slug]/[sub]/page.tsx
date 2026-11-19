@@ -7,8 +7,10 @@ import { Migas } from "@/componentes/navegacion/Migas";
 import { MiniMapa } from "@/componentes/navegacion/MiniMapa";
 import { NavHermanos } from "@/componentes/navegacion/NavHermanos";
 import { IndicadoresDelProceso } from "@/componentes/indicadores/IndicadoresDelProceso";
+import { SeccionMejoramiento } from "@/componentes/mejoramiento/enganches/SeccionMejoramiento";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { indicadoresDeSubproceso, sinTumbarLaPagina } from "@/db/consultas/indicadores/lista";
+import { seccionDeMejoramiento } from "@/db/consultas/mejoramiento/citas";
 import {
   obtenerDetalleSubproceso,
   obtenerDocumentosDeSubproceso,
@@ -28,9 +30,16 @@ export default async function VistaSubproceso({
   const subproceso = await obtenerDetalleSubproceso(slug, sub);
   if (!subproceso) notFound();
 
-  const [documentos, indicadores] = await Promise.all([
+  const [documentos, indicadores, mejoramiento] = await Promise.all([
     obtenerDocumentosDeSubproceso(subproceso.id, sesion),
     sinTumbarLaPagina(indicadoresDeSubproceso(sesion, subproceso.id)),
+    // «Mejoramiento» (Fase 15B, anexo §10.1): los hallazgos del subproceso que la persona ve, y «Abrir hallazgo» o «Reportar» con su
+    // proceso puesto. Lo decide Mejoramiento.
+    seccionDeMejoramiento(
+      sesion,
+      { subprocesoId: subproceso.id },
+      { procesoId: subproceso.proceso.id, enlace: { proceso: subproceso.proceso.slug } },
+    ),
   ]);
   const propios = documentos.filter((d) => d.esPrincipal);
   const tambienAplican = documentos.filter((d) => !d.esPrincipal);
@@ -88,6 +97,8 @@ export default async function VistaSubproceso({
       {indicadores ? (
         <IndicadoresDelProceso procesoId={subproceso.proceso.id} titulo="Indicadores del subproceso" propios={indicadores} />
       ) : null}
+
+      <SeccionMejoramiento seccion={mejoramiento} className="mt-8" />
 
       {tambienAplican.length > 0 && (
         <section className="mt-8" aria-labelledby="titulo-tambien">

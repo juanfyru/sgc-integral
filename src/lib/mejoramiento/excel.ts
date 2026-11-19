@@ -1,8 +1,8 @@
 /**
  * El Excel de la lista de hallazgos (spec 15 §16.3 y Apéndice A.6): la matriz consolidada del SGC-FO-28, una fila por actividad
  * (un hallazgo sin actividades, una fila), con el código y la ronda delante de sus diecisiete columnas y «Fin original» junto a
- * «Fecha límite». Toda celda de texto pasa por `neutralizarFormula` (`agregarHoja`). Puro: las filas llegan ya leídas y con lo que
- * la persona no ve en nulo (`filasParaExcel`).
+ * «Fecha límite»; al final, «Plan» y «Objetivo» (Fase 15B). Toda celda de texto pasa por `neutralizarFormula` (`agregarHoja`).
+ * Puro: las filas llegan ya leídas y con lo que la persona no ve en nulo (`filasParaExcel`).
  */
 import ExcelJS from "exceljs";
 import { agregarHoja, type Celda, type Columna, type MetaHoja } from "@/lib/distribucion/hoja-excel";
@@ -60,6 +60,9 @@ export type FilaDeExcel = {
   eficacia: { resultado: "eficaz" | "no_eficaz" | null; criterios: CriterioEficacia[]; criterioOtro: string | null } | null;
   /** La decisión del cierre (un hallazgo terminado), en la fila de su ronda en curso. */
   cierre: { etiqueta: string; en: string | null } | null;
+  /** Fase 15B (anexo §10.6): el plan de mejoramiento («PM-2026-01 Nombre») y el enunciado del objetivo; nulos si no tiene. */
+  plan: string | null;
+  objetivo: string | null;
 };
 
 type FilaNumerada = FilaDeExcel & { n: number };
@@ -139,6 +142,9 @@ const COLUMNAS: Array<Columna<FilaNumerada>> = [
   { cab: "Evaluación de eficacia y criterio", ancho: 40, valor: eficacia },
   { cab: "Observaciones o causa del retraso", ancho: 50, valor: (f) => deLaActividad(f, observaciones) },
   { cab: "Decisión de la Alta Dirección", ancho: 50, valor: decision },
+  // La clasificación (Fase 15B, anexo §10.6), al final: las columnas de la matriz no se mueven.
+  { cab: "Plan", ancho: 36, valor: (f) => f.plan },
+  { cab: "Objetivo", ancho: 40, valor: (f) => f.objetivo },
 ];
 
 /**

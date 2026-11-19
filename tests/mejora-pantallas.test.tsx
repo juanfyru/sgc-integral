@@ -2520,6 +2520,8 @@ describe("Tarea 18: los reportes de funcionarios", () => {
     motivo: null,
     hallazgo: null,
     archivos: 0,
+    documento: null,
+    indicador: null,
     ...extra,
   });
   const parecido = { id: 40, codigo: "HZ-2026-040", titulo: "Nevera sin registro", etiqueta: "En ejecución", proceso: "Farmacia" };

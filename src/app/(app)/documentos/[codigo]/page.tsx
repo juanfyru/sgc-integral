@@ -16,6 +16,7 @@ import {
   formatoDesdeMime,
 } from "@/componentes/documentos/IconoFormato";
 import { BloqueDistribucion } from "@/componentes/distribucion/BloqueDistribucion";
+import { SeccionMejoramiento } from "@/componentes/mejoramiento/enganches/SeccionMejoramiento";
 import { BloqueVigencia } from "@/componentes/vigencia/BloqueVigencia";
 import { BloqueExterno } from "@/componentes/vigencia/externos/BloqueExterno";
 import { NormasEnlazadas } from "@/componentes/normograma/NormasEnlazadas";
@@ -31,7 +32,10 @@ import {
   type ArchivoFicha,
   obtenerFichaDocumento,
 } from "@/db/consultas/documentos";
+import { obtenerSql } from "@/db/cliente";
 import { registrarEventoConsulta } from "@/db/consultas/eventos";
+import { seccionDeMejoramiento } from "@/db/consultas/mejoramiento/citas";
+import { documentoEnlazable } from "@/db/consultas/mejoramiento/enlazables";
 import { puedePedirSobreDocumento } from "@/db/consultas/tramites";
 import { ipDePeticion } from "@/lib/ip";
 import { exigirSesion } from "@/lib/paginas";
@@ -85,6 +89,14 @@ export default async function FichaDocumento({
   }).catch((err) => console.error("No se pudo registrar la vista:", err));
 
   const puedePedirCambio = await puedePedirSobreDocumento(sesion, ficha.id);
+  // «Mejoramiento» (Fase 15B, anexo §10.1): los hallazgos que la persona ve y citan el documento, y «Abrir hallazgo» o «Reportar» con
+  // el documento puesto y su proceso propietario propuesto (la regla de «A qué se refiere», `documentoEnlazable`). Lo decide
+  // Mejoramiento.
+  const enlazable = await documentoEnlazable(obtenerSql(), sesion, { id: ficha.id });
+  const mejoramiento = await seccionDeMejoramiento(sesion, { documentoId: ficha.id }, {
+    procesoId: enlazable?.procesoId ?? null,
+    enlace: { documento: ficha.codigo },
+  });
   const principal = ficha.ubicaciones.find((u) => u.esPrincipal);
   const pdf = ficha.archivos.find((a) => a.mime === "application/pdf");
   const rutaBase = `/documentos/${ficha.codigo.toLowerCase()}`;
@@ -288,6 +300,8 @@ export default async function FichaDocumento({
 
           {/* Las normas que el documento implementa o referencia (spec 13C §14.4); sin ninguna, no se pinta. */}
           <NormasEnlazadas documentoId={ficha.id} sesion={sesion} />
+
+          <SeccionMejoramiento seccion={mejoramiento} />
 
           <BloqueDistribucion
             documento={{ id: ficha.id, codigo: ficha.codigo, titulo: ficha.titulo }}

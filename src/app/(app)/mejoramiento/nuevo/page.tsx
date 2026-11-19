@@ -18,7 +18,7 @@ import {
   procesosDelAlcance,
   usuariosActivos,
 } from "@/db/consultas/mejoramiento/opciones";
-import { prellenadoDeRegistro, type Prellenado } from "@/db/consultas/mejoramiento/prellenado";
+import { combinar, prellenadoDelReporte, prellenadoDeRegistro, type Prellenado } from "@/db/consultas/mejoramiento/prellenado";
 import { hallazgoDeOrigen } from "@/db/consultas/mejoramiento/registro";
 import { leerReporte } from "@/db/consultas/mejoramiento/reportes";
 import { PARAMETROS_DE_REGISTRO, rutaDeRegistro, type ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
@@ -89,7 +89,9 @@ function parametrosDe(sp: Record<string, string | string[] | undefined>): Parame
  * si no lo ve o no existe, el valor se ignora sin decir por qué (lo vuelve a comprobar `registrarHallazgo`). Desde un reporte
  * de funcionario (`?reporte=<id>`, spec §7.3), solo para quien clasifica (`mejora.gestionar`) y mientras siga «Recibido»: llega
  * con lo que se vio, el día, el proceso y la referencia copiados, y el reporte viaja oculto (lo vuelve a comprobar
- * `registrarHallazgo` dentro de su transacción). Si no, se ignora igual. Con `?modo=en-curso`, quien gestiona carga un hallazgo
+ * `registrarHallazgo` dentro de su transacción). Si no, se ignora igual. El reporte trae además sobre qué se reportó (Fase 15B, anexo
+ * §10.2): su documento y su indicador, y el proceso del documento si quien reportó no dijo uno (`prellenadoDelReporte`), todo
+ * editable. Con `?modo=en-curso`, quien gestiona carga un hallazgo
  * que se tramitó en papel con su plan ya aprobado (spec §15, `FormularioCarga`); para los demás ese modo no existe.
  *
  * Los parámetros de la Fase 15B (`plan`, `documento`, `indicador`, `proceso` y los enganches; anexo §3.4 y §10.3) los resuelve
@@ -160,6 +162,18 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
   // La norma fija de un impacto (anexo 15B §8) suele no regir ya: el formulario la muestra por su nombre.
   const normas = await conLaNorma(queRigen, normaFija(prellenado), { sql });
   const reporte = leido?.control?.estado === "recibido" ? { ...leido, reportadoPor: leido.control.reportadoPor } : null;
+  // Lo que trae el reporte va antes de lo que trae la dirección (`combinar`: una parte posterior manda).
+  const conReporte =
+    reporte && leido?.control
+      ? combinar([
+          await prellenadoDelReporte(
+            sesion,
+            { procesoId: reporte.procesoId, documentoId: leido.control.documento?.id ?? null, indicadorId: leido.control.indicador?.id ?? null },
+            { sql, ahora },
+          ),
+          prellenado,
+        ])
+      : prellenado;
   const procesoInicial = reporte?.procesoId ?? origen?.procesoId ?? null;
   const valores: Record<string, string> = {
     ...(procesoInicial !== null && procesos.some((p) => p.id === procesoInicial) ? { procesoId: String(procesoInicial) } : {}),
@@ -192,7 +206,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
         indicadores={aQueSeRefiere.indicadores}
         mediciones={aQueSeRefiere.mediciones}
         objetivos={objetivos}
-        prellenado={prellenado}
+        prellenado={conReporte}
         hoy={fechaEnZona(ahora, contexto.zona)}
         diasParaAceptar={contexto.config.plazos.aceptar}
         valores={Object.keys(valores).length > 0 ? valores : undefined}

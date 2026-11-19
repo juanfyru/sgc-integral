@@ -1423,6 +1423,10 @@ export const EsquemaReporte = z
     vistoEn: fechaDelDia("Escriba una fecha válida en que lo vio"),
     procesoId: idOpcional("El proceso elegido no es válido"),
     referenciaCaso: textoOpcional("La referencia del caso", 100),
+    // Fase 15B (anexo §10.2): sobre qué se reporta, desde la sección «Mejoramiento» de otra página. `enviarReporte` lo guarda solo si
+    // quien reporta lo ve; si no, nulo, sin error.
+    documentoId: idOpcional("El documento no es válido"),
+    indicadorId: idOpcional("El indicador no es válido"),
   })
   .strict();
 export type ReporteValidado = z.output<typeof EsquemaReporte>;

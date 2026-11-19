@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { SeccionMejoramiento } from "@/componentes/mejoramiento/enganches/SeccionMejoramiento";
 import { FichaNorma, type OpcionesFicha } from "@/componentes/normograma/FichaNorma";
 import { indicadoresQueExige } from "@/db/consultas/indicadores/busqueda";
 import { sinTumbarLaPagina } from "@/db/consultas/indicadores/lista";
+import { seccionDeMejoramiento } from "@/db/consultas/mejoramiento/citas";
 import { documentosGestionables } from "@/db/consultas/normograma/asociaciones";
 import { normasParaElegir, obtenerNorma } from "@/db/consultas/normograma/lectura";
 import { procesosActivos } from "@/db/consultas/procesos";
@@ -34,7 +36,7 @@ export default async function PaginaNorma({ params }: { params: Promise<{ id: st
   // Una derogada conserva sus procesos (se edita o se quita su requisito) pero no se asocia a uno nuevo.
   const asociaNuevos = asocia && norma.estado !== "derogada";
   const administra = abierta && norma.acciones.administrar;
-  const [procesos, documentos, normas, indicadores] = await Promise.all([
+  const [procesos, documentos, normas, indicadores, mejoramiento] = await Promise.all([
     asociaNuevos ? procesosActivos() : Promise.resolve([]),
     asocia ? documentosGestionables(norma.id, sesion, { alcance }) : Promise.resolve([]),
     // Una derogada no admite relaciones nuevas como afectada (`registrarRelacion`).
@@ -42,6 +44,9 @@ export default async function PaginaNorma({ params }: { params: Promise<{ id: st
     // La visibilidad de los indicadores es la de `filtroIndicadores`; el normograma no la reimplementa. Si su lectura
     // falla, la ficha de la norma (13C) se pinta sin esa sección y el error queda en el registro (F14A-R39).
     sinTumbarLaPagina(indicadoresQueExige(sesion, norma.id)),
+    // «Mejoramiento» (Fase 15B, anexo §10.1): los hallazgos que la persona ve y citan la norma como requisito incumplido. Sin botón
+    // (B7.2): desde una norma no se abre ni se reporta un hallazgo. Lo decide Mejoramiento.
+    seccionDeMejoramiento(sesion, { normaId: norma.id }, null),
   ]);
   const asociados = new Set(norma.procesos.map((p) => p.id));
   const opciones: OpcionesFicha = {
@@ -54,5 +59,5 @@ export default async function PaginaNorma({ params }: { params: Promise<{ id: st
     indicadores: indicadores ?? [],
   };
 
-  return <FichaNorma norma={norma} opciones={opciones} />;
+  return <FichaNorma norma={norma} opciones={opciones} mejoramiento={<SeccionMejoramiento seccion={mejoramiento} />} />;
 }

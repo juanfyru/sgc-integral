@@ -110,6 +110,19 @@ export function ReportesRecibidos({
                   <dd className="break-all">{r.referenciaCaso}</dd>
                 </div>
               ) : null}
+              {/* Sobre qué se reportó (Fase 15B, anexo §10.2): al convertirlo llega al registro. */}
+              {r.documento ? (
+                <div className="flex min-w-0 gap-1">
+                  <dt>Documento:</dt>
+                  <dd className="break-words">{`${r.documento.codigo} ${r.documento.titulo}`}</dd>
+                </div>
+              ) : null}
+              {r.indicador ? (
+                <div className="flex min-w-0 gap-1">
+                  <dt>Indicador:</dt>
+                  <dd className="break-words">{`${r.indicador.codigo} ${r.indicador.nombre}`}</dd>
+                </div>
+              ) : null}
             </dl>
             {archivos.length > 0 ? <ArchivosDe archivos={archivos} quitables={quitables} /> : null}
             {r.hallazgo ? (

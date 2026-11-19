@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileSpreadsheet, Printer } from "lucide-react";
 import { MenuAdministrar } from "@/componentes/indicadores/admin/MenuAdministrar";
+import { SeccionMejoramiento } from "@/componentes/mejoramiento/enganches/SeccionMejoramiento";
 import { PanelDeMarcas } from "@/componentes/mejoramiento/marcas/PanelDeMarcas";
 import { AvisoDeImpacto } from "@/componentes/indicadores/AvisoDeImpacto";
 import { PestanasDeIndicador, Recuadro, type PestanaDeIndicador } from "@/componentes/indicadores/vistas/comun";
@@ -21,6 +22,9 @@ import { proximaPorReportar } from "@/db/consultas/indicadores/lectura";
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { resumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
+import { obtenerSql } from "@/db/cliente";
+import { seccionDeMejoramiento } from "@/db/consultas/mejoramiento/citas";
+import { indicadorEnlazable } from "@/db/consultas/mejoramiento/enlazables";
 import { engancheDeImpactos } from "@/db/consultas/mejoramiento/enganche-impacto";
 import { marcasDelIndicador, salidasVisibles } from "@/db/consultas/mejoramiento/marcas";
 import { puedeMedir } from "@/lib/alcance";
@@ -137,6 +141,18 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   // decidido, a quien ve el indicador. Mejoramiento las decide; las consultas de Indicadores no lo importan.
   const marcas = ve ? await marcasDelIndicador(sesion, indicador.id, { ahora }) : null;
   const salidas = ve && vista === "resultados" ? await salidasVisibles(sesion, indicador.id) : null;
+  // «Mejoramiento» (Fase 15B, anexo §10.1), a quien ve el indicador activo o retirado (los únicos que un hallazgo puede citar; la regla
+  // de «A qué se refiere», `indicadorEnlazable`): los hallazgos que la persona ve y lo citan, y «Abrir hallazgo» o «Reportar» con el
+  // indicador puesto y su proceso propuesto. Lo decide Mejoramiento: las consultas de Indicadores no lo importan.
+  const enlazable = ve ? await indicadorEnlazable(obtenerSql(), sesion, { id: indicador.id }) : null;
+  const mejoramiento = enlazable
+    ? await seccionDeMejoramiento(
+        sesion,
+        { indicadorId: enlazable.id },
+        { procesoId: enlazable.procesoId, enlace: { indicador: enlazable.codigo } },
+        { ahora },
+      )
+    : null;
   const contexto: ContextoDeVista = { sesion, indicador, ve, versiones, vigente, ficha, administra, ahora };
   // La vista elegida lee lo suyo; «Resultados» abre antes los periodos que hayan terminado (F14-DC12).
   const cuerpo =
@@ -240,6 +256,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         </Recuadro>
       ) : null}
       {cuerpo}
+      {mejoramiento ? <SeccionMejoramiento seccion={mejoramiento} /> : null}
     </div>
   );
 }

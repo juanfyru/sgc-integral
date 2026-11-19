@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Target } from "lucide-react";
-import { Objetivos } from "@/componentes/indicadores/Objetivos";
+import { Objetivos, type HallazgosDeObjetivo } from "@/componentes/indicadores/Objetivos";
 import { apruebaFichas, PestanasIndicadores, pestanasVisibles } from "@/componentes/indicadores/PestanasIndicadores";
 import { Selector } from "@/componentes/indicadores/Selector";
 import { Boton } from "@/componentes/ui/Boton";
@@ -8,7 +8,10 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { pestanaDeDatos } from "@/db/consultas/indicadores/datos";
 import { objetivosDelPeriodo, periodosDeObjetivos } from "@/db/consultas/indicadores/objetivos";
+import { abiertosPorObjetivo } from "@/db/consultas/mejoramiento/citas";
+import { rutaDeListaFiltrada } from "@/lib/mejoramiento/filtro";
 import { exigirSesion } from "@/lib/paginas";
+import { cuenta } from "@/lib/plural";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 export const dynamic = "force-dynamic";
@@ -20,14 +23,27 @@ type Parametros = Record<string, string | string[] | undefined>;
  * «Objetivos» (anexo 14B, §7), para toda persona con sesión: los objetivos activos, por clase, cada uno con los
  * indicadores que la persona ve, la medición que se tomó de cada uno en el periodo y si el objetivo se cumplió (la regla
  * del cálculo «Objetivos cumplidos», §5.2). El periodo va en un formulario `GET` (`?periodo=`): uno de los que ofrece
- * `periodosDeObjetivos`; cualquier otro valor es el año en curso.
+ * `periodosDeObjetivos`; cualquier otro valor es el año en curso. Cada objetivo dice además cuántos hallazgos abiertos que la
+ * persona ve apuntan a él (Fase 15B, anexo §10.5).
  */
 export default async function PaginaObjetivos({ searchParams }: { searchParams: Promise<Parametros> }) {
   const sesion = await exigirSesion();
   const sp = await searchParams;
   const periodos = periodosDeObjetivos(new Date(), zonaHoraria());
   const periodo = periodos.find((p) => p.clave === sp.periodo) ?? periodos[0];
-  const [objetivos, datos] = await Promise.all([objetivosDelPeriodo(sesion, periodo.clave), pestanaDeDatos(sesion)]);
+  const [objetivos, datos, abiertos] = await Promise.all([
+    objetivosDelPeriodo(sesion, periodo.clave),
+    pestanaDeDatos(sesion),
+    // Cuántos hallazgos sin terminar apuntan a cada objetivo (Fase 15B, anexo §10.5): solo los que la persona ve; lo cuenta
+    // Mejoramiento, que la página llama (las consultas de Indicadores no lo importan). Sin ninguno, el objetivo no dice nada.
+    abiertosPorObjetivo(sesion),
+  ]);
+  const hallazgos: HallazgosDeObjetivo = Object.fromEntries(
+    [...abiertos].map(([id, n]) => [
+      id,
+      { texto: cuenta(n, "hallazgo abierto", "hallazgos abiertos"), href: rutaDeListaFiltrada({ objetivo: id }) },
+    ]),
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -55,7 +71,7 @@ export default async function PaginaObjetivos({ searchParams }: { searchParams: 
       {objetivos.length === 0 ? (
         <EstadoVacio icono={Target} titulo="Aún no hay objetivos" texto="Se crean en Configuración de indicadores." />
       ) : (
-        <Objetivos objetivos={objetivos} />
+        <Objetivos objetivos={objetivos} hallazgos={hallazgos} />
       )}
     </div>
   );

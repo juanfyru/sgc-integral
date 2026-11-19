@@ -56,6 +56,7 @@ import { zonaHoraria } from "@/lib/zona-horaria";
 import { aMarcaLeida, columnasDeMarca, desdeLaMedicion } from "./marcas-base";
 import { avanceDeAccion, avanceDeHallazgo } from "./actividades";
 import { quienDecideAjustes } from "./ajustes";
+import { citaDe } from "./citas";
 import { clasificacionDe } from "./clasificacion";
 import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura";
 
@@ -86,6 +87,17 @@ export type FiltroDeLista = {
   soloVencidos?: boolean;
   /** Los que esperan la decisión de quien mira (R2): los hallazgos de sus tareas de mejoramiento (`tareasConSuHallazgo`). */
   esperanSuDecision?: boolean;
+  /** Fase 15B (anexo §10.6): los de un plan y los que apuntan a un objetivo (`mejora_clasificacion`), a la vista en el formulario. */
+  plan?: number;
+  objetivo?: number;
+  /**
+   * Los que citan un documento, un indicador o una norma, o son de un subproceso (`citaDe`, la condición de la sección «Mejoramiento»
+   * de esas páginas): solo llegan por el enlace «Ver todos» (anexo §10.1).
+   */
+  documento?: number;
+  indicador?: number;
+  norma?: number;
+  subproceso?: number;
 };
 
 export type FilaDeHallazgo = {
@@ -386,6 +398,17 @@ export async function listarHallazgos(
     : sql`true`,
     filtro.soloVencidos ? sql`(${abierto} AND ${algoVencido})` : sql`true`,
     filtro.esperanSuDecision ? sql`h.id = ANY(${sql.array(suyos)}::bigint[])` : sql`true`,
+    // La clasificación (Fase 15B, anexo §10.6) y lo que cita (anexo §10.1, la condición de la sección de esas páginas).
+    filtro.plan !== undefined
+      ? sql`EXISTS (SELECT 1 FROM mejora_clasificacion fc WHERE fc.hallazgo_id = h.id AND fc.plan_id = ${filtro.plan})`
+      : sql`true`,
+    filtro.objetivo !== undefined
+      ? sql`EXISTS (SELECT 1 FROM mejora_clasificacion fc WHERE fc.hallazgo_id = h.id AND fc.objetivo_id = ${filtro.objetivo})`
+      : sql`true`,
+    filtro.documento !== undefined ? citaDe(sql, { documentoId: filtro.documento }) : sql`true`,
+    filtro.indicador !== undefined ? citaDe(sql, { indicadorId: filtro.indicador }) : sql`true`,
+    filtro.norma !== undefined ? citaDe(sql, { normaId: filtro.norma }) : sql`true`,
+    filtro.subproceso !== undefined ? citaDe(sql, { subprocesoId: filtro.subproceso }) : sql`true`,
   ];
   const filas = await sql`
     SELECT ${COLUMNAS_DE_LA_LISTA(sql, hoy, algoVencido)}
@@ -495,7 +518,7 @@ function agrupar<T>(filas: readonly T[], clave: (f: T) => string): Map<string, T
  * fila pasa otra vez por `filtroHallazgos`. Quien ve el hallazgo solo por una actividad (§6.3) recibe de las que no abre
  * (`puedeVerActividad`: la suya o una en que registró un seguimiento) lo que la página le muestra en texto: sin sus archivos, sus
  * seguimientos ni sus ajustes; la respuesta de Gerencia a una escalada, solo quien lo ve completo. El indicador del criterio no se
- * nombra. Cinco consultas para todo el libro, nunca una por fila.
+ * nombra. El plan y el objetivo de cada hallazgo (Fase 15B), al final. Seis consultas para todo el libro, nunca una por fila.
  */
 export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista, opciones?: Opciones): Promise<FilaDeExcel[]> {
   const sql = opciones?.sql ?? obtenerSql();
@@ -504,7 +527,7 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
   const { filas: lista } = await listarHallazgos(sesion, filtro, { sql, ahora });
   if (lista.length === 0) return [];
   const ids = sql.array(lista.map((f) => f.id));
-  const [hallazgos, rondas, actividades, causas, analisis] = await Promise.all([
+  const [hallazgos, rondas, actividades, causas, analisis, clasificacion] = await Promise.all([
     sql`SELECT h.id, h.codigo, h.titulo, h.descripcion, h.origen, h.fuente, h.ronda, h.estado, h.resultado_cierre,
         h.correccion_requerida, to_char(h.cerrado_en, 'YYYY-MM-DD') AS cerrado, p.nombre AS proceso,
         ${vistaCompletaDeHallazgo(sql, sesion)} AS completo
@@ -540,6 +563,8 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
       WHERE v.hallazgo_id = ANY(${ids}::bigint[]) ORDER BY c.orden, c.id`,
     sql`SELECT x.hallazgo_id, r.numero AS ronda, x.metodo FROM mejora_analisis x JOIN mejora_rondas r ON r.id = x.ronda_id
       WHERE x.hallazgo_id = ANY(${ids}::bigint[]) ORDER BY x.orden, x.id`,
+    // El plan y el objetivo (Fase 15B, anexo §10.6): el código y el nombre del plan los lee todo el que ve el hallazgo (F15B-DC9).
+    clasificacionDe(sql, lista.map((f) => f.id)),
   ]);
 
   const visibles = new Map(hallazgos.map((f) => [Number(f.id), f]));
@@ -554,6 +579,7 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
     if (!h) continue;
     const completo = h.completo === true;
     const rondaEnCurso = Number(h.ronda);
+    const clase = clasificacion.get(id);
     const base = (ronda: number): Omit<FilaDeExcel, "actividad"> => ({
       codigo: h.codigo as string,
       ronda,
@@ -575,6 +601,8 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
               en: (h.cerrado as string | null) ?? null,
             }
           : null,
+      plan: clase?.planCodigo ? `${clase.planCodigo} ${clase.planNombre ?? ""}`.trim() : null,
+      objetivo: clase?.objetivo ?? null,
     });
     const suyas = actividadesDe.get(String(id)) ?? [];
     if (suyas.length === 0) {

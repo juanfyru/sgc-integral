@@ -3,7 +3,7 @@ import { obtenerSql } from "@/db/cliente";
 import { registrarAuditoria } from "@/db/consultas/admin";
 import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { filasParaExcel } from "@/db/consultas/mejoramiento/lectura";
-import { procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
+import { nombresDelFiltro, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { construirExcelDeHallazgos } from "@/lib/mejoramiento/excel";
 import { filtroDeConsulta, filtrosEnPalabras } from "@/lib/mejoramiento/filtro";
 import { crearLimitador } from "@/lib/limite";
@@ -33,8 +33,13 @@ export async function GET(peticion: NextRequest): Promise<Response> {
   const ahora = new Date();
   const q = peticion.nextUrl.searchParams;
   const filtro = filtroDeConsulta(Object.fromEntries([...new Set(q.keys())].map((k) => [k, q.getAll(k)])));
-  const [filas, procesos, marca] = await Promise.all([filasParaExcel(sesion, filtro, { ahora }), procesosDelAlcance(sesion), obtenerMarcaSegura()]);
-  const filtros = filtrosEnPalabras(filtro, procesos);
+  const [filas, procesos, marca, nombres] = await Promise.all([
+    filasParaExcel(sesion, filtro, { ahora }),
+    procesosDelAlcance(sesion),
+    obtenerMarcaSegura(),
+    nombresDelFiltro(sesion, filtro),
+  ]);
+  const filtros = filtrosEnPalabras(filtro, procesos, nombres);
   const buffer = await construirExcelDeHallazgos(filas, {
     hospital: marca.nombre,
     generadoEn: fechaHoraLocal(ahora),

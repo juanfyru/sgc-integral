@@ -279,6 +279,13 @@ function filtrosDeMejora(v: unknown): (string | null)[] {
     f.soloVencidos === true ? "solo los vencidos" : null,
     f.esperanSuDecision === true ? "los que esperan su decisión" : null,
     texto(f.q) ? `con el texto «${texto(f.q)}»` : null,
+    // Fase 15B (anexo §10.6): solo los ids; la frase no nombra lo filtrado.
+    numero(f.plan) === null ? null : "de un plan de mejoramiento",
+    numero(f.objetivo) === null ? null : "de un objetivo",
+    numero(f.documento) === null ? null : "que citan un documento",
+    numero(f.indicador) === null ? null : "que citan un indicador",
+    numero(f.norma) === null ? null : "que citan una norma",
+    numero(f.subproceso) === null ? null : "de un subproceso",
   ];
 }
 

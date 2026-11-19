@@ -34,6 +34,27 @@ export const RUTA_REPORTES_RECIBIDOS = "/mejoramiento/reportes?vista=recibidos";
 /** El formulario de reportar; con `?reporte=<id>`, el paso de los archivos de un reporte propio recién enviado. */
 export const rutaDeReportar = (reporteId?: number) => (reporteId ? `/mejoramiento/reportar?reporte=${reporteId}` : "/mejoramiento/reportar");
 
+/**
+ * Sobre qué se reporta desde la sección «Mejoramiento» de otra página (Fase 15B, anexo §10.2): el código de un documento o de un
+ * indicador, o el slug de un proceso; los mismos identificadores que `rutaDeRegistro`. Tal como vienen en la dirección, sin validar:
+ * la página de reportar ignora lo que la persona no ve.
+ */
+export type SobreQueSeReporta = { documento?: string; indicador?: string; proceso?: string };
+
+/** Los parámetros de `SobreQueSeReporta`, en el orden en que van en la dirección. */
+export const PARAMETROS_DEL_REPORTE = ["documento", "indicador", "proceso"] as const satisfies ReadonlyArray<keyof SobreQueSeReporta>;
+
+/** El formulario de reportar con el enlace puesto (los vacíos no van), codificado. */
+export function rutaDeReportarSobre(p: SobreQueSeReporta): string {
+  const q = new URLSearchParams();
+  for (const k of PARAMETROS_DEL_REPORTE) {
+    const v = p[k];
+    if (typeof v === "string" && v !== "") q.set(k, v);
+  }
+  const texto = q.toString();
+  return texto ? `${rutaDeReportar()}?${texto}` : rutaDeReportar();
+}
+
 /** Convertir un reporte: el registro de un hallazgo con lo del reporte copiado. */
 export const rutaDeConvertir = (reporteId: number) => `/mejoramiento/nuevo?reporte=${reporteId}`;
 

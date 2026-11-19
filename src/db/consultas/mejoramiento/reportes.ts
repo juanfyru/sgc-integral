@@ -33,6 +33,7 @@ import { puede, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { activosDeRol } from "./avisos";
 import { contextoDeMejora } from "./config";
+import { documentoEnlazable, indicadorEnlazable } from "./enlazables";
 import { bloquearHallazgo, legible, NO_EXISTE } from "./flujo";
 import { registrarOcurrencia } from "./registro";
 import { bloquearReporteRecibido, dejarClasificado, dejarEventoDeReporte } from "./reportes-base";
@@ -60,10 +61,21 @@ const esId = (n: number) => Number.isSafeInteger(n) && n > 0;
  * clasificar contado desde ahora, y avisa a cada Admin SGC activo con quién reportó y cuándo lo vio, sin lo que escribió (los
  * avisos pueden salir por correo). Los archivos, hasta tres, se suben después (`api/mejoramiento/reportes/[id]/archivos`).
  * Enviado, no se edita.
+ *
+ * Desde la sección «Mejoramiento» de otra página (Fase 15B, anexo §10.2, F15B-DC36) llega además sobre qué se reporta: un documento o un
+ * indicador. Se vuelve a mirar aquí, dentro de la transacción, con la regla de «A qué se refiere» (`documentoEnlazable`,
+ * `indicadorEnlazable`): se guarda solo si quien reporta lo ve; si no (o si no existe), queda nulo, sin error y sin decir por qué.
  */
 export async function enviarReporte(
   sesion: SesionFlujo,
-  d: { descripcion: string; vistoEn: string; procesoId?: number | null; referenciaCaso?: string | null },
+  d: {
+    descripcion: string;
+    vistoEn: string;
+    procesoId?: number | null;
+    referenciaCaso?: string | null;
+    documentoId?: number | null;
+    indicadorId?: number | null;
+  },
   opciones?: OpcionesFlujo,
 ): Promise<{ id: number }> {
   requerirPermiso(sesion, "mejora.reportar");
@@ -81,10 +93,12 @@ export async function enviarReporte(
         if (!p?.activo) throw new ErrorMejora("Elija un proceso activo");
         proceso = p.nombre as string;
       }
+      const documentoId = v.documentoId === null ? null : ((await documentoEnlazable(tx, sesion, { id: v.documentoId }))?.id ?? null);
+      const indicadorId = v.indicadorId === null ? null : ((await indicadorEnlazable(tx, sesion, { id: v.indicadorId }))?.id ?? null);
       const [r] = await tx`INSERT INTO mejora_reportes
-          (reportado_por, reportado_en, descripcion, visto_en, proceso_id, referencia_caso, estado, vence_en)
+          (reportado_por, reportado_en, descripcion, visto_en, proceso_id, referencia_caso, estado, vence_en, documento_id, indicador_id)
         VALUES (${sesion.usuarioId}, ${c.ahora}, ${v.descripcion}, ${v.vistoEn}, ${v.procesoId}, ${v.referenciaCaso}, 'recibido',
-          ${venceEn("clasificar", c.ahora, c)})
+          ${venceEn("clasificar", c.ahora, c)}, ${documentoId}, ${indicadorId})
         RETURNING id`;
       const id = Number(r.id);
       await dejarEventoDeReporte(tx, { reporteId: id, tipo: "enviado", usuarioId: sesion.usuarioId, creadoEn: c.ahora });
@@ -93,7 +107,13 @@ export async function enviarReporte(
         accion: "mejora_reporte_enviado",
         entidad: ENTIDAD_REPORTE,
         entidadId: id,
-        detalle: { reporteId: id, procesoId: v.procesoId, estado: { antes: null, despues: "recibido" } },
+        detalle: {
+          reporteId: id,
+          procesoId: v.procesoId,
+          ...(documentoId !== null ? { documentoId } : {}),
+          ...(indicadorId !== null ? { indicadorId } : {}),
+          estado: { antes: null, despues: "recibido" },
+        },
       });
       const admins = (await activosDeRol(tx, ["admin_sgc"])).filter((u) => u !== sesion.usuarioId);
       if (admins.length > 0) {
@@ -165,6 +185,31 @@ export async function misReportes(sesion: Pick<SesionFlujo, "usuarioId">, opcion
 /** El hallazgo de un reporte clasificado, para los roles de control (que ven todos los hallazgos). */
 export type HallazgoDelReporte = { id: number; codigo: string; titulo: string };
 
+/**
+ * Sobre qué se reportó (Fase 15B, anexo §10.2): el documento y el indicador, para los roles de control (`mejora.ver_todo`, que ven
+ * todos los documentos y los indicadores publicados). Al convertir el reporte llegan al registro (`prellenadoDelReporte`).
+ */
+export type EnlaceDeUnReporte = {
+  documento: { id: number; codigo: string; titulo: string } | null;
+  indicador: { id: number; codigo: string; nombre: string } | null;
+};
+
+/** El documento y el indicador del reporte, con su código y su nombre (el de la ficha vigente del indicador). */
+const COLUMNAS_DEL_ENLACE = (sql: Cliente) => sql`r.documento_id, dr.codigo AS documento_codigo, dr.titulo AS documento_titulo,
+  r.indicador_id, ir.codigo AS indicador_codigo, coalesce((SELECT iv.nombre FROM indicador_versiones iv
+    WHERE iv.indicador_id = ir.id AND iv.estado = 'aprobada' ORDER BY iv.numero DESC LIMIT 1), ir.codigo) AS indicador_nombre`;
+
+const enlaceDe = (f: Record<string, unknown>): EnlaceDeUnReporte => ({
+  documento:
+    f.documento_id === null || f.documento_id === undefined
+      ? null
+      : { id: Number(f.documento_id), codigo: f.documento_codigo as string, titulo: f.documento_titulo as string },
+  indicador:
+    f.indicador_id === null || f.indicador_id === undefined
+      ? null
+      : { id: Number(f.indicador_id), codigo: f.indicador_codigo as string, nombre: f.indicador_nombre as string },
+});
+
 /** Un reporte en «Reportes recibidos» (`mejora.ver_todo`), con quién reportó. */
 export type ReporteDeLaLista = {
   id: number;
@@ -180,7 +225,7 @@ export type ReporteDeLaLista = {
   motivo: string | null;
   hallazgo: HallazgoDelReporte | null;
   archivos: number;
-};
+} & EnlaceDeUnReporte;
 
 const hallazgoDe = (f: Record<string, unknown>): HallazgoDelReporte | null =>
   f.hallazgo_id === null || f.hallazgo_id === undefined
@@ -197,11 +242,13 @@ export async function reportesRecibidos(sesion: SesionFlujo, opciones?: Opciones
   const sql = opciones?.sql ?? obtenerSql();
   const desde = new Date((opciones?.ahora ?? new Date()).getTime() - DIAS_DE_CLASIFICADOS * 86_400_000);
   const filas = await sql`SELECT ${COLUMNAS(sql)}, u.nombre AS reportador, r.proceso_id, p.nombre AS proceso, r.referencia_caso,
-      r.vence_en, h.id AS hallazgo_id, h.codigo AS hallazgo_codigo, h.titulo AS hallazgo_titulo
+      r.vence_en, h.id AS hallazgo_id, h.codigo AS hallazgo_codigo, h.titulo AS hallazgo_titulo, ${COLUMNAS_DEL_ENLACE(sql)}
     FROM mejora_reportes r
     JOIN usuarios u ON u.id = r.reportado_por
     LEFT JOIN procesos p ON p.id = r.proceso_id
     LEFT JOIN mejora_hallazgos h ON h.id = r.hallazgo_id
+    LEFT JOIN documentos dr ON dr.id = r.documento_id
+    LEFT JOIN indicadores ir ON ir.id = r.indicador_id
     WHERE r.estado = 'recibido' OR r.clasificado_en >= ${desde}
     ORDER BY (r.estado = 'recibido') DESC, CASE WHEN r.estado = 'recibido' THEN r.vence_en END ASC,
       coalesce(r.clasificado_en, r.reportado_en) DESC, r.id DESC`;
@@ -219,6 +266,7 @@ export async function reportesRecibidos(sesion: SesionFlujo, opciones?: Opciones
     motivo: (f.motivo_descarte as string | null) ?? null,
     hallazgo: hallazgoDe(f),
     archivos: Number(f.archivos),
+    ...enlaceDe(f),
   }));
 }
 
@@ -236,8 +284,8 @@ export type ReporteLeido = MiReporte & {
   referenciaCaso: string | null;
   /** Si lo envió quien lee. */
   suyo: boolean;
-  /** Lo que solo ven los roles de control (`mejora.ver_todo`): quién reportó, el estado, el plazo y el hallazgo. */
-  control: { reportadoPor: string; estado: EstadoReporte; vence: Date; hallazgo: HallazgoDelReporte | null } | null;
+  /** Lo que solo ven los roles de control (`mejora.ver_todo`): quién reportó, el estado, el plazo, el hallazgo y sobre qué se reportó. */
+  control: ({ reportadoPor: string; estado: EstadoReporte; vence: Date; hallazgo: HallazgoDelReporte | null } & EnlaceDeUnReporte) | null;
 };
 
 /**
@@ -248,11 +296,13 @@ export async function leerReporte(sesion: SesionFlujo, id: number, opciones?: Op
   if (!esId(id)) return null;
   const sql = opciones?.sql ?? obtenerSql();
   const [f] = await sql`SELECT ${COLUMNAS(sql)}, u.nombre AS reportador, r.proceso_id, p.nombre AS proceso, r.referencia_caso,
-      r.vence_en, h.id AS hallazgo_id, h.codigo AS hallazgo_codigo, h.titulo AS hallazgo_titulo
+      r.vence_en, h.id AS hallazgo_id, h.codigo AS hallazgo_codigo, h.titulo AS hallazgo_titulo, ${COLUMNAS_DEL_ENLACE(sql)}
     FROM mejora_reportes r
     JOIN usuarios u ON u.id = r.reportado_por
     LEFT JOIN procesos p ON p.id = r.proceso_id
     LEFT JOIN mejora_hallazgos h ON h.id = r.hallazgo_id
+    LEFT JOIN documentos dr ON dr.id = r.documento_id
+    LEFT JOIN indicadores ir ON ir.id = r.indicador_id
     WHERE r.id = ${id}`;
   if (!f) return null;
   const suyo = Number(f.reportado_por) === sesion.usuarioId;
@@ -265,7 +315,13 @@ export async function leerReporte(sesion: SesionFlujo, id: number, opciones?: Op
     referenciaCaso: (f.referencia_caso as string | null) ?? null,
     suyo,
     control: deControl
-      ? { reportadoPor: f.reportador as string, estado: f.estado as EstadoReporte, vence: f.vence_en as Date, hallazgo: hallazgoDe(f) }
+      ? {
+          reportadoPor: f.reportador as string,
+          estado: f.estado as EstadoReporte,
+          vence: f.vence_en as Date,
+          hallazgo: hallazgoDe(f),
+          ...enlaceDe(f),
+        }
       : null,
   };
 }

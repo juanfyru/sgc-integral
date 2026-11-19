@@ -123,3 +123,29 @@ describe("el enlace de una actividad con un trámite (Fase 15B, anexo §9) es li
     expect(ruta ? ruta.join(" → ") : null).toBeNull();
   });
 });
+
+describe("los hallazgos en las otras páginas (Fase 15B, anexo §10.1) son livianos", () => {
+  const CITAS = path.join(SRC, "db", "consultas", "mejoramiento", "citas.ts");
+  const ENLAZABLES = path.join(SRC, "db", "consultas", "mejoramiento", "enlazables.ts");
+  const LECTURA = path.join(SRC, "db", "consultas", "mejoramiento", "lectura.ts");
+
+  it("citas.ts y enlazables.ts no llegan, por ningún camino, a lectura.ts (que importa citas.ts para sus filtros)", () => {
+    const g = grafo();
+    expect(g.get(LECTURA) ?? []).toContain(CITAS);
+    for (const liviano of [CITAS, ENLAZABLES]) {
+      const ruta = camino(g, liviano, [LECTURA], "");
+      expect(ruta ? ruta.join(" → ") : null).toBeNull();
+    }
+  });
+
+  it("las consultas de Indicadores no importan nada de Mejoramiento: lo llaman las páginas (anexo §10.5)", () => {
+    const g = grafo();
+    const INDICADORES = path.join(SRC, "db", "consultas", "indicadores") + path.sep;
+    const malos = [...g].flatMap(([desde, destinos]) =>
+      desde.startsWith(INDICADORES)
+        ? destinos.filter((d) => d.includes(`${path.sep}mejoramiento${path.sep}`)).map((d) => `${path.relative(SRC, desde)} → ${path.relative(SRC, d)}`)
+        : [],
+    );
+    expect(malos).toEqual([]);
+  });
+});

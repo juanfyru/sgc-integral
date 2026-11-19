@@ -3,7 +3,12 @@ import { Boton } from "@/componentes/ui/Boton";
 import { claseControl } from "@/componentes/ui/Campo";
 import type { FiltroDeLista } from "@/db/consultas/mejoramiento/lectura";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
-import { ETIQUETA_ESTADO_ESPECIAL } from "@/lib/mejoramiento/filtro";
+import {
+  ETIQUETA_ESTADO_ESPECIAL,
+  FILTROS_POR_ENLACE,
+  filtrosConNombreEnPalabras,
+  type NombresDelFiltro,
+} from "@/lib/mejoramiento/filtro";
 import { ORIGENES } from "@/lib/mejoramiento/origenes";
 import { ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
 import { ESTADOS_HALLAZGO } from "@/lib/mejoramiento/tipos";
@@ -38,16 +43,39 @@ function Selector({
   );
 }
 
-/** Los filtros de la lista: un formulario `GET`, cuyos nombres son los de `filtroDeConsulta` (`src/lib/mejoramiento/filtro.ts`). */
+/**
+ * Los filtros de la lista: un formulario `GET`, cuyos nombres son los de `filtroDeConsulta` (`src/lib/mejoramiento/filtro.ts`). El plan
+ * y el objetivo (Fase 15B, anexo §10.6) van a la vista si hay entre qué elegir; lo que llega por «Ver todos» de otra página (un
+ * documento, un indicador, una norma, un subproceso) se dice en una línea, por su nombre ya resuelto con su regla de visibilidad
+ * (`nombres`), y viaja oculto para que filtrar de nuevo no lo pierda. «Quitar» lo quita todo.
+ */
 export function FiltrosDeHallazgos({
   filtro,
   procesos,
+  planes = [],
+  objetivos = [],
+  nombres = {},
 }: {
   filtro: FiltroDeLista;
   procesos: ReadonlyArray<{ id: number; nombre: string }>;
+  planes?: ReadonlyArray<{ id: number; etiqueta: string }>;
+  objetivos?: ReadonlyArray<{ id: number; etiqueta: string }>;
+  nombres?: NombresDelFiltro;
 }) {
+  const porEnlace = filtrosConNombreEnPalabras(filtro, nombres, FILTROS_POR_ENLACE);
+  // El plan o el objetivo elegidos están entre las opciones aunque ya no se elijan (un objetivo inactivo, un plan que no se ve).
+  const conElegido = (lista: ReadonlyArray<{ id: number; etiqueta: string }>, elegido: number | undefined, nombre: string | undefined) =>
+    elegido === undefined || lista.some((x) => x.id === elegido) ? lista : [...lista, { id: elegido, etiqueta: nombre ?? "No disponible" }];
+  const opcionesDePlan = conElegido(planes, filtro.plan, nombres.plan);
+  const opcionesDeObjetivo = conElegido(objetivos, filtro.objetivo, nombres.objetivo);
   return (
     <form method="get" action="/mejoramiento" role="search" aria-label="Filtrar hallazgos" className="flex flex-wrap items-end gap-3">
+      {porEnlace.length > 0 ? (
+        <p className="w-full text-sm">
+          <span className="font-medium">Desde otra página: </span>
+          {porEnlace.join(" · ")}
+        </p>
+      ) : null}
       <div className="flex min-w-48 flex-[2] flex-col gap-1">
         <label htmlFor="filtro-q" className="text-sm font-medium">
           Buscar
@@ -58,6 +86,17 @@ export function FiltrosDeHallazgos({
       <Selector nombre="origen" etiqueta="Origen" valor={filtro.origen} opciones={ORIGENES.map((o) => [o.clave, o.etiqueta] as const)} />
       <Selector nombre="clase" etiqueta="Clase" valor={filtro.clase} opciones={Object.entries(ETIQUETA_CLASE)} />
       <Selector nombre="criticidad" etiqueta="Criticidad" valor={filtro.criticidad} opciones={Object.entries(ETIQUETA_CRITICIDAD)} />
+      {opcionesDePlan.length > 0 ? (
+        <Selector nombre="plan" etiqueta="Plan" valor={filtro.plan} opciones={opcionesDePlan.map((p) => [String(p.id), p.etiqueta] as const)} />
+      ) : null}
+      {opcionesDeObjetivo.length > 0 ? (
+        <Selector
+          nombre="objetivo"
+          etiqueta="Objetivo"
+          valor={filtro.objetivo}
+          opciones={opcionesDeObjetivo.map((o) => [String(o.id), o.etiqueta] as const)}
+        />
+      ) : null}
       <Selector
         nombre="estado"
         etiqueta="Estado"
@@ -72,6 +111,7 @@ export function FiltrosDeHallazgos({
         Solo vencidos
       </label>
       {filtro.esperanSuDecision ? <input type="hidden" name="decision" value="1" /> : null}
+      {FILTROS_POR_ENLACE.map((k) => (filtro[k] === undefined ? null : <input key={k} type="hidden" name={k} value={String(filtro[k])} />))}
       <div className="flex gap-2 pb-0.5">
         <Boton type="submit" variante="primario">
           Filtrar

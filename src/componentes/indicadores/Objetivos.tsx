@@ -18,6 +18,12 @@ const COLUMNAS = [
   { clave: "estado", etiqueta: "Estado" },
 ];
 
+/**
+ * Lo que Mejoramiento dice de un objetivo (Fase 15B, anexo §10.5): «4 hallazgos abiertos», con su enlace a la lista filtrada. Lo decide
+ * la página con Mejoramiento (`abiertosPorObjetivo`); un objetivo sin hallazgos que la persona vea no lo trae, ni con un cero.
+ */
+export type HallazgosDeObjetivo = Readonly<Record<number, { texto: string; href: string }>>;
+
 /** Las clases de objetivo, en el orden de la página. */
 const CLASES: { clase: ObjetivoLeido["clase"]; titulo: string }[] = [
   { clase: "calidad", titulo: "Objetivos de calidad" },
@@ -72,7 +78,7 @@ function Estado({ i }: { i: IndicadorDeObjetivo }) {
  * la meta»); el que no cuenta para el estado del objetivo lo dice debajo de su nombre. Tabla en pantallas anchas y tarjetas
  * en el celular. Sin indicadores que la persona vea, lo dice.
  */
-function TarjetaObjetivo({ objetivo: o }: { objetivo: ObjetivoLeido }) {
+function TarjetaObjetivo({ objetivo: o, hallazgos }: { objetivo: ObjetivoLeido; hallazgos?: { texto: string; href: string } }) {
   const titulo = `objetivo-${o.id}`;
   const tituloDeIndicadores = `Indicadores del objetivo: ${o.enunciado}`;
   return (
@@ -83,6 +89,14 @@ function TarjetaObjetivo({ objetivo: o }: { objetivo: ObjetivoLeido }) {
         </h3>
         <Insignia variante={VARIANTE[o.estado]}>{ETIQUETA_ESTADO_OBJETIVO[o.estado]}</Insignia>
       </div>
+      {hallazgos ? (
+        <p className="text-sm">
+          <Link href={hallazgos.href} className={ENLACE}>
+            {hallazgos.texto}
+            <span aria-hidden="true"> →</span>
+          </Link>
+        </p>
+      ) : null}
       {o.indicadores.length === 0 ? (
         <p className="text-sm text-muted-foreground">Sin indicadores que mostrar</p>
       ) : (
@@ -146,8 +160,11 @@ function TarjetaObjetivo({ objetivo: o }: { objetivo: ObjetivoLeido }) {
   );
 }
 
-/** Los objetivos de la página «Objetivos» (anexo 14B, §7), por clase, cada uno en su tarjeta. Una clase sin objetivos no se pinta. */
-export function Objetivos({ objetivos }: { objetivos: ObjetivoLeido[] }) {
+/**
+ * Los objetivos de la página «Objetivos» (anexo 14B, §7), por clase, cada uno en su tarjeta. Una clase sin objetivos no se pinta. Con
+ * `hallazgos` (Fase 15B, anexo §10.5), cada objetivo que lo trae dice cuántos hallazgos abiertos apuntan a él; los demás, nada.
+ */
+export function Objetivos({ objetivos, hallazgos = {} }: { objetivos: ObjetivoLeido[]; hallazgos?: HallazgosDeObjetivo }) {
   return (
     <div className="flex min-w-0 flex-col gap-8">
       {CLASES.filter((c) => objetivos.some((o) => o.clase === c.clase)).map((c) => (
@@ -158,7 +175,7 @@ export function Objetivos({ objetivos }: { objetivos: ObjetivoLeido[] }) {
           {objetivos
             .filter((o) => o.clase === c.clase)
             .map((o) => (
-              <TarjetaObjetivo key={o.id} objetivo={o} />
+              <TarjetaObjetivo key={o.id} objetivo={o} hallazgos={hallazgos[o.id]} />
             ))}
         </section>
       ))}

@@ -11,12 +11,15 @@
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { alcanceProcesos, enAlcance, filtroAcceso, filtroIndicadores, type Alcance } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, type Alcance } from "@/lib/alcance";
 import { FIJOS_DE_VERIFICACION, fuenteDeImpacto, fuenteDeVerificacion, ORIGEN_DE_IMPACTO } from "@/lib/mejoramiento/enganches";
+import type { SobreQueSeReporta } from "@/lib/mejoramiento/reportes";
 import type { ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
 import { puede } from "@/lib/permisos";
+import { procesoAdmiteRegistro } from "./citas";
 import { impactoParaAbrir, type ClaseDeImpacto } from "./enganche-impacto";
 import { hallazgoParaAbrir } from "./enganche-verificacion";
+import { documentoEnlazable, indicadorEnlazable, type DocumentoEnlazable, type IndicadorEnlazable } from "./enlazables";
 import { leerMarca, puedeResolverMarca, textosDeLaMarca } from "./marcas-base";
 import type { DatosDeHallazgo } from "./registro";
 
@@ -93,14 +96,14 @@ export const rotuloDeImpacto = (norma: string) =>
 type Lectura = { sql: Cliente; sesion: SesionFlujo; alcance: () => Promise<Alcance>; ahora: Date };
 
 /**
- * El proceso que se propone, solo si la persona puede registrar en él: activo y en su alcance (`alcanceProcesos`: el líder, los
- * suyos; los demás, todos). Una sola regla para `proceso`, `documento` e `indicador`: el líder que ve un documento general de otro
- * proceso recibe el documento, no el proceso.
+ * El proceso que se propone, solo si la persona puede registrar en él: la regla del registro (`procesoAdmiteRegistro`: activo y en su
+ * alcance; el líder, los suyos; los demás, todos), la misma del botón «Abrir hallazgo» de otras páginas (`puedeRegistrarEn`). Una sola
+ * regla para `proceso`, `documento`, `indicador` y el reporte que se convierte: el líder que ve un documento general de otro proceso
+ * recibe el documento, no el proceso.
  */
 async function procesoDondeRegistra(l: Lectura, procesoId: number | null): Promise<{ procesoId: number } | Record<string, never>> {
   if (procesoId === null) return {};
-  const [p] = await l.sql`SELECT activo FROM procesos WHERE id = ${procesoId}`;
-  return p?.activo === true && enAlcance(await l.alcance(), procesoId) ? { procesoId } : {};
+  return (await procesoAdmiteRegistro(l.sql, await l.alcance(), procesoId)) ? { procesoId } : {};
 }
 
 /**
@@ -129,36 +132,36 @@ async function delPlan(l: Lectura, valor: string | undefined): Promise<Prellenad
   };
 }
 
+/** Un documento que la persona puede enlazar (`documentoEnlazable`) con su proceso propietario, si puede registrar en él. */
+async function conElDocumento(l: Lectura, d: DocumentoEnlazable | null): Promise<Prellenado> {
+  if (!d) return PRELLENADO_VACIO;
+  return { ...PRELLENADO_VACIO, valores: { documentoId: d.id, ...(await procesoDondeRegistra(l, d.procesoId)) } };
+}
+
+/** Un indicador que la persona puede enlazar (`indicadorEnlazable`) con su proceso, si puede registrar en él. */
+async function conElIndicador(l: Lectura, i: IndicadorEnlazable | null): Promise<Prellenado> {
+  if (!i) return PRELLENADO_VACIO;
+  return { ...PRELLENADO_VACIO, valores: { indicadorId: i.id, ...(await procesoDondeRegistra(l, i.procesoId)) } };
+}
+
 /**
- * `documento` (anexo §10.3), por su código: uno con versión vigente que la persona ve (`filtroAcceso`, la regla de
+ * `documento` (anexo §10.3), por su código: uno con versión vigente que la persona ve (`documentoEnlazable`, la regla de
  * `documentosVigentesVisibles`), y su proceso propietario si puede registrar en él.
  */
 async function delDocumento(l: Lectura, valor: string | undefined): Promise<Prellenado> {
   const codigo = claveDe(valor);
   if (codigo === null) return PRELLENADO_VACIO;
-  const [d] = await l.sql`SELECT d.id, coalesce(dp.proceso_id, s.proceso_id) AS proceso_id FROM documentos d
-      LEFT JOIN documento_proceso dp ON dp.documento_id = d.id AND dp.es_principal
-      LEFT JOIN subprocesos s ON s.id = dp.subproceso_id
-    WHERE d.codigo = ${codigo}
-      AND EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
-      AND ${filtroAcceso(l.sql, l.sesion)}`;
-  if (!d) return PRELLENADO_VACIO;
-  const proceso = await procesoDondeRegistra(l, d.proceso_id === null ? null : Number(d.proceso_id));
-  return { ...PRELLENADO_VACIO, valores: { documentoId: Number(d.id), ...proceso } };
+  return conElDocumento(l, await documentoEnlazable(l.sql, l.sesion, { codigo }));
 }
 
 /**
- * `indicador` (anexo §10.3), por su código: uno activo o retirado que la persona ve (`filtroIndicadores`, la regla de
+ * `indicador` (anexo §10.3), por su código: uno activo o retirado que la persona ve (`indicadorEnlazable`, la regla de
  * `indicadoresConMediciones`), y su proceso si puede registrar en él.
  */
 async function delIndicador(l: Lectura, valor: string | undefined): Promise<Prellenado> {
   const codigo = claveDe(valor);
   if (codigo === null) return PRELLENADO_VACIO;
-  const [i] = await l.sql`SELECT i.id, i.proceso_id FROM indicadores i
-    WHERE i.codigo = ${codigo} AND i.estado IN ('activo', 'retirado') AND ${filtroIndicadores(l.sql, l.sesion)}`;
-  if (!i) return PRELLENADO_VACIO;
-  const proceso = await procesoDondeRegistra(l, Number(i.proceso_id));
-  return { ...PRELLENADO_VACIO, valores: { indicadorId: Number(i.id), ...proceso } };
+  return conElIndicador(l, await indicadorEnlazable(l.sql, l.sesion, { codigo }));
 }
 
 /** `proceso` (anexo §10.3), por su slug: uno activo donde la persona puede registrar. */
@@ -312,6 +315,13 @@ export function combinar(partes: readonly Prellenado[]): Prellenado {
   };
 }
 
+/** Lo que se lee para resolver una parte: la base, quien mira, su alcance (una consulta, solo si hace falta) y su hora. */
+function lecturaDe(sesion: SesionFlujo, opciones?: OpcionesDePrellenado): Lectura {
+  const sql = opciones?.sql ?? obtenerSql();
+  let alcance: Promise<Alcance> | null = null;
+  return { sql, sesion, alcance: () => (alcance ??= alcanceProcesos(sesion, { sql })), ahora: opciones?.ahora ?? new Date() };
+}
+
 /**
  * Lo que llega puesto al formulario de registro (y al de la carga) desde los parámetros de la dirección. Resuelve `plan`,
  * `documento`, `indicador` y `proceso`, y el primero de los enganches; lo que no reconoce o no admite, lo ignora. Las partes se
@@ -323,9 +333,7 @@ export async function prellenadoDeRegistro(
   p: ParametrosDeRegistro,
   opciones?: OpcionesDePrellenado,
 ): Promise<Prellenado> {
-  const sql = opciones?.sql ?? obtenerSql();
-  let alcance: Promise<Alcance> | null = null;
-  const l: Lectura = { sql, sesion, alcance: () => (alcance ??= alcanceProcesos(sesion, { sql })), ahora: opciones?.ahora ?? new Date() };
+  const l = lecturaDe(sesion, opciones);
   const partes = await Promise.all([
     delPlan(l, p.plan),
     delDocumento(l, p.documento),
@@ -334,4 +342,65 @@ export async function prellenadoDeRegistro(
     delEnganche(l, engancheDe(p)),
   ]);
   return combinar(partes);
+}
+
+/**
+ * Lo que trae puesto un reporte de funcionario que se convierte en hallazgo (spec 15 §7.3; Fase 15B, anexo §10.2, F15B-DC36): su
+ * documento y su indicador, si quien convierte los puede enlazar (`documentoEnlazable`, `indicadorEnlazable`), y el proceso: el que
+ * dijo quien reportó o, si no dijo, el del documento o, sin él, el del indicador; solo si quien convierte puede registrar en él
+ * (`procesoDondeRegistra`). Todo editable: lo vuelve a validar el registro. Se junta con `combinar`, antes de lo que trae la dirección.
+ */
+export async function prellenadoDelReporte(
+  sesion: SesionFlujo,
+  r: { procesoId: number | null; documentoId: number | null; indicadorId: number | null },
+  opciones?: OpcionesDePrellenado,
+): Promise<Prellenado> {
+  const l = lecturaDe(sesion, opciones);
+  const [d, i] = await Promise.all([
+    r.documentoId === null ? null : documentoEnlazable(l.sql, sesion, { id: r.documentoId }),
+    r.indicadorId === null ? null : indicadorEnlazable(l.sql, sesion, { id: r.indicadorId }),
+  ]);
+  const proceso = await procesoDondeRegistra(l, r.procesoId ?? d?.procesoId ?? i?.procesoId ?? null);
+  return {
+    ...PRELLENADO_VACIO,
+    valores: { ...(d ? { documentoId: d.id } : {}), ...(i ? { indicadorId: i.id } : {}), ...proceso },
+  };
+}
+
+/** Sobre qué se reporta, ya resuelto (anexo §10.2): lo que la persona ve y el proceso que se le propone. */
+export type EnlaceDelReporte = {
+  documento: { id: number; codigo: string; titulo: string } | null;
+  indicador: { id: number; codigo: string; nombre: string } | null;
+  procesoId: number | null;
+};
+
+/**
+ * Los parámetros de `/mejoramiento/reportar` que vienen de la sección «Mejoramiento» de otra página (anexo §10.2): el documento y el
+ * indicador por su código, con la regla de «A qué se refiere» (`documentoEnlazable`, `indicadorEnlazable`), y el proceso por su slug.
+ * Lo que la persona no ve se ignora sin decir por qué. El proceso que se propone, con la precedencia del registro (`combinar`): el
+ * explícito, si no el del indicador y, si no, el del documento; siempre uno activo (quien reporta lo pudo ver en cualquiera, spec 15
+ * §7.3). Lo que viaja oculto lo vuelve a mirar `enviarReporte` dentro de su transacción. Solo lecturas.
+ */
+export async function enlaceDelReporte(sesion: SesionFlujo, p: SobreQueSeReporta, opciones?: { sql?: Cliente }): Promise<EnlaceDelReporte> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const documento = claveDe(p.documento);
+  const indicador = claveDe(p.indicador);
+  const slug = claveDe(p.proceso);
+  const [d, i, delSlug] = await Promise.all([
+    documento === null ? null : documentoEnlazable(sql, sesion, { codigo: documento }),
+    indicador === null ? null : indicadorEnlazable(sql, sesion, { codigo: indicador }),
+    slug === null ? [] : sql`SELECT id FROM procesos WHERE slug = ${slug}`,
+  ]);
+  const candidatos = [delSlug[0] ? Number(delSlug[0].id) : null, i?.procesoId ?? null, d?.procesoId ?? null].filter(
+    (x): x is number => x !== null,
+  );
+  const activos =
+    candidatos.length === 0
+      ? new Set<number>()
+      : new Set((await sql`SELECT id FROM procesos WHERE activo AND id = ANY(${sql.array(candidatos)}::bigint[])`).map((f) => Number(f.id)));
+  return {
+    documento: d ? { id: d.id, codigo: d.codigo, titulo: d.titulo } : null,
+    indicador: i ? { id: i.id, codigo: i.codigo, nombre: i.nombre } : null,
+    procesoId: candidatos.find((id) => activos.has(id)) ?? null,
+  };
 }

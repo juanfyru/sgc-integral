@@ -113,7 +113,16 @@ function SeccionDatos({ norma: n, administra }: { norma: Norma; administra: bool
  * dos sentidos, procesos con su requisito, documentos internos y externos enlazados (los que la persona no ve, sin
  * código ni título) y el PDF; y lo que la persona puede hacer. Una retirada conserva su ficha, sin acciones.
  */
-export function FichaNorma({ norma: n, opciones }: { norma: Norma; opciones: OpcionesFicha }) {
+export function FichaNorma({
+  norma: n,
+  opciones,
+  mejoramiento,
+}: {
+  norma: Norma;
+  opciones: OpcionesFicha;
+  /** La sección «Mejoramiento» (Fase 15B, anexo §10.1): la pinta la página con lo que decide Mejoramiento; sin hallazgos, nada. */
+  mejoramiento?: React.ReactNode;
+}) {
   const retirada = n.estado === "retirada";
   const administra = n.acciones.administrar && !retirada;
   return (
@@ -145,6 +154,7 @@ export function FichaNorma({ norma: n, opciones }: { norma: Norma; opciones: Opc
         <SeccionProcesos norma={n} abierta={!retirada} procesos={opciones.procesos} />
         <SeccionDocumentos norma={n} abierta={!retirada} documentos={opciones.documentos} />
         <IndicadoresQueExige indicadores={opciones.indicadores ?? []} clase={SECCION} />
+        {mejoramiento}
         {administra ? <SeccionAdministrar norma={n} /> : null}
       </div>
     </div>

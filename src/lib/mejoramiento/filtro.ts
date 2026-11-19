@@ -28,12 +28,47 @@ export function etiquetaDelFiltroDeEstado(estado: NonNullable<FiltroDeLista["est
     : etiquetaDeEstado({ estado: estado as EstadoHallazgo, resultadoCierre: null, correccionRequerida: null });
 }
 
+/** Los filtros de la Fase 15B que se nombran (anexo §10.6): el plan y el objetivo, a la vista, y los que llegan por «Ver todos». */
+export const FILTROS_CON_NOMBRE = ["plan", "objetivo", "documento", "indicador", "norma", "subproceso"] as const;
+export type FiltroConNombre = (typeof FILTROS_CON_NOMBRE)[number];
+
+/** Los que solo llegan por el enlace «Ver todos» de otra página (anexo §10.1): el formulario los conserva ocultos. */
+export const FILTROS_POR_ENLACE = ["documento", "indicador", "norma", "subproceso"] as const satisfies ReadonlyArray<FiltroConNombre>;
+
+/**
+ * El nombre de lo filtrado, ya resuelto con la regla de visibilidad de cada cosa (`nombresDelFiltro`): lo que la persona no ve no
+ * llega y se dice «no disponible».
+ */
+export type NombresDelFiltro = Partial<Record<FiltroConNombre, string>>;
+
+const ROTULO_DEL_FILTRO: Record<FiltroConNombre, string> = {
+  plan: "Plan",
+  objetivo: "Objetivo",
+  documento: "Documento",
+  indicador: "Indicador",
+  norma: "Norma",
+  subproceso: "Subproceso",
+};
+
+/** «Plan: PM-2026-01 Auditoría…», en el orden de `claves`, para los que el filtro trae. */
+export function filtrosConNombreEnPalabras(
+  f: FiltroDeLista,
+  nombres: NombresDelFiltro,
+  claves: ReadonlyArray<FiltroConNombre> = FILTROS_CON_NOMBRE,
+): string[] {
+  return claves.flatMap((k) => (f[k] === undefined ? [] : [`${ROTULO_DEL_FILTRO[k]}: ${nombres[k] ?? "no disponible"}`]));
+}
+
 /**
  * Los filtros de la lista en palabras, uno por parte («Proceso: Urgencias», «Estado: Por aceptar», «Solo vencidos»), en el orden
  * del formulario: la línea de filtros del Excel. El proceso por su nombre en `procesos` (los del alcance de quien exporta); uno que
- * ya no está, «no disponible».
+ * ya no está, «no disponible». El plan, el objetivo y lo que llega por «Ver todos», por su nombre en `nombres`.
  */
-export function filtrosEnPalabras(f: FiltroDeLista, procesos: ReadonlyArray<{ id: number; nombre: string }>): string[] {
+export function filtrosEnPalabras(
+  f: FiltroDeLista,
+  procesos: ReadonlyArray<{ id: number; nombre: string }>,
+  nombres: NombresDelFiltro = {},
+): string[] {
   return [
     f.q ? `Texto: «${f.q}»` : null,
     f.procesoId !== undefined ? `Proceso: ${procesos.find((p) => p.id === f.procesoId)?.nombre ?? "no disponible"}` : null,
@@ -43,8 +78,11 @@ export function filtrosEnPalabras(f: FiltroDeLista, procesos: ReadonlyArray<{ id
     f.estado ? `Estado: ${etiquetaDelFiltroDeEstado(f.estado)}` : null,
     f.soloVencidos ? "Solo vencidos" : null,
     f.esperanSuDecision ? "Esperan su decisión" : null,
+    ...filtrosConNombreEnPalabras(f, nombres),
   ].filter((x): x is string => x !== null);
 }
+
+const ID_DE_LA_URL = /^\d{1,15}$/;
 
 export function filtroDeConsulta(p: Parametros): FiltroDeLista {
   const filtro: FiltroDeLista = {};
@@ -62,6 +100,10 @@ export function filtroDeConsulta(p: Parametros): FiltroDeLista {
   if (estado) filtro.estado = estado;
   if (primero(p.vencidos) === "1") filtro.soloVencidos = true;
   if (primero(p.decision) === "1") filtro.esperanSuDecision = true;
+  for (const k of FILTROS_CON_NOMBRE) {
+    const v = primero(p[k]);
+    if (v !== undefined && ID_DE_LA_URL.test(v)) filtro[k] = Number(v);
+  }
   return filtro;
 }
 
@@ -76,5 +118,12 @@ export function consultaDeFiltro(f: FiltroDeLista): string {
   if (f.estado) u.set("estado", f.estado);
   if (f.soloVencidos) u.set("vencidos", "1");
   if (f.esperanSuDecision) u.set("decision", "1");
+  for (const k of FILTROS_CON_NOMBRE) if (f[k] !== undefined) u.set(k, String(f[k]));
   return u.toString();
+}
+
+/** La lista de Mejoramiento con ese filtro puesto: adonde lleva «Ver todos» de la sección de otra página (anexo §10.1). */
+export function rutaDeListaFiltrada(f: FiltroDeLista): string {
+  const q = consultaDeFiltro(f);
+  return q ? `/mejoramiento?${q}` : "/mejoramiento";
 }

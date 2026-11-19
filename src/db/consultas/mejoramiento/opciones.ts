@@ -2,9 +2,11 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
-import { alcanceProcesos, filtroAcceso, filtroHallazgos, filtroIndicadores } from "@/lib/alcance";
+import { alcanceProcesos, filtroAcceso, filtroHallazgos, filtroIndicadores, filtroPlanes } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
+import type { NombresDelFiltro } from "@/lib/mejoramiento/filtro";
 import { etiquetasDeUsuarios } from "@/lib/mejoramiento/textos";
+import type { FiltroDeLista } from "./lectura";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
 /** Los procesos activos que la persona alcanza: el líder, solo los suyos; Admin SGC y Control Interno, todos (`alcanceProcesos`). */
@@ -176,4 +178,64 @@ export async function opcionesDeLaCarga(sesion: SesionFlujo, opciones?: { sql?: 
     cerrados: cerrados.map((f) => ({ id: Number(f.id), codigo: f.codigo as string, titulo: f.titulo as string, procesoId: Number(f.proceso_id) })),
     ...aQueSeRefiere,
   };
+}
+
+/**
+ * Las opciones del filtro por plan y por objetivo de la lista (Fase 15B, anexo §10.6): los planes no anulados que la persona ve
+ * (`filtroPlanes`), del más reciente al más antiguo, y los objetivos activos del maestro, más el elegido si ya no está activo (un
+ * hallazgo lo conserva y la lista lo sigue filtrando, anexo §10.4).
+ */
+export async function opcionesDelFiltro(
+  sesion: SesionFlujo,
+  elegido: { objetivo?: number },
+  opciones?: { sql?: Cliente },
+): Promise<{ planes: Array<{ id: number; etiqueta: string }>; objetivos: ObjetivoElegible[] }> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const [planes, objetivos] = await Promise.all([
+    sql`SELECT p.id, p.codigo, p.nombre FROM mejora_planes p WHERE p.anulado_en IS NULL AND ${filtroPlanes(sql, sesion)}
+      ORDER BY p.vigencia DESC, p.consecutivo DESC, p.id DESC`,
+    sql`SELECT id, clase, enunciado FROM objetivos WHERE activo OR id = ${elegido.objetivo ?? null}
+      ORDER BY clase <> 'calidad', orden, id`,
+  ]);
+  return {
+    planes: planes.map((f) => ({ id: Number(f.id), etiqueta: `${f.codigo as string} ${f.nombre as string}` })),
+    objetivos: objetivos.map((f) => ({
+      id: Number(f.id),
+      etiqueta: `${f.clase === "calidad" ? "Calidad" : "Institucional"} · ${f.enunciado as string}`,
+    })),
+  };
+}
+
+/**
+ * El nombre de lo que filtra la lista (Fase 15B, anexo §10.6): el plan, el objetivo y lo que llega por «Ver todos» de otra página, para
+ * la línea del formulario y la del Excel (`filtrosEnPalabras`). Cada uno con la regla de visibilidad de su módulo: el plan, la de
+ * `filtroPlanes`; el documento, `filtroAcceso`; el indicador, `filtroIndicadores`; la norma, el objetivo y el subproceso los lee toda
+ * sesión. Lo que la persona no ve no llega (la línea dice «no disponible»): un id cualquiera en la dirección no imprime el título de un
+ * documento restringido. Una consulta por filtro puesto, ninguna sin filtros.
+ */
+export async function nombresDelFiltro(sesion: SesionFlujo, f: FiltroDeLista, opciones?: { sql?: Cliente }): Promise<NombresDelFiltro> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const uno = async (consulta: Promise<readonly Record<string, unknown>[]> | null): Promise<string | undefined> => {
+    if (consulta === null) return undefined;
+    const [fila] = await consulta;
+    return fila ? (fila.nombre as string) : undefined;
+  };
+  const [plan, objetivo, documento, indicador, norma, subproceso] = await Promise.all([
+    uno(f.plan === undefined ? null : sql`SELECT p.codigo || ' ' || p.nombre AS nombre FROM mejora_planes p
+      WHERE p.id = ${f.plan} AND ${filtroPlanes(sql, sesion)}`),
+    uno(f.objetivo === undefined ? null : sql`SELECT enunciado AS nombre FROM objetivos WHERE id = ${f.objetivo}`),
+    uno(f.documento === undefined ? null : sql`SELECT d.codigo || ' ' || d.titulo AS nombre FROM documentos d
+      WHERE d.id = ${f.documento} AND ${filtroAcceso(sql, sesion)}`),
+    uno(f.indicador === undefined ? null : sql`SELECT i.codigo || ' ' || coalesce((SELECT iv.nombre FROM indicador_versiones iv
+        WHERE iv.indicador_id = i.id AND iv.estado = 'aprobada' ORDER BY iv.numero DESC LIMIT 1), '') AS nombre
+      FROM indicadores i WHERE i.id = ${f.indicador} AND ${filtroIndicadores(sql, sesion)}`),
+    uno(f.norma === undefined ? null : sql`SELECT ${nombreSql(sql)} AS nombre FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+      WHERE n.id = ${f.norma}`),
+    uno(f.subproceso === undefined ? null : sql`SELECT s.nombre FROM subprocesos s WHERE s.id = ${f.subproceso}`),
+  ]);
+  const nombres: NombresDelFiltro = {};
+  for (const [k, v] of Object.entries({ plan, objetivo, documento, indicador, norma, subproceso })) {
+    if (v !== undefined) nombres[k as keyof NombresDelFiltro] = v.trim();
+  }
+  return nombres;
 }
