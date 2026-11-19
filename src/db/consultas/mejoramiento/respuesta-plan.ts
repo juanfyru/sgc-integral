@@ -194,7 +194,9 @@ const mismos = (a: readonly number[], b: readonly number[]) => a.length === b.le
  * El Admin SGC registra la respuesta al ente desde el plan (anexo §3.8): la fecha de envío, ni futura ni anterior al día en que se
  * aprobó el más reciente de los planes de acción incluidos, y el oficio, un archivo del plan que no es ya el oficio de otra
  * respuesta. Vale para todos los hallazgos listos, que tienen que ser los que la persona vio (`vistos`): si con todo bloqueado la
- * lista no es la misma, no se registra nada (`LISTOS_CAMBIARON`, Review Focus 4). En una transacción: la respuesta y los hallazgos
+ * lista no es la misma, no se registra nada (`LISTOS_CAMBIARON`, Review Focus 4), también cuando todos los que vio dejaron de estar
+ * listos (se anularon, se respondieron con el mismo formulario enviado dos veces…): se confirma lo que se vio antes que nada.
+ * `SIN_LISTOS` queda solo para una lista vista vacía en un plan sin listos. En una transacción: la respuesta y los hallazgos
  * que incluye; en cada hallazgo, lo que escribe la respuesta de la 15A (la fecha y quién, su evento `respuesta_ente` y su
  * bitácora), con el plan; y el evento `respuesta` del plan con su bitácora. El id del oficio no va al evento del hallazgo (lo lee
  * su líder, que no abre los archivos del plan); a la bitácora, sí. No avisa: no le pasa el turno a nadie.
@@ -219,10 +221,12 @@ export async function registrarRespuestaDelPlan(
       if (r.vistos.some((id) => !delPlan.has(id))) throw new ErrorMejora(LISTOS_CAMBIARON);
       const bloqueados = new Map<number, HallazgoBase>();
       for (const id of r.vistos) bloqueados.set(id, await bloquearHallazgo(tx, id));
-      // Con los vistos bloqueados, otra vez: uno que dejó de estar listo, o uno que se volvió listo y no se vio, cambia la lista.
+      // Con los vistos bloqueados, otra vez: uno que dejó de estar listo, o uno que se volvió listo y no se vio, cambia la lista. Se
+      // compara antes de mirar si quedan listos: si la persona vio alguno y ya no queda ninguno, la lista cambió y la pantalla pide
+      // revisarla; `SIN_LISTOS` es solo de una lista vista vacía.
       const listos = await listosDe(tx, plan.id, zona);
-      if (listos.length === 0) throw new ErrorMejora(SIN_LISTOS);
       if (!mismos(listos.map((l) => l.id), r.vistos)) throw new ErrorMejora(LISTOS_CAMBIARON);
+      if (listos.length === 0) throw new ErrorMejora(SIN_LISTOS);
       if (r.enviadaEn > fechaEnZona(ahora, zona)) throw new ErrorMejora(ENVIO_FUTURO);
       const desde = elMayor(listos.map((l) => l.aprobadoEl)) as string;
       if (r.enviadaEn < desde) throw new ErrorMejora(envioAntesDeAprobar(desde));

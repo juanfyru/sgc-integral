@@ -291,7 +291,35 @@ describe("registrarRespuestaDelPlan", () => {
       expect((await loEscrito(tx, plan.id, todos)).respondidos).toBe(2);
     }));
 
-  it("sin listos, SIN_LISTOS; la fecha, ni futura ni anterior a la aprobación más reciente de los incluidos", () =>
+  it("si todos los que se vieron dejan de estar listos, la lista cambió (LISTOS_CAMBIARON, no SIN_LISTOS) y no se escribe nada", () =>
+    revertida(sql, async (tx) => {
+      const { b, plan, h1, h2, h3 } = await escena(tx);
+      const todos = [h1.id, h2.id, h3.id];
+      const oficio = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      const otro = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      const registrar = (oficioId: number) =>
+        registrarRespuestaDelPlan(b.admin, { planId: plan.id, enviadaEn: "2026-11-18", oficioId, vistos: [h1.id, h2.id] }, o(tx));
+
+      // El mismo formulario, enviado dos veces: la segunda vez ya no queda ningún listo (H3 sigue sin su plan aprobado).
+      await registrar(oficio);
+      const despuesDeLaPrimera = await loEscrito(tx, plan.id, todos);
+      await expect(registrar(otro)).rejects.toThrow(LISTOS_CAMBIARON);
+      expect(await loEscrito(tx, plan.id, todos)).toEqual(despuesDeLaPrimera);
+      expect(await respuestaDelPlan(b.admin, plan.id, { sql: tx })).toMatchObject({ listos: [] });
+    }));
+
+  it("si los que se vieron se anulan todos con el formulario abierto, también LISTOS_CAMBIARON, sin escribir nada", () =>
+    revertida(sql, async (tx) => {
+      const { b, plan, h1, h2, h3 } = await escena(tx);
+      const oficio = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      for (const h of [h1, h2]) await anularHallazgo(b.admin, { hallazgoId: h.id, justificacion: "Se registró dos veces por un error" }, o(tx));
+      await expect(
+        registrarRespuestaDelPlan(b.admin, { planId: plan.id, enviadaEn: "2026-11-18", oficioId: oficio, vistos: [h1.id, h2.id] }, o(tx)),
+      ).rejects.toThrow(LISTOS_CAMBIARON);
+      expect(await loEscrito(tx, plan.id, [h1.id, h2.id, h3.id])).toEqual(NADA);
+    }));
+
+  it("sin listos y sin nada visto, SIN_LISTOS (con algo visto, la lista cambió); la fecha, ni futura ni anterior a la aprobación más reciente", () =>
     revertida(sql, async (tx) => {
       const { b, plan, h1, h2, h3 } = await escena(tx);
       const oficio = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
@@ -306,12 +334,13 @@ describe("registrarRespuestaDelPlan", () => {
       await sacarDelPlan(b.control, { hallazgoId: h3.id, motivo: "Pasa al plan de la visita de seguimiento" }, o(tx));
       await ponerEnPlan(b.control, { planId: soloFaltan.id, hallazgoIds: [h3.id] }, o(tx));
       const delOtro = await archivoDelPlan(tx, soloFaltan.id, b.admin.usuarioId);
-      for (const vistos of [[], [h3.id]]) {
-        await expect(
-          registrarRespuestaDelPlan(b.admin, { planId: soloFaltan.id, enviadaEn: "2026-11-18", oficioId: delOtro, vistos }, o(tx)),
-        ).rejects.toThrow(SIN_LISTOS);
-      }
+      const enElOtro = (vistos: number[]) =>
+        registrarRespuestaDelPlan(b.admin, { planId: soloFaltan.id, enviadaEn: "2026-11-18", oficioId: delOtro, vistos }, o(tx));
+      await expect(enElOtro([])).rejects.toThrow(SIN_LISTOS);
+      // Quien dice haber visto H3 como listo vio otra lista: se le pide revisarla, no se le dice que no hay listos.
+      await expect(enElOtro([h3.id])).rejects.toThrow(LISTOS_CAMBIARON);
       expect(await loEscrito(tx, plan.id, [h1.id, h2.id])).toEqual(NADA);
+      expect(await loEscrito(tx, soloFaltan.id, [h3.id])).toEqual(NADA);
     }));
 
   it("el oficio es un archivo del plan que no es ya el oficio de otra respuesta; Control Interno no registra", () =>
@@ -384,6 +413,13 @@ describe("la respuesta de la 15A y la página del hallazgo", () => {
       expect(texto).not.toContain("Oficio único de respuesta al ente");
       expect(texto).not.toContain(`/mejoramiento/archivos/${oficio}`);
       expect(texto).not.toContain(`"oficioId":${oficio}`);
+
+      // En el plan, el líder no lee el bloque de la respuesta ni su línea del historial (Review Focus 1).
+      const planDelLider = await leerPlan(b.lider, plan.id, ahora);
+      expect(planDelLider).not.toBeNull();
+      expect(planDelLider?.respuesta).toBeNull();
+      expect(planDelLider?.historial.some((e) => e.tipo === "respuesta")).toBe(false);
+      expect((await leerPlan(b.gerencia, plan.id, ahora))?.historial.some((e) => e.tipo === "respuesta")).toBe(true);
 
       const deGerencia = await leerHallazgo(b.gerencia, h1.id, ahora);
       expect(deGerencia?.respuestaAlEnte).toEqual({

@@ -8,6 +8,7 @@ import { ANCLA_ARCHIVOS_DEL_PLAN, ANCLA_RESPUESTA_AL_ENTE, rutaDeHallazgo } from
 import { finDeFecha } from "@/lib/tramites/plazos";
 import type { AccionDelPaso } from "../pasos/Partes";
 import { FormularioRespuestaDelPlan } from "./FormularioRespuestaDelPlan";
+import { QuitarAvisoDeCambio } from "./QuitarAvisoDeCambio";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -60,9 +61,13 @@ export function RespuestaAlEnte({
         Respuesta al ente
       </h2>
       {cambio ? (
-        <p role="alert" className="rounded-md border border-estado-atencion bg-estado-atencion-fondo px-3 py-2 text-sm text-estado-atencion-texto">
-          {LISTOS_CAMBIARON}
-        </p>
+        <>
+          <p role="alert" className="rounded-md border border-estado-atencion bg-estado-atencion-fondo px-3 py-2 text-sm text-estado-atencion-texto">
+            {LISTOS_CAMBIARON}
+          </p>
+          {/* Junto al aviso y no en el formulario: con la lista nueva vacía el formulario no se pinta. */}
+          <QuitarAvisoDeCambio />
+        </>
       ) : null}
       {respuesta.vence && vence ? (
         <p className="text-sm">
@@ -101,7 +106,6 @@ export function RespuestaAlEnte({
           desde={respuesta.desde}
           hoy={hoy}
           anclaDeArchivos={ANCLA_ARCHIVOS_DEL_PLAN}
-          conAviso={cambio}
           accion={accion}
         />
       ) : null}

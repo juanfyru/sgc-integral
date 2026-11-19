@@ -390,6 +390,10 @@ describe("la respuesta al ente y los archivos del plan (Tarea 5, anexo §3.7 y �
     expect(pintar(respuesta(), { responder: false })).not.toContain("<form");
     const conAviso = pintar(respuesta(), { cambio: true });
     expect(conAviso).toMatch(/role="alert"[^>]*>Cambiaron los hallazgos listos para responder: revise la lista</);
+    // Con la lista nueva vacía no hay formulario, pero el aviso sigue (y su pieza de cliente, que no pinta nada).
+    const vaciaConAviso = pintar(respuesta({ listos: [], vence: null, desde: null }), { cambio: true });
+    expect(vaciaConAviso).toMatch(/role="alert"[^>]*>Cambiaron los hallazgos listos para responder: revise la lista</);
+    expect(vaciaConAviso).not.toContain("<form");
   });
 
   it("las respuestas registradas, con su oficio y sus hallazgos; sin listos, sin formulario", () => {

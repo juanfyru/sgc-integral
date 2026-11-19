@@ -27,6 +27,7 @@ import { registrarRespuestaAlEnteAccion, registrarRespuestaDelPlanAccion } from 
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
+import { anularHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { archivoDelPlan, baseDeMejora, c, evidenciaDelHallazgo, hallazgoEn, planDeMejoraDePrueba } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 
@@ -123,5 +124,32 @@ describe("registrarRespuestaDelPlanAccion (Fase 15B, anexo §3.8)", () => {
       expect(await registrar(b.admin, campos)).toBe(`REDIRECT:/mejoramiento/planes/${plan.id}#respuesta-al-ente`);
       const respondidos = await tx`SELECT count(*)::int AS n FROM mejora_hallazgos WHERE id IN (${h1.id}, ${h2.id}) AND respuesta_ente_en IS NOT NULL`;
       expect(respondidos[0].n).toBe(2);
+
+      // El mismo formulario, enviado otra vez: ya no queda ningún listo de los que vio. La lista cambió: vuelve al plan a revisarla
+      // (no un error en el formulario viejo) y no se escribe otra respuesta.
+      const otroOficio = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      expect(await registrar(b.admin, { ...campos, oficioId: String(otroOficio) })).toBe(
+        `REDIRECT:/mejoramiento/planes/${plan.id}?respuesta=cambio#respuesta-al-ente`,
+      );
+      const [respuestas] = await tx`SELECT count(*)::int AS n FROM mejora_plan_respuestas WHERE plan_id = ${plan.id}`;
+      expect(respuestas.n).toBe(1);
+    }));
+
+  it("si todos los que vio se anularon con el formulario abierto, vuelve al plan a revisar la lista y no escribe nada", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ente = { origen: "ente_control" as const, fuente: "Superintendencia Nacional de Salud", fechaLimiteEnte: "2026-12-30" };
+      const plan = await planDeMejoraDePrueba(tx, b.control, { origen: "ente_control", fechaLimiteEnte: "2026-12-30" });
+      const h = await hallazgoEn(tx, b, "en_ejecucion", ente);
+      const o = c(ENVIADA + "T15:00:00Z", tx);
+      await ponerEnPlan(b.control, { planId: plan.id, hallazgoIds: [h.id] }, o);
+      const oficioId = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      await anularHallazgo(b.admin, { hallazgoId: h.id, justificacion: "Se registró dos veces por un error" }, o);
+      const campos = { planId: String(plan.id), enviadaEn: ENVIADA, oficioId: String(oficioId), vistos: String(h.id) };
+      expect(await como(tx, b.admin, () => destino(registrarRespuestaDelPlanAccion(null, formulario(campos))))).toBe(
+        `REDIRECT:/mejoramiento/planes/${plan.id}?respuesta=cambio#respuesta-al-ente`,
+      );
+      const [respuestas] = await tx`SELECT count(*)::int AS n FROM mejora_plan_respuestas WHERE plan_id = ${plan.id}`;
+      expect(respuestas.n).toBe(0);
     }));
 });

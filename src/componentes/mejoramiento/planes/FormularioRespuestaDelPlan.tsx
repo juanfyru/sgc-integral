@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState } from "react";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
@@ -12,9 +12,8 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
  * «Registrar la respuesta» desde el plan (anexo §3.8): el oficio, uno de los archivos del plan que no es ya el oficio de otra
  * respuesta (con uno solo, ya elegido), y la fecha en que se envió, entre el día de la aprobación más reciente de los listos
  * (`desde`) y hoy. Envía la lista de hallazgos que mostró como listos (`vistos`): si al guardar no es la misma, no se registra
- * nada y la página vuelve con la lista nueva y el aviso (`conAviso`), que aquí se quita de la dirección para que recargar no lo
- * repita. Sin ningún archivo que pueda serlo, el formulario no se pinta: dice que falta y enlaza «Archivos del plan». El servidor
- * vuelve a comprobarlo todo.
+ * nada y la página vuelve con la lista nueva y el aviso (lo pinta `RespuestaAlEnte`). Sin ningún archivo que pueda serlo, el
+ * formulario no se pinta: dice que falta y enlaza «Archivos del plan». El servidor vuelve a comprobarlo todo.
  */
 export function FormularioRespuestaDelPlan({
   planId,
@@ -23,7 +22,6 @@ export function FormularioRespuestaDelPlan({
   desde,
   hoy,
   anclaDeArchivos,
-  conAviso,
   accion,
 }: {
   planId: number;
@@ -32,20 +30,9 @@ export function FormularioRespuestaDelPlan({
   desde: string | null;
   hoy: string;
   anclaDeArchivos: string;
-  conAviso: boolean;
   accion: AccionDelPaso;
 }) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
-  useEffect(() => {
-    if (!conAviso) return;
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("respuesta");
-      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
-    } catch {
-      // Sin historial que tocar: recargar repetiría el aviso, nada más.
-    }
-  }, [conAviso]);
   if (oficios.length === 0) {
     return (
       <p className="text-sm">
