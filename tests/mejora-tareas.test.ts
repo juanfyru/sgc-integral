@@ -25,6 +25,7 @@ import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { resolverConOcurrencia, resolverNoRequiere } from "@/db/consultas/mejoramiento/marcas";
 import { decidirAccionCorrectiva, rechazarHallazgo, registrarCorreccion, sostenerHallazgo } from "@/db/consultas/mejoramiento/recorrido";
 import { anularHallazgo, registrarHallazgo, registrarRespuestaAlEnte } from "@/db/consultas/mejoramiento/registro";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
@@ -50,6 +51,7 @@ import {
   evidenciaDelHallazgo,
   HORA_DE_ESCENA,
   hallazgoEn,
+  medicionMarcada,
   otroProcesoConLider,
   planDeMejoraDePrueba,
   planDePrueba,
@@ -635,6 +637,57 @@ describe("la respuesta al ente desde el plan (Fase 15B, anexo §3.8)", () => {
     }));
 });
 
+describe("la marca «Requiere acción de mejora» de un indicador (Fase 15B, anexo §6.5)", () => {
+  // Octubre de 2026, reportada y analizada el 3 de noviembre: ya es un pendiente; sin análisis, lo es desde su fecha límite.
+  const REPORTA = "2026-11-03T15:00:00Z";
+  const ANTES = "2026-11-05T15:00:00Z";
+
+  it("mej-marca: una por pendiente, del Admin SGC, con su título, sin fecha, a la sección de las marcas; ni el líder ni Control Interno", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const mm = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      const espera = await medicionMarcada(tx, { ahora: REPORTA, procesoId: b.procesoId });
+      const [{ nombre: proceso }] = await tx`SELECT nombre FROM procesos WHERE id = ${b.procesoId}`;
+      const id = `mej-marca:${mm.medicionId}`;
+      expect(await laDe(b.admin, tx, id, ANTES)).toEqual({
+        id,
+        modulo: "planes",
+        titulo: `Decidir la acción de mejora de ${mm.ind.codigo} Indicador de prueba ${mm.ind.codigo}, octubre de 2026`,
+        detalle: proceso,
+        vence: null,
+        enlace: `/indicadores/${encodeURIComponent(mm.ind.codigo)}#accion-de-mejora`,
+      });
+      // La que todavía espera su análisis no es tarea de nadie hasta su fecha límite.
+      expect(await laDe(b.admin, tx, `mej-marca:${espera.medicionId}`, ANTES)).toBeUndefined();
+      expect(await laDe(b.admin, tx, `mej-marca:${espera.medicionId}`, "2026-11-25T15:00:00Z")).toBeDefined();
+      for (const s of [b.lider, b.control]) expect(await laDe(s, tx, id, ANTES)).toBeUndefined();
+      // No es de un hallazgo: no cuenta en «Esperan su decisión».
+      const conSuHallazgo = (await tareasConSuHallazgo(b.admin, { sql: tx, ahora: new Date(ANTES) })).find((t) => t.tarea.id === id);
+      expect(conSuHallazgo?.hallazgoId).toBeNull();
+    }));
+
+  it("desaparece al decidir, con cualquiera de las tres salidas", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const o = c(ANTES, tx);
+      const conNoRequiere = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      const conHallazgo = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      const conOcurrencia = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      const abierto = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { indicadorId: conOcurrencia.ind.id, detectadoEn: "2026-11-04" }), o);
+      const ids = [conNoRequiere, conHallazgo, conOcurrencia].map((m) => `mej-marca:${m.medicionId}`);
+      const tiene = async () => (await tareasDe(b.admin, tx, ANTES)).filter((t) => ids.includes(t.id)).map((t) => t.id);
+      expect(await tiene()).toEqual(ids);
+      await resolverNoRequiere(b.admin, { medicionId: conNoRequiere.medicionId, justificacion: "El resultado se explica por el cierre de la sede" }, o);
+      await registrarHallazgo(
+        b.admin,
+        datosDeHallazgo(b.procesoId, { origen: "indicador", fuente: null, detectadoEn: "2026-11-04", indicadorId: conHallazgo.ind.id, medicionId: conHallazgo.medicionId }),
+        o,
+      );
+      await resolverConOcurrencia(b.lider, { medicionId: conOcurrencia.medicionId, hallazgoId: abierto.id }, o);
+      expect(await tiene()).toEqual([]);
+    }));
+});
+
 describe("«Mis tareas» agrupa las de mejoramiento por fuente", () => {
   const de = (paso: string, n: number, titulo = `Tarea ${n}`): Tarea => ({
     id: `mej-${paso}:${n}`,
@@ -681,6 +734,15 @@ describe("«Mis tareas» agrupa las de mejoramiento por fuente", () => {
     });
     const mezcladas = [...[1, 2, 3].map((n) => de("ente", n)), ...[4, 5, 6].map((n) => de("ente-plan", n))];
     expect(agruparTareas(mezcladas, 5, AHORA_G)).toEqual(mezcladas);
+  });
+
+  it("las marcas de los indicadores por decidir van a la lista de indicadores que requieren acción de mejora", () => {
+    expect(agruparTareas(seis("marca"), 5, AHORA_G)[0]).toMatchObject({
+      id: "mejora-marcas",
+      modulo: "planes",
+      titulo: "6 acciones de mejora de indicadores por decidir",
+      enlace: "/indicadores?reporte=requiere-accion",
+    });
   });
 
   it("las cargas sin su formato firmado van a la lista de «Esperan su decisión»", () => {

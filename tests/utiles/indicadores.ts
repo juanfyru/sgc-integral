@@ -91,6 +91,8 @@ export type OpcionesIndicadorDePrueba = {
   normaIds?: number[];
   /** La dimensión por la que se desagrega la versión 1, con su nombre de hoy (anexo 14C, §5.2); sin valor, ninguna. */
   dimensionId?: number;
+  /** El subproceso de la versión 1, con su nombre de hoy (debe ser del proceso); sin valor, ninguno. */
+  subprocesoId?: number;
 };
 
 export type VariableDePrueba = {
@@ -182,7 +184,7 @@ export async function indicadorDePrueba(
        unidad_id, unidad_nombre, unidad_sufijo, decimales, periodicidad, tendencia, meta,
        semaforo_modo, umbral_atencion_pct, limite_critico, rangos, resultado_max, nivel, riesgo_asociado,
        importacion_id, aprobacion_previa_documento, aprobacion_previa_por, aprobacion_previa_fecha,
-       ente, periodicidad_externa, plazo_externo_dias, dimension_id, dimension_nombre, creado_por)
+       ente, periodicidad_externa, plazo_externo_dias, dimension_id, dimension_nombre, subproceso_id, subproceso_nombre, creado_por)
     SELECT ${indicadorId}, 1, 'borrador', 'inicial', ${`Indicador de prueba ${codigo}`}, 'Medir el cumplimiento de la prueba',
       t.id, t.nombre, c.id, c.nombre, ${proceso.nombre as string}, ${o.objetivoId ?? null},
       (SELECT enunciado FROM objetivos WHERE id = ${o.objetivoId ?? null}), ${calculo ? "automatico" : "manual"}, ${o.calculo?.clave ?? null},
@@ -193,7 +195,8 @@ export async function indicadorDePrueba(
       ${o.importacionId ?? null}, ${o.importacionId ? (o.aprobacionPrevia?.documento ?? "Acta 1 de 2025") : null}, ${o.importacionId ? (o.aprobacionPrevia?.aprobadoPor ?? "Comité de calidad") : null},
       ${o.importacionId ? (o.aprobacionPrevia?.fecha ?? "2025-01-15") : null},
       ${o.ente?.nombre ?? null}, ${o.ente?.periodicidad ?? null}, ${o.ente?.plazoDias ?? null},
-      ${o.dimensionId ?? null}, (SELECT nombre FROM dimensiones WHERE id = ${o.dimensionId ?? null}), ${elaboradaPor}
+      ${o.dimensionId ?? null}, (SELECT nombre FROM dimensiones WHERE id = ${o.dimensionId ?? null}),
+      ${o.subprocesoId ?? null}, (SELECT nombre FROM subprocesos WHERE id = ${o.subprocesoId ?? null}), ${elaboradaPor}
     FROM tipos_indicador t, clasificaciones_indicador c, unidades_indicador un
     WHERE t.nombre = 'Eficacia' AND c.nombre = ${clasificacion} AND un.nombre = 'Porcentaje'
     RETURNING id`;

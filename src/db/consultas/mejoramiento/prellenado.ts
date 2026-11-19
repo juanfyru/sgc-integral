@@ -14,6 +14,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, enAlcance, filtroAcceso, filtroIndicadores, type Alcance } from "@/lib/alcance";
 import type { ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
 import { puede } from "@/lib/permisos";
+import { leerMarca, puedeResolverMarca, textosDeLaMarca } from "./marcas-base";
 import type { DatosDeHallazgo } from "./registro";
 
 export type { ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
@@ -38,7 +39,10 @@ export const PRELLENADO_VACIO: Prellenado = Object.freeze({
   rotulo: null,
 });
 
-/** `ahora`, para las ramas que lo necesiten (la marca de una medición, Tarea 8). */
+/**
+ * `ahora`, para las ramas que lo necesiten. La de una medición marcada no lo usa: propone el registro tanto para un pendiente como
+ * para una marca que espera su análisis (el registro deja su salida en los dos casos, anexo §6.3).
+ */
 export type OpcionesDePrellenado = { sql?: Cliente; ahora?: Date };
 
 /** Los enganches de otros módulos, en su orden de precedencia: si llega más de uno, se usa el primero. */
@@ -151,14 +155,46 @@ async function delProceso(l: Lectura, valor: string | undefined): Promise<Prelle
 }
 
 /**
- * El enganche que se usa (`engancheDe`). Cada uno añade aquí su rama: `medicion`, la Tarea 8 (la marca «Requiere acción de mejora»,
+ * `medicion` (anexo §6.2 y §10.3): la medición marcada sin salida en vigor (un pendiente, o una que todavía espera su análisis: el
+ * registro deja su salida en los dos casos, §6.3) de un indicador que la persona ve y cuya marca puede resolver con un hallazgo (el
+ * Admin SGC, o un líder activo de su proceso; `puedeResolverMarca`). Propone el origen «Indicador», el proceso del indicador (si
+ * puede registrar en él) y su subproceso vigente, el título (el nombre y el periodo) y la descripción (la frase del resultado);
+ * fija el indicador y la medición, y la medición viaja oculta (`marcaMedicionId`), que el registro vuelve a validar. Las mismas
+ * lecturas de `registrarHallazgo` (`leerMarca`), sin candado.
+ */
+async function deLaMedicion(l: Lectura, valor: string): Promise<Prellenado> {
+  const id = idDe(valor);
+  const m = id === null ? null : await leerMarca(l.sql, l.sesion, id);
+  if (!m || !m.marcada || m.decidida) return PRELLENADO_VACIO;
+  if (!(await puedeResolverMarca(l.sql, l.sesion, { id: m.indicadorId, procesoId: m.procesoId })).hallazgo) return PRELLENADO_VACIO;
+  const proceso = await procesoDondeRegistra(l, m.procesoId);
+  const { titulo, descripcion } = textosDeLaMarca(m);
+  return {
+    valores: {
+      origen: "indicador",
+      ...proceso,
+      ...("procesoId" in proceso && m.subprocesoId !== null ? { subprocesoId: m.subprocesoId } : {}),
+      indicadorId: m.indicadorId,
+      medicionId: m.medicionId,
+      titulo,
+      descripcion,
+    },
+    fijos: ["indicadorId", "medicionId"],
+    ocultos: { marcaMedicionId: String(m.medicionId) },
+    rotulo: null,
+  };
+}
+
+/**
+ * El enganche que se usa (`engancheDe`). Cada uno añade aquí su rama: `medicion`, esta tarea (la marca «Requiere acción de mejora»,
  * anexo §6.3); `verificacion`, la Tarea 10 (§7.2); `impacto` e `impactoIndicador`, la Tarea 11 (§8). Mientras no la tienen, no
  * ponen nada.
  */
-async function delEnganche(_l: Lectura, e: { clave: Enganche; valor: string } | null): Promise<Prellenado> {
+async function delEnganche(l: Lectura, e: { clave: Enganche; valor: string } | null): Promise<Prellenado> {
   if (e === null) return PRELLENADO_VACIO;
   switch (e.clave) {
-    case "medicion": // Tarea 8.
+    case "medicion":
+      return deLaMedicion(l, e.valor);
     case "verificacion": // Tarea 10.
     case "impacto": // Tarea 11.
     case "impactoIndicador": // Tarea 11.

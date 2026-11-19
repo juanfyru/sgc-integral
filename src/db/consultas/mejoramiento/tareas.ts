@@ -13,10 +13,11 @@
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
+import { filtroIndicadores, quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
 import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
+import { estadoDeLaMarca, tituloDeLaTarea } from "@/lib/mejoramiento/marcas";
 import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
-import { ANCLA_RESPUESTA_AL_ENTE, rutaDeActividad, rutaDeFormular, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
+import { ANCLA_RESPUESTA_AL_ENTE, rutaDeActividad, rutaDeFormular, rutaDeHallazgo, rutaDeMarcas, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { PREFIJO_REASIGNAR } from "@/lib/mejoramiento/textos";
 import { TERMINALES, type EstadoHallazgo, type HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { puede } from "@/lib/permisos";
@@ -29,6 +30,7 @@ import { cargaResuelta } from "./carga-confirmada";
 import { contextoDeMejora } from "./config";
 import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
 import { aBase } from "./flujo";
+import { aMarcaLeida, columnasDeMarca, desdeLaMedicion, etiquetaDelPeriodo, marcaSinSalida } from "./marcas-base";
 import { esperaRespuesta } from "./respuesta-plan";
 import { venceLaActividad } from "./vence-actividad";
 
@@ -304,6 +306,34 @@ async function delAdmin(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> 
   ];
 }
 
+/**
+ * Las marcas «Requiere acción de mejora» que esperan su decisión (Fase 15B, anexo §6.5): una tarea `mej-marca:<medicionId>` por
+ * pendiente, de quien tiene `mejora.gestionar`, sin fecha límite, que lleva a la sección de las marcas en la página del indicador.
+ * Una sola sentencia, sin importar cuántas haya (anexo §11.3: no encarece el cascarón): las marcadas sin salida en vigor
+ * (`marcaSinSalida`), y en memoria las que ya se pueden decidir (`estadoDeLaMarca`). No es de un hallazgo (`hallazgoId` nulo): no
+ * cuenta en «Esperan su decisión». El líder del proceso también puede resolverla, pero no recibe la tarea.
+ */
+export async function tareasDeMarcas(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<TareaDeMejora[]> {
+  if (!puede(s, "mejora.gestionar")) return [];
+  const filas = await sql`SELECT ${columnasDeMarca(sql)}, p.nombre AS proceso
+    FROM ${desdeLaMedicion(sql)} JOIN procesos p ON p.id = i.proceso_id
+    WHERE ${marcaSinSalida(sql)} AND ${filtroIndicadores(sql, s)}
+    ORDER BY m.desde, m.id`;
+  return filas.flatMap((f) => {
+    const m = aMarcaLeida(f);
+    if (estadoDeLaMarca(m, ahora) !== "pendiente") return [];
+    const tarea: Tarea = {
+      id: `mej-marca:${m.medicionId}`,
+      modulo: "planes",
+      titulo: tituloDeLaTarea(m.codigo, m.nombre, etiquetaDelPeriodo(m)),
+      detalle: f.proceso as string,
+      vence: null,
+      enlace: rutaDeMarcas(m.codigo),
+    };
+    return [{ tarea, hallazgoId: null }];
+  });
+}
+
 /** Por vencimiento ascendente, las que no vencen al final; a igual fecha, por identificador. */
 function enOrden(a: TareaDeMejora, b: TareaDeMejora): number {
   const va = a.tarea.vence?.getTime() ?? Infinity;
@@ -316,7 +346,13 @@ function enOrden(a: TareaDeMejora, b: TareaDeMejora): number {
 export async function tareasConSuHallazgo(sesion: SesionFlujo, opciones?: Opciones): Promise<TareaDeMejora[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const grupos = await Promise.all([deLosPasos(sql, sesion, ahora), deLasActividades(sql, sesion), deLosAjustes(sql, sesion), delAdmin(sql, sesion)]);
+  const grupos = await Promise.all([
+    deLosPasos(sql, sesion, ahora),
+    deLasActividades(sql, sesion),
+    deLosAjustes(sql, sesion),
+    delAdmin(sql, sesion),
+    tareasDeMarcas(sql, sesion, ahora),
+  ]);
   return grupos.flat().sort(enOrden);
 }
 

@@ -4,6 +4,8 @@
  */
 import type { TransactionSql } from "postgres";
 import { registrarArchivo } from "@/db/consultas/admin";
+import { analizar } from "@/db/consultas/indicadores/analisis";
+import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import type { OpcionesFlujo, SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { guardarAnalisis, guardarCausas, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
@@ -33,6 +35,7 @@ import { tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { indicadorDePrueba, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./indicadores";
 import { procesoNuevo } from "./mixto";
 import { sesionDe, usuarioDePrueba } from "./tramites";
 import { firmaDePrueba } from "./vigencia";
@@ -589,4 +592,55 @@ export async function objetivoDePrueba(tx: TransactionSql, activo = true): Promi
   const enunciado = `Objetivo de prueba ${Date.now()}-${objetivos}`;
   const [f] = await tx`INSERT INTO objetivos (clase, enunciado, orden, activo) VALUES ('calidad', ${enunciado}, 999, ${activo}) RETURNING id`;
   return { id: Number(f.id), enunciado };
+}
+
+/** La medición marcada de `medicionMarcada`: la de octubre de 2026 de su indicador, con quien la mide y quien la analiza. */
+export type MedicionMarcada = {
+  ind: IndicadorDePrueba;
+  medicionId: number;
+  mide: SesionFlujo;
+  analiza: SesionFlujo;
+  /** Su fecha límite, para reportar y para analizar (la que guarda la medición). */
+  venceEn: Date;
+};
+
+/** La causa y la acción propuesta con que `medicionMarcada` analiza la medición (las dos partes que pide un Crítico). */
+export const ANALISIS_DE_LA_MARCA = {
+  causa: "Dos de cinco agendas estuvieron cerradas por incapacidad",
+  accionPropuesta: "Definir un médico de reemplazo y abrir agenda los sábados",
+};
+
+/**
+ * Una medición ordinaria en Crítico, con la marca «Requiere acción de mejora» puesta por el dominio (Fase 15B, anexo §6): un indicador
+ * mensual activo nuevo (`indicadorDePrueba`, meta 90 y Crítico por debajo de 63, aprobado en enero de 2026 y medido desde octubre),
+ * del proceso `procesoId` si llega, con quien lo mide y quien lo analiza (dos personas de Consulta designadas); abre sus periodos a
+ * `ahora` y reporta octubre de 2026 con 10 de 100 (10 %). Con `analizada`, quien analiza escribe la causa y la acción propuesta
+ * (`ANALISIS_DE_LA_MARCA`). Con `vence`, la fecha límite de la medición pasa a ser esa (por SQL: es lo único que no sale del
+ * dominio). Todo a `ahora`. Solo dentro de `revertida`: deja una ficha aprobada.
+ */
+export async function medicionMarcada(
+  tx: TransactionSql,
+  x: { ahora: string; analizada?: boolean; vence?: string; procesoId?: number; indicador?: OpcionesIndicadorDePrueba; valores?: { A: string; B: string } },
+): Promise<MedicionMarcada> {
+  const ahora = new Date(x.ahora);
+  const mide = await usuarioDePrueba(tx, { rol: "consulta" });
+  const analiza = await usuarioDePrueba(tx, { rol: "consulta" });
+  const ind = await indicadorDePrueba(tx, {
+    periodicidad: "mensual",
+    inicioMedicion: "2026-10",
+    aprobadaEn: new Date("2026-01-15T15:00:00Z"),
+    mide: [mide.usuarioId],
+    analiza: [analiza.usuarioId],
+    ...(x.procesoId !== undefined ? { procesoId: x.procesoId } : {}),
+    ...x.indicador,
+  });
+  await asegurarMediciones({ sql: tx, ahora, indicadorId: ind.id });
+  const [m] = await tx`SELECT id FROM mediciones WHERE indicador_id = ${ind.id} AND periodo = '2026-10'`;
+  const medicionId = Number(m.id);
+  if (x.vence) await tx`UPDATE mediciones SET vence_en = ${new Date(x.vence)} WHERE id = ${medicionId}`;
+  const valores = x.valores ?? { A: "10", B: "100" };
+  await reportar(mide, { medicionId, valores, parcial: false, confirmado: true }, { sql: tx, ahora });
+  if (x.analizada) await analizar(analiza, { medicionId, ...ANALISIS_DE_LA_MARCA }, { sql: tx, ahora });
+  const [f] = await tx`SELECT vence_en FROM mediciones WHERE id = ${medicionId}`;
+  return { ind, medicionId, mide, analiza, venceEn: f.vence_en as Date };
 }

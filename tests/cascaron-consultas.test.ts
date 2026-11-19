@@ -41,8 +41,10 @@ vi.mock("@/db/consultas/mejoramiento/tareas", async (original) => ({
 
 import { Cascaron } from "@/componentes/cascaron/Cascaron";
 import { obtenerSql } from "@/db/cliente";
+import { tareasDeMarcas } from "@/db/consultas/mejoramiento/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { SesionValida } from "@/lib/sesion";
+import { baseDeMejora, medicionMarcada, type MedicionMarcada } from "./utiles/mejoramiento";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { contada } from "./utiles/sentencias";
 import { revertida } from "./utiles/transaccion";
@@ -220,6 +222,26 @@ describe("el costo del cascarón por render", () => {
         });
       } finally {
         await e.limpiar();
+      }
+    }));
+});
+
+describe("las tareas de las marcas de los indicadores (Fase 15B, anexo §6.5 y §11.3)", () => {
+  it("salen de una sola sentencia, sin importar cuántas haya; a quien no tiene mejora.gestionar no le cuestan ninguna", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ahora = "2026-11-25T15:00:00Z";
+      const marcadas: MedicionMarcada[] = [];
+      for (let i = 0; i < 3; i++) marcadas.push(await medicionMarcada(tx, { ahora: "2026-11-03T15:00:00Z", procesoId: b.procesoId }));
+      const { sql: contador, sentencias } = contada(tx);
+      const tareas = await tareasDeMarcas(contador, b.admin, new Date(ahora));
+      expect(sentencias).toHaveLength(1);
+      const ids = new Set(tareas.map((t) => t.tarea.id));
+      for (const m of marcadas) expect(ids.has(`mej-marca:${m.medicionId}`)).toBe(true);
+      for (const s of [b.lider, b.control, b.gerencia, b.consulta]) {
+        const otro = contada(tx);
+        expect(await tareasDeMarcas(otro.sql, s, new Date(ahora))).toEqual([]);
+        expect(otro.sentencias).toHaveLength(0);
       }
     }));
 });

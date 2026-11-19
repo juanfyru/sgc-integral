@@ -34,6 +34,7 @@ import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, trans
 import { cargaPendiente } from "./carga-confirmada";
 import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
 import { DATO_YA_NO_EXISTE } from "./legible";
+import { bloquearMarca, marcaDelPanel, salidaAlNacer } from "./marcas-base";
 import { bloquearReporteRecibido, dejarClasificado } from "./reportes-base";
 import { ENVIO_FUTURO, envioAntesDeAprobar, planQueResponde } from "./respuesta-plan";
 
@@ -78,6 +79,12 @@ export type DatosDeHallazgo = {
   planId?: number | null;
   /** El objetivo del maestro al que apunta (anexo §10.4): debe estar activo. Solo al registrar (y al cargar). */
   objetivoId?: number | null;
+  /**
+   * La medición marcada desde cuyo panel llegó el formulario (Fase 15B, anexo §6.3): el registro vuelve a sacar de ella la medición
+   * y el indicador, que quedan fijos, y si la medición ya tiene una salida en vigor se rechaza (`MARCA_YA_DECIDIDA`). Solo para quien
+   * puede resolver la marca; si no, se ignora. Solo al registrar.
+   */
+  marcaMedicionId?: number | null;
 };
 
 /** Lo que un hallazgo ya enlaza: al editarlo, un enlace que no cambia no se vuelve a mirar con el alcance de hoy. */
@@ -187,11 +194,18 @@ async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: str
  * `clasificarAlNacer`, en la misma transacción. Un plan que no admite (sin `mejora.planes`, anulado o que no existe) se ignora sin
  * decir por qué; un objetivo inactivo se rechaza (`OBJETIVO_INACTIVO`).
  *
+ * Con una medición marcada (anexo §6.3), el registro deja la salida «hallazgo» de esa marca en su misma transacción
+ * (`salidaAlNacer`) si quien registra puede resolverla. Con `marcaMedicionId` (el formulario llegó desde el panel de la marca y quien
+ * registra puede resolverla, `marcaDelPanel`), la medición y el indicador se vuelven a sacar de la base, el subproceso del indicador
+ * llega si el proceso elegido es el suyo, y una salida que otra persona decidió entre tanto rechaza el registro.
+ *
  * Orden de candados, el del módulo (primero el plan, después el hallazgo, después lo demás): el plan `FOR UPDATE`
- * (`bloquearPlanDelRegistro`, la primera sentencia, como en todo camino que clasifica: §3.4), el hallazgo de origen
- * (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar, pero antes del reporte—, el reporte `FOR UPDATE` y
- * el consecutivo del año. Así no se cruza con `sumarReporte`, que bloquea el hallazgo (`FOR UPDATE`) y después el reporte, ni con
- * `ponerEnPlan` y `ponerObjetivo`, que bloquean el plan y después el hallazgo.
+ * (`bloquearPlanDelRegistro`, la primera sentencia, como en todo camino que clasifica: §3.4), el candado de la medición
+ * (`bloquearMarca`, con la llave de lo que llega y antes de cualquier lectura que decida: así un registro nunca tiene la fila de un
+ * hallazgo mientras lo espera), el hallazgo de origen (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar,
+ * pero antes del reporte—, el reporte `FOR UPDATE` y el consecutivo del año. Así no se cruza con `sumarReporte`, que bloquea el
+ * hallazgo (`FOR UPDATE`) y después el reporte, ni con `ponerEnPlan` y `ponerObjetivo`, que bloquean el plan y después el hallazgo,
+ * ni con `resolverConOcurrencia`, que toma la medición y después el hallazgo.
  */
 export async function registrarHallazgo(
   sesion: SesionFlujo,
@@ -201,13 +215,25 @@ export async function registrarHallazgo(
   requerirPermiso(sesion, "mejora.registrar");
   const leido = EsquemaHallazgo.safeParse(d);
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
-  const v = leido.data;
+  const recibido = leido.data;
   // Clasificar un reporte es del Admin SGC (spec §6.1), aunque registrar lo puedan otros.
-  if (v.reporteId !== null) requerirPermiso(sesion, "mejora.gestionar");
+  if (recibido.reporteId !== null) requerirPermiso(sesion, "mejora.gestionar");
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
-      await bloquearPlanDelRegistro(tx, sesion, v.planId);
+      await bloquearPlanDelRegistro(tx, sesion, recibido.planId);
+      const medicionDelCandado = recibido.marcaMedicionId ?? recibido.medicionId;
+      if (medicionDelCandado !== null) await bloquearMarca(tx, medicionDelCandado);
+      // Desde el panel de la marca, lo fijo (la medición y su indicador) sale de la base, nunca del envío (anexo §10.3).
+      const panel = recibido.marcaMedicionId !== null ? await marcaDelPanel(tx, sesion, recibido.marcaMedicionId) : null;
+      const v: HallazgoValidado = panel
+        ? {
+            ...recibido,
+            medicionId: panel.medicionId,
+            indicadorId: panel.indicadorId,
+            subprocesoId: recibido.subprocesoId ?? (recibido.procesoId === panel.procesoId ? panel.subprocesoId : null),
+          }
+        : recibido;
       if (v.derivadoDe !== null) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${v.derivadoDe} FOR KEY SHARE`;
       const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
@@ -238,6 +264,7 @@ export async function registrarHallazgo(
         c,
       );
       await clasificarAlNacer(tx, sesion, h.id, { planId: v.planId, objetivoId: v.objetivoId }, c.ahora);
+      if (v.medicionId !== null) await salidaAlNacer(tx, sesion, { medicionId: v.medicionId, hallazgoId: h.id, desdeElPanel: panel !== null }, c.ahora);
       if (reporte) await dejarClasificado(tx, sesion, reporte, { estado: "convertido", hallazgo: h }, c.ahora);
       if (esExterno(v.origen)) await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
       return { id: h.id, codigo: h.codigo };
@@ -345,13 +372,22 @@ async function avisarAlProcesoNuevo(tx: TransactionSql, h: HallazgoBase, proceso
  */
 export async function registrarOcurrencia(
   sesion: SesionFlujo,
-  d: { hallazgoId: number; fecha: string; descripcion: string; origen?: "registro" | "reporte" | "medicion"; reporteId?: number | null },
+  d: {
+    hallazgoId: number;
+    fecha: string;
+    descripcion: string;
+    origen?: "registro" | "reporte" | "medicion";
+    reporteId?: number | null;
+    medicionId?: number | null;
+  },
   opciones?: OpcionesFlujo,
 ): Promise<void> {
   requerirPermiso(sesion, "mejora.registrar");
   const leido = EsquemaOcurrencia.safeParse(d);
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
   const o = leido.data;
+  // La medición de la que nace (la marca de un indicador, anexo 15B §6.2), como id: el evento y la bitácora la nombran.
+  const deLaMedicion = o.origen === "medicion" && o.medicionId !== null ? { medicionId: o.medicionId } : {};
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
@@ -371,7 +407,7 @@ export async function registrarOcurrencia(
         hallazgoId: h.id,
         ronda: h.ronda,
         tipo: "ocurrencia",
-        detalle: { fecha: o.fecha, origen: o.origen },
+        detalle: { fecha: o.fecha, origen: o.origen, ...deLaMedicion },
         usuarioId: sesion.usuarioId,
         ocurrioEn: c.ahora,
       });
@@ -380,7 +416,7 @@ export async function registrarOcurrencia(
         accion: "mejora_ocurrencia",
         entidad: ENTIDAD_HALLAZGO,
         entidadId: h.id,
-        detalle: { codigo: h.codigo, titulo, fecha: o.fecha, origen: o.origen },
+        detalle: { codigo: h.codigo, titulo, fecha: o.fecha, origen: o.origen, ...deLaMedicion },
       });
       const lideres = await lideresDeProceso(h.procesoId, { sql: tx });
       const admins = await activosDeRol(tx, ["admin_sgc"]);

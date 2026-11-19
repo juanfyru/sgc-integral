@@ -13,11 +13,12 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
+import { resolverNoRequiere } from "@/db/consultas/mejoramiento/marcas";
 import { anularPlan } from "@/db/consultas/mejoramiento/planes";
 import { engancheDe, PRELLENADO_VACIO, prellenadoDeRegistro } from "@/db/consultas/mejoramiento/prellenado";
 import { rutaDeRegistro } from "@/lib/mejoramiento/rutas";
 import { indicadorDePrueba } from "./utiles/indicadores";
-import { baseDeMejora, c, objetivoDePrueba, otroProcesoConLider, planDeMejoraDePrueba } from "./utiles/mejoramiento";
+import { baseDeMejora, c, medicionMarcada, objetivoDePrueba, otroProcesoConLider, planDeMejoraDePrueba } from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
 import { documentoLibre, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./utiles/tramites";
@@ -26,6 +27,8 @@ const sql = obtenerSql();
 afterAll(() => sql.end());
 
 const AHORA = "2026-11-17T15:00:00Z";
+/** Cuándo se reporta (y se analiza) la medición marcada, antes de su fecha límite. */
+const REPORTA = "2026-11-03T15:00:00Z";
 
 const siglaDe = async (tx: TransactionSql, procesoId: number) => (await tx`SELECT sigla FROM procesos WHERE id = ${procesoId}`)[0].sigla as string;
 const slugDe = async (tx: TransactionSql, procesoId: number) => (await tx`SELECT slug FROM procesos WHERE id = ${procesoId}`)[0].slug as string;
@@ -212,9 +215,63 @@ describe("prellenadoDeRegistro: a qué se refiere y el proceso", () => {
     await revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const p = await planDeMejoraDePrueba(tx, b.control);
+      // La medición manda sobre los demás enganches; Control Interno no resuelve marcas, así que no pone nada.
       const r = await prellenadoDeRegistro(b.control, { plan: String(p.id), medicion: "1", verificacion: "2", impacto: "3", impactoIndicador: "4" }, { sql: tx });
       expect(r.ocultos).toEqual({ planId: String(p.id) });
       expect(r.fijos).toEqual([]);
+    });
+  });
+});
+
+describe("prellenadoDeRegistro: la marca de una medición (Tarea 8, anexo §6.2)", () => {
+  it("de un pendiente, como Admin SGC: el origen, el proceso y el subproceso, el título y la frase del resultado; fija el indicador y la medición", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const [sub] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden) VALUES (${b.procesoId}, 'Consulta externa', ${`zz-sub-${Date.now()}`}, 1) RETURNING id`;
+      const mm = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId, indicador: { subprocesoId: Number(sub.id) } });
+      const nombre = `Indicador de prueba ${mm.ind.codigo}`;
+      expect(await prellenadoDeRegistro(b.admin, { medicion: String(mm.medicionId) }, { sql: tx })).toEqual({
+        valores: {
+          origen: "indicador",
+          procesoId: b.procesoId,
+          subprocesoId: Number(sub.id),
+          indicadorId: mm.ind.id,
+          medicionId: mm.medicionId,
+          titulo: `${nombre}, octubre de 2026`,
+          descripcion: `Octubre de 2026: «${nombre}» quedó en Crítico con 10 % (meta: ≥ 90 %).`,
+        },
+        fijos: ["indicadorId", "medicionId"],
+        ocultos: { marcaMedicionId: String(mm.medicionId) },
+        rotulo: null,
+      });
+      // El líder del proceso también la resuelve con un hallazgo; la que todavía espera su análisis también llega.
+      const espera = await medicionMarcada(tx, { ahora: REPORTA, procesoId: b.procesoId });
+      expect((await prellenadoDeRegistro(b.lider, { medicion: String(espera.medicionId) }, { sql: tx })).ocultos).toEqual({
+        marcaMedicionId: String(espera.medicionId),
+      });
+    });
+  });
+
+  it("de una medición sin marca, de una ya decidida, de un indicador que no ve o como Control Interno: vacío", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const sinMarca = await medicionMarcada(tx, { ahora: REPORTA, procesoId: b.procesoId, valores: { A: "95", B: "100" } });
+      expect(await prellenadoDeRegistro(b.admin, { medicion: String(sinMarca.medicionId) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+
+      const decidida = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      await resolverNoRequiere(b.admin, { medicionId: decidida.medicionId, justificacion: "El resultado se explica por el cierre de la sede" }, c(AHORA, tx));
+      expect(await prellenadoDeRegistro(b.admin, { medicion: String(decidida.medicionId) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+
+      const otro = await otroProcesoConLider(tx);
+      const restringida = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: otro.procesoId, indicador: { nivelAcceso: "restringido" } });
+      expect(await prellenadoDeRegistro(b.lider, { medicion: String(restringida.medicionId) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+
+      const pendiente = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      expect(await prellenadoDeRegistro(b.control, { medicion: String(pendiente.medicionId) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      expect(await prellenadoDeRegistro(otro.lider, { medicion: String(pendiente.medicionId) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      for (const medicion of ["2000000000", "9000000000", "0", "abc"]) {
+        expect(await prellenadoDeRegistro(b.admin, { medicion }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      }
     });
   });
 });

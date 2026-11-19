@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
+import { JUSTIFICACION_CORTA } from "@/lib/mejoramiento/marcas";
 import { FALTA_LA_FECHA_DEL_ENTE, MOTIVO_CORTO } from "@/lib/mejoramiento/planes";
 import { inicioDespuesDelFin } from "@/lib/mejoramiento/textos";
 import {
@@ -209,6 +210,11 @@ export const EsquemaHallazgo = z
     planId: idOpcional("El plan no es válido"),
     /** El objetivo del maestro al que apunta (anexo §10.4): activo al elegirlo. Solo al registrar; después, «Clasificación». */
     objetivoId: idOpcional("El objetivo elegido no es válido"),
+    /**
+     * La medición marcada desde cuyo panel llegó el formulario (anexo §6.3): llega oculta desde `?medicion=` y la vuelve a validar el
+     * registro dentro de su transacción. Solo al registrar: la carga, editar y reclasificar la ignoran.
+     */
+    marcaMedicionId: idOpcional("La medición elegida no es válida"),
   })
   .strict()
   .superRefine((d, ctx) => {
@@ -257,6 +263,8 @@ export const EsquemaOcurrencia = z
     descripcion: textoAcotado("La descripción de la ocurrencia", 10, 4000),
     origen: z.enum(["registro", "reporte", "medicion"], { error: "El origen de la ocurrencia no es válido" }).optional(),
     reporteId: idOpcional("El reporte no es válido"),
+    /** La medición marcada de la que nace (Fase 15B, anexo §6.2): solo con el origen «medicion»; va al evento y a la bitácora, como id. */
+    medicionId: idOpcional("La medición no es válida"),
   })
   .strict()
   .transform((d) => ({ ...d, origen: d.origen ?? ("registro" as const) }));
@@ -1560,4 +1568,25 @@ export const EsquemaFormularioRespuestaDelPlan = z
 /** El objetivo de un hallazgo: uno del maestro, o ninguno (lo quita). */
 export const EsquemaObjetivoDelHallazgo = z
   .object({ hallazgoId: idDeHallazgo, objetivoId: idOpcional("El objetivo elegido no es válido") })
+  .strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La marca «Requiere acción de mejora» de una medición (Fase 15B, anexo §6.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const idDeMedicion = idRequerido("La medición no es válida");
+
+/** Resolver la marca como una ocurrencia de un hallazgo sin terminar que cita el indicador. */
+export const EsquemaMarcaConOcurrencia = z.object({ medicionId: idDeMedicion, hallazgoId: idDeHallazgo }).strict();
+
+/** Resolver la marca con «No requiere acción de mejora»: la justificación va a la fila de la marca, nunca a la bitácora. */
+export const EsquemaMarcaNoRequiere = z
+  .object({
+    medicionId: idDeMedicion,
+    justificacion: z
+      .string({ error: JUSTIFICACION_CORTA })
+      .trim()
+      .min(10, JUSTIFICACION_CORTA)
+      .max(1000, "La justificación no puede pasar de 1000 caracteres"),
+  })
   .strict();

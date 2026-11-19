@@ -509,6 +509,24 @@ describe("frases con el detalle real", () => {
       expect(e(a, {}), a).not.toMatch(/^Acción «|undefined|null|NaN|\[object/);
     }
   });
+  it("la salida de la marca de un indicador (15B): el indicador, el periodo y el hallazgo; nunca la justificación", () => {
+    const m = { indicador: "CEX-ID-001", indicadorId: 7, periodo: "2026-10" };
+    expect(e("mejora_marca", { ...m, salida: "hallazgo", hallazgo: "HZ-2026-014", hallazgoId: 40, alRegistrar: true })).toBe(
+      "Decidió la acción de mejora de la medición de octubre de 2026 de CEX-ID-001: el hallazgo HZ-2026-014, al registrarlo",
+    );
+    expect(e("mejora_marca", { ...m, salida: "ocurrencia", hallazgo: "HZ-2026-014", hallazgoId: 40 })).toBe(
+      "Decidió la acción de mejora de la medición de octubre de 2026 de CEX-ID-001: una ocurrencia del hallazgo HZ-2026-014",
+    );
+    // Una fila que trajera la justificación no la muestra.
+    expect(e("mejora_marca", { ...m, salida: "no_requiere", justificacion: "La sede cerró por obras" })).toBe(
+      "Decidió que la medición de octubre de 2026 de CEX-ID-001 no requiere acción de mejora",
+    );
+    expect(e("mejora_marca", { ...m, periodo: "2026-T3", salida: "no_requiere" })).toBe(
+      "Decidió que la medición del tercer trimestre de 2026 de CEX-ID-001 no requiere acción de mejora",
+    );
+    expect(e("mejora_marca", {})).toBe("Decidió la acción de mejora de la medición de un indicador");
+    expect(nombreDeAccion("mejora_marca")).toBe("Decidió la acción de mejora de una medición");
+  });
 });
 
 /**

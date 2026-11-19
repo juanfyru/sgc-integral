@@ -533,6 +533,13 @@ function periodoEnFrase(clave: string): string {
   return /^\d{4}(-\d{2})?$/.test(clave) ? etiqueta : `el ${etiqueta}`;
 }
 
+/** «la medición de octubre de 2026 de CEX-ID-001», «la medición del tercer trimestre de 2026 de …»; sin código, «la medición de un indicador». */
+function laMedicionDe(codigo: string | null, periodo: string | null): string {
+  const de = periodo ? `de ${periodoEnFrase(periodo)}`.replace(/^de el /, "del ") : null;
+  if (!codigo) return `la medición de un indicador${de ? ` (${de.replace(/^del? /, "")})` : ""}`;
+  return `la medición ${de ? `${de} ` : ""}de ${codigo}`;
+}
+
 /** «Se resolvieron 2 revisiones por cambio de norma.» (anexo 14B, §9: `impactosResueltos`); `null` si no resolvió ninguna. */
 function revisionesResueltas(d: Record<string, unknown>): string | null {
   const n = numero(d.impactosResueltos) ?? 0;
@@ -1219,6 +1226,18 @@ export function describirEvento(e: EventoAuditoria): string {
     case "mejora_plan_respuesta":
     case "mejora_objetivo":
       return describirPlan(e.accion, d);
+    // ── Mejoramiento (15B): la salida de la marca «Requiere acción de mejora» de una medición. Nunca la justificación de un «no
+    // requiere»: no llega a la bitácora (queda en la fila de la marca), y una fila que la trajera tampoco la muestra
+    case "mejora_marca": {
+      const medicion = laMedicionDe(texto(d.indicador), texto(d.periodo));
+      const hallazgo = texto(d.hallazgo);
+      if (d.salida === "no_requiere") return `Decidió que ${medicion} no requiere acción de mejora`;
+      if (d.salida === "ocurrencia") return `Decidió la acción de mejora de ${medicion}: una ocurrencia ${hallazgo ? `del hallazgo ${hallazgo}` : "de un hallazgo"}`;
+      if (d.salida === "hallazgo") {
+        return `Decidió la acción de mejora de ${medicion}: ${hallazgo ? `el hallazgo ${hallazgo}` : "un hallazgo"}${d.alRegistrar === true ? ", al registrarlo" : ""}`;
+      }
+      return `Decidió la acción de mejora de ${medicion}`;
+    }
     // ── Indicadores (14C): el catálogo de datos compartidos
     case "dato_compartido_guardado":
       return d.creado === true
@@ -1712,6 +1731,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_plan_sale: "Sacó un hallazgo de un plan de mejoramiento",
   mejora_plan_respuesta: "Registró la respuesta al ente de un plan de mejoramiento",
   mejora_objetivo: "Cambió el objetivo de un hallazgo",
+  mejora_marca: "Decidió la acción de mejora de una medición",
   ...NOMBRES_DE_MEJORA,
   dato_compartido_guardado: "Guardó un dato compartido",
   dato_compartido_responsables: "Cambió los responsables de un dato compartido",

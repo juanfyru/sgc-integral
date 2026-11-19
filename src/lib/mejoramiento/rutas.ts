@@ -1,4 +1,5 @@
 /** Las rutas del módulo de mejoramiento: una sola definición para las páginas, los componentes y las acciones. Sin Node ni BD. */
+import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { puede, type SujetoPermiso } from "@/lib/permisos";
 
 /** La página de un hallazgo. */
@@ -21,6 +22,12 @@ export const rutaDePlan = (id: number) => `/mejoramiento/planes/${id}`;
 
 /** El bloque «Respuesta al ente» de la página del plan (anexo §3.8): adonde llevan su tarea y su formulario. */
 export const ANCLA_RESPUESTA_AL_ENTE = "respuesta-al-ente";
+
+/** La sección de la marca «Requiere acción de mejora» en la página del indicador (anexo §6.5): adonde lleva su tarea. */
+export const ANCLA_DE_MARCAS = "accion-de-mejora";
+
+/** La sección de las marcas de un indicador, en su página. */
+export const rutaDeMarcas = (codigoDelIndicador: string) => `${rutaDeIndicador(codigoDelIndicador)}#${ANCLA_DE_MARCAS}`;
 
 /** El bloque «Archivos del plan» (anexo §3.7): donde se sube el oficio antes de elegirlo en la respuesta. */
 export const ANCLA_ARCHIVOS_DEL_PLAN = "archivos-del-plan";
