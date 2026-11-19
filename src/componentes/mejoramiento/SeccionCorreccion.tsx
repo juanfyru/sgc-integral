@@ -75,7 +75,8 @@ function CorreccionEnlazada({ e, zona }: { e: NonNullable<DetalleDeHallazgo["cor
  * evidencia; si no, la justificación. Debajo, la decisión sobre la acción correctiva y, en el camino corto, quién la validó.
  * Plegable: abierta mientras es la etapa en curso. Solo en la no conformidad. Los archivos llegan como hijos (`ArchivosDe`),
  * solo para quien los ve. La de un hallazgo de verificación (`enlazada`, Fase 15B) pinta la corrección de ese hallazgo, sin
- * corrección propia; su acción correctiva, requerida desde que se abrió, la pinta aparte la página (`AccionCorrectivaRequerida`).
+ * corrección propia, y la acción correctiva requerida desde que se abrió (a quien ve el hallazgo completo, la página la repite a la
+ * vista, `AccionCorrectivaRequerida`).
  */
 export function SeccionCorreccion({
   correccion: c,
@@ -131,7 +132,7 @@ export function SeccionCorreccion({
           </dl>
         )}
         {children}
-        {decision.accionRequerida !== null && !enlazada ? (
+        {decision.accionRequerida !== null ? (
           <dl className="grid grid-cols-1 gap-3 border-t border-linea-suave pt-3 sm:grid-cols-2">
             <Dato etiqueta="¿Requiere acción correctiva?">
               {decision.accionRequerida ? (decision.decididaEn ? "Sí" : "Sí: es obligada") : "No"}

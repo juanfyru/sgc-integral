@@ -99,7 +99,7 @@ describe("SeccionCorreccion con la corrección de un hallazgo de verificación",
       ),
     );
 
-  it("a quien la ve: en qué va, qué se corrigió, quién, cuándo y el enlace; la acción correctiva va aparte, no aquí", () => {
+  it("a quien la ve: en qué va, qué se corrigió, quién, cuándo y el enlace; la acción correctiva requerida con su justificación", () => {
     const html = pintar({
       visible: true,
       estado: "Por validar",
@@ -113,9 +113,10 @@ describe("SeccionCorreccion con la corrección de un hallazgo de verificación",
     expect(html).toContain("Se retiró la copia vieja y se entregó la vigente");
     expect(html).toContain("Carlos Rojas");
     expect(html).toMatch(/<a [^>]*href="\/distribucion\/verificaciones\/4"[^>]*>Ver el hallazgo de verificación<\/a>/);
-    // La acción correctiva, requerida desde que nació, la pinta `AccionCorrectivaRequerida`, a la vista (maqueta 6).
-    expect(html).not.toContain("Es la tercera copia obsoleta del año en este punto");
-    expect(html).not.toContain("¿Requiere acción correctiva?");
+    // La decisión sigue en la sección, para todo el que la ve (también quien ve el hallazgo solo por su actividad, como en la 15A); la
+    // pieza a la vista (`AccionCorrectivaRequerida`) la añade la página a quien lo ve completo.
+    expect(html).toContain("¿Requiere acción correctiva?");
+    expect(html).toContain("Es la tercera copia obsoleta del año en este punto");
     expect(html).not.toContain("Aún no se registra la corrección</span>");
     expect(html).not.toContain(CORRECCION_EN_DISTRIBUCION);
   });
