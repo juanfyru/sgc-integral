@@ -19,10 +19,16 @@ import { ErrorMejora } from "@/lib/mejoramiento/tipos";
  */
 export const DATO_YA_NO_EXISTE = "Uno de los datos elegidos ya no existe: vuelva a cargar la página";
 
+/**
+ * Un hallazgo terminado (el trigger `sgc_impedir_si_hallazgo_terminado`, `42501`). Es también lo que dice el retiro de un archivo
+ * por datos personales de un hallazgo terminado (anexo 15B §11.2), que lo comprueba antes de escribir.
+ */
+export const HALLAZGO_TERMINADO = "El hallazgo ya terminó y no admite cambios";
+
 const LEGIBLES: Record<string, string> = {
   "23503": DATO_YA_NO_EXISTE,
   "23505": "Otra persona guardó lo mismo a la vez: vuelva a cargar la página",
-  "42501": "El hallazgo ya terminó y no admite cambios",
+  "42501": HALLAZGO_TERMINADO,
   "40P01": "Otra persona cambió el hallazgo a la vez: vuelva a intentarlo",
 };
 

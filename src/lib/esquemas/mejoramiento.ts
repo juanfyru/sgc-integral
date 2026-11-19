@@ -2,7 +2,7 @@ import { z } from "zod";
 import { esExterno, fuenteObligatoria, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
 import { JUSTIFICACION_CORTA } from "@/lib/mejoramiento/marcas";
 import { FALTA_LA_FECHA_DEL_ENTE, MOTIVO_CORTO } from "@/lib/mejoramiento/planes";
-import { inicioDespuesDelFin } from "@/lib/mejoramiento/textos";
+import { inicioDespuesDelFin, RETIRO_SIN_JUSTIFICAR } from "@/lib/mejoramiento/textos";
 import {
   CLASES,
   CRITERIOS_EFICACIA,
@@ -1624,3 +1624,22 @@ export const EsquemaEnlazarTramite = z
 
 /** Quitar el enlace de un trámite con una actividad. */
 export const EsquemaQuitarEnlace = z.object({ enlaceId: idRequerido("El enlace no es válido") }).strict();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los archivos que ya se firmaron: el retiro por datos personales (Fase 15B, anexo §11.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Retirar un archivo congelado por datos personales: el archivo y la justificación (al menos diez caracteres; vacía, el formulario no
+ * la manda y también es corta). La justificación va al evento del hallazgo, nunca a la bitácora.
+ */
+export const EsquemaRetiroDeArchivo = z
+  .object({
+    archivoId: idRequerido("El archivo no es válido"),
+    justificacion: z
+      .string({ error: RETIRO_SIN_JUSTIFICAR })
+      .trim()
+      .min(10, RETIRO_SIN_JUSTIFICAR)
+      .max(1000, "La justificación no puede pasar de 1000 caracteres"),
+  })
+  .strict();

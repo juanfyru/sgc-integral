@@ -119,8 +119,8 @@ describe("quién abre un archivo de un plan", () => {
 
       expect(await archivoServible(b.gerencia, id, { sql: tx })).toMatchObject({ nombreOriginal: "Informe final de auditoría.pdf" });
       expect(await archivoServible(b.lider, id, { sql: tx })).toBeNull();
-      expect((await archivosDe(tx, b.gerencia, archivo)).map((a) => a.id)).toEqual([id]);
-      expect(await archivosDe(tx, b.lider, archivo)).toEqual([]);
+      expect((await archivosDe(tx, b.gerencia, archivo)).archivos.map((a) => a.id)).toEqual([id]);
+      expect(await archivosDe(tx, b.lider, archivo)).toEqual({ archivos: [], retirados: [] });
 
       // La página del plan: el bloque de archivos, solo a quien ve todo; al líder, nada (ni el bloque).
       const deGerencia = await leerPlan(b.gerencia, plan.id, { sql: tx, ahora: new Date(AHORA) });

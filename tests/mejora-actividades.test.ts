@@ -475,14 +475,14 @@ describe("lo que se lee", () => {
       expect(d?.rondas[0].causas.length).toBeGreaterThan(0);
       expect(d?.rondas[0].acciones[0].actividades.map((x) => x.id)).toEqual([suya, ajena]);
       // De los archivos, solo los de su actividad: la otra actividad, el hallazgo y la ronda le dan la lista vacía.
-      const nombres = async (contexto: string, contextoId: number) => (await archivosDe(tx, responsable, { contexto, contextoId })).map((x) => x.nombre);
+      const nombres = async (contexto: string, contextoId: number) => (await archivosDe(tx, responsable, { contexto, contextoId })).archivos.map((x) => x.nombre);
       expect(await nombres("mejora_actividad", suya)).toEqual(["zz-suya.pdf"]);
       expect(await nombres("mejora_actividad", ajena)).toEqual([]);
       expect(await nombres("mejora_hallazgo", h.id)).toEqual([]);
       expect(await nombres("mejora_ronda", Number(r.id))).toEqual([]);
       // Quien lo ve completo, todos.
-      expect((await archivosDe(tx, b.lider, { contexto: "mejora_hallazgo", contextoId: h.id })).map((x) => x.nombre)).toContain("zz-del-hallazgo.pdf");
-      expect((await archivosDe(tx, b.lider, { contexto: "mejora_actividad", contextoId: ajena })).map((x) => x.nombre)).toEqual(["zz-ajena.pdf"]);
+      expect((await archivosDe(tx, b.lider, { contexto: "mejora_hallazgo", contextoId: h.id })).archivos.map((x) => x.nombre)).toContain("zz-del-hallazgo.pdf");
+      expect((await archivosDe(tx, b.lider, { contexto: "mejora_actividad", contextoId: ajena })).archivos.map((x) => x.nombre)).toEqual(["zz-ajena.pdf"]);
       // La página del hallazgo enlaza solo las actividades que quien mira abre.
       expect(d?.rondas[0].acciones[0].actividades.map((x) => x.seAbre)).toEqual([true, false]);
       const delLider = await leerHallazgo(b.lider, h.id, { sql: tx, ahora: new Date(AHORA) });

@@ -56,7 +56,7 @@ export default async function PaginaReportes({ searchParams }: { searchParams: P
         continue;
       }
       const dueno = { contexto: "mejora_reporte", contextoId: reporte.id } as const;
-      const archivos = reporte.archivos > 0 ? await archivosDe(sql, sesion, dueno) : [];
+      const archivos = reporte.archivos > 0 ? (await archivosDe(sql, sesion, dueno)).archivos : [];
       filas.push({
         reporte,
         archivos,
@@ -85,7 +85,7 @@ export default async function PaginaReportes({ searchParams }: { searchParams: P
     for (const reporte of mios) {
       reportes.push({
         reporte,
-        archivos: reporte.archivos > 0 ? await archivosDe(sql, sesion, { contexto: "mejora_reporte", contextoId: reporte.id }) : [],
+        archivos: reporte.archivos > 0 ? (await archivosDe(sql, sesion, { contexto: "mejora_reporte", contextoId: reporte.id })).archivos : [],
       });
     }
     descripcion = "Lo que usted reportó y en qué va. El Administrador del SGC lo clasifica y le avisa cuando lo hace y cuando se cierra.";

@@ -428,7 +428,7 @@ describe("la respuesta al ente y los archivos del plan (Tarea 5, anexo §3.7 y �
   });
 
   it("los archivos del plan: cada uno, una descarga; la zona de carga a quien puede subir", () => {
-    const archivos = { lista: [{ id: 70, nombre: "Informe final de auditoría.pdf", rol: "evidencia", tamano: 1800, mime: "application/pdf" }], quitables: [70], puedeSubir: true };
+    const archivos = { lista: [{ id: 70, nombre: "Informe final de auditoría.pdf", rol: "evidencia", tamano: 1800, mime: "application/pdf", congelado: false }], quitables: [70], puedeSubir: true };
     const html = renderToStaticMarkup(<ArchivosDelPlan planId={2} archivos={archivos} />);
     expect(html).toContain('id="archivos-del-plan"');
     expect(html).toContain('href="/mejoramiento/archivos/70/Informe%20final%20de%20auditor%C3%ADa.pdf"');

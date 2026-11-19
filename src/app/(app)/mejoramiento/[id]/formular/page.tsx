@@ -27,7 +27,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { laVezPasada, puedeFormular, puntoDePartidaDeLaMedicion } from "@/db/consultas/mejoramiento/analisis";
 import { saltaLaRevision } from "@/db/consultas/mejoramiento/aprobacion";
-import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
+import { archivosDe, archivosQuitables, autorizarSubida, retiradosDeLaSeccion } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadoresElegibles } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
 import type { DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
@@ -37,6 +37,7 @@ import { leerCriterios } from "@/lib/mejoramiento/eficacia";
 import { razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import type { TipoAccion } from "@/lib/mejoramiento/tipos";
 import { exigirSesion } from "@/lib/paginas";
+import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirHallazgo, rutaDeFormular, rutaDeHallazgo } from "../../_comun";
 
 export const dynamic = "force-dynamic";
@@ -167,7 +168,10 @@ export default async function PaginaFormular({
   if (!ronda) notFound();
 
   const dueno = { contexto: "mejora_ronda", contextoId: ronda.id } as const;
-  const analisis = (await archivosDe(sql, sesion, dueno)).filter((a) => a.rol === "analisis");
+  const deLaRonda = await archivosDe(sql, sesion, dueno);
+  const analisis = deLaRonda.archivos.filter((a) => a.rol === "analisis");
+  // Lo que se retiró por datos personales mientras el plan estaba enviado (anexo 15B §11.2): la lista dice que se retiró y cuándo.
+  const retirados = retiradosDeLaSeccion(deLaRonda, "analisis", zonaHoraria());
   const puedeSubir = (await autorizarSubida(sesion, { contexto: "mejora_ronda", id: ronda.id, rol: "analisis" })).ok;
   const quitables = await archivosQuitables(sql, sesion, analisis, dueno);
   const anterior = h.reincidenteDe && "id" in h.reincidenteDe ? await laVezPasada(sql, h.id) : null;
@@ -233,6 +237,7 @@ export default async function PaginaFormular({
                   <ArchivosDe
                     archivos={analisis}
                     quitables={quitables}
+                    retirados={retirados}
                     direccionDeSubida={puedeSubir ? `/api/mejoramiento/rondas/${ronda.id}/archivos?rol=analisis` : null}
                     nombre="Zona de carga de los adjuntos del análisis"
                     vacio="Sin adjuntos del análisis."

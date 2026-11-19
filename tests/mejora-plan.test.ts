@@ -6,7 +6,9 @@
 import type { TransactionSql } from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
+import { registrarArchivo } from "@/db/consultas/admin";
 import { guardarAnalisis, guardarCausas, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
+import { retirarPorDatosPersonales } from "@/db/consultas/mejoramiento/archivos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { NO_EXISTE } from "@/db/consultas/mejoramiento/flujo";
 import { indicadorDeEficacia, indicadoresElegibles } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
@@ -21,7 +23,7 @@ import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { puntoDePrueba } from "./utiles/distribucion";
 import { indicadorDePrueba } from "./utiles/indicadores";
-import { baseDeMejora, c, hallazgoEn, otroProcesoConLider, type BaseDeMejora } from "./utiles/mejoramiento";
+import { baseDeMejora, c, hallazgoEn, llevarHasta, otroProcesoConLider, type BaseDeMejora } from "./utiles/mejoramiento";
 import { documentoLibre, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
@@ -754,4 +756,43 @@ describe("la huella del plan y el impacto de norma", () => {
     expect(huellaDePlan(con({ impactoId: 6 }))).not.toBe(deDocumento);
     expect(huellaDePlan(con({ impactoId: 5 }))).toBe(deDocumento);
   });
+});
+
+/**
+ * El retiro por datos personales (anexo 15B §11.2): los archivos no entran a la huella del plan, así que retirar uno del análisis o
+ * de la evidencia del registro de un plan enviado no cambia ninguna huella firmada.
+ */
+describe("la huella del plan y el retiro de un archivo", () => {
+  it("retirar un archivo no cambia la huella del plan enviado", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      const [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = 1`;
+      const subir = async (contexto: "mejora_hallazgo" | "mejora_ronda", contextoId: number, rol: string, quien: number) =>
+        Number(
+          (
+            await registrarArchivo(
+              {
+                versionId: null, rol, ruta: `mejoramiento/prueba/${Date.now()}-${rol}.pdf`, nombreOriginal: `zz-${rol}.pdf`, extension: "pdf",
+                mime: "application/pdf", tamanoBytes: 10, hashSha256: "7".repeat(64), contexto, contextoId,
+              },
+              quien,
+              { sql: tx },
+            )
+          ).id,
+        );
+      const adjunto = await subir("mejora_ronda", Number(r.id), "analisis", b.lider.usuarioId);
+      const evidencia = await subir("mejora_hallazgo", h.id, "evidencia", b.control.usuarioId);
+      await llevarHasta(tx, b, h.id, "en_revision");
+      const [envio] = await tx`SELECT detalle->>'huella' AS huella FROM mejora_eventos WHERE hallazgo_id = ${h.id} AND tipo = 'enviar_plan'`;
+      const firmas = await tx`SELECT firma, hash_sha256 FROM firmas WHERE mejora_hallazgo_id = ${h.id} ORDER BY id`;
+      expect((await examinar(tx, h.id)).huella).toBe(envio.huella);
+
+      for (const archivoId of [adjunto, evidencia]) {
+        await retirarPorDatosPersonales(b.admin, { archivoId, justificacion: "Trae el nombre de un paciente en la primera hoja" }, c(AHORA, tx));
+      }
+      expect(await tx`SELECT 1 FROM archivos WHERE id IN ${tx([adjunto, evidencia])}`).toHaveLength(0);
+      expect((await examinar(tx, h.id)).huella).toBe(envio.huella);
+      expect(await tx`SELECT firma, hash_sha256 FROM firmas WHERE mejora_hallazgo_id = ${h.id} ORDER BY id`).toEqual(firmas);
+    }));
 });

@@ -101,7 +101,7 @@ export default async function PaginaImprimirHallazgo({
         formato={formato}
         seguimientos={seguimientos}
         indicadores={Object.fromEntries(indicadores)}
-        evidenciaDeCorreccion={archivos.filter((a) => a.rol === "correccion").map((a) => a.nombre)}
+        evidenciaDeCorreccion={archivos.archivos.filter((a) => a.rol === "correccion").map((a) => a.nombre)}
       />
     );
   }

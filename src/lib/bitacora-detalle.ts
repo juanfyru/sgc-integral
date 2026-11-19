@@ -1227,6 +1227,14 @@ export function describirEvento(e: EventoAuditoria): string {
       const codigo = texto(d.codigo);
       return `Adjuntó el formato firmado de la carga ${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}: su plan llega a sus responsables`;
     }
+    // ── Mejoramiento (15B): el retiro por datos personales de un archivo ya firmado (anexo §11.2). El código del hallazgo y de qué
+    // sección era; nunca la justificación (queda en el evento del hallazgo) ni el nombre del archivo, que pudo traer el dato personal
+    case "mejora_archivo_retirado": {
+      const codigo = texto(d.codigo);
+      const deDonde =
+        d.contexto === "mejora_ronda" ? "del análisis" : d.rol === "evidencia" ? "de la evidencia del registro" : null;
+      return `Retiró por datos personales un archivo ${deDonde ? `${deDonde} ` : ""}${codigo ? `del hallazgo ${codigo}` : "de un hallazgo"}`;
+    }
     // ── Mejoramiento (15B): el plan de mejoramiento y el objetivo de un hallazgo (`describirPlan`)
     case "mejora_plan_crear":
     case "mejora_plan_editar":
@@ -1748,6 +1756,7 @@ const NOMBRE_DE_ACCION: Record<string, string> = {
   mejora_reporte_descartado: "Descartó un reporte",
   mejora_respuesta_ente: "Registró la respuesta al ente de un hallazgo",
   mejora_carga_confirmada: "Adjuntó el formato firmado de la carga de un hallazgo",
+  mejora_archivo_retirado: "Retiró por datos personales un archivo de un hallazgo",
   mejora_exporto_hallazgos: "Emitió la matriz de hallazgos de mejoramiento",
   mejora_exporto_plan_ente: "Emitió el Excel para el ente de un plan de mejoramiento",
   mejora_plan_crear: "Creó un plan de mejoramiento",

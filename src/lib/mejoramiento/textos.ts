@@ -15,6 +15,14 @@ export function cuerpoDeActividadAsignada(descripcion: string, fin: string): str
 /** Va en todo formulario del módulo con texto libre (spec §6.4). */
 export const AVISO_SIN_PACIENTES = "No escriba nombres ni documentos de pacientes o de quien se quejó. Use el número del caso.";
 
+/**
+ * Los archivos que ya se firmaron (Fase 15B, anexo §11.2): lo que dice quitar uno de ellos, el retiro por datos personales sin su
+ * justificación y el retiro de un archivo que esa regla no congela (o que la 15A ya dejaba sin quitar).
+ */
+export const ARCHIVO_FIRMADO = "Este archivo ya es parte de lo firmado y no se puede quitar";
+export const RETIRO_SIN_JUSTIFICAR = "Escriba por qué se retira el archivo (al menos 10 caracteres)";
+export const NO_SE_RETIRA_POR_AQUI = "Este archivo no se retira por datos personales";
+
 export const ETIQUETA_CLASE: Record<Clase, string> = {
   no_conformidad: "No conformidad",
   observacion: "Observación",

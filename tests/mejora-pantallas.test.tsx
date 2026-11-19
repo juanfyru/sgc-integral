@@ -2880,6 +2880,58 @@ describe("un hallazgo ya en curso (spec §15)", () => {
     expect(html.match(/Ana Carga/g)).toHaveLength(2);
     expect(html).toContain("Adjuntó el formato firmado de la carga");
   });
+
+  it("el retiro por datos personales (anexo 15B §11.2): el nombre, el tamaño, quién lo subió, quién lo retiró, cuándo y por qué", () => {
+    const detalle = {
+      archivoId: 41, contexto: "mejora_hallazgo", contextoId: 9, rol: "evidencia", nombre: "queja-firmada.pdf", tamano: 2048,
+      huella: "9".repeat(64), subidoPor: 5, subidoPorNombre: "Luis Registro", justificacion: "Trae el documento de un paciente",
+    };
+    const html = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        eventos={[{ id: 1, tipo: "archivo_retirado", ronda: 1, quien: "Ana Admin", cuando: new Date("2026-11-18T15:00:00Z"), detalle }]}
+      />,
+    );
+    expect(html).toContain("Retiró por datos personales el archivo «queja-firmada.pdf» (2 KB) de la evidencia del registro, que había subido Luis Registro");
+    expect(html).toContain("Justificación: Trae el documento de un paciente");
+    expect(html).toContain(`Huella SHA-256 del archivo: ${"9".repeat(64)}`);
+    expect(html).toContain(`Ana Admin · <time dateTime="2026-11-18T15:00:00.000Z">${fechaYHora(new Date("2026-11-18T15:00:00Z"), "America/Bogota")}</time>`);
+    // La huella de un evento del plan (la del plan firmado) no se pinta.
+    const envio = renderToStaticMarkup(
+      <HistorialDelHallazgo
+        zona="America/Bogota"
+        eventos={[{ id: 2, tipo: "enviar_plan", ronda: 1, quien: "Ana Admin", cuando: new Date("2026-11-18T15:00:00Z"), detalle: { huella: "8".repeat(64) } }]}
+      />,
+    );
+    expect(envio).not.toContain("8".repeat(64));
+  });
+});
+
+describe("los archivos que ya se firmaron en la lista (anexo 15B §11.2)", () => {
+  const archivos = [
+    { id: 41, nombre: "acta-firmada.pdf", mime: "application/pdf", tamano: 2048 },
+    { id: 42, nombre: "foto.png", mime: "image/png", tamano: 1024 },
+  ];
+
+  it("«Retirar por datos personales» solo en los retirables, con su justificación y su aviso; la línea de cada retiro, sin el nombre", () => {
+    const html = renderToStaticMarkup(<ArchivosDe archivos={archivos} quitables={[42]} retirables={[41]} retirados={[{ dia: "2026-11-18" }]} />);
+    expect(html.match(/Retirar por datos personales<\/button>/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Retirar por datos personales el archivo acta-firmada.pdf"');
+    expect(html).toContain('aria-label="Quitar el archivo foto.png"');
+    expect(html).not.toContain('aria-label="Quitar el archivo acta-firmada.pdf"');
+    expect(html).toContain('id="retirar-justificacion-41"');
+    expect(html).toContain(AVISO_SIN_PACIENTES);
+    expect(html).toContain(`Se retiró un archivo el <time dateTime="2026-11-18">${fechaDeDia("2026-11-18")}</time>`);
+  });
+
+  it("sin archivos, la línea del retiro reemplaza al «Sin archivos»; sin retiros ni retirables, la lista de siempre", () => {
+    const soloRetiro = renderToStaticMarkup(<ArchivosDe archivos={[]} retirados={[{ dia: "2026-11-18" }]} vacio="Sin evidencias adjuntas." />);
+    expect(soloRetiro).toContain("Se retiró un archivo el");
+    expect(soloRetiro).not.toContain("Sin evidencias adjuntas.");
+    const comoAntes = renderToStaticMarkup(<ArchivosDe archivos={archivos} />);
+    expect(comoAntes).not.toContain("Retirar por datos personales");
+    expect(comoAntes).not.toContain("Se retiró");
+  });
 });
 
 describe("los formularios del módulo caben a 390 px (recorrido de cierre, D1 y D8)", () => {

@@ -537,7 +537,7 @@ export async function leerActividad(sesion: SesionFlujo, id: number, opciones?: 
     sql`SELECT s.id, to_char(s.fecha, 'YYYY-MM-DD') AS fecha, s.realizado, s.avance, s.barreras, s.creado_en, u.nombre AS quien
       FROM mejora_seguimientos s JOIN usuarios u ON u.id = s.registrado_por
       WHERE s.actividad_id = ${id} ORDER BY s.fecha DESC, s.id DESC`,
-    archivosDe(sql, sesion, { contexto: "mejora_actividad", contextoId: id }),
+    archivosDe(sql, sesion, { contexto: "mejora_actividad", contextoId: id }).then((x) => x.archivos),
     sql`SELECT id, tipo, pedido_en, datos->>'finNuevo' AS fin_nuevo
       FROM mejora_ajustes WHERE actividad_id = ${id} AND estado = 'pendiente' ORDER BY id DESC LIMIT 1`,
     leerAjustes(sql, { actividadId: id }),

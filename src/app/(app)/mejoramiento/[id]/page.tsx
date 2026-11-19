@@ -86,7 +86,15 @@ import { obtenerSql } from "@/db/cliente";
 import { pideAjustesDelPlan, puedeReasignar } from "@/db/consultas/mejoramiento/actividades";
 import { laVezPasada, puedeFormular } from "@/db/consultas/mejoramiento/analisis";
 import { firmasDeHallazgo, puedeAprobar, puedeDevolverSinRevisor, puedeRevisar } from "@/db/consultas/mejoramiento/aprobacion";
-import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/mejoramiento/archivos";
+import {
+  archivosDe,
+  archivosQuitables,
+  archivosRetirables,
+  autorizarSubida,
+  retiradosDeLaSeccion,
+  type ArchivoDeMejora,
+  type ArchivosDeMejora,
+} from "@/db/consultas/mejoramiento/archivos";
 import { FALTA_EL_FORMATO } from "@/db/consultas/mejoramiento/carga-confirmada";
 import { revisoresDe } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
@@ -240,18 +248,23 @@ export default async function PaginaHallazgo({
   // Los archivos del hallazgo: solo para quien lo ve completo; el servidor decide cada subida.
   const sqlArchivos = obtenerSql();
   const dueno = { contexto: "mejora_hallazgo", contextoId: h.id } as const;
-  const archivos = completo ? await archivosDe(sqlArchivos, sesion, dueno) : [];
+  const sinArchivos: ArchivosDeMejora = { archivos: [], retirados: [] };
+  const delHallazgo = completo ? await archivosDe(sqlArchivos, sesion, dueno) : sinArchivos;
+  const archivos = delHallazgo.archivos;
   const evidencias = archivos.filter((a) => a.rol === "evidencia");
   const puedeSubirEvidencia = completo && (await autorizarSubida(sesion, { contexto: "mejora_hallazgo", id: h.id, rol: "evidencia" })).ok;
   const quitables = await archivosQuitables(sqlArchivos, sesion, evidencias, dueno);
+  // Lo que ya se firmó (anexo 15B §11.2): el Admin SGC lo retira por datos personales; donde estaba, la línea del retiro.
+  const retirables = await archivosRetirables(sqlArchivos, sesion, evidencias, dueno);
+  const retiradasDeEvidencia = retiradosDeLaSeccion(delHallazgo, "evidencia", zona);
   // La evidencia del reporte del que nació (spec §7.3): la abre quien ve el hallazgo completo; ya no se sube ni se quita.
   const delReporte =
-    h.reporteId !== null ? await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: h.reporteId }) : [];
+    h.reporteId !== null ? (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: h.reporteId })).archivos : [];
   // La de cada reporte que se sumó como ocurrencia (§7.5: la ocurrencia lleva su evidencia).
-  const archivosDeOcurrencias: Record<number, Awaited<ReturnType<typeof archivosDe>>> = {};
+  const archivosDeOcurrencias: Record<number, ArchivoDeMejora[]> = {};
   for (const o of h.ocurrencias) {
     if (o.reporteId === null) continue;
-    const suyos = await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: o.reporteId });
+    const { archivos: suyos } = await archivosDe(sqlArchivos, sesion, { contexto: "mejora_reporte", contextoId: o.reporteId });
     if (suyos.length > 0) archivosDeOcurrencias[o.id] = suyos;
   }
 
@@ -490,7 +503,7 @@ export default async function PaginaHallazgo({
   // los archivos de la verificación y de la evaluación son de la ronda (rol `verificacion`).
   const duenoDeLaRonda = rondaEnCurso ? ({ contexto: "mejora_ronda", contextoId: rondaEnCurso.id } as const) : null;
   const deVerificacion =
-    completo && duenoDeLaRonda ? (await archivosDe(sqlArchivos, sesion, duenoDeLaRonda)).filter((a) => a.rol === "verificacion") : [];
+    completo && duenoDeLaRonda ? (await archivosDe(sqlArchivos, sesion, duenoDeLaRonda)).archivos.filter((a) => a.rol === "verificacion") : [];
   const subeVerificacion =
     completo &&
     rondaEnCurso !== null &&
@@ -524,7 +537,7 @@ export default async function PaginaHallazgo({
         etiqueta,
         descripcion: x.descripcion,
         terminadaEn: x.terminadaEn ? fechaEnZona(x.terminadaEn, zona) : null,
-        archivos: await archivosDe(sqlArchivos, sesion, { contexto: "mejora_actividad", contextoId: x.id }),
+        archivos: (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_actividad", contextoId: x.id })).archivos,
         tramites: tramites.length > 0 ? <ListaDeTramites tramites={tramites} zona={zona} /> : null,
       };
     }),
@@ -719,6 +732,8 @@ export default async function PaginaHallazgo({
                 <ArchivosDe
                   archivos={evidencias}
                   quitables={quitables}
+                  retirables={retirables}
+                  retirados={retiradasDeEvidencia}
                   direccionDeSubida={puedeSubirEvidencia ? `/api/mejoramiento/hallazgos/${h.id}/archivos` : null}
                   nombre="Zona de carga de las evidencias del hallazgo"
                   vacio="Sin evidencias adjuntas."
@@ -760,9 +775,12 @@ export default async function PaginaHallazgo({
             h.rondasAnteriores.map(async (r) => {
               // Los archivos de la ronda (solo a quien ve el hallazgo completo): los del análisis y los de su verificación y su
               // evaluación, en lectura (spec §8.7).
-              const deLaRonda = completo ? await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id }) : [];
-              const adjuntos = seccionesDeLaRonda(h, r).adjuntos ? deLaRonda.filter((a) => a.rol === "analisis") : [];
-              const verificados = deLaRonda.filter((a) => a.rol === "verificacion");
+              const deLaRonda = completo ? await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id }) : sinArchivos;
+              const conAdjuntos = seccionesDeLaRonda(h, r).adjuntos;
+              const adjuntos = conAdjuntos ? deLaRonda.archivos.filter((a) => a.rol === "analisis") : [];
+              // Un adjunto que se retiró por datos personales cuando esta ronda estaba en curso (anexo 15B §11.2).
+              const retiradosDelAnalisis = conAdjuntos ? retiradosDeLaSeccion(deLaRonda, "analisis", zona) : [];
+              const verificados = deLaRonda.archivos.filter((a) => a.rol === "verificacion");
               return (
                 <RondaAnterior
                   key={`ronda-${r.id}`}
@@ -770,7 +788,11 @@ export default async function PaginaHallazgo({
                   indicador={await indicadorParaQuienLee(r, sesion)}
                   hoy={hoy}
                   zona={zona}
-                  adjuntos={adjuntos.length > 0 ? <ArchivosDe archivos={adjuntos} nombre={`Adjuntos del análisis de la ronda ${r.numero}`} /> : null}
+                  adjuntos={
+                    adjuntos.length > 0 || retiradosDelAnalisis.length > 0 ? (
+                      <ArchivosDe archivos={adjuntos} retirados={retiradosDelAnalisis} nombre={`Adjuntos del análisis de la ronda ${r.numero}`} />
+                    ) : null
+                  }
                   verificacion={
                     verificados.length > 0 ? (
                       <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
@@ -801,9 +823,13 @@ export default async function PaginaHallazgo({
                 const conAnalisis = secciones.causaRaiz;
                 const conPlan = secciones.plan;
                 // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí; solo quien ve completo.
-                const adjuntos = secciones.adjuntos
-                  ? (await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id })).filter((a) => a.rol === "analisis")
-                  : [];
+                const duenoDelAnalisis = { contexto: "mejora_ronda", contextoId: r.id } as const;
+                const delAnalisis = secciones.adjuntos ? await archivosDe(sqlArchivos, sesion, duenoDelAnalisis) : sinArchivos;
+                const adjuntos = delAnalisis.archivos.filter((a) => a.rol === "analisis");
+                // Con el plan enviado o aprobado ya son parte de lo firmado (anexo 15B §11.2): solo se retiran por datos personales,
+                // aquí, y donde estaban queda la línea del retiro.
+                const retirablesDelAnalisis = await archivosRetirables(sqlArchivos, sesion, adjuntos, duenoDelAnalisis);
+                const retiradosDelAnalisis = retiradosDeLaSeccion(delAnalisis, "analisis", zona);
                 const evaluableDesde =
                   conPlan && r.estadoPlan !== "aprobado" && PLAN_SIN_APROBAR.has(h.estado)
                     ? (await examinarPlan(sqlArchivos, h.id, await contextoDeMejora(sqlArchivos, ahora))).evaluableDesde
@@ -814,10 +840,15 @@ export default async function PaginaHallazgo({
                   <>
                     {conAnalisis ? (
                       <AnalisisEnLectura ronda={r} titulo="3. Causa raíz" abierta={h.estado === "por_formular"}>
-                        {adjuntos.length > 0 ? (
+                        {adjuntos.length > 0 || retiradosDelAnalisis.length > 0 ? (
                           <div className="flex flex-col gap-2 border-t border-linea-suave pt-3">
                             <h3 className="text-sm font-semibold">Adjuntos del análisis</h3>
-                            <ArchivosDe archivos={adjuntos} nombre="Adjuntos del análisis" />
+                            <ArchivosDe
+                              archivos={adjuntos}
+                              retirables={retirablesDelAnalisis}
+                              retirados={retiradosDelAnalisis}
+                              nombre="Adjuntos del análisis"
+                            />
                           </div>
                         ) : null}
                       </AnalisisEnLectura>

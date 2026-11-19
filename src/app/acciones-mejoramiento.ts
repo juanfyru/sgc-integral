@@ -10,7 +10,7 @@ import { reasignarActividad, registrarSeguimiento, terminarActividad } from "@/d
 import { decidirAjuste, escalarAGerencia, pedirAjuste, responderEscalada } from "@/db/consultas/mejoramiento/ajustes";
 import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } from "@/db/consultas/mejoramiento/analisis";
 import { aprobarPlan, devolverPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
-import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
+import { quitarArchivoDeMejora, retirarPorDatosPersonales } from "@/db/consultas/mejoramiento/archivos";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { resolverConOcurrencia, resolverNoRequiere } from "@/db/consultas/mejoramiento/marcas";
 import { cambiarDePlan, ponerEnPlan, ponerObjetivo, sacarDelPlan } from "@/db/consultas/mejoramiento/clasificacion";
@@ -92,6 +92,7 @@ import {
   EsquemaReclasificacion,
   EsquemaReporte,
   EsquemaRespuestaAlEnte,
+  EsquemaRetiroDeArchivo,
   EsquemaSacarDelPlan,
   EsquemaSeguimiento,
   EsquemaSostener,
@@ -283,6 +284,16 @@ export async function cambiarProcesoAccion(_previo: EstadoAccion, formData: Form
 export async function quitarArchivoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.ejecutar", async (_usuarioId, datos, sesion) => {
     await quitarArchivoDeMejora(sesion, idNumerico(datos, "archivoId"));
+  });
+}
+
+/**
+ * El Admin SGC retira por datos personales un archivo que ya se firmó (anexo 15B §11.2; Ley 1581 de 2012): la justificación va solo
+ * al evento del hallazgo; `retirarPorDatosPersonales` decide si el archivo se retira por aquí.
+ */
+export async function retirarArchivoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.gestionar", async (_usuarioId, datos, sesion) => {
+    await retirarPorDatosPersonales(sesion, parsearFormulario(datos, EsquemaRetiroDeArchivo));
   });
 }
 

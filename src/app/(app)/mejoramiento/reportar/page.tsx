@@ -50,7 +50,7 @@ export default async function PaginaReportar({ searchParams }: { searchParams: P
 
   if (leido?.suyo) {
     const dueno = { contexto: "mejora_reporte", contextoId: leido.id } as const;
-    const archivos = await archivosDe(sql, sesion, dueno);
+    const { archivos } = await archivosDe(sql, sesion, dueno);
     const quitables = await archivosQuitables(sql, sesion, archivos, dueno);
     const sube = (await autorizarSubida(sesion, { contexto: "mejora_reporte", id: leido.id })).ok;
     return (

@@ -1,3 +1,4 @@
+import { formatearTamano } from "@/componentes/documentos/IconoFormato";
 import { fechaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 
@@ -30,11 +31,16 @@ const TEXTOS_DEL_DETALLE: ReadonlyArray<readonly [clave: string, rotulo: string]
 const comoObjeto = (detalle: unknown): Record<string, unknown> =>
   typeof detalle === "object" && detalle !== null ? (detalle as Record<string, unknown>) : {};
 
-function textosDe(detalle: unknown): Array<{ rotulo: string; texto: string }> {
+function textosDe(detalle: unknown, tipo: string): Array<{ rotulo: string; texto: string }> {
   const d = comoObjeto(detalle);
   const textos = TEXTOS_DEL_DETALLE.flatMap(([clave, rotulo]) =>
     typeof d[clave] === "string" && d[clave].trim() !== "" ? [{ rotulo, texto: d[clave] as string }] : [],
   );
+  // El rastro del retiro de un archivo por datos personales (anexo 15B §11.2): la huella del archivo que salió del almacén. Solo en
+  // ese evento: los del plan también traen una `huella`, la del plan firmado, que no se pinta aquí.
+  if (tipo === "archivo_retirado" && typeof d.huella === "string" && /^[0-9a-f]{64}$/.test(d.huella)) {
+    textos.push({ rotulo: "Huella SHA-256 del archivo", texto: d.huella });
+  }
   // El acta del Comité que citó el acto (spec §8.5): número y fecha, que pone el motor.
   const acta = comoObjeto(d.acta);
   if (typeof acta.numero === "string" && typeof acta.fecha === "string") {
@@ -93,6 +99,8 @@ const FRASE: Record<string, string> = {
   tramite_enlazado: "Enlazó un trámite documental a una actividad",
   tramite_desenlazado: "Quitó un trámite documental de una actividad",
   tramite_terminado: "Terminó un trámite documental de una actividad",
+  // Fase 15B, anexo §11.2: el nombre, el tamaño, de qué sección y quién lo había subido los dice `fraseDe` con el detalle.
+  archivo_retirado: "Retiró un archivo por datos personales",
 };
 
 /** Cómo terminó un trámite documental, en minúscula, para la frase de su evento. */
@@ -158,6 +166,16 @@ function fraseDe(e: Evento, etiquetas: Readonly<Record<number, string>>): string
     const final = typeof d.etapa === "string" && Object.hasOwn(FINAL_DEL_TRAMITE, d.etapa) ? `: ${FINAL_DEL_TRAMITE[d.etapa]}` : "";
     return `Terminó un trámite documental de la actividad ${etiqueta}${final}`;
   }
+  // El retiro de un archivo por datos personales (anexo 15B §11.2): su nombre, su tamaño, de qué sección y quién lo había subido; quién
+  // lo retiró y cuándo van abajo, como en todo evento, y el porqué, en su justificación.
+  if (e.tipo === "archivo_retirado") {
+    const nombre = typeof d.nombre === "string" && d.nombre.trim() !== "" ? d.nombre : null;
+    const tamano = typeof d.tamano === "number" && Number.isFinite(d.tamano) && d.tamano >= 0 ? formatearTamano(d.tamano) : null;
+    const seccion = d.contexto === "mejora_ronda" ? " de los adjuntos del análisis" : d.rol === "evidencia" ? " de la evidencia del registro" : "";
+    const subio = typeof d.subidoPorNombre === "string" && d.subidoPorNombre.trim() !== "" ? d.subidoPorNombre : null;
+    const cual = nombre ? `el archivo «${nombre}»${tamano ? ` (${tamano})` : ""}` : "un archivo";
+    return `Retiró por datos personales ${cual}${seccion}${subio ? `, que había subido ${subio}` : ""}`;
+  }
   // La respuesta al ente dice cuándo se envió (spec §13.4); el oficio son sus archivos.
   if (e.tipo === "respuesta_ente" && typeof d.enviadaEn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d.enviadaEn)) {
     return `${FRASE.respuesta_ente}, enviada el ${fechaDeDia(d.enviadaEn)}`;
@@ -209,7 +227,7 @@ export function HistorialDelHallazgo({
                 {fraseDe(e, etiquetasDeActividad)}
                 {e.ronda > 1 ? ` (ronda ${e.ronda})` : ""}
               </span>
-              {textosDe(e.detalle).map((t) => (
+              {textosDe(e.detalle, e.tipo).map((t) => (
                 <span key={t.rotulo} className="block whitespace-pre-line break-words text-sm">
                   {t.rotulo}: {t.texto}
                 </span>

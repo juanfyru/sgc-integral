@@ -254,9 +254,9 @@ describe("quién abre qué", () => {
       const deRonda = await archivoPorSql(tx, "mejora_ronda", r, "analisis");
       expect(await archivoServible(responsable, deA1, subida(tx))).not.toBeNull();
       for (const id of [deA2, deHallazgo, deRonda]) expect(await archivoServible(responsable, id, subida(tx))).toBeNull();
-      expect(await archivosDe(tx, responsable, { contexto: "mejora_hallazgo", contextoId: h.id })).toEqual([]);
-      expect(await archivosDe(tx, responsable, { contexto: "mejora_actividad", contextoId: a2 })).toEqual([]);
-      expect((await archivosDe(tx, responsable, { contexto: "mejora_actividad", contextoId: a1 })).map((f) => f.id)).toEqual([deA1]);
+      expect(await archivosDe(tx, responsable, { contexto: "mejora_hallazgo", contextoId: h.id })).toEqual({ archivos: [], retirados: [] });
+      expect(await archivosDe(tx, responsable, { contexto: "mejora_actividad", contextoId: a2 })).toEqual({ archivos: [], retirados: [] });
+      expect((await archivosDe(tx, responsable, { contexto: "mejora_actividad", contextoId: a1 })).archivos.map((f) => f.id)).toEqual([deA1]);
       // Quien ve el hallazgo completo abre todo.
       for (const id of [deA1, deA2, deHallazgo, deRonda]) expect(await archivoServible(b.control, id, subida(tx))).not.toBeNull();
       // Un seguimiento en esa actividad da lo mismo que ser su responsable, y solo en esa.
@@ -276,7 +276,7 @@ describe("quién abre qué", () => {
       const delBorrador = await archivoPorSql(tx, "mejora_actividad", borrador);
       expect(await puedeAbrirArchivoDeMejora({ contexto: "mejora_actividad", contextoId: borrador }, responsable, subida(tx))).toBe(false);
       expect(await archivoServible(responsable, delBorrador, subida(tx))).toBeNull();
-      expect(await archivosDe(tx, responsable, { contexto: "mejora_actividad", contextoId: borrador })).toEqual([]);
+      expect(await archivosDe(tx, responsable, { contexto: "mejora_actividad", contextoId: borrador })).toEqual({ archivos: [], retirados: [] });
       // Lo mismo quien registró un seguimiento en ella (por eso ve el hallazgo).
       const seguidor = await usuarioDePrueba(tx, { rol: "consulta" });
       await tx`INSERT INTO mejora_seguimientos (hallazgo_id, actividad_id, fecha, realizado, avance, registrado_por)
@@ -539,7 +539,7 @@ describe("la evidencia de la verificación (Tarea 17, ronda 1)", () => {
             )
           ).id,
         );
-      const quitables = async (quien: typeof b.control) => archivosQuitables(tx, quien, (await archivosDe(tx, quien, dueno)).map((a) => ({ id: a.id })), dueno);
+      const quitables = async (quien: typeof b.control) => archivosQuitables(tx, quien, (await archivosDe(tx, quien, dueno)).archivos.map((a) => ({ id: a.id })), dueno);
 
       const antes = await subir("verificacion.pdf");
       expect(await quitables(b.control)).toContain(antes);

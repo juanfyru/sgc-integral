@@ -545,6 +545,19 @@ describe("frases con el detalle real", () => {
       "desde una actividad de mejoramiento",
     );
   });
+  it("el retiro de un archivo por datos personales (15B, anexo §11.2): el hallazgo y la sección; nunca la justificación ni el nombre del archivo", () => {
+    const retiro = { codigo: "HZ-2026-019", archivoId: 41, contexto: "mejora_hallazgo", contextoId: 9, rol: "evidencia" };
+    expect(e("mejora_archivo_retirado", retiro)).toBe("Retiró por datos personales un archivo de la evidencia del registro del hallazgo HZ-2026-019");
+    expect(e("mejora_archivo_retirado", { ...retiro, contexto: "mejora_ronda", contextoId: 3, rol: "analisis" })).toBe(
+      "Retiró por datos personales un archivo del análisis del hallazgo HZ-2026-019",
+    );
+    // Una fila que trajera la justificación o el nombre no los muestra.
+    expect(e("mejora_archivo_retirado", { ...retiro, justificacion: "Trae el documento de un paciente", nombre: "queja-de-juan.pdf" })).toBe(
+      "Retiró por datos personales un archivo de la evidencia del registro del hallazgo HZ-2026-019",
+    );
+    expect(e("mejora_archivo_retirado", {})).toBe("Retiró por datos personales un archivo de un hallazgo");
+    expect(nombreDeAccion("mejora_archivo_retirado")).toBe("Retiró por datos personales un archivo de un hallazgo");
+  });
 });
 
 /**

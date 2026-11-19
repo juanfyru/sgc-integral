@@ -324,7 +324,7 @@ export async function leerPlan(sesion: SesionFlujo, id: number, opciones?: Opcio
   // Los archivos y la respuesta al ente, solo a quien ve todo (§3.6): a los demás, ni el bloque.
   const verTodo = puede(sesion, "mejora.ver_todo");
   const dueno = { contexto: "mejora_plan", contextoId: id } as const;
-  const lista = verTodo ? await archivosDe(sql, sesion, dueno) : [];
+  const lista = verTodo ? (await archivosDe(sql, sesion, dueno)).archivos : [];
   const archivos = verTodo
     ? {
         lista,
