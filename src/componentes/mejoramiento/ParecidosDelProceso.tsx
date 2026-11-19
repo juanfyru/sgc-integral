@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
 import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { DISTINTO, resolverPanelDeParecidos, salidaDe, type ParecidoDeRuta, type RespuestaDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
@@ -27,6 +28,12 @@ type Props = {
    * `enlace` lleva de vuelta a ese panel. El servidor rechaza esa combinación igual (`OCURRENCIA_DESDE_EL_PANEL`).
    */
   desdeElPanel?: { enlace: string | null };
+  /**
+   * El formulario llegó desde un hallazgo de verificación (`verificacionHallazgoId`, anexo 15B §7.2): tampoco se ofrece la ocurrencia de
+   * un parecido abierto (perdería el enlace y la justificación de la acción); la nota lo dice. El servidor la rechaza igual
+   * (`OCURRENCIA_DESDE_UNA_VERIFICACION`).
+   */
+  desdeUnaVerificacion?: boolean;
 };
 
 /**
@@ -34,7 +41,7 @@ type Props = {
  * es el mismo problema de uno abierto (una ocurrencia), es reincidencia de uno cerrado, o es distinto. La elegida viaja en
  * el campo `relacion` del formulario. Sin resultados, el campo vale `distinto` y no se dice nada más que una nota.
  */
-export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCambiar, desdeElPanel }: Props) {
+export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCambiar, desdeElPanel, desdeUnaVerificacion = false }: Props) {
   const recortado = texto.trim().slice(0, LARGO_DE_LA_CONSULTA);
   const consulta = procesoId !== "" && recortado.length > MINIMO ? `proceso=${encodeURIComponent(procesoId)}&q=${encodeURIComponent(recortado)}` : null;
   const [respuesta, setRespuesta] = useState<RespuestaDeParecidos | null>(null);
@@ -63,7 +70,7 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
     procesoId,
     respuesta,
     relacion,
-    sinOcurrencia: desdeElPanel !== undefined,
+    sinOcurrencia: desdeElPanel !== undefined || desdeUnaVerificacion,
   });
 
   // El formulario cambia el texto de su botón según la salida: se le dice cuando una salida deja de valer.
@@ -109,7 +116,13 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
                 </li>
               ))}
             </ul>
-            <SalidasDeParecidos parecidos={parecidos} vigente={vigente} alCambiar={alCambiar} desdeElPanel={desdeElPanel} />
+            <SalidasDeParecidos
+              parecidos={parecidos}
+              vigente={vigente}
+              alCambiar={alCambiar}
+              desdeElPanel={desdeElPanel}
+              desdeUnaVerificacion={desdeUnaVerificacion}
+            />
             {vigente.startsWith("ocurrencia:") ? (
               <p className="text-muted-foreground">
                 No nace otro hallazgo: la fecha de detección y la descripción de este formulario quedan como una ocurrencia del que ya existe.
@@ -130,21 +143,26 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
 /**
  * Las salidas ante los parecidos (spec 15 §7.5): una ocurrencia de cada abierto, la reincidencia de cada cerrado y «distinto».
  * Desde el panel de la marca (`desdeElPanel`), los abiertos no dan salida: la nota dice que la ocurrencia se añade desde la página
- * del indicador, con su enlace.
+ * del indicador, con su enlace. Desde un hallazgo de verificación (`desdeUnaVerificacion`), tampoco: la nota dice que se registra la
+ * no conformidad enlazada.
  */
 export function SalidasDeParecidos({
   parecidos,
   vigente,
   alCambiar,
   desdeElPanel,
+  desdeUnaVerificacion = false,
 }: {
   parecidos: ParecidoDeRuta[];
   vigente: string;
   alCambiar: (relacion: string) => void;
   desdeElPanel?: { enlace: string | null };
+  desdeUnaVerificacion?: boolean;
 }) {
-  const conSalida = desdeElPanel ? parecidos.filter((p) => !p.abierto) : parecidos;
-  const abiertos = desdeElPanel ? parecidos.filter((p) => p.abierto) : [];
+  const sinOcurrencia = desdeElPanel !== undefined || desdeUnaVerificacion;
+  const conSalida = sinOcurrencia ? parecidos.filter((p) => !p.abierto) : parecidos;
+  const abiertos = sinOcurrencia ? parecidos.filter((p) => p.abierto) : [];
+  const nombrados = `${abiertos.map((p) => p.codigo).join(", ")} ${abiertos.length === 1 ? "está abierto" : "están abiertos"}`;
   return (
     <fieldset className="flex min-w-0 flex-col gap-2">
       <legend className="font-medium">¿Qué es lo que va a registrar?</legend>
@@ -176,7 +194,7 @@ export function SalidasDeParecidos({
       </label>
       {abiertos.length > 0 && desdeElPanel ? (
         <p className="text-muted-foreground">
-          {`${abiertos.map((p) => p.codigo).join(", ")} ${abiertos.length === 1 ? "está abierto" : "están abiertos"}. ${OCURRENCIA_DESDE_EL_PANEL}.`}
+          {`${nombrados}. ${OCURRENCIA_DESDE_EL_PANEL}.`}
           {desdeElPanel.enlace ? (
             <>
               {" "}
@@ -189,6 +207,8 @@ export function SalidasDeParecidos({
             </>
           ) : null}
         </p>
+      ) : abiertos.length > 0 && desdeUnaVerificacion ? (
+        <p className="text-muted-foreground">{`${nombrados}. ${OCURRENCIA_DESDE_UNA_VERIFICACION}.`}</p>
       ) : null}
     </fieldset>
   );

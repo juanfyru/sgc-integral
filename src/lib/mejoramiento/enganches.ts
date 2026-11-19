@@ -12,6 +12,13 @@ export const SIN_JUSTIFICAR_LA_ACCION = "Escriba por qué esta falla necesita ac
 /** El proceso de esa no conformidad se elige entre los del punto de uso, si el punto tiene alguno (anexo §7.2). */
 export const PROCESO_DEL_PUNTO = "Elija un proceso del punto de uso";
 
+/**
+ * Desde un hallazgo de verificación no se añade una ocurrencia a un parecido abierto (como desde el panel de la marca, anexo §6.2): así
+ * se perderían el enlace y la justificación de la acción. La nota de los parecidos y el rechazo de la acción.
+ */
+export const OCURRENCIA_DESDE_UNA_VERIFICACION =
+  "Desde un hallazgo de verificación se registra una no conformidad nueva, enlazada a él: no se añade como ocurrencia";
+
 /** Para quien no ve el hallazgo de verificación, uno que no existe y uno que no ve se dicen igual. */
 export const VERIFICACION_NO_EXISTE = "El hallazgo de verificación no existe";
 

@@ -11,13 +11,14 @@ import { ErrorFirma, ErrorTramite, type OpcionesFlujo, type SesionFlujo } from "
 import { leerActividad, reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
 import { quitarAnalisis } from "@/db/consultas/mejoramiento/analisis";
-import { enviarPlan } from "@/db/consultas/mejoramiento/aprobacion";
+import { aprobarPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { bloquearHallazgo, dejarEvento } from "@/db/consultas/mejoramiento/flujo";
-import { leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { baseDeDetalle, leerHallazgo, listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { parecidosDelProceso } from "@/db/consultas/mejoramiento/parecidos";
 import { ACCION_AJENA, guardarAccion, quitarAccion } from "@/db/consultas/mejoramiento/plan";
-import { registrarOcurrencia } from "@/db/consultas/mejoramiento/registro";
+import { aceptarHallazgo } from "@/db/consultas/mejoramiento/recorrido";
+import { registrarHallazgo, registrarOcurrencia } from "@/db/consultas/mejoramiento/registro";
 import {
   cerrarHallazgo,
   datosDeEvaluacion,
@@ -32,6 +33,8 @@ import {
 import { puedeVerificar, quienesVerifican } from "@/lib/alcance";
 import type { Verificador } from "@/lib/firma";
 import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
+import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
+import { huellaDePlan, type PlanFirmado } from "@/lib/mejoramiento/huellas";
 import { venceEn } from "@/lib/mejoramiento/plazos";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
@@ -42,8 +45,11 @@ import { indicadorDePrueba, versionTrimestral } from "./utiles/indicadores";
 import {
   baseDeMejora,
   c,
+  datosDeHallazgo,
   evidenciaDeActividad,
+  hallazgoDeVerificacion,
   hallazgoEn,
+  HORA_DE_ESCENA,
   LECCIONES_DE_ESCENA,
   planDePrueba,
   terminarTodas,
@@ -372,6 +378,59 @@ describe("puedeVerificar: la no conformidad de un hallazgo de verificación (ane
       expect(await puedeVerificar(h.id, despues, { sql: tx })).toBe(false);
       expect(await puedeVerificar(h.id, corrigio, { sql: tx })).toBe(false);
       expect(await puedeVerificar(h.id, b.admin, { sql: tx })).toBe(true);
+    }));
+
+  it("por el camino real (ronda 1 de correcciones, punto 6): aceptada, se formula, se envía, se revisa y se aprueba sin pedir la corrección ni la decisión; lo enviado firma el enlace", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [b.procesoId] });
+      const o = c(HORA_DE_ESCENA, tx);
+      const { id } = await registrarHallazgo(
+        b.admin,
+        { ...datosDeHallazgo(b.procesoId), verificacionHallazgoId: vh.id, accionJustificacion: "Es la tercera copia obsoleta del año en este punto" },
+        o,
+      );
+      const estado = async () => (await bloquearHallazgo(tx, id)).estado;
+      const loQueSigue = async () => (await leerHallazgo(b.lider, id, { sql: tx, ahora: new Date(HORA_DE_ESCENA) }))!;
+      expect(await estado()).toBe("por_aceptar");
+      await aceptarHallazgo(b.lider, { hallazgoId: id }, o);
+      expect(await estado()).toBe("por_formular");
+      const alFormular = await loQueSigue();
+      expect(["corregir", "decidir", "validar"]).not.toContain(alFormular.loQueSigue.paso);
+      const pasos = pasosDelRecorrido(baseDeDetalle(alFormular)).map((p) => p.etiqueta);
+      expect(pasos).not.toContain("Corrección");
+      expect(pasos).not.toContain("Decisión");
+
+      await planDePrueba(tx, b, id);
+      await enviarPlan(b.lider, { hallazgoId: id, credenciales: CLAVE }, o);
+      expect(await estado()).toBe("en_revision");
+      await firmarRevision(
+        b.admin,
+        { hallazgoId: id, requiereRecursos: true, notaRecursos: "Hace falta imprimir y plastificar las copias nuevas", credenciales: CLAVE },
+        o,
+      );
+      expect(await estado()).toBe("en_aprobacion");
+      await aprobarPlan(b.gerencia, { hallazgoId: id, credenciales: CLAVE }, o);
+      expect(await estado()).toBe("en_ejecucion");
+
+      // Ningún paso pidió la corrección ni la decisión: del registro y la aceptación, directo al plan.
+      const eventos = await tx`SELECT tipo, detalle FROM mejora_eventos WHERE hallazgo_id = ${id} ORDER BY id`;
+      for (const tipo of ["corregir", "decidir_si", "decidir_no", "validar_correccion"]) expect(eventos.map((e) => e.tipo)).not.toContain(tipo);
+      const recorrido = eventos.flatMap((e) => {
+        const d = e.detalle as { estado?: { despues?: string } };
+        return d.estado?.despues ? [d.estado.despues] : [];
+      });
+      expect(recorrido).toEqual(["por_aceptar", "por_formular", "en_revision", "en_aprobacion", "en_ejecucion"]);
+      const [f] = await tx`SELECT correccion_requerida, accion_requerida FROM mejora_hallazgos WHERE id = ${id}`;
+      expect(f).toEqual({ correccion_requerida: null, accion_requerida: true });
+
+      // Lo enviado lleva el hallazgo de verificación en su identificación, y las tres firmas firman esa misma huella.
+      const envio = eventos.find((e) => e.tipo === "enviar_plan")!.detalle as { plan: PlanFirmado };
+      expect(envio.plan.identificacion.verificacionHallazgoId).toBe(vh.id);
+      const firmas = await tx`SELECT firma, hash_sha256 FROM firmas WHERE mejora_hallazgo_id = ${id} ORDER BY id`;
+      expect(firmas.map((x) => x.firma)).toEqual(["elaboro", "reviso", "aprobo"]);
+      expect(new Set(firmas.map((x) => x.hash_sha256))).toEqual(new Set([huellaDePlan(envio.plan)]));
     }));
 });
 

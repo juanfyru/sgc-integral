@@ -26,6 +26,7 @@ import type { AjusteDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { resolverPanelDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { SalidasDeParecidos } from "@/componentes/mejoramiento/ParecidosDelProceso";
+import { OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
 import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
 import { CriterioDeEficacia } from "@/componentes/mejoramiento/plan/CriterioDeEficacia";
@@ -450,6 +451,18 @@ describe("el panel de parecidos", () => {
       OCURRENCIA_DESDE_EL_PANEL,
     );
   });
+
+  it("desde un hallazgo de verificación (Fase 15B, anexo §7.2) tampoco se ofrece la ocurrencia de un abierto: la nota dice por qué", () => {
+    const html = renderToStaticMarkup(<SalidasDeParecidos parecidos={[p, cerrado]} vigente="distinto" alCambiar={vi.fn()} desdeUnaVerificacion />);
+    expect(html).not.toContain("que está abierto: se añade como ocurrencia");
+    expect((html.match(/type="radio"/g) ?? []).length).toBe(2);
+    expect(html).toContain("Es reincidencia de HZ-2026-008, que está cerrado");
+    expect(html).toContain(`HZ-2026-007 está abierto. ${OCURRENCIA_DESDE_UNA_VERIFICACION}.`);
+    expect(html).not.toContain("<a ");
+    expect(renderToStaticMarkup(<SalidasDeParecidos parecidos={[cerrado]} vigente="distinto" alCambiar={vi.fn()} desdeUnaVerificacion />)).not.toContain(
+      OCURRENCIA_DESDE_UNA_VERIFICACION,
+    );
+  });
 });
 
 describe("la justificación, la nota y el motivo se ven", () => {
@@ -504,6 +517,34 @@ describe("FormularioHallazgo en edición", () => {
     expect(html).toContain("Guardar los cambios");
     expect(html).toMatch(/<input[^>]*name="hallazgoId"[^>]*value="41"/);
     expect(html).not.toContain('name="relacion"');
+    expect(html).not.toContain("Parecidos en");
+  });
+
+  it("la de un hallazgo de verificación (Fase 15B, anexo §7.2): la clase y el origen fijos, solo los procesos del punto y sin pedir otra vez la justificación", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        accion={vi.fn(async () => null)}
+        procesos={[
+          { id: 3, nombre: "Farmacia" },
+          { id: 4, nombre: "Urgencias" },
+        ]}
+        hoy="2026-11-18"
+        diasParaAceptar={3}
+        valores={{ clase: "observacion", origen: "pamec", procesoId: "4", titulo: "Un título", criticidad: "media" }}
+        edicion={{ hallazgoId: 41 }}
+        prellenado={{ valores: { clase: "no_conformidad", origen: "control_documental" }, fijos: ["clase", "origen"], ocultos: {}, rotulo: null, procesos: [4] }}
+      />,
+    );
+    expect(html).not.toMatch(/<select[^>]*name="clase"/);
+    expect(html).not.toMatch(/<select[^>]*name="origen"/);
+    expect(html).toMatch(/<input type="hidden" name="clase" value="no_conformidad"\/>/);
+    expect(html).toMatch(/<input type="hidden" name="origen" value="control_documental"\/>/);
+    // Como no conformidad, pide la criticidad.
+    expect(html).toMatch(/<select[^>]*name="criticidad"/);
+    const procesos = html.match(/<select[^>]*name="procesoId"[^>]*>[\s\S]*?<\/select>/)![0];
+    expect(procesos).toContain("Urgencias");
+    expect(procesos).not.toContain("Farmacia");
+    expect(html).not.toContain('name="accionJustificacion"');
     expect(html).not.toContain("Parecidos en");
   });
 });

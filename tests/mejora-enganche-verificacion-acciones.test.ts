@@ -24,10 +24,12 @@ vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
 vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion: async () => ({ ip: "10.0.0.1", userAgent: "prueba" }) }));
 
 import type { TransactionSql } from "postgres";
-import { registrarHallazgoAccion } from "@/app/acciones-mejoramiento";
+import { editarHallazgoAccion, registrarHallazgoAccion } from "@/app/acciones-mejoramiento";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { baseDeMejora, datosDeHallazgo, hallazgoDeVerificacion } from "./utiles/mejoramiento";
+import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
+import { baseDeMejora, c, datosDeHallazgo, hallazgoDeVerificacion, hallazgoEn } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 
@@ -86,5 +88,73 @@ describe("registrarHallazgoAccion desde un hallazgo de verificación", () => {
         FROM mejora_hallazgos WHERE verificacion_hallazgo_id = ${vh.id}`;
       expect(destino).toBe(`REDIRECT:/mejoramiento/${f.id}`);
       expect(f).toMatchObject({ clase: "no_conformidad", origen: "control_documental", criticidad: "media", fecha_limite_ente: null, accion_requerida: true });
+    }));
+
+  it("no añade una ocurrencia a un parecido: se rechaza y no se escribe nada (ronda 1, punto 2)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [b.procesoId] });
+      const parecido = await hallazgoEn(tx, b, "por_aceptar");
+      const d = datosDeHallazgo(b.procesoId);
+      const campos = {
+        clase: "no_conformidad",
+        origen: "control_documental",
+        criticidad: "media",
+        detectadoEn: d.detectadoEn,
+        procesoId: String(b.procesoId),
+        fuente: d.fuente ?? "",
+        titulo: d.titulo,
+        descripcion: d.descripcion,
+        requisitoClausula: d.requisitoClausula ?? "",
+        verificacionHallazgoId: String(vh.id),
+        accionJustificacion: "Es la tercera copia obsoleta del año en este punto",
+        relacion: `ocurrencia:${parecido.id}`,
+      };
+      const rechazo = await como(tx, b.admin, () => registrarHallazgoAccion(null, formulario(campos)));
+      expect(rechazo).toMatchObject({ ok: false, error: OCURRENCIA_DESDE_UNA_VERIFICACION });
+      expect(await tx`SELECT 1 FROM mejora_ocurrencias WHERE hallazgo_id = ${parecido.id}`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM mejora_hallazgos WHERE verificacion_hallazgo_id = ${vh.id}`).toHaveLength(0);
+    }));
+});
+
+describe("editarHallazgoAccion de una no conformidad de un hallazgo de verificación (ronda 1, punto 1)", () => {
+  it("la clase y el origen forzados no cuentan ni en la validación: se guardan los fijos y lo demás que cambió", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [b.procesoId] });
+      const d = datosDeHallazgo(b.procesoId);
+      const { id } = await registrarHallazgo(
+        b.admin,
+        { ...d, verificacionHallazgoId: vh.id, accionJustificacion: "Es la tercera copia obsoleta del año en este punto" },
+        c("2026-11-18T15:00:00Z", tx),
+      );
+      // Una observación de un ente de control, sin la fecha del ente ni la criticidad (el formulario de una observación no la pinta).
+      const campos = {
+        hallazgoId: String(id),
+        clase: "observacion",
+        origen: "ente_control",
+        detectadoEn: d.detectadoEn,
+        procesoId: String(b.procesoId),
+        criticidad: "alta",
+        fuente: d.fuente ?? "",
+        titulo: "Copias obsoletas del protocolo en urgencias",
+        descripcion: d.descripcion,
+        requisitoClausula: d.requisitoClausula ?? "",
+      };
+      const destino = await como(tx, b.admin, () => editarHallazgoAccion(null, formulario(campos))).then(
+        (r) => r,
+        (err: Error) => err.message,
+      );
+      expect(destino).toBe(`REDIRECT:/mejoramiento/${id}`);
+      const [f] = await tx`SELECT clase, origen, criticidad, titulo, fecha_limite_ente FROM mejora_hallazgos WHERE id = ${id}`;
+      expect(f).toEqual({
+        clase: "no_conformidad",
+        origen: "control_documental",
+        criticidad: "alta",
+        titulo: "Copias obsoletas del protocolo en urgencias",
+        fecha_limite_ente: null,
+      });
     }));
 });

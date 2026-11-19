@@ -75,14 +75,7 @@ export async function engancheDeVerificacion(
   // Lo que acumula cada punto solo hace falta para las filas sin una que cuente y que no se reabrieron.
   const porPunto = hallazgos.filter((h) => abre && !cuentan.has(h.id) && h.reaperturas === 0).map((h) => h.puntoUsoId);
   const config = porPunto.length > 0 ? await obtenerConfigMejora({ sql }) : null;
-  const acumulan = new Map<number, number>();
-  if (config) {
-    const conteos = await sql`SELECT punto_uso_id, count(*)::int AS cuantos FROM hallazgos
-      WHERE punto_uso_id = ANY(${sql.array([...new Set(porPunto)])}::bigint[])
-        AND creado_en >= ${ahora}::timestamptz - make_interval(months => ${config.sugerirMeses})
-      GROUP BY punto_uso_id`;
-    for (const f of conteos) acumulan.set(Number(f.punto_uso_id), Number(f.cuantos));
-  }
+  const acumulan = config ? await conteosPorPunto(sql, porPunto, config.sugerirMeses, ahora) : new Map<number, number>();
 
   for (const h of hallazgos) {
     const f = cuentan.get(h.id);
@@ -110,6 +103,50 @@ export async function engancheDeVerificacion(
     resultado.set(h.id, { noConformidad, puedeAbrir, sugerir });
   }
   return resultado;
+}
+
+/**
+ * Cuántos hallazgos tiene cada punto en los últimos `meses` meses, contados hasta `ahora` (todos los del punto, de verificación o de
+ * recogida): una consulta para todos.
+ */
+async function conteosPorPunto(sql: Cliente, puntos: readonly number[], meses: number, ahora: Date): Promise<Map<number, number>> {
+  const conteos = await sql`SELECT punto_uso_id, count(*)::int AS cuantos FROM hallazgos
+    WHERE punto_uso_id = ANY(${sql.array([...new Set(puntos)])}::bigint[])
+      AND creado_en >= ${ahora}::timestamptz - make_interval(months => ${meses})
+    GROUP BY punto_uso_id`;
+  return new Map(conteos.map((f) => [Number(f.punto_uso_id), Number(f.cuantos)]));
+}
+
+/**
+ * Lo que dice encima de la lista de hallazgos filtrada por un punto (anexo §7.4): al Admin SGC, si el punto acumula
+ * `mej_sugerir_hallazgos` hallazgos en los últimos `mej_sugerir_meses` meses. Se decide con la cuenta del punto, aparte de la regla de
+ * cada fila (donde un hallazgo reabierto dice «se reabrió»). Quien llama decide si alguna fila todavía puede abrir una no conformidad.
+ */
+export async function acumulaElPunto(
+  sesion: SesionFlujo,
+  puntoUsoId: number,
+  opciones?: Opciones,
+): Promise<Extract<SugerenciaDeVerificacion, { por: "acumula" }> | null> {
+  if (!puede(sesion, "mejora.gestionar") || !Number.isSafeInteger(puntoUsoId) || puntoUsoId <= 0) return null;
+  const sql = opciones?.sql ?? obtenerSql();
+  const config = await obtenerConfigMejora({ sql });
+  const cuantos = (await conteosPorPunto(sql, [puntoUsoId], config.sugerirMeses, opciones?.ahora ?? new Date())).get(puntoUsoId) ?? 0;
+  return cuantos >= config.sugerirHallazgos ? { por: "acumula", hallazgos: cuantos, meses: config.sugerirMeses } : null;
+}
+
+/**
+ * Los procesos activos del punto del hallazgo de verificación, de menor a mayor id (vacío: el punto no tiene ninguno, o el hallazgo no
+ * existe). Sin la regla de quién ve el punto: los procesos de un punto no son secretos, y así la regla de la edición (el proceso de la
+ * no conformidad, entre los del punto) nunca se salta en silencio.
+ */
+export async function procesosDelPunto(sql: Cliente, verificacionHallazgoId: number): Promise<number[]> {
+  if (!Number.isSafeInteger(verificacionHallazgoId) || verificacionHallazgoId <= 0) return [];
+  const filas = await sql`SELECT pp.proceso_id FROM hallazgos vh
+    JOIN punto_uso_procesos pp ON pp.punto_uso_id = vh.punto_uso_id
+    JOIN procesos p ON p.id = pp.proceso_id AND p.activo
+    WHERE vh.id = ${verificacionHallazgoId}
+    ORDER BY pp.proceso_id`;
+  return filas.map((f) => Number(f.proceso_id));
 }
 
 /**

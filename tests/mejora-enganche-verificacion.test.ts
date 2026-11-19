@@ -10,7 +10,7 @@ import { obtenerSql } from "@/db/cliente";
 import { corregirHallazgo, obtenerHallazgo, reabrirHallazgo, type Hallazgo } from "@/db/consultas/distribucion/hallazgos";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
-import { correccionEnlazada, engancheDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
+import { acumulaElPunto, correccionEnlazada, engancheDeVerificacion, procesosDelPunto } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { baseDeDetalle, leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { legible } from "@/db/consultas/mejoramiento/legible";
 import { aceptarHallazgo, rechazarHallazgo, retirarHallazgo } from "@/db/consultas/mejoramiento/recorrido";
@@ -204,6 +204,27 @@ describe("registrarHallazgo con un hallazgo de verificación", () => {
       expect(f).toMatchObject({ clase: "no_conformidad", origen: "control_documental", titulo: "Copias obsoletas en el puesto", criticidad: "media", estado: "por_aceptar" });
     }));
 
+  it("al editarla, la primera validación ya usa lo fijo: un origen de ente de control forzado sin su fecha no se mira (ronda 1, punto 1)", () =>
+    revertida(sql, async (tx) => {
+      const e = await escena(tx);
+      const r = await registrarHallazgo(e.b.admin, datos(e), c(AHORA, tx));
+      await editarHallazgo(e.b.admin, r.id, datos(e, { origen: "ente_control", titulo: "Copias obsoletas en urgencias" }), c(AHORA, tx));
+      const [f] = await tx`SELECT origen, titulo, fecha_limite_ente FROM mejora_hallazgos WHERE id = ${r.id}`;
+      expect(f).toEqual({ origen: "control_documental", titulo: "Copias obsoletas en urgencias", fecha_limite_ente: null });
+    }));
+
+  it("los procesos del punto de la edición se leen sin la regla de quién ve el punto: sus activos, de menor a mayor (ronda 1, punto 5)", () =>
+    revertida(sql, async (tx) => {
+      const e = await escena(tx);
+      // `procesosDelPunto` no recibe sesión: los procesos del punto no son secretos, y la regla nunca se salta en silencio.
+      expect(await procesosDelPunto(tx, e.vh.id)).toEqual([e.b.procesoId]);
+      const [otro, inactivo] = [await procesoNuevo(tx), await procesoNuevo(tx)];
+      await tx`INSERT INTO punto_uso_procesos (punto_uso_id, proceso_id) VALUES (${e.vh.punto.id}, ${otro}), (${e.vh.punto.id}, ${inactivo})`;
+      await tx`UPDATE procesos SET activo = false WHERE id = ${inactivo}`;
+      expect(await procesosDelPunto(tx, e.vh.id)).toEqual([e.b.procesoId, otro].sort((x, y) => x - y));
+      expect(await procesosDelPunto(tx, 9_000_000_000)).toEqual([]);
+    }));
+
   it("la carga de un hallazgo en curso no escribe el enlace aunque el envío lo traiga", () =>
     revertida(sql, async (tx) => {
       const e = await escena(tx);
@@ -290,6 +311,32 @@ describe("engancheDeVerificacion", () => {
       // Ya con una no conformidad que cuenta, no se sugiere.
       await registrarHallazgo(e.b.admin, datos(e), c(AHORA, tx));
       expect(await sugerencia()).toBeNull();
+    }));
+
+  it("lo que acumula el punto (para encima de la lista filtrada) sale de su cuenta, también con todas sus filas reabiertas (ronda 1, punto 4)", () =>
+    revertida(sql, async (tx) => {
+      const e = await escena(tx);
+      const o = { sql: tx, ahora: new Date(AHORA) };
+      const otros = [
+        await hallazgoDeVerificacion(tx, { responsable: e.responsable, punto: e.vh.punto, ahora: "2026-06-02T15:00:00Z" }),
+        await hallazgoDeVerificacion(tx, { responsable: e.responsable, punto: e.vh.punto, ahora: "2026-09-01T15:00:00Z" }),
+      ];
+      // Las tres filas del punto se reabrieron: cada una dice «se reabrió», ninguna «acumula».
+      for (const id of [e.vh.id, ...otros.map((x) => x.id)]) {
+        const [h] = await tx`SELECT estado FROM hallazgos WHERE id = ${id}`;
+        if (h.estado === "abierto") await corregirHallazgo(id, e.responsable, NOTA, { sql: tx, ahora: new Date(CORRIGE) });
+        await reabrirHallazgo(id, e.b.admin, "La copia vieja sigue en el puesto", { sql: tx, ahora: new Date(CORRIGE) });
+      }
+      const filas = await Promise.all([e.vh.id, ...otros.map((x) => x.id)].map((id) => fila(tx, e.b.admin, id)));
+      const mapa = await engancheDeVerificacion(e.b.admin, filas, o);
+      expect([...mapa.values()].map((x) => x.sugerir?.por)).toEqual(["reabierto", "reabierto", "reabierto"]);
+      expect(await acumulaElPunto(e.b.admin, e.vh.punto.id, o)).toEqual({ por: "acumula", hallazgos: 3, meses: 12 });
+      // Solo al Admin SGC; con dos no acumula.
+      expect(await acumulaElPunto(e.b.lider, e.vh.punto.id, o)).toBeNull();
+      expect(await acumulaElPunto(e.b.control, e.vh.punto.id, o)).toBeNull();
+      const dos = await hallazgoDeVerificacion(tx, { responsable: e.responsable });
+      await hallazgoDeVerificacion(tx, { responsable: e.responsable, punto: dos.punto, ahora: "2026-06-02T15:00:00Z" });
+      expect(await acumulaElPunto(e.b.admin, dos.punto.id, o)).toBeNull();
     }));
 
   it("una consulta por lo que se pide, no una por fila", () =>

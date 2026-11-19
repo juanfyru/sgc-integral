@@ -40,7 +40,7 @@ import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
 import { cargaPendiente } from "./carga-confirmada";
 import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
-import { hallazgoParaAbrir, type HallazgoParaAbrir } from "./enganche-verificacion";
+import { hallazgoParaAbrir, procesosDelPunto } from "./enganche-verificacion";
 import { DATO_YA_NO_EXISTE } from "./legible";
 import { bloquearMarca, marcaDelPanel, salidaAlNacer } from "./marcas-base";
 import { bloquearReporteRecibido, dejarClasificado } from "./reportes-base";
@@ -330,13 +330,16 @@ async function verificacionDelRegistro(tx: TransactionSql, sesion: SesionFlujo, 
   const vh = await hallazgoParaAbrir(tx, sesion, id);
   if (!vh) throw new ErrorMejora(VERIFICACION_NO_EXISTE);
   if (vh.yaTiene) throw new ErrorMejora(YA_TIENE_NO_CONFORMIDAD);
-  exigirProcesoDelPunto(vh, procesoId);
+  exigirProcesoDelPunto(vh.procesos, procesoId);
   return { id: vh.id };
 }
 
-/** El proceso de la no conformidad de un hallazgo de verificación, entre los del punto; si el punto no tiene ninguno, cualquiera. */
-function exigirProcesoDelPunto(vh: HallazgoParaAbrir, procesoId: number): void {
-  if (vh.procesos.length > 0 && !vh.procesos.includes(procesoId)) throw new ErrorMejora(PROCESO_DEL_PUNTO);
+/**
+ * El proceso de la no conformidad de un hallazgo de verificación, entre los procesos activos del punto; si el punto no tiene ninguno,
+ * cualquiera.
+ */
+function exigirProcesoDelPunto(procesos: readonly number[], procesoId: number): void {
+  if (procesos.length > 0 && !procesos.includes(procesoId)) throw new ErrorMejora(PROCESO_DEL_PUNTO);
 }
 
 const SOLO_CERRADO = "Solo se marca reincidencia de un hallazgo cerrado";
@@ -515,13 +518,13 @@ export async function registrarOcurrencia(
  * Mientras el hallazgo está «Por aceptar», quien lo registró corrige cualquier campo de la identificación menos el código;
  * el evento `editado` guarda el antes y el después de lo que cambió. Si cambia el proceso, avisa a sus líderes y el plazo de
  * aceptar se cuenta otra vez desde este acto (como `cambiarProceso`). Si el origen pasa a externo, queda aceptado (§7.4). La no
- * conformidad de un hallazgo de verificación (Fase 15B, anexo §7.2) conserva su clase y su origen, que son fijos, y su proceso sigue
- * entre los del punto.
+ * conformidad de un hallazgo de verificación (Fase 15B, anexo §7.2) conserva su clase y su origen, que son fijos y se ponen antes de
+ * leer lo enviado (la única validación ya los usa: lo forzado no cuenta ni en lo que el esquema exige), y su proceso sigue entre los
+ * del punto (`procesosDelPunto`, sin la regla de quién ve el punto). Lo enviado se lee después de bloquear el hallazgo: ahí se sabe si
+ * nació de un hallazgo de verificación.
  */
 export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDeHallazgo, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.registrar");
-  const leido = EsquemaHallazgo.safeParse(d);
-  if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
@@ -530,13 +533,10 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
         throw (await puedeVerHallazgo(id, sesion, { sql: tx })) ? new ErrorPermiso() : new ErrorMejora(NO_EXISTE);
       }
       if (h.estado !== "por_aceptar") throw new ErrorMejora(YA_CAMBIO);
-      const fija = h.verificacionHallazgoId === null ? leido : EsquemaHallazgo.safeParse({ ...d, ...FIJOS_DE_VERIFICACION });
-      if (!fija.success) throw new ErrorMejora(fija.error.issues[0].message);
-      const v = fija.data;
-      if (h.verificacionHallazgoId !== null) {
-        const vh = await hallazgoParaAbrir(tx, sesion, h.verificacionHallazgoId);
-        if (vh) exigirProcesoDelPunto(vh, v.procesoId);
-      }
+      const leido = EsquemaHallazgo.safeParse(h.verificacionHallazgoId === null ? d : { ...d, ...FIJOS_DE_VERIFICACION });
+      if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
+      const v = leido.data;
+      if (h.verificacionHallazgoId !== null) exigirProcesoDelPunto(await procesosDelPunto(tx, h.verificacionHallazgoId), v.procesoId);
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
         throw new ErrorPermiso();
       }
@@ -954,15 +954,27 @@ export async function registrarRespuestaAlEnte(
   );
 }
 
-/** Lo enlazado que el formulario de edición no pinta: la edición lo conserva en vez de borrarlo. */
+/**
+ * Lo enlazado que el formulario de edición no pinta: la edición lo conserva en vez de borrarlo. `verificacionHallazgoId` (Fase 15B,
+ * anexo §7.2) dice además si la clase y el origen son fijos; no se reenvía: no cambia nunca.
+ */
 export async function enlacesDelHallazgo(
   id: number,
   opciones?: { sql?: Cliente },
-): Promise<{ subprocesoId: number | null; documentoId: number | null; indicadorId: number | null; medicionId: number | null; reincidenteDe: number | null }> {
+): Promise<{
+  subprocesoId: number | null;
+  documentoId: number | null;
+  indicadorId: number | null;
+  medicionId: number | null;
+  reincidenteDe: number | null;
+  verificacionHallazgoId: number | null;
+}> {
   const sql = opciones?.sql ?? obtenerSql();
-  const [f] = await sql`SELECT subproceso_id, documento_id, indicador_id, medicion_id, reincidente_de FROM mejora_hallazgos WHERE id = ${id}`;
+  const [f] = await sql`SELECT subproceso_id, documento_id, indicador_id, medicion_id, reincidente_de, verificacion_hallazgo_id
+    FROM mejora_hallazgos WHERE id = ${id}`;
   if (!f) throw new ErrorMejora(NO_EXISTE);
   return {
+    verificacionHallazgoId: idONulo(f.verificacion_hallazgo_id),
     subprocesoId: idONulo(f.subproceso_id),
     documentoId: idONulo(f.documento_id),
     indicadorId: idONulo(f.indicador_id),

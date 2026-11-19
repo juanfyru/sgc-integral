@@ -29,7 +29,8 @@ type Props = {
   objetivos?: ReadonlyArray<{ id: number; etiqueta: string }>;
   /**
    * Lo que llega puesto desde la dirección (`prellenadoDeRegistro`): lo propuesto, lo fijo (texto con su campo oculto), los campos
-   * ocultos y el rótulo de arriba. Solo al registrar.
+   * ocultos y el rótulo de arriba. En la edición solo valen lo fijo y los procesos: los de la no conformidad de un hallazgo de
+   * verificación (Fase 15B, anexo §7.2), que la página de edición arma.
    */
   prellenado?: Prellenado;
   /** Hoy en la zona de la instalación (`yyyy-mm-dd`): el tope de la fecha de detección. */
@@ -64,7 +65,8 @@ const NOTA = "rounded-md border border-border bg-muted px-3 py-2 text-sm";
  * que ese hallazgo llevará. Los nombres de los campos son los de `EsquemaHallazgo`, que es estricto.
  *
  * Al registrar (no al editar) gana «A qué se refiere» y «Objetivo» (Fase 15B, anexo §10.3 y §10.4), y lo que trae `prellenado`.
- * Editar no los pinta: la edición conserva los enlaces que el hallazgo ya tiene y el objetivo se cambia en «Clasificación».
+ * Editar no los pinta: la edición conserva los enlaces que el hallazgo ya tiene y el objetivo se cambia en «Clasificación». La
+ * edición de la no conformidad de un hallazgo de verificación sí respeta lo fijo y los procesos del `prellenado` (anexo §7.2).
  */
 export function FormularioHallazgo({
   accion,
@@ -85,15 +87,16 @@ export function FormularioHallazgo({
 }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const conPrellenado = edicion ? undefined : prellenado;
-  // Desde un hallazgo de verificación (Fase 15B, anexo §7.2), el proceso se elige entre los del punto y se pide la justificación de la
-  // acción correctiva; el servidor lo vuelve a comprobar.
-  const permitidos = conPrellenado?.procesos;
+  // Desde un hallazgo de verificación (Fase 15B, anexo §7.2), el proceso se elige entre los del punto y, al registrar, se pide la
+  // justificación de la acción correctiva; el servidor lo vuelve a comprobar. En la edición también: el prellenado solo trae lo fijo y
+  // los procesos.
+  const permitidos = prellenado?.procesos;
   const procesos = permitidos ? delAlcance.filter((p) => permitidos.includes(p.id)) : delAlcance;
   const deVerificacion = conPrellenado !== undefined && Object.hasOwn(conPrellenado.ocultos, "verificacionHallazgoId");
-  // Lo fijo manda también sobre lo que volvió de un rechazo: se muestra y viaja con el valor del prellenado.
-  const fijos = fijosEnTexto(conPrellenado);
+  // Lo fijo manda también sobre lo que volvió de un rechazo y sobre lo guardado: se muestra y viaja con el valor del prellenado.
+  const fijos = fijosEnTexto(prellenado);
   const fijo = (k: string) => Object.hasOwn(fijos, k);
-  const v = estado?.valores ? { ...estado.valores, ...fijos } : valoresIniciales(conPrellenado, valores);
+  const v = estado?.valores ? { ...estado.valores, ...fijos } : { ...valoresIniciales(conPrellenado, valores), ...fijos };
   const [clase, setClase] = useState<string>(texto(v, "clase"));
   const [origen, setOrigen] = useState<string>(texto(v, "origen"));
   const [criticidad, setCriticidad] = useState<string>(texto(v, "criticidad"));
@@ -356,6 +359,7 @@ export function FormularioHallazgo({
               relacion={relacion}
               alCambiar={setRelacion}
               desdeElPanel={desdeElPanel}
+              desdeUnaVerificacion={deVerificacion}
             />
           )}
           {lateral}

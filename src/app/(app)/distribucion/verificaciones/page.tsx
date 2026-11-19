@@ -6,7 +6,7 @@ import { TablaHallazgos } from "@/componentes/distribucion/verificaciones/TablaH
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { hallazgosDe } from "@/db/consultas/distribucion/hallazgos";
 import { estadoDePuntos, fallosPorItem, historialVerificaciones } from "@/db/consultas/distribucion/verificaciones-resumen";
-import { engancheDeVerificacion, filasDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
+import { acumulaElPunto, engancheDeVerificacion, filasDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { filtroDeVerificaciones } from "@/lib/distribucion/filtro-verificaciones";
 import { textoDeSugerencia } from "@/lib/mejoramiento/enganches";
 import { exigirSesion } from "@/lib/paginas";
@@ -37,10 +37,13 @@ export default async function PaginaVerificaciones({
     fallosPorItem(sesion, filtro),
     hallazgosDe({ puntoId: filtro.puntoId }, sesion),
   ]);
-  // Lo de mejoramiento en cada fila (Fase 15B, anexo §7.1) y, con la lista filtrada por un punto, la sugerencia del punto encima (§7.4).
+  // Lo de mejoramiento en cada fila (Fase 15B, anexo §7.1) y, con la lista filtrada por un punto, la sugerencia del punto encima (§7.4):
+  // con su cuenta, aunque cada fila diga «se reabrió», mientras alguna fila todavía pueda abrir una no conformidad.
   const enganches = await engancheDeVerificacion(sesion, filasDeVerificacion(hallazgos), { ahora });
   const delPunto =
-    filtro.puntoId === undefined ? null : ([...enganches.values()].find((e) => e.sugerir?.por === "acumula")?.sugerir ?? null);
+    filtro.puntoId !== undefined && [...enganches.values()].some((e) => e.puedeAbrir)
+      ? await acumulaElPunto(sesion, filtro.puntoId, { ahora })
+      : null;
 
   return (
     <div className="flex flex-col gap-8">
