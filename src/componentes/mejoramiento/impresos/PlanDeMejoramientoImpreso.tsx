@@ -7,14 +7,12 @@
  */
 import type { FilaDePlanDeAccion } from "@/db/consultas/mejoramiento/filas-de-plan";
 import type { Fo14 } from "@/db/consultas/mejoramiento/fo14";
-import { estadoDeActividadEnTexto } from "@/lib/mejoramiento/excel-ente";
-import { fechaDeDia } from "@/lib/mejoramiento/formato";
 import { ORIGENES } from "@/lib/mejoramiento/origenes";
-import { ETIQUETA_CLASE, REPROGRAMADA } from "@/lib/mejoramiento/textos";
+import { estadoDeActividadCorto, ETIQUETA_CLASE, REPROGRAMADA } from "@/lib/mejoramiento/textos";
 import type { TipoAccion } from "@/lib/mejoramiento/tipos";
 import { cuenta } from "@/lib/plural";
 import { EncabezadoDeFormato } from "./EncabezadoDeFormato";
-import { Bloque, conPorcentajesUnidos, Hoja, Nota, PieDeImpreso, Tabla, TD, TH } from "./Partes";
+import { Bloque, BORDE, conPorcentajesUnidos, Hoja, Nota, PieDeImpreso, Tabla, TD, TH } from "./Partes";
 
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
@@ -40,7 +38,49 @@ export type DatosDelPlanImpreso = {
 /** Las columnas de la tabla de las acciones después de «Hallazgo» y antes de «Estado»: las que cubre la fila de en qué va. */
 const COLUMNAS_DE_LA_ACTIVIDAD = 12;
 
+/**
+ * El ancho relativo de cada columna de la tabla de las acciones, en su orden. Con `table-layout: fixed` la tabla mide el ancho de
+ * la hoja (A4 o carta apaisadas, con los márgenes de `@page ficha-horizontal`) y cada columna su parte: ninguna casilla la ensancha
+ * y el texto se parte dentro de ella. «Plan» solo existe en el consolidado.
+ */
+const PESOS: ReadonlyArray<{ clave: string; peso: number; soloConsolidado?: true }> = [
+  { clave: "n", peso: 2.5 },
+  { clave: "plan", peso: 8.5, soloConsolidado: true },
+  { clave: "hallazgo", peso: 9.5 },
+  { clave: "causa", peso: 8.5 },
+  { clave: "accion", peso: 9.5 },
+  { clave: "tipo", peso: 3.5 },
+  { clave: "responsable", peso: 8 },
+  { clave: "recursos", peso: 7.5 },
+  { clave: "inicio", peso: 5.5 },
+  { clave: "fin", peso: 9 },
+  { clave: "indicador", peso: 8.5 },
+  { clave: "meta", peso: 7.5 },
+  { clave: "seguimiento", peso: 5.5 },
+  { clave: "avance", peso: 5 },
+  { clave: "observaciones", peso: 9 },
+  { clave: "estado", peso: 7 },
+];
+
+/** Las casillas de la tabla de las acciones: relleno corto y el texto partido donde haga falta, nunca más ancho que su columna. */
+const CELDA = `${BORDE} px-1 py-1 align-top [overflow-wrap:anywhere]`;
+const CABECERA = `${CELDA} bg-muted text-left font-semibold hyphens-auto`;
+
 const VACIO = "—";
+
+/** `AAAA-MM-DD` como `DD/MM/AAAA`, el día del formato (maqueta 4). */
+const diaDelFormato = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}/${dia.slice(0, 4)}`;
+
+/** Un día en una columna angosta: si no cabe, se parte antes del año y no dentro de una cifra. */
+function Dia({ dia }: { dia: string }) {
+  return (
+    <span className="tabular-nums">
+      {`${dia.slice(8, 10)}/${dia.slice(5, 7)}/`}
+      <wbr />
+      {dia.slice(0, 4)}
+    </span>
+  );
+}
 
 /** Una lista de líneas dentro de una casilla: un líder por línea. */
 function Lineas({ lineas }: { lineas: readonly string[] }) {
@@ -63,7 +103,9 @@ function Fuentes({ fuentes }: { fuentes: Fo14["encabezado"]["fuentes"] }) {
       {ORIGENES.map((o) => {
         const marcada = tiene.has(o.clave);
         return (
-          <li key={o.clave} className="inline-flex items-center gap-1">
+          // `relative`: el texto para lector de pantalla (`sr-only`, absoluto) queda dentro de la tabla que se desplaza y no ensancha
+          // la página a 390 px.
+          <li key={o.clave} className="relative inline-flex items-center gap-1">
             <span
               aria-hidden="true"
               className="inline-flex size-3.5 shrink-0 items-center justify-center border border-foreground text-[0.6rem] font-bold leading-none"
@@ -107,7 +149,7 @@ function DatosDelPlan({ fo14 }: { fo14: Fo14 }) {
             "Cargo",
             sinLider ? VACIO : <Lineas lineas={e.responsables.map((r) => r.cargo ?? "Sin cargo")} />,
           )}
-          {fila("Periodo / vigencia", String(e.vigencia), "Fecha de elaboración", fechaDeDia(e.elaboradoEl))}
+          {fila("Periodo / vigencia", String(e.vigencia), "Fecha de elaboración", diaDelFormato(e.elaboradoEl))}
           <tr>
             <th scope="row" className={TH}>
               Fuente del hallazgo
@@ -160,58 +202,70 @@ function FilaDeActividad({ n, f, conPlan }: { n: number; f: FilaDePlanDeAccion; 
   const accion = f.accion;
   return (
     <tr>
-      <td className={`${TD} tabular-nums`}>{n}</td>
-      {conPlan ? <td className={`${TD} whitespace-nowrap font-mono`}>{f.hallazgo.planCodigo ?? SIN_PLAN}</td> : null}
-      <td className={`${TD} min-w-40`}>
+      <td className={`${CELDA} tabular-nums`}>{n}</td>
+      {conPlan ? <td className={`${CELDA} font-mono`}>{f.hallazgo.planCodigo ?? SIN_PLAN}</td> : null}
+      <td className={CELDA}>
         <Hallazgo f={f} />
       </td>
       {!a || !accion ? (
         <>
-          <td colSpan={COLUMNAS_DE_LA_ACTIVIDAD} className={`${TD} whitespace-pre-line text-muted-foreground`}>
+          <td colSpan={COLUMNAS_DE_LA_ACTIVIDAD} className={`${CELDA} whitespace-pre-line text-muted-foreground`}>
             {f.enQueVa ?? ""}
           </td>
-          <td className={TD} />
+          <td className={CELDA} />
         </>
       ) : (
         <>
-          <td className={`${TD} min-w-32`}>{causaRaiz(accion)}</td>
-          <td className={`${TD} min-w-40`}>{`${accion.descripcion}: ${a.descripcion}`}</td>
-          <td className={TD}>{SIGLA_DE_TIPO[accion.tipo]}</td>
-          <td className={`${TD} min-w-28`}>
+          <td className={CELDA}>{causaRaiz(accion)}</td>
+          <td className={CELDA}>{`${accion.descripcion}: ${a.descripcion}`}</td>
+          <td className={CELDA}>{SIGLA_DE_TIPO[accion.tipo]}</td>
+          <td className={CELDA}>
             {a.responsable}
             {a.cargo ? <span className="block text-muted-foreground">{a.cargo}</span> : null}
           </td>
-          <td className={TD}>{accion.recursos ?? VACIO}</td>
-          <td className={`${TD} whitespace-nowrap`}>{fechaDeDia(a.inicio)}</td>
-          <td className={`${TD} whitespace-nowrap`}>
-            {fechaDeDia(a.fin)}
-            {a.reprogramada ? <span className="block font-semibold">{REPROGRAMADA}</span> : null}
+          <td className={CELDA}>{accion.recursos ?? VACIO}</td>
+          <td className={CELDA}>
+            <Dia dia={a.inicio} />
           </td>
-          <td className={TD}>{accion.indicadorCumplimiento ?? VACIO}</td>
-          <td className={TD}>{accion.meta ? conPorcentajesUnidos(accion.meta) : VACIO}</td>
-          <td className={`${TD} whitespace-nowrap`}>{a.ultimoSeguimiento ? fechaDeDia(a.ultimoSeguimiento.fecha) : VACIO}</td>
-          <td className={`${TD} tabular-nums`}>{a.avance}</td>
-          <td className={`${TD} min-w-32`}>{observaciones(a)}</td>
-          <td className={`${TD} whitespace-nowrap${a.vencida ? " font-semibold text-estado-critico-texto" : ""}`}>{estadoDeActividadEnTexto(a)}</td>
+          <td className={CELDA}>
+            <Dia dia={a.fin} />
+            {a.reprogramada ? <span className="block font-semibold hyphens-auto">{REPROGRAMADA}</span> : null}
+          </td>
+          <td className={CELDA}>{accion.indicadorCumplimiento ?? VACIO}</td>
+          <td className={CELDA}>{accion.meta ? conPorcentajesUnidos(accion.meta) : VACIO}</td>
+          <td className={CELDA}>{a.ultimoSeguimiento ? <Dia dia={a.ultimoSeguimiento.fecha} /> : VACIO}</td>
+          <td className={`${CELDA} tabular-nums`}>{a.avance}</td>
+          <td className={CELDA}>{observaciones(a)}</td>
+          <td className={`${CELDA}${a.vencida ? " font-semibold text-estado-critico-texto" : ""}`}>{estadoDeActividadCorto(a)}</td>
         </>
       )}
     </tr>
   );
 }
 
-/** La tabla de las acciones, que se desplaza a lo ancho en pantalla (enfocable, con nombre) y cabe en la hoja apaisada. */
+/**
+ * La tabla de las acciones: al imprimir mide el ancho de la hoja apaisada (`table-layout: fixed`, las columnas en proporción a
+ * `PESOS`, a 7 pt); en pantalla, a 10 px, desde 56 rem cabe en el contenido a 1280 px y por debajo se desplaza a lo ancho
+ * (enfocable, con nombre).
+ */
 function Acciones({ fo14 }: { fo14: Fo14 }) {
   const conPlan = fo14.forma === "consolidado";
-  const columnas = 2 + (conPlan ? 1 : 0) + COLUMNAS_DE_LA_ACTIVIDAD + 1;
+  const pesos = PESOS.filter((p) => conPlan || !p.soloConsolidado);
+  const total = pesos.reduce((s, p) => s + p.peso, 0);
   const th = (texto: string, extra?: { colSpan?: number; rowSpan?: number; scope?: "col" | "colgroup" }) => (
-    <th scope={extra?.scope ?? "col"} colSpan={extra?.colSpan} rowSpan={extra?.rowSpan} className={TH}>
+    <th scope={extra?.scope ?? "col"} colSpan={extra?.colSpan} rowSpan={extra?.rowSpan} className={CABECERA}>
       {texto}
     </th>
   );
   const dos = { rowSpan: 2 };
   return (
     <div role="region" aria-label="Acciones del plan de mejoramiento" tabIndex={0} className={`min-w-0 overflow-x-auto print:overflow-visible ${FOCO}`}>
-      <table className="ficha-tabla fo14-acciones w-full min-w-[80rem] border-collapse text-xs print:min-w-0">
+      <table className="ficha-tabla fo14-acciones w-full min-w-[56rem] table-fixed border-collapse text-[0.625rem] print:min-w-0">
+        <colgroup>
+          {pesos.map((p) => (
+            <col key={p.clave} style={{ width: `${((p.peso / total) * 100).toFixed(3)}%` }} />
+          ))}
+        </colgroup>
         <thead>
           <tr>
             {th("N°", dos)}
@@ -238,7 +292,7 @@ function Acciones({ fo14 }: { fo14: Fo14 }) {
         <tbody>
           {fo14.filas.length === 0 ? (
             <tr>
-              <td colSpan={columnas} className={`${TD} text-muted-foreground`}>
+              <td colSpan={pesos.length} className={`${CELDA} text-muted-foreground`}>
                 {conPlan ? `El proceso no tuvo hallazgos abiertos en ${fo14.encabezado.vigencia}.` : "Sin hallazgos que imprimir."}
               </td>
             </tr>
@@ -271,14 +325,14 @@ function AprobacionYControl({ aprobaciones }: { aprobaciones: Fo14["aprobaciones
             <td className={`${TD} whitespace-nowrap font-mono`}>{a.codigo}</td>
             {a.fuera ? (
               <td colSpan={4} className={TD}>
-                {`${APROBADO_FUERA} · ${a.fuera.rol} · ${fechaDeDia(a.fuera.fecha)}`}
+                {`${APROBADO_FUERA} · ${a.fuera.rol} · ${diaDelFormato(a.fuera.fecha)}`}
               </td>
             ) : (
               <>
                 <td className={TD}>{a.elaboro?.nombre ?? VACIO}</td>
                 <td className={TD}>{a.elaboro?.cargo ?? VACIO}</td>
                 <td className={TD}>{a.aprobo?.nombre ?? VACIO}</td>
-                <td className={TD}>{a.aprobo ? [a.aprobo.cargo, fechaDeDia(a.aprobo.fecha)].filter(Boolean).join(" · ") : VACIO}</td>
+                <td className={TD}>{a.aprobo ? [a.aprobo.cargo, diaDelFormato(a.aprobo.fecha)].filter(Boolean).join(" · ") : VACIO}</td>
               </>
             )}
           </tr>

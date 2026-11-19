@@ -88,6 +88,15 @@ export const ETIQUETA_ESTADO_ACTIVIDAD: Record<EstadoActividad, string> = {
 };
 
 /**
+ * El estado de una actividad en una palabra (Fase 15B, anexo §4.1 y §5.3): el guardado, o «Vencida» si lo está; sin la verificación
+ * ni «Reprogramada» (el SGC-FO-14 pone esa marca junto al fin). Una sola regla para el Excel para el ente y el SGC-FO-14, en este
+ * módulo puro para que el impreso no cargue `exceljs`; `excel-ente.ts` la reexporta con su nombre (`estadoDeActividadEnTexto`).
+ */
+export function estadoDeActividadCorto(a: { estado: string; vencida: boolean }): string {
+  return a.vencida ? "Vencida" : (ETIQUETA_ESTADO_ACTIVIDAD[a.estado as EstadoActividad] ?? a.estado);
+}
+
+/**
  * La marca de una actividad con un ajuste de reprogramación aprobado (spec §10.6): un solo texto y una sola regla para la página
  * del hallazgo, la de la actividad, el impreso y el Excel.
  */

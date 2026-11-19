@@ -53,8 +53,9 @@ import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { guardarConfigMejora, obtenerConfigMejora, type ConfigMejora } from "@/db/consultas/mejoramiento/config";
 import type { FilaDePlanDeAccion } from "@/db/consultas/mejoramiento/filas-de-plan";
 import { CONSOLIDADO_DEL_PROCESO, type Fo14 } from "@/db/consultas/mejoramiento/fo14";
-import { fechaDeDia } from "@/lib/mejoramiento/formato";
+import { estadoDeActividadEnTexto as estadoDelEnte } from "@/lib/mejoramiento/excel-ente";
 import { ORIGENES } from "@/lib/mejoramiento/origenes";
+import { estadoDeActividadCorto } from "@/lib/mejoramiento/textos";
 import { baseDeMejora, c, HORA_DE_ESCENA, hallazgoEn, otroProcesoConLider, planDeMejoraDePrueba } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { documentoLibre, opc, usuarioDePrueba } from "./utiles/tramites";
@@ -260,7 +261,8 @@ describe("el SGC-FO-14 impreso", () => {
   it("el hallazgo sin plan de acción aprobado va con en qué va a lo ancho; «Reprogramada» junto al fin", () => {
     const html = pintar(fo14De("plan"));
     expect(html).toMatch(/<td colSpan="12"[^>]*>En revisión<\/td>/i);
-    expect(html).toContain(`${fechaDeDia("2026-12-31")}<span class="block font-semibold">Reprogramada</span>`);
+    // El día como en el formato (DD/MM/AAAA), que en una columna angosta se parte antes del año, y la marca debajo.
+    expect(html).toContain(`<span class="tabular-nums">31/12/<wbr/>2026</span><span class="block font-semibold hyphens-auto">Reprogramada</span>`);
     // El último seguimiento y cuántos archivos tiene; sin ellos, una raya.
     expect(html).toContain("Formato publicado y socializado · 2 archivos");
     // El tipo, por su sigla, y sus convenciones al pie.
@@ -279,8 +281,35 @@ describe("el SGC-FO-14 impreso", () => {
     const html = pintar(fo14De("plan"));
     expect(html).toContain(">Aprobación y control<");
     expect(html).toContain("Gerente de ejemplo");
-    expect(html).toContain(`Gerente · ${fechaDeDia("2026-10-30")}`);
-    expect(html).toContain(`${APROBADO_FUERA} · Coordinador del SGC · ${fechaDeDia("2025-11-04")}`);
+    expect(html).toContain("Gerente · 30/10/2026");
+    expect(html).toContain(`${APROBADO_FUERA} · Coordinador del SGC · 04/11/2025`);
+  });
+
+  it("la tabla de las acciones cabe en la hoja: ancho fijo, columnas que suman el todo y ninguna casilla que la ensanche", () => {
+    for (const [forma, columnas] of [["plan", 15], ["consolidado", 16]] as const) {
+      const html = pintar(fo14De(forma));
+      const tabla = html.slice(html.indexOf('<table class="ficha-tabla fo14-acciones'), html.indexOf("</table>", html.indexOf("fo14-acciones")));
+      const clases = (tabla.match(/^<table class="([^"]*)"/)?.[1] ?? "").split(/\s+/);
+      expect(clases).toEqual(expect.arrayContaining(["table-fixed", "w-full"]));
+      const anchos = [...tabla.matchAll(/<col style="width:([\d.]+)%"\/>/g)].map((m) => Number(m[1]));
+      expect(anchos).toHaveLength(columnas);
+      expect(Math.abs(anchos.reduce((s, a) => s + a, 0) - 100)).toBeLessThan(0.01);
+      // Al imprimir no queda ningún mínimo de ancho ni texto que no se parta.
+      expect(tabla).not.toContain("whitespace-nowrap");
+      expect(tabla.match(/min-w-[^\s"]+/g)).toEqual(["min-w-[56rem]", "min-w-0"]);
+      expect(tabla).toContain("print:min-w-0");
+    }
+    const css = readFileSync(path.resolve(import.meta.dirname, "../src/app/globals.css"), "utf8");
+    expect(css).toMatch(/\.ficha-impresa\.ficha-horizontal \.fo14-acciones\s*\{[^}]*font-size:\s*7pt/);
+    // El texto para lector de pantalla de cada fuente (absoluto) queda dentro de su tabla: no ensancha la página a 390 px.
+    expect(veces(pintar(fo14De("plan")), '<li class="relative inline-flex')).toBe(ORIGENES.length);
+  });
+
+  it("el impreso no carga `exceljs`: el estado de la actividad sale de `textos.ts`, la misma regla del Excel del ente", () => {
+    const fuente = readFileSync(path.resolve(import.meta.dirname, "../src/componentes/mejoramiento/impresos/PlanDeMejoramientoImpreso.tsx"), "utf8");
+    expect(fuente).not.toContain("excel-ente");
+    expect(fuente).not.toContain("exceljs");
+    expect(estadoDelEnte).toBe(estadoDeActividadCorto);
   });
 
   it("sin documento elegido, el encabezado sale sin el código, la versión ni la fecha de emisión", () => {

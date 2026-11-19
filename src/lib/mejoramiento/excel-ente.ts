@@ -7,6 +7,7 @@ import ExcelJS from "exceljs";
 import type { FilaDePlanDeAccion } from "@/db/consultas/mejoramiento/filas-de-plan";
 import { neutralizarFormula } from "@/lib/celdas";
 import { plazoEnTexto } from "./planes";
+import { estadoDeActividadCorto } from "./textos";
 
 export const COLUMNAS_DEL_ENTE: readonly string[] = [
   "Auditoría o evento",
@@ -26,12 +27,11 @@ export const COLUMNAS_DEL_ENTE: readonly string[] = [
 
 const ANCHOS = [34, 9, 60, 55, 12, 14, 14, 10, 50, 30, 16, 50, 14];
 
-const ESTADO: Record<string, string> = { abierta: "Abierta", en_proceso: "En proceso", terminada: "Terminada", cancelada: "Cancelada" };
-
-/** El estado de una actividad para el ente: el suyo, o «Vencida» si lo está. */
-export function estadoDeActividadEnTexto(a: { estado: string; vencida: boolean }): string {
-  return a.vencida ? "Vencida" : (ESTADO[a.estado] ?? a.estado);
-}
+/**
+ * El estado de una actividad para el ente: el suyo, o «Vencida» si lo está. La regla vive en `textos.ts` (`estadoDeActividadCorto`),
+ * que el SGC-FO-14 lee sin cargar `exceljs`; aquí se reexporta con su nombre de siempre.
+ */
+export const estadoDeActividadEnTexto = estadoDeActividadCorto;
 
 /** `2026-11-02` como `2026/11/02`. */
 const fecha = (dia: string) => dia.replaceAll("-", "/");
