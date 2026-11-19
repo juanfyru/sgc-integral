@@ -93,6 +93,29 @@ async function loEscrito(tx: TransactionSql, planId: number, ids: number[]) {
 
 const NADA = { respuestas: 0, eventos_del_plan: 0, eventos: 0, respondidos: 0 };
 
+/**
+ * Las sentencias, con sus valores, de un camino del dominio que abre su propia transacción (`enTransaccion` sobre la del test es
+ * un savepoint): para ver en qué orden toma sus candados. Registra también los fragmentos que arma; los candados no son fragmentos.
+ */
+function conSentencias(tx: TransactionSql): { sql: TransactionSql; sentencias: Array<{ texto: string; valores: unknown[] }> } {
+  const sentencias: Array<{ texto: string; valores: unknown[] }> = [];
+  const contar = (sp: TransactionSql) =>
+    new Proxy(sp, {
+      apply(objetivo, propio, argumentos: unknown[]) {
+        const plantilla = argumentos[0];
+        if (Array.isArray(plantilla) && "raw" in plantilla) sentencias.push({ texto: (plantilla as string[]).join("?"), valores: argumentos.slice(1) });
+        return Reflect.apply(objetivo, propio, argumentos);
+      },
+    });
+  const envoltura = new Proxy(tx, {
+    get(objetivo, clave, propio) {
+      if (clave !== "savepoint") return Reflect.get(objetivo, clave, propio);
+      return (fn: (sp: TransactionSql) => Promise<unknown>) => objetivo.savepoint((sp) => fn(contar(sp)));
+    },
+  });
+  return { sql: envoltura, sentencias };
+}
+
 describe("lo que lee la página del plan (respuestaDelPlan)", () => {
   it("listos H1 y H2, falta H3 con su estado; vence la menor fecha del ente de los listos; los oficios, los archivos del plan", () =>
     revertida(sql, async (tx) => {
@@ -215,6 +238,30 @@ describe("registrarRespuestaDelPlan", () => {
       expect(historial.find((e) => e.tipo === "respuesta")?.texto).toBe(
         `registró la respuesta al ente de ${h1.codigo} y ${h2.codigo}, enviada el 18 de noviembre de 2026, con el oficio «Oficio de respuesta.pdf»`,
       );
+    }));
+
+  it("toma el plan antes que nada y después los hallazgos, por id ascendente, aunque la lista llegue en otro orden (anexo §3.4)", () =>
+    revertida(sql, async (tx) => {
+      const { b, plan, h1, h2 } = await escena(tx);
+      const oficio = await archivoDelPlan(tx, plan.id, b.admin.usuarioId);
+      const { sql: contador, sentencias } = conSentencias(tx);
+      await registrarRespuestaDelPlan(
+        b.admin,
+        { planId: plan.id, enviadaEn: "2026-11-18", oficioId: oficio, vistos: [h2.id, h1.id] },
+        { ...o(tx), sql: contador },
+      );
+      const candados = sentencias.filter((x) => /FOR UPDATE/.test(x.texto));
+      expect(candados[0].texto).toMatch(/FROM mejora_planes WHERE id = \? FOR UPDATE/);
+      expect(candados[0].valores).toEqual([plan.id]);
+      const deHallazgos = candados.filter((x) => /FROM mejora_hallazgos WHERE id = \? FOR UPDATE/.test(x.texto));
+      expect(deHallazgos.map((x) => x.valores[0])).toEqual([h1.id, h2.id].sort((x, y) => x - y));
+      expect(sentencias.findIndex((x) => /FROM mejora_planes WHERE id = \? FOR UPDATE/.test(x.texto))).toBeLessThan(
+        sentencias.findIndex((x) => /FROM mejora_hallazgos WHERE id = \? FOR UPDATE/.test(x.texto)),
+      );
+      // Nada se escribe antes de tener todos los candados.
+      const primeraEscritura = sentencias.findIndex((x) => /^\s*(INSERT|UPDATE)/.test(x.texto));
+      const ultimoCandado = sentencias.findLastIndex((x) => /FOR UPDATE/.test(x.texto));
+      expect(primeraEscritura).toBeGreaterThan(ultimoCandado);
     }));
 
   it("si la lista cambió (Review Focus 4: un hallazgo cambió de estado con el formulario abierto), LISTOS_CAMBIARON y no se escribe nada", () =>
