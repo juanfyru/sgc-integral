@@ -40,6 +40,7 @@ import {
   c,
   datosDeCarga,
   datosDeHallazgo,
+  hallazgoDeVerificacion,
   impactoDePrueba,
   otroProcesoConLider,
   revisionDePrueba,
@@ -47,6 +48,7 @@ import {
 } from "./utiles/mejoramiento";
 import { contada } from "./utiles/sentencias";
 import { revertida } from "./utiles/transaccion";
+import { usuarioDePrueba } from "./utiles/tramites";
 
 const sql = obtenerSql();
 afterAll(() => sql.end());
@@ -278,6 +280,24 @@ describe("registrarHallazgo con un impacto sobre un documento", () => {
       const [f] = await tx`SELECT impacto_id, impacto_indicador_id FROM mejora_hallazgos WHERE id = ${r.id}`;
       expect(Number(f.impacto_id)).toBe(e.imp.id);
       expect(f.impacto_indicador_id).toBeNull();
+    }));
+
+  it("con un hallazgo de verificación en el mismo envío, manda él: no se escribe el enlace del impacto", () =>
+    revertida(sql, async (tx) => {
+      const e = await escena(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [e.b.procesoId] });
+      const r = await registrarHallazgo(
+        e.b.admin,
+        datos(e, { verificacionHallazgoId: vh.id, accionJustificacion: "Es la tercera copia obsoleta del año en este punto" }),
+        c(AHORA, tx),
+      );
+      const [f] = await tx`SELECT verificacion_hallazgo_id, impacto_id, impacto_indicador_id FROM mejora_hallazgos WHERE id = ${r.id}`;
+      expect(Number(f.verificacion_hallazgo_id)).toBe(vh.id);
+      expect(f.impacto_id).toBeNull();
+      expect(f.impacto_indicador_id).toBeNull();
+      // El impacto sigue sin hallazgo: se puede abrir el suyo.
+      expect((await mapa(tx, e.b.admin, "documento", [e.imp.id])).get(e.imp.id)).toMatchObject({ hallazgo: null, puedeAbrir: true });
     }));
 
   it("al editarlo mientras espera su aceptación, el origen, la norma y el proceso siguen fijos", () =>

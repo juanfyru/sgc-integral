@@ -149,6 +149,12 @@ describe("el registro y la edición del hallazgo de un impacto", () => {
       expect(html).toMatch(new RegExp(`<input type="hidden" name="procesoId" value="${b.procesoId}"/>`));
       expect(html).toContain(`value="Cambio de ${imp.norma.nombre}"`);
       expect(html).not.toContain("Ya está en curso");
+      // Forzado por el líder de otro proceso (Review Focus 5): el formulario de siempre, sin el impacto y sin decir por qué.
+      const otro = await otroProcesoConLider(tx);
+      const ajeno = await pintar(tx, otro.lider, () => PaginaNuevoHallazgo({ searchParams: Promise.resolve({ impacto: String(imp.id) }) }));
+      expect(ajeno).not.toContain('name="impactoId"');
+      expect(ajeno).toMatch(/<select[^>]*name="origen"/);
+      expect(ajeno).not.toContain(imp.norma.nombre);
       // Sin el impacto, la carga se ofrece.
       expect(await pintar(tx, b.admin, () => PaginaNuevoHallazgo({ searchParams: Promise.resolve({}) }))).toContain("Ya está en curso");
     }));
