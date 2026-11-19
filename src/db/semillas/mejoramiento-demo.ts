@@ -56,7 +56,24 @@ import { enviarReporte } from "../consultas/mejoramiento/reportes";
 import { revisarVencimientosDeMejoramiento } from "../consultas/mejoramiento/vencimientos";
 import { cerrarHallazgo, datosDeEvaluacion, evaluarEficacia, huellaDeLoVisto, verificarImplementacion } from "../consultas/mejoramiento/verificacion";
 import { generarPlaceholder } from "../placeholders";
+import { ITEMS_FIJOS } from "../../lib/distribucion/verificacion";
+import { periodoDe } from "../../lib/indicadores-documentales/periodo";
+import { anterior, periodoQueContiene } from "../../lib/indicadores/periodos";
+import { corregirHallazgo, reabrirHallazgo } from "../consultas/distribucion/hallazgos";
+import { abrirVerificacion, cerrarVerificacion, guardarAvance } from "../consultas/distribucion/verificaciones";
+import { analizar } from "../consultas/indicadores/analisis";
+import { aprobarFichas, enviarAAprobacion } from "../consultas/indicadores/aprobacion";
+import { crearIndicador } from "../consultas/indicadores/fichas";
+import { asegurarMediciones, reportar } from "../consultas/indicadores/mediciones";
+import { ponerEnPlan, ponerObjetivo } from "../consultas/mejoramiento/clasificacion";
+import { resolverNoRequiere } from "../consultas/mejoramiento/marcas";
+import { crearPlan } from "../consultas/mejoramiento/planes";
+import { registrarRespuestaDelPlan } from "../consultas/mejoramiento/respuesta-plan";
+import { enlazarTramite } from "../consultas/mejoramiento/tramites-enlace";
+import { registrarRelacion } from "../consultas/normograma/relaciones";
+import { impactosVencidos } from "../consultas/normograma/vencidos";
 import { minutosDespues, momentoHace, sesionDe, type ContextoDistribucion } from "./distribucion-demo";
+import { datosDeFicha, type Catalogo, type FichaDemo } from "./indicadores-demo-fichas";
 import { FIRMA, firmaDeLaDemo } from "./vigencia-demo";
 
 /** Un hallazgo de la demo: su título (lo identifica), la etiqueta de su estado y, si la lleva, su marca. */
@@ -78,31 +95,68 @@ export const HALLAZGOS_DE_LA_DEMO = {
   eficaz: { titulo: "Planilla de temperatura de la nevera de vacunas sin diligenciar el fin de semana", etiqueta: "Cerrado · eficaz" },
   reabierto: { titulo: "Unificar el formato de entrega de turno entre hospitalización y urgencias", etiqueta: "Por formular", marca: "Reabierto · ronda 2" },
   cargado: { titulo: "Carro de paro de urgencias sin la lista de chequeo diaria diligenciada", etiqueta: "En ejecución", marca: "Cargado" },
+  // Los seis de la 15B (anexo 15B, §15.1).
+  porCerrar: { titulo: "Instructivo de higiene de manos de urgencias desactualizado frente al protocolo institucional", etiqueta: "Por cerrar" },
+  conTramites: { titulo: "Inducción del personal asistencial sin el módulo de seguridad del paciente", etiqueta: "En ejecución" },
+  enteRespondido: { titulo: "Medicamentos de control especial sin el libro de registro al día en farmacia", etiqueta: "En ejecución" },
+  enteListo: { titulo: "Planta eléctrica de emergencia sin el registro de sus pruebas semanales", etiqueta: "En ejecución" },
+  sugeridoDeLaMarca: { titulo: "Usuarios de medicina general que esperan más de una semana por una cita", etiqueta: "Por aceptar" },
+  desdeVerificacion: { titulo: "Copia no controlada de un formato en el servicio de urgencias", etiqueta: "Por formular" },
 } as const satisfies Record<string, HallazgoDeLaDemo>;
 
 type Clave = keyof typeof HALLAZGOS_DE_LA_DEMO;
+
+/**
+ * Los tres planes de la 15B, por su nombre (anexo 15B, §15.1): el de la visita del ente, con hallazgos de varios procesos; el de la
+ * auditoría interna, con hallazgos y su objetivo; y uno sin hallazgos.
+ */
+export const PLANES_DE_LA_DEMO = {
+  interno: "Auditoría interna de calidad",
+  ente: "Visita de inspección de la Secretaría de Salud Departamental",
+  vacio: "Autoevaluación de estándares de habilitación",
+} as const;
+
+/**
+ * El indicador de las marcas (anexo 15B, §15.1): mensual, de Consulta Externa, con 45 días de plazo para reportar y analizar (el
+ * informe del operador de la agenda llega a mitad del mes siguiente). Su penúltimo mes es el pendiente con su análisis; el último, el
+ * que todavía espera el análisis: con ese plazo sigue dentro de él el día que se siembre.
+ */
+export const INDICADOR_DE_LAS_MARCAS = "Días de espera para una cita de medicina general";
 
 /** Un momento de la siembra: hace `dias` días (`momentoHace`) y `minutos` después. */
 type Momento = { dias: number; minutos?: number };
 
 /**
  * Cuándo se registra cada hallazgo de la demo: un solo lugar, que usan su escenario y el orden de la siembra (los códigos salen
- * en el orden de sus fechas). El «Por formular» no está aquí: se registra en días hábiles hacia atrás (`diaDelPorFormular`).
+ * en el orden de sus fechas). El «Por formular» no está aquí: se registra en días hábiles hacia atrás (`diaDelPorFormular`); ni la
+ * no conformidad del hallazgo de verificación, que nace a la hora de la siembra (`desdeLaVerificacion`).
  */
-const REGISTRO: Record<Exclude<Clave, "porFormular">, Momento> = {
+const REGISTRO: Record<Exclude<Clave, "porFormular" | "desdeVerificacion">, Momento> = {
   eficaz: { dias: 210 },
+  porCerrar: { dias: 120 },
   reabierto: { dias: 100 },
   enEspera: { dias: 80 },
   porEvaluar: { dias: 75 },
   enEjecucion: { dias: 30 },
+  conTramites: { dias: 27 },
   conCorreccion: { dias: 25 },
   sinAccion: { dias: 20 },
   cargado: { dias: 12 },
   enRevision: { dias: 11 },
   enAprobacion: { dias: 9 },
+  enteRespondido: { dias: 9, minutos: 30 },
+  enteListo: { dias: 9, minutos: 60 },
   rechazado: { dias: 7 },
   enArbitraje: { dias: 6 },
+  sugeridoDeLaMarca: { dias: 2 },
   porAceptar: { dias: 1, minutos: 120 },
+};
+
+/** Cuándo se crea cada plan: en el orden de sus códigos. El del ente, justo antes de que se registren sus dos externos. */
+const CREACION_DE_PLAN: Record<keyof typeof PLANES_DE_LA_DEMO, Momento> = {
+  interno: { dias: 33 },
+  ente: { dias: 9, minutos: 10 },
+  vacio: { dias: 1, minutos: 60 },
 };
 
 /** Cuándo se envía el reporte que sigue por clasificar. */
@@ -148,6 +202,12 @@ type Siembra = {
   norma3100: number;
   /** Los hallazgos ya sembrados, por su clave: el reincidente necesita el cerrado del que es reincidencia. */
   ids: Partial<Record<keyof typeof HALLAZGOS_DE_LA_DEMO, number>>;
+  /** Los planes ya creados, por su clave. */
+  planes: Partial<Record<keyof typeof PLANES_DE_LA_DEMO, number>>;
+  /** Los objetivos del maestro, en el orden de su id: los tres de calidad y los dos institucionales de la 14A. */
+  objetivos: number[];
+  /** El id del indicador de las marcas, una vez creado (`indicadorDeLasMarcas`). */
+  indicadorDeLasMarcas?: number;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,7 +233,7 @@ const enElDia = (s: Siembra, dia: string, minutos = 0) =>
 const dia = (s: Siembra, dias: number) => fechaEnZona(momentoHace(dias, s.ahora), s.zona);
 
 /** El momento del registro de un hallazgo de la demo (`REGISTRO`, o el día hábil del «Por formular»), o el de un `Momento`. */
-function registroDe(s: Siembra, de: Clave | Momento): Date {
+function registroDe(s: Siembra, de: Exclude<Clave, "desdeVerificacion"> | Momento): Date {
   if (de === "porFormular") return enElDia(s, diaDelPorFormular(s));
   const m = typeof de === "string" ? REGISTRO[de] : de;
   return hace(s, m.dias, m.minutos ?? 0);
@@ -186,17 +246,17 @@ const en = (s: Siembra, momento: Date): OpcionesFlujo => ({ sql: s.sql, ahora: m
 // Los pasos comunes
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CARPETA = { mejora_hallazgo: "hallazgos", mejora_actividad: "actividades" } as const;
+const CARPETA = { mejora_hallazgo: "hallazgos", mejora_actividad: "actividades", mejora_plan: "planes" } as const;
 
 /**
  * Un PDF mínimo de la semilla, en el almacén y registrado por `registrarArchivo` como lo haría la subida: la corrección y el
- * formato de la carga van al hallazgo; la evidencia, a su actividad. Con `ahora`, la hora con que el formato de una carga la
- * confirma.
+ * formato de la carga van al hallazgo; la evidencia, a su actividad; el oficio de la respuesta al ente, al plan. Con `ahora`, la
+ * hora con que el formato de una carga la confirma, o la del evento `archivo` del historial del plan. Devuelve el id del archivo.
  */
 async function subir(
   s: Siembra,
   x: { contexto: keyof typeof CARPETA; id: number; rol: "correccion" | "carga" | "evidencia"; nombre: string; quien: SesionFlujo; ahora?: Date },
-): Promise<void> {
+): Promise<number> {
   const contenido = await generarPlaceholder({ codigo: x.nombre, titulo: "Archivo de la demo de mejoramiento", numeroVersion: 1, ext: "pdf", entidad: s.entidad });
   const archivo = sanearNombre(`${x.nombre}.pdf`);
   const ruta = `mejoramiento/${CARPETA[x.contexto]}/${x.id}/${archivo}`;
@@ -204,7 +264,7 @@ async function subir(
   if (!destino) throw new Error(`Ruta de almacén inválida: ${ruta}`);
   await mkdir(path.dirname(destino), { recursive: true });
   await writeFile(destino, contenido);
-  await registrarArchivo(
+  const { id } = await registrarArchivo(
     {
       versionId: null,
       rol: x.rol,
@@ -220,6 +280,7 @@ async function subir(
     x.quien.usuarioId,
     { sql: s.sql, ...(x.ahora ? { ahora: x.ahora } : {}) },
   );
+  return Number(id);
 }
 
 /** La corrección de una no conformidad que sí la requirió, con su evidencia: la registra quien actúa por el proceso. */
@@ -1217,6 +1278,617 @@ async function reportePorClasificar(s: Siembra): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Lo de la 15B (anexo 15B, §15.1): los planes, las marcas, los enganches y el cambio documental
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** El año de un día `AAAA-MM-DD`: la vigencia de un plan es la de su evento. */
+const anioDe = (dia: string) => Number(dia.slice(0, 4));
+
+/** Crea un plan de la demo a su hora (`CREACION_DE_PLAN`), a nombre de quien lo crea, y lo deja en `s.planes`. */
+async function nuevoPlan(
+  s: Siembra,
+  clave: keyof typeof PLANES_DE_LA_DEMO,
+  quien: SesionFlujo,
+  d: { origen: "auditoria_interna" | "ente_control" | "autoevaluacion"; evento: number; objetivoTexto?: string; objetivoId?: number; fechaLimiteEnte?: string },
+): Promise<number> {
+  const fechaEvento = dia(s, d.evento);
+  const m = CREACION_DE_PLAN[clave];
+  const { id } = await crearPlan(
+    quien,
+    {
+      nombre: PLANES_DE_LA_DEMO[clave],
+      origen: d.origen,
+      fechaEvento,
+      vigencia: anioDe(fechaEvento),
+      objetivoTexto: d.objetivoTexto ?? null,
+      objetivoId: d.objetivoId ?? null,
+      fechaLimiteEnte: d.fechaLimiteEnte ?? null,
+    },
+    en(s, hace(s, m.dias, m.minutos ?? 0)),
+  );
+  s.planes[clave] = id;
+  return id;
+}
+
+/** El plan de la auditoría interna, con el primer objetivo de calidad: Control Interno lo crea antes de registrar en él. */
+async function planInterno(s: Siembra): Promise<void> {
+  await nuevoPlan(s, "interno", s.s.control, {
+    origen: "auditoria_interna",
+    evento: 34,
+    objetivoTexto: "Verificar que los procesos asistenciales y de apoyo cumplen los requisitos del sistema de gestión de la calidad.",
+    objetivoId: s.objetivos[0],
+  });
+}
+
+/** Un plan sin hallazgos: la autoevaluación que todavía no ha dejado ninguno. */
+async function planVacio(s: Siembra): Promise<void> {
+  await nuevoPlan(s, "vacio", s.s.control, { origen: "autoevaluacion", evento: 2 });
+}
+
+/**
+ * «Por cerrar», y su análisis marcó «documentos» sin un trámite enlazado: el cierre le pedirá cómo se atendieron los cambios
+ * (anexo 15B, §9.6). Atención Inmediata, sin líder: lo trabaja la coordinadora, lo aprueba Gerencia y lo verifica y evalúa
+ * «eficaz» Control Interno; espera la firma «Cerró».
+ */
+async function porCerrar(s: Siembra): Promise<void> {
+  const { id: h } = await registrarHallazgo(
+    s.s.control,
+    identificacion(s, "porCerrar", {
+      clase: "no_conformidad",
+      origen: "auditoria_interna",
+      fuente: "Auditoría interna de seguridad del paciente",
+      detectado: 121,
+      procesoId: s.proceso.AIN,
+      subprocesoId: s.subproceso("AIN", "urgencias"),
+      criticidad: "media",
+      descripcion:
+        "En la auditoría interna de seguridad del paciente, el instructivo de higiene de manos publicado en urgencias no tiene los cinco momentos del protocolo institucional vigente.",
+      requisitoClausula: "ISO 9001:2015, 7.5.2",
+    }),
+    en(s, registroDe(s, "porCerrar")),
+  );
+  s.ids.porCerrar = h;
+  await corregir(s, h, s.s.coordinadora, {
+    descripcion: "Se retiró el instructivo desactualizado de los puestos de urgencias y se dejó a la vista el protocolo institucional vigente.",
+    responsable: s.s.jefeUrgencias,
+    dias: 118,
+  });
+  await decidirAccionCorrectiva(
+    s.s.coordinadora,
+    { hallazgoId: h, requiere: true, justificacion: "El instructivo se publicó sin revisar el protocolo vigente: hay que buscar la causa." },
+    en(s, hace(s, 117)),
+  );
+  const [[socializar]] = await formular(
+    s,
+    h,
+    s.s.coordinadora,
+    {
+      analisis: [
+        {
+          metodo: "cinco_porques",
+          equipo: "Enfermera jefe de urgencias y Coordinación del SGC",
+          contenido: {
+            niveles: [
+              { respuesta: "El instructivo de urgencias no tiene los cinco momentos de la higiene de manos." },
+              { respuesta: "Se elaboró antes de que se actualizara el protocolo institucional." },
+              { respuesta: "Cuando el protocolo cambió, nadie revisó los instructivos que dependen de él." },
+            ],
+          },
+        },
+      ],
+      causas: ["Al cambiar el protocolo institucional no se revisan los instructivos que dependen de él"],
+      preguntas: { similares: null, cambios: "Actualizar el instructivo de higiene de manos de urgencias con el protocolo institucional" },
+      acciones: [
+        {
+          tipo: "correctiva",
+          descripcion: "Actualizar el instructivo de higiene de manos de urgencias y socializarlo con el personal",
+          causas: [1],
+          indicadorCumplimiento: "Personal de urgencias socializado",
+          meta: "Todo el personal de urgencias",
+          actividades: [{ descripcion: "Socializar el instructivo actualizado con el personal de urgencias", responsable: s.s.jefeUrgencias, inicio: 110, fin: 95 }],
+        },
+      ],
+      criterios: ["no_recurrencia"],
+    },
+    hace(s, 115),
+  );
+  await enviarPlan(s.s.coordinadora, { hallazgoId: h, credenciales: FIRMA }, en(s, hace(s, 113)));
+  await aprobarPlan(s.s.gerente, { hallazgoId: h, credenciales: FIRMA }, en(s, hace(s, 112)));
+  await terminar(s, socializar, s.s.jefeUrgencias, {
+    dias: 96,
+    realizado: "Se socializó el instructivo actualizado en los tres turnos de urgencias.",
+    evidencia: "Lista de asistencia a la socialización del instructivo",
+  });
+  await verificar(s, h, [socializar], { dias: 92, nota: "La lista de asistencia cubre los tres turnos y el instructivo publicado es el vigente." });
+  await evaluar(s, h, {
+    dias: 3,
+    resultado: "eficaz",
+    criterios: ["no_recurrencia"],
+    hasta: "minima",
+    justificacion: "En las rondas de seguridad del paciente de los dos meses siguientes no se encontró un instructivo desactualizado en urgencias.",
+  });
+}
+
+/**
+ * «En ejecución», registrado en el plan de la auditoría interna: Talento Humano, con su líder. Su primera actividad, de `lider.gth`,
+ * tiene enlazados dos trámites documentales (los enlaza él más adelante, `enlazarLosTramites`); la segunda es de `jefe.urgencias`, que
+ * no puede solicitar trámites.
+ */
+async function conTramites(s: Siembra): Promise<void> {
+  const planId = s.planes.interno;
+  if (!planId) throw new Error("El hallazgo con trámites de la demo necesita antes el plan de la auditoría interna");
+  const { id: h } = await registrarHallazgo(
+    s.s.control,
+    {
+      ...identificacion(s, "conTramites", {
+        clase: "no_conformidad",
+        origen: "auditoria_interna",
+        fuente: PLANES_DE_LA_DEMO.interno,
+        detectado: 28,
+        procesoId: s.proceso.GTH,
+        subprocesoId: s.subproceso("GTH", "ingreso"),
+        criticidad: "media",
+        descripcion:
+          "En la auditoría interna de calidad, las tres últimas inducciones del personal asistencial no incluyeron el módulo de seguridad del paciente que pide la caracterización del proceso.",
+        requisitoClausula: "ISO 9001:2015, 7.2 y 7.3",
+      }),
+      planId,
+      objetivoId: s.objetivos[0],
+    },
+    en(s, registroDe(s, "conTramites")),
+  );
+  s.ids.conTramites = h;
+  await aceptarHallazgo(s.s.liderGth, { hallazgoId: h }, en(s, hace(s, 27, 120)));
+  await corregir(s, h, s.s.liderGth, {
+    descripcion: "Se programó el módulo de seguridad del paciente para el personal que ingresó en las tres últimas inducciones.",
+    responsable: s.s.liderGth,
+    dias: 26,
+  });
+  await decidirAccionCorrectiva(
+    s.s.coordinadora,
+    { hallazgoId: h, requiere: true, justificacion: "Se repitió en tres inducciones seguidas: hay que buscar la causa." },
+    en(s, hace(s, 25, 30)),
+  );
+  await formular(
+    s,
+    h,
+    s.s.liderGth,
+    {
+      analisis: [
+        {
+          metodo: "cinco_porques",
+          equipo: "Líder de Talento Humano y Coordinación del SGC",
+          contenido: {
+            niveles: [
+              { respuesta: "La inducción no tuvo el módulo de seguridad del paciente." },
+              { respuesta: "El procedimiento de inducción no lo incluye en su lista de temas." },
+              { respuesta: "El módulo se añadió a la caracterización del proceso y no se pasó al procedimiento." },
+            ],
+          },
+        },
+      ],
+      causas: ["El procedimiento de inducción no se actualizó cuando la caracterización del proceso añadió el módulo"],
+      preguntas: { similares: null, cambios: "Actualizar la caracterización y el procedimiento de inducción con el módulo de seguridad del paciente" },
+      acciones: [
+        {
+          tipo: "correctiva",
+          descripcion: "Incluir el módulo de seguridad del paciente en el procedimiento de inducción",
+          causas: [1],
+          indicadorCumplimiento: "Inducciones con el módulo",
+          meta: "Todas las inducciones del personal asistencial",
+          actividades: [
+            { descripcion: "Actualizar la caracterización y el procedimiento de inducción con el módulo de seguridad del paciente", responsable: s.s.liderGth, inicio: 22, fin: -15 },
+            { descripcion: "Dar el módulo de seguridad del paciente en la próxima inducción del personal asistencial", responsable: s.s.jefeUrgencias, inicio: 20, fin: -25 },
+          ],
+        },
+      ],
+      criterios: ["no_recurrencia"],
+    },
+    hace(s, 24),
+  );
+  await enviarPlan(s.s.liderGth, { hallazgoId: h, credenciales: FIRMA }, en(s, hace(s, 23)));
+  await firmarRevision(s.s.coordinadora, { hallazgoId: h, requiereRecursos: false, credenciales: FIRMA }, en(s, hace(s, 22)));
+}
+
+/** Un hallazgo de la visita del ente, registrado dentro de su plan: nace aceptado y pide la fecha límite del ente (spec 15 §13.4). */
+async function delEnte(
+  s: Siembra,
+  clave: "enteRespondido" | "enteListo",
+  planId: number,
+  d: { proceso: string; subproceso: string; descripcion: string; requisitoClausula: string },
+): Promise<number> {
+  const { id } = await registrarHallazgo(
+    s.s.coordinadora,
+    {
+      ...identificacion(s, clave, {
+        clase: "no_conformidad",
+        origen: "ente_control",
+        fuente: PLANES_DE_LA_DEMO.ente,
+        detectado: 10,
+        procesoId: s.proceso[d.proceso],
+        subprocesoId: s.subproceso(d.proceso, d.subproceso),
+        criticidad: "media",
+        descripcion: d.descripcion,
+        requisitoClausula: d.requisitoClausula,
+        fechaLimiteEnte: dia(s, -16),
+      }),
+      planId,
+    },
+    en(s, registroDe(s, clave)),
+  );
+  s.ids[clave] = id;
+  return id;
+}
+
+/** El plan de acción de un externo del ente, en borrador: una acción con una actividad a cargo de `responsable`. */
+async function planDeUnExterno(
+  s: Siembra,
+  h: number,
+  x: { causa: string; porques: string[]; accion: string; actividad: string; responsable: SesionFlujo; momento: Date },
+): Promise<void> {
+  await formular(
+    s,
+    h,
+    s.s.coordinadora,
+    {
+      analisis: [{ metodo: "cinco_porques", equipo: "Coordinación del SGC", contenido: { niveles: x.porques.map((respuesta) => ({ respuesta })) } }],
+      causas: [x.causa],
+      preguntas: { similares: null, cambios: null },
+      acciones: [
+        { tipo: "correctiva", descripcion: x.accion, causas: [1], actividades: [{ descripcion: x.actividad, responsable: x.responsable, inicio: 3, fin: -12 }] },
+      ],
+      criterios: ["no_recurrencia"],
+    },
+    x.momento,
+  );
+}
+
+/**
+ * El plan de la visita del ente (anexo 15B, §15.1): la coordinadora lo crea y registra en él dos externos de la visita (Apoyo
+ * Terapéutico y Bienes y Servicios), y le añade tres de la 15A: el «En aprobación» de la misma visita (sin plan de acción aprobado),
+ * el cerrado eficaz y el «En espera de eficacia» de Consulta Externa (de otro origen). El primer externo tiene su plan aprobado y su
+ * respuesta registrada desde el plan, con el oficio entre los archivos del plan; el segundo se aprueba después de esa respuesta, así
+ * que queda listo para responder y da la tarea del plan. En este orden: la base se lee como está, no como estaba a la hora del paso.
+ */
+async function planDelEnte(s: Siembra): Promise<void> {
+  const planId = await nuevoPlan(s, "ente", s.s.coordinadora, {
+    origen: "ente_control",
+    evento: 10,
+    objetivoTexto: "Responder a la Secretaría de Salud los hallazgos del acta de visita dentro del plazo que fijó.",
+    fechaLimiteEnte: dia(s, -16),
+  });
+  const respondido = await delEnte(s, "enteRespondido", planId, {
+    proceso: "ATE",
+    subproceso: "farmacia",
+    descripcion: "En la visita, la Secretaría de Salud encontró que el libro de registro de los medicamentos de control especial de farmacia no está al día (hallazgo 1 del acta de visita).",
+    requisitoClausula: "Resolución 3100 de 2019, estándar de medicamentos",
+  });
+  const listo = await delEnte(s, "enteListo", planId, {
+    proceso: "GBS",
+    subproceso: "mantenimiento",
+    descripcion: "En la visita, la Secretaría de Salud encontró que la planta eléctrica de emergencia no tiene el registro de sus pruebas semanales del último trimestre (hallazgo 2 del acta de visita).",
+    requisitoClausula: "Resolución 3100 de 2019, estándar de infraestructura",
+  });
+  const de15A = [s.ids.eficaz, s.ids.enEspera, s.ids.enAprobacion];
+  if (de15A.some((id) => id === undefined)) throw new Error("El plan del ente necesita antes el eficaz, el «En espera» y el «En aprobación»");
+  await ponerEnPlan(s.s.coordinadora, { planId, hallazgoIds: (de15A as number[]).sort((a, b) => a - b), conObjetivo: false }, en(s, hace(s, 8, 30)));
+
+  await corregir(s, respondido, s.s.coordinadora, {
+    descripcion: "Se pasaron al libro los movimientos de los medicamentos de control especial con los soportes de dispensación.",
+    responsable: s.s.regente,
+    dias: 8,
+  });
+  await corregir(s, listo, s.s.coordinadora, {
+    descripcion: "Se hizo la prueba de la planta eléctrica y se dejó su registro en la hoja de vida del equipo.",
+    responsable: s.s.coordinadora,
+    dias: 8,
+  });
+  await planDeUnExterno(s, respondido, {
+    causa: "El libro de control especial no tiene un responsable de registrarlo cada día",
+    porques: ["El libro no está al día.", "Cada turno supone que lo registra el siguiente.", "El procedimiento de farmacia no asigna quién lo registra."],
+    accion: "Asignar el registro diario del libro de control especial al regente de farmacia",
+    actividad: "Registrar cada día los movimientos de control especial y revisarlos cada semana",
+    responsable: s.s.regente,
+    momento: hace(s, 7),
+  });
+  await enviarPlan(s.s.coordinadora, { hallazgoId: respondido, credenciales: FIRMA }, en(s, hace(s, 6)));
+  await aprobarPlan(s.s.gerente, { hallazgoId: respondido, credenciales: FIRMA }, en(s, hace(s, 6, 60)));
+
+  // La respuesta al ente, desde el plan: el oficio es un archivo del plan y la respuesta vale para el único listo.
+  const oficioId = await subir(s, {
+    contexto: "mejora_plan",
+    id: planId,
+    rol: "evidencia",
+    nombre: "Oficio de respuesta a la Secretaría de Salud",
+    quien: s.s.coordinadora,
+    ahora: hace(s, 5),
+  });
+  await registrarRespuestaDelPlan(s.s.coordinadora, { planId, enviadaEn: dia(s, 5), oficioId, vistos: [respondido] }, en(s, hace(s, 5, 30)));
+
+  await planDeUnExterno(s, listo, {
+    causa: "El mantenimiento preventivo de la planta eléctrica no tiene un formato de registro de la prueba semanal",
+    porques: ["La prueba semanal no quedó registrada.", "No hay un formato para registrarla.", "El plan de mantenimiento solo pide la prueba, no su registro."],
+    accion: "Registrar la prueba semanal de la planta eléctrica en la hoja de vida del equipo",
+    actividad: "Hacer y registrar la prueba semanal de la planta eléctrica",
+    responsable: s.s.coordinadora,
+    momento: hace(s, 5, 60),
+  });
+  await enviarPlan(s.s.coordinadora, { hallazgoId: listo, credenciales: FIRMA }, en(s, hace(s, 4, 30)));
+  await aprobarPlan(s.s.gerente, { hallazgoId: listo, credenciales: FIRMA }, en(s, hace(s, 4, 60)));
+}
+
+/** «Por aceptar»: lo registra Control Interno y cita el indicador de las marcas, no una medición: es la ocurrencia que el panel sugiere. */
+async function sugeridoDeLaMarca(s: Siembra): Promise<void> {
+  const { id } = await registrarHallazgo(
+    s.s.control,
+    identificacion(s, "sugeridoDeLaMarca", {
+      clase: "no_conformidad",
+      origen: "pqrsf",
+      fuente: "Buzón de PQRSF de consulta externa",
+      referenciaCaso: "PQRSF-2026-131",
+      detectado: 3,
+      procesoId: s.proceso.CEX,
+      subprocesoId: s.subproceso("CEX", "medicina-general"),
+      criticidad: "media",
+      descripcion:
+        "Varias quejas del mes dicen que la primera cita de medicina general disponible está a más de una semana; el indicador de días de espera lo confirma.",
+      requisitoClausula: "ISO 9001:2015, 8.2.1",
+      indicadorId: s.indicadorDeLasMarcas,
+    }),
+    en(s, registroDe(s, "sugeridoDeLaMarca")),
+  );
+  s.ids.sugeridoDeLaMarca = id;
+}
+
+/** El indicador de las marcas (`INDICADOR_DE_LAS_MARCAS`): lo mide y lo analiza `lider.cex`, que también aprueba su ficha. */
+const FICHA_DE_LAS_MARCAS: FichaDemo = {
+  codigo: "CEX-ID-004",
+  proceso: "CEX",
+  subproceso: "medicina-general",
+  nombre: INDICADOR_DE_LAS_MARCAS,
+  proposito: "Medir cuántos días espera en promedio un usuario entre la solicitud y la cita de medicina general.",
+  tipo: "Eficiencia",
+  clasificacion: "Operativo",
+  forma: "razon",
+  unidad: "Días",
+  decimales: 1,
+  periodicidad: "mensual",
+  tendencia: "descendente",
+  meta: "3",
+  a: {
+    nombre: "Días de espera de las citas asignadas",
+    descripcion: "Suma de los días entre la solicitud y la cita de cada cita de medicina general asignada en el mes",
+    fuente: "Informe mensual del operador de la agenda",
+    unidad: "días",
+  },
+  b: {
+    nombre: "Citas de medicina general asignadas",
+    descripcion: "Citas de medicina general asignadas en el mes",
+    fuente: "Informe mensual del operador de la agenda",
+    unidad: "citas",
+  },
+  prueba: ["450", "150"],
+  cargo: "Médico Coordinador",
+  plazoReporte: 45,
+};
+
+/**
+ * Crea, aprueba y mide el indicador de las marcas (anexo 15B, §15.1), por las funciones de indicadores y con la hora de cada paso:
+ * aprobado a mitad del penúltimo mes, ese mes se reporta en Crítico y se analiza (el pendiente con su análisis); el último, también
+ * en Crítico, se reporta sin análisis (todavía no es un pendiente: está dentro de sus 45 días). No toca ningún indicador sembrado.
+ * Devuelve su id.
+ */
+async function indicadorDeLasMarcas(s: Siembra): Promise<number> {
+  const mesEnCurso = periodoQueContiene("mensual", s.ahora, s.zona);
+  const ultimo = periodoDe(anterior(mesEnCurso.clave), s.zona)!;
+  const penultimo = periodoDe(anterior(ultimo.clave), s.zona)!;
+  const enMes = (p: { desde: Date }, dias: number, horas: number) => antesDeLaSiembra(s, new Date(p.desde.getTime() + dias * 86_400_000 + horas * 3_600_000));
+  const porNombre = async (tabla: "tipos_indicador" | "clasificaciones_indicador" | "unidades_indicador" | "cargos") =>
+    new Map((await s.sql`SELECT id, nombre FROM ${s.sql(tabla)}`).map((f) => [f.nombre as string, Number(f.id)]));
+  const [tipos, clasificaciones, unidades, cargos] = await Promise.all([
+    porNombre("tipos_indicador"),
+    porNombre("clasificaciones_indicador"),
+    porNombre("unidades_indicador"),
+    porNombre("cargos"),
+  ]);
+  const de = (mapa: Map<string, number>, nombre: string) => {
+    const id = mapa.get(nombre);
+    if (id === undefined) throw new Error(`La demo de mejoramiento no encuentra «${nombre}»`);
+    return id;
+  };
+  const noSeUsa = () => {
+    throw new Error("La ficha de las marcas no cita ese catálogo");
+  };
+  const cat: Catalogo = {
+    proceso: (sigla) => s.proceso[sigla],
+    subproceso: s.subproceso,
+    tipo: (n) => de(tipos, n),
+    clasificacion: (n) => de(clasificaciones, n),
+    unidad: (n) => de(unidades, n),
+    cargo: (n) => de(cargos, n),
+    norma: noSeUsa,
+    documento: noSeUsa,
+    objetivo: noSeUsa,
+    dato: noSeUsa,
+    dimension: noSeUsa,
+    indicador: noSeUsa,
+  };
+  const lider = s.s.liderCex;
+  const creacion = enMes(penultimo, 14, 9);
+  const op = { inicio: penultimo.clave, mide: [lider.usuarioId], analiza: [lider.usuarioId] };
+  const { indicadorId, versionId } = await crearIndicador(s.s.coordinadora, datosDeFicha(cat, FICHA_DE_LAS_MARCAS, op), { sql: s.sql, ahora: creacion });
+  const conFirma = (ahora: Date) => ({ sql: s.sql, ahora, verificar: firmaDeLaDemo });
+  await enviarAAprobacion(s.s.coordinadora, { versionId, credenciales: FIRMA }, conFirma(minutosDespues(creacion, 60)));
+  await aprobarFichas(lider, { versionIds: [versionId], credenciales: FIRMA }, conFirma(enMes(penultimo, 15, 10)));
+
+  const medir = async (periodo: { clave: string }, valores: { A: string; B: string }, ahora: Date): Promise<number> => {
+    await asegurarMediciones({ sql: s.sql, ahora, indicadorId });
+    const [m] = await s.sql`SELECT id FROM mediciones WHERE indicador_id = ${indicadorId} AND periodo = ${periodo.clave}`;
+    if (!m) throw new Error(`El indicador de las marcas no tiene medición de ${periodo.clave}`);
+    const r = await reportar(lider, { medicionId: Number(m.id), valores, parcial: false, confirmado: true }, { sql: s.sql, ahora });
+    if (!r.ok || r.semaforo !== "critico") throw new Error(`El indicador de las marcas debía quedar en Crítico en ${periodo.clave}`);
+    return Number(m.id);
+  };
+  // El penúltimo: 4,7 días frente a una meta de 3, analizado al día siguiente.
+  const reporte = enMes(ultimo, 2, 10);
+  const pendiente = await medir(penultimo, { A: "702", B: "150" }, reporte);
+  await analizar(
+    lider,
+    {
+      medicionId: pendiente,
+      causa: "Dos médicos de la agenda de medicina general estuvieron de vacaciones y sus citas no se reasignaron a los demás.",
+      accionPropuesta: "Programar las vacaciones de los médicos por turnos y abrir agenda adicional los sábados cuando falte un médico.",
+    },
+    { sql: s.sql, ahora: minutosDespues(reporte, 24 * 60) },
+  );
+  // El último: 5 días, reportado poco después de terminar el mes y sin análisis.
+  const terminado = ultimo.hasta.getTime();
+  const margen = Math.min(2 * 86_400_000, Math.floor((s.ahora.getTime() - terminado) / 2));
+  await medir(ultimo, { A: "735", B: "147" }, antesDeLaSiembra(s, new Date(terminado + margen)));
+  return indicadorId;
+}
+
+/** La salida «no requiere» del Crítico de `SGC-IND-01`, ya analizado: la coordinadora la decide al día siguiente de su análisis. */
+async function noRequiereDeLasAuditorias(s: Siembra): Promise<void> {
+  const [m] = await s.sql`SELECT m.id, m.analizada_en FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+    WHERE i.codigo = 'SGC-IND-01' AND m.requiere_accion AND NOT m.historica ORDER BY m.desde DESC LIMIT 1`;
+  if (!m?.analizada_en) throw new Error("La demo de mejoramiento necesita el Crítico analizado de SGC-IND-01");
+  const momento = new Date(Math.min((m.analizada_en as Date).getTime() + 86_400_000, s.ahora.getTime() - 3_600_000));
+  await resolverNoRequiere(
+    s.s.coordinadora,
+    {
+      medicionId: Number(m.id),
+      justificacion:
+        "Las dos auditorías que faltaron ya se reprogramaron para el trimestre siguiente y la formación de los auditores de respaldo está en el plan de capacitación.",
+    },
+    en(s, antesDeLaSiembra(s, momento)),
+  );
+}
+
+/**
+ * Otro hallazgo de verificación en Urgencias, reabierto una vez y sin no conformidad: la fila con la sugerencia (anexo 15B, §7.4).
+ * Una verificación de Urgencias después de la que ya tiene: su última sigue no conforme, así la conformidad de los puntos que
+ * fotografía `SGC-ID-002` no cambia. `jefe.urgencias` lo corrige y la coordinadora lo reabre con un plazo nuevo.
+ */
+async function reabiertoEnUrgencias(s: Siembra): Promise<void> {
+  const [punto] = await s.sql`SELECT id FROM puntos_uso WHERE nombre = 'Urgencias'`;
+  const ahora = hace(s, 8);
+  const { verificacionId } = await abrirVerificacion(s.s.coordinadora, Number(punto.id), { sql: s.sql, ahora });
+  const items = await s.sql`SELECT id, texto FROM verificacion_items WHERE verificacion_id = ${verificacionId} ORDER BY orden`;
+  const obsoletos = ITEMS_FIJOS[0];
+  await guardarAvance(
+    verificacionId,
+    s.s.coordinadora,
+    items.map((i) =>
+      i.texto === obsoletos
+        ? { itemId: Number(i.id), respuesta: "no_conforme" as const, nota: "Una copia impresa de una versión anterior del protocolo de triage en el puesto de enfermería" }
+        : { itemId: Number(i.id), respuesta: "conforme" as const, nota: null },
+    ),
+    { sql: s.sql, ahora },
+  );
+  await cerrarVerificacion(verificacionId, s.s.coordinadora, { sql: s.sql, ahora: minutosDespues(ahora, 10) });
+  const [h] = await s.sql`SELECT id FROM hallazgos WHERE verificacion_id = ${verificacionId}`;
+  await corregirHallazgo(Number(h.id), s.s.jefeUrgencias, "Se retiró la copia impresa y se dejó a la vista el acceso a la versión vigente en la plataforma.", {
+    sql: s.sql,
+    ahora: hace(s, 6),
+  });
+  await reabrirHallazgo(Number(h.id), s.s.coordinadora, "En la ronda de seguimiento la copia anterior seguía en el puesto de enfermería del turno de la noche.", {
+    sql: s.sql,
+    ahora: hace(s, 2),
+  });
+}
+
+/**
+ * Un impacto de norma vencido y escalado, sin hallazgo (anexo 15B, §8): la Ley 1438 de 2011 modifica la Ley 100 de 1993, registrado
+ * hace cuarenta días; la pasada de los impactos vencidos de la 13C corre a los veinte, cuando ya venció y pasó el escalamiento, y
+ * avisa y escala de una vez. Solo esa pasada: la de vencimientos completa avisaría lo demás de otros módulos.
+ */
+async function impactoVencido(s: Siembra): Promise<void> {
+  const normas = new Map(
+    (await s.sql`SELECT n.id, n.numero, n.anio FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id WHERE tn.nombre = 'Ley'`).map((f) => [
+      `${f.numero}/${f.anio}`,
+      Number(f.id),
+    ]),
+  );
+  const [ley1438, ley100] = [normas.get("1438/2011"), normas.get("100/1993")];
+  if (!ley1438 || !ley100) throw new Error("La demo de mejoramiento necesita la Ley 100 de 1993 y la Ley 1438 de 2011 en el normograma");
+  await registrarRelacion(
+    s.s.coordinadora,
+    {
+      normaId: ley1438,
+      afectadaId: ley100,
+      tipo: "modifica",
+      detalle: "La Ley 1438 de 2011 modifica artículos de la Ley 100 de 1993 sobre el Sistema General de Seguridad Social en Salud.",
+      fecha: "2011-01-19",
+    },
+    { sql: s.sql, ahora: hace(s, 40) },
+  );
+  const { escalamientoDias } = await obtenerConfigDocumental({ sql: s.sql });
+  await impactosVencidos({ sql: s.sql, ahora: hace(s, 20), escalamientoDias });
+}
+
+/** `lider.gth` enlaza a su actividad el trámite publicado de la caracterización y el que sigue en revisión del procedimiento de inducción. */
+async function enlazarLosTramites(s: Siembra): Promise<void> {
+  const h = s.ids.conTramites;
+  if (!h) throw new Error("Los enlaces de la demo necesitan antes el hallazgo con trámites");
+  const [actividad] = await s.sql`SELECT a.id FROM mejora_actividades a JOIN usuarios u ON u.id = a.responsable_id
+    WHERE a.hallazgo_id = ${h} AND u.usuario = 'lider.gth'`;
+  const tramite = async (codigo: string, etapa: string) => {
+    const [t] = await s.sql`SELECT t.id FROM tramites t JOIN documentos d ON d.id = t.documento_id WHERE d.codigo = ${codigo} AND t.etapa = ${etapa}`;
+    if (!t) throw new Error(`La demo de mejoramiento necesita el trámite de ${codigo} en ${etapa}`);
+    return Number(t.id);
+  };
+  await enlazarTramite(s.s.liderGth, { actividadId: Number(actividad.id), tramiteId: await tramite("GTH-CA-01", "publicado") }, en(s, hace(s, 5)));
+  await enlazarTramite(s.s.liderGth, { actividadId: Number(actividad.id), tramiteId: await tramite("GTH-PR-02", "revision") }, en(s, hace(s, 5, 10)));
+}
+
+/**
+ * La clasificación que no se hace al registrar: Control Interno pone en el plan de la auditoría interna el reincidente de la nevera y
+ * el «Por aceptar» de Talento Humano (reciben el objetivo del plan); la coordinadora pone un objetivo a dos hallazgos sin plan.
+ */
+async function clasificar(s: Siembra): Promise<void> {
+  const { interno } = s.planes;
+  const { enEjecucion, porAceptar, reabierto, sugeridoDeLaMarca } = s.ids;
+  if (!interno || !enEjecucion || !porAceptar || !reabierto || !sugeridoDeLaMarca) throw new Error("La clasificación de la demo necesita antes sus hallazgos");
+  await ponerEnPlan(s.s.control, { planId: interno, hallazgoIds: [enEjecucion, porAceptar].sort((a, b) => a - b), conObjetivo: true }, en(s, hace(s, 1, 180)));
+  await ponerObjetivo(s.s.coordinadora, { hallazgoId: reabierto, objetivoId: s.objetivos[2] }, en(s, hace(s, 1, 190)));
+  await ponerObjetivo(s.s.coordinadora, { hallazgoId: sugeridoDeLaMarca, objetivoId: s.objetivos[3] }, en(s, hace(s, 1, 200)));
+}
+
+/**
+ * La no conformidad del hallazgo de verificación de Urgencias (anexo 15B, §7.2), a la hora de la siembra: la abre la coordinadora,
+ * cita el Crítico de conformidad de `SGC-ID-002` (que la foto de la siembra marcó y analizó a esa misma hora), y con ello le escribe su
+ * salida «hallazgo» (§6.3). Atención Inmediata no tiene líder: nace aceptada y va a «Por formular».
+ */
+async function desdeLaVerificacion(s: Siembra): Promise<void> {
+  const [vh] = await s.sql`SELECT id, creado_en FROM hallazgos WHERE estado = 'abierto' AND descripcion LIKE '%AIN-FO-01%' ORDER BY id LIMIT 1`;
+  const [m] = await s.sql`SELECT m.id, m.indicador_id FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+    WHERE i.codigo = 'SGC-ID-002' AND m.requiere_accion ORDER BY m.desde DESC LIMIT 1`;
+  if (!vh || !m) throw new Error("La demo de mejoramiento necesita el hallazgo de verificación de Urgencias y el Crítico de SGC-ID-002");
+  const { id } = await registrarHallazgo(
+    s.s.coordinadora,
+    {
+      clase: "no_conformidad",
+      origen: "control_documental",
+      fuente: "Verificación del punto Urgencias",
+      detectadoEn: fechaEnZona(vh.creado_en as Date, s.zona),
+      procesoId: s.proceso.AIN,
+      subprocesoId: s.subproceso("AIN", "urgencias"),
+      criticidad: "media",
+      titulo: HALLAZGOS_DE_LA_DEMO.desdeVerificacion.titulo,
+      descripcion: "En la verificación del punto de uso de Urgencias se encontró una copia no controlada de AIN-FO-01, impresa sin sello, en el servicio.",
+      requisitoClausula: "ISO 9001:2015, 7.5.3",
+      indicadorId: Number(m.indicador_id),
+      medicionId: Number(m.id),
+      verificacionHallazgoId: Number(vh.id),
+      accionJustificacion: "Una copia no controlada en un servicio asistencial puede llevar a usar un formato desactualizado: hay que tratar la causa.",
+    },
+    en(s, s.ahora),
+  );
+  s.ids.desdeVerificacion = id;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** El día no hábil de ejemplo: el primer día hábil desde tres semanas después de la siembra. */
 function diaDeEjemplo(s: Siembra): string {
@@ -1286,6 +1958,8 @@ async function prepararSiembra(sql: Sql, c: ContextoDistribucion): Promise<Siemb
     },
     norma3100: Number(norma.id),
     ids: {},
+    planes: {},
+    objetivos: (await sql`SELECT id FROM objetivos ORDER BY id`).map((f) => Number(f.id)),
   };
 }
 
@@ -1296,29 +1970,49 @@ export async function sembrarMejoramiento(sql: Sql, c: ContextoDistribucion): Pr
   await agregarDiaDeCalendario(s.s.coordinadora, { fecha: diaDeEjemplo(s), tipo: "no_habil", motivo: DIA_NO_HABIL_DE_EJEMPLO }, { sql });
   s.calendario = await calendarioDeMejora(sql);
 
-  // En el orden de su registro (`REGISTRO`): así los códigos salen en el orden de sus fechas. A igual hora, en el de esta lista.
-  const escenarios: Record<Clave, (s: Siembra) => Promise<void>> = {
+  // El indicador de las marcas (15B) va antes que los hallazgos: uno lo cita. No crea hallazgos, así que no mueve ningún código.
+  s.indicadorDeLasMarcas = await indicadorDeLasMarcas(s);
+
+  // En el orden de su registro (`REGISTRO`): así los códigos salen en el orden de sus fechas. A igual hora, en el de esta lista. El
+  // del ente registra sus dos externos (`planDelEnte`); los planes se crean en el orden de sus códigos (`CREACION_DE_PLAN`).
+  const escenarios: Record<Exclude<Clave, "enteListo" | "desdeVerificacion">, (s: Siembra) => Promise<void>> = {
     eficaz,
+    porCerrar,
     reabierto,
     enEspera,
     porEvaluar,
     enEjecucion,
+    conTramites,
     conCorreccion,
     sinAccion,
     cargado,
     enRevision,
     porFormular,
     enAprobacion,
+    enteRespondido: planDelEnte,
     rechazado,
     enArbitraje,
+    sugeridoDeLaMarca,
     porAceptar,
   };
+  const momentoDePlan = (clave: keyof typeof PLANES_DE_LA_DEMO) => hace(s, CREACION_DE_PLAN[clave].dias, CREACION_DE_PLAN[clave].minutos ?? 0);
   const siembras = [
-    ...(Object.keys(escenarios) as Clave[]).map((clave) => ({ registro: registroDe(s, clave), sembrar: escenarios[clave] })),
+    ...(Object.keys(escenarios) as (keyof typeof escenarios)[]).map((clave) => ({ registro: registroDe(s, clave), sembrar: escenarios[clave] })),
     { registro: registroDe(s, REPORTE_POR_CLASIFICAR), sembrar: reportePorClasificar },
+    { registro: momentoDePlan("interno"), sembrar: planInterno },
+    { registro: momentoDePlan("vacio"), sembrar: planVacio },
   ];
   siembras.sort((a, b) => a.registro.getTime() - b.registro.getTime());
   for (const { sembrar } of siembras) await sembrar(s);
+
+  // Lo de la 15B que cruza hallazgos ya sembrados, cada paso con su hora en el pasado: la base se lee como está.
+  await noRequiereDeLasAuditorias(s);
+  await reabiertoEnUrgencias(s);
+  await impactoVencido(s);
+  await enlazarLosTramites(s);
+  await clasificar(s);
+  // A la hora de la siembra, la última: el Crítico de `SGC-ID-002` nació con la foto de esa hora.
+  await desdeLaVerificacion(s);
 
   // Antes de la pasada: lo que ella avise queda sin leer.
   await leerAvisosResueltos(sql);

@@ -159,8 +159,12 @@ describe("distribución sembrada", () => {
   });
 
   it("Farmacia verificada conforme y Urgencias con un hallazgo abierto y vencido", async (ctx) => {
-    const verificaciones = await sql`SELECT v.id, pu.nombre AS punto, v.estado, v.conforme, v.cerrada_en < now() - interval '15 days' AS antigua
-      FROM verificaciones v JOIN puntos_uso pu ON pu.id = v.punto_uso_id ORDER BY pu.orden`;
+    // Las de la 13B: la primera de cada punto. La segunda de Urgencias es de la 15B (`tests/semilla-mejoramiento.test.ts`).
+    const verificaciones = await sql`SELECT * FROM (
+        SELECT DISTINCT ON (pu.id) v.id, pu.nombre AS punto, pu.orden, v.estado, v.conforme,
+          v.cerrada_en < now() - interval '15 days' AS antigua
+        FROM verificaciones v JOIN puntos_uso pu ON pu.id = v.punto_uso_id ORDER BY pu.id, v.abierta_en, v.id) primeras
+      ORDER BY orden`;
     exigirDemo(ctx, verificaciones.length === 2 && verificaciones.every((v) => v.estado === "cerrada"), "las verificaciones ya no son las sembradas");
     const [urgencias, farmacia] = verificaciones;
     expect([urgencias.punto, urgencias.conforme, farmacia.punto, farmacia.conforme]).toEqual(["Urgencias", false, "Farmacia", true]);
@@ -170,13 +174,14 @@ describe("distribución sembrada", () => {
     const deFarmacia = items.filter((i) => Number(i.verificacion_id) === Number(farmacia.id));
     expect(deFarmacia).toHaveLength(3);
     expect(deFarmacia.every((i) => i.respuesta === "conforme")).toBe(true);
-    const noConformes = items.filter((i) => i.respuesta === "no_conforme");
+    const delaTreceB = [Number(urgencias.id), Number(farmacia.id)];
+    const noConformes = items.filter((i) => i.respuesta === "no_conforme" && delaTreceB.includes(Number(i.verificacion_id)));
     expect(noConformes.map((i) => [Number(i.verificacion_id), i.texto, i.nota])).toEqual([
       [Number(urgencias.id), "Sin copias no controladas (impresiones sin sello)", "Copia no controlada de AIN-FO-01"],
     ]);
 
     const hallazgos = await sql`SELECT h.estado, h.descripcion, u.usuario, h.vence_en < now() AS vencido
-      FROM hallazgos h JOIN usuarios u ON u.id = h.responsable_id`;
+      FROM hallazgos h JOIN usuarios u ON u.id = h.responsable_id WHERE h.verificacion_id = ${urgencias.id}`;
     expect(hallazgos).toHaveLength(1);
     expect(hallazgos[0].estado).toBe("abierto");
     expect(hallazgos[0].usuario).toBe("jefe.urgencias");

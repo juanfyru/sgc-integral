@@ -18,13 +18,24 @@ import { obtenerSql } from "@/db/cliente";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { calendarioDeMejora } from "@/db/consultas/mejoramiento/config";
 import { evaluableDesde, fechaMinimaDe } from "@/db/consultas/mejoramiento/espera";
+import { engancheDeImpactos } from "@/db/consultas/mejoramiento/enganche-impacto";
+import { engancheDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { hallazgoBase } from "@/db/consultas/mejoramiento/flujo";
+import { marcasDelIndicador } from "@/db/consultas/mejoramiento/marcas";
+import { tareasDeMejoramiento } from "@/db/consultas/mejoramiento/tareas";
 import { venceLaActividad } from "@/db/consultas/mejoramiento/vence-actividad";
 import { revisarVencimientosDeMejoramiento } from "@/db/consultas/mejoramiento/vencimientos";
 import { datosDeEvaluacion } from "@/db/consultas/mejoramiento/verificacion";
-import { DIA_NO_HABIL_DE_EJEMPLO, HALLAZGOS_DE_LA_DEMO, REPORTES_DE_LA_DEMO } from "@/db/semillas/mejoramiento-demo";
+import {
+  DIA_NO_HABIL_DE_EJEMPLO,
+  HALLAZGOS_DE_LA_DEMO,
+  INDICADOR_DE_LAS_MARCAS,
+  PLANES_DE_LA_DEMO,
+  REPORTES_DE_LA_DEMO,
+} from "@/db/semillas/mejoramiento-demo";
 import { diasHabilesEntre } from "@/lib/dias-habiles";
 import { etiquetaDeEstado, marcasDeHallazgo } from "@/lib/mejoramiento/estados";
+import { TERMINALES } from "@/lib/mejoramiento/tipos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { exigirDemo, sembradaEn } from "./utiles/demo";
@@ -43,11 +54,12 @@ type Clave = keyof typeof HALLAZGOS_DE_LA_DEMO;
 const CLAVES = Object.keys(HALLAZGOS_DE_LA_DEMO) as Clave[];
 
 /**
- * Si lo sembrado en mejoramiento sigue como se sembró: los catorce hallazgos y los dos reportes, ningún paso ni evento de un
- * reporte después del reloj de la siembra (lo que se hace al recorrer la demo lleva la hora real: `ocurrio_en` en los
- * hallazgos y `creado_en` en los reportes, que la siembra inyecta), ningún aviso de mejoramiento leído por una persona (la
- * semilla deja leídos los resueltos en la hora en que nacieron; quien lee después lo hace más tarde) y el día no hábil de
- * ejemplo como único del calendario.
+ * Si lo sembrado en mejoramiento sigue como se sembró: los hallazgos de `HALLAZGOS_DE_LA_DEMO` y los dos reportes, ningún paso
+ * ni evento de un reporte después del reloj de la siembra (lo que se hace al recorrer la demo lleva la hora real: `ocurrio_en`
+ * en los hallazgos y `creado_en` en los reportes, que la siembra inyecta), ningún aviso de mejoramiento leído por una persona
+ * (la semilla deja leídos los resueltos en la hora en que nacieron; quien lee después lo hace más tarde) y el día no hábil de
+ * ejemplo como único del calendario. Desde la 15B, también los tres planes y, después del reloj, ningún evento de un plan,
+ * ninguna salida de una marca, ningún enlace a un trámite ni ningún cambio de la clasificación.
  */
 async function comoSeSembro(): Promise<{ intacta: boolean; motivo: string }> {
   const t = await sembradaEn(sql);
@@ -57,9 +69,20 @@ async function comoSeSembro(): Promise<{ intacta: boolean; motivo: string }> {
       (SELECT count(*)::int FROM mejora_eventos WHERE ocurrio_en > ${t}) AS eventos,
       (SELECT count(*)::int FROM mejora_reporte_eventos WHERE creado_en > ${t}) AS "eventosDeReportes",
       (SELECT count(*)::int FROM notificaciones WHERE tipo LIKE 'mejora.%' AND leida_en > creado_en) AS leidos,
-      (SELECT count(*)::int FROM dias_no_habiles) AS dias`;
+      (SELECT count(*)::int FROM dias_no_habiles) AS dias,
+      (SELECT count(*)::int FROM mejora_planes) AS planes,
+      (SELECT count(*)::int FROM mejora_plan_eventos WHERE creado_en > ${t}) AS "eventosDePlanes",
+      (SELECT count(*)::int FROM mejora_marcas WHERE decidido_en > ${t}) AS marcas,
+      (SELECT count(*)::int FROM mejora_actividad_tramites WHERE enlazado_en > ${t}) AS enlaces,
+      (SELECT count(*)::int FROM mejora_clasificacion WHERE actualizado_en > ${t}) AS clasificaciones`;
   const cambios: string[] = [];
-  if (c.hallazgos !== 14) cambios.push(`${c.hallazgos} hallazgos (se sembraron 14)`);
+  const sembrados = CLAVES.length;
+  if (c.hallazgos !== sembrados) cambios.push(`${c.hallazgos} hallazgos (se sembraron ${sembrados})`);
+  const planes = Object.keys(PLANES_DE_LA_DEMO).length;
+  if (c.planes !== planes) cambios.push(`${c.planes} planes (se sembraron ${planes})`);
+  for (const clave of ["eventosDePlanes", "marcas", "enlaces", "clasificaciones"] as const) {
+    if (c[clave] > 0) cambios.push(`${c[clave]} ${clave} posteriores a la siembra`);
+  }
   if (c.reportes !== 2) cambios.push(`${c.reportes} reportes (se sembraron 2)`);
   if (c.eventos > 0) cambios.push(`${c.eventos} pasos de hallazgos posteriores a la siembra`);
   if (c.eventosDeReportes > 0) cambios.push(`${c.eventosDeReportes} eventos de reportes posteriores a la siembra`);
@@ -253,6 +276,156 @@ describe("los planes de mejoramiento de la demo", () => {
     await revertida(sql, async (tx) => {
       const config = await obtenerConfigDocumental({ sql: tx });
       expect(await revisarVencimientosDeMejoramiento({ sql: tx, ahora: t, config })).toEqual({ avisados: 0, escalados: 0 });
+      // Tampoco queda un trámite enlazado que haya terminado sin su aviso, en un hallazgo sin terminar (anexo 15B, §9.5).
+      const [{ n }] = await tx`SELECT count(*)::int AS n FROM mejora_actividad_tramites e
+        JOIN tramites tr ON tr.id = e.tramite_id JOIN mejora_hallazgos h ON h.id = e.hallazgo_id
+        WHERE e.avisado_en IS NULL AND tr.cerrado_en IS NOT NULL AND h.estado NOT IN ${tx([...TERMINALES])}`;
+      expect(n).toBe(0);
     });
+  });
+});
+
+/** El plan sembrado con ese nombre (`PLANES_DE_LA_DEMO`). */
+async function plan(nombre: string) {
+  const filas = await sql`SELECT * FROM mejora_planes WHERE nombre = ${nombre}`;
+  expect(filas, nombre).toHaveLength(1);
+  return filas[0];
+}
+
+/** Los hallazgos de un plan, con su proceso, su estado y su origen. */
+async function hallazgosDelPlan(planId: number) {
+  return sql`SELECT h.id, h.titulo, h.estado, h.origen, h.proceso_id FROM mejora_clasificacion c
+    JOIN mejora_hallazgos h ON h.id = c.hallazgo_id WHERE c.plan_id = ${planId} ORDER BY h.id`;
+}
+
+describe("lo que la 15B le añade a la demo (anexo 15B, §15.1)", () => {
+  it("el plan del ente: dos procesos, uno cerrado, uno de otro origen, uno sin plan de acción aprobado y dos externos aprobados", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const p = await plan(PLANES_DE_LA_DEMO.ente);
+    expect(p.origen).toBe("ente_control");
+    expect(p.codigo).toMatch(/^PM-\d{4}-\d{2,}$/);
+    const hs = await hallazgosDelPlan(Number(p.id));
+    const titulos = hs.map((h) => h.titulo);
+    for (const clave of ["eficaz", "enEspera", "enAprobacion", "enteRespondido", "enteListo"] as const) {
+      expect(titulos, clave).toContain(HALLAZGOS_DE_LA_DEMO[clave].titulo);
+    }
+    expect(new Set(hs.map((h) => h.proceso_id)).size).toBeGreaterThanOrEqual(2);
+    expect(hs.some((h) => h.estado === "cerrado")).toBe(true);
+    expect(hs.some((h) => h.origen !== "ente_control")).toBe(true);
+    expect((await hallazgo("enAprobacion")).estado).toBe("en_aprobacion");
+  });
+
+  it("el plan del ente tiene un archivo y una respuesta para uno de sus externos; el otro sigue listo, con su tarea", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const t = await sembradaEn(sql);
+    const p = await plan(PLANES_DE_LA_DEMO.ente);
+    const archivos = await sql`SELECT id FROM archivos WHERE contexto = 'mejora_plan' AND contexto_id = ${p.id}`;
+    expect(archivos.length).toBeGreaterThanOrEqual(1);
+    const respuestas = await sql`SELECT r.id, r.archivo_id FROM mejora_plan_respuestas r WHERE r.plan_id = ${p.id}`;
+    expect(respuestas).toHaveLength(1);
+    expect(archivos.map((a) => Number(a.id))).toContain(Number(respuestas[0].archivo_id));
+    const incluidos = await sql`SELECT hallazgo_id FROM mejora_plan_respuesta_hallazgos WHERE respuesta_id = ${respuestas[0].id}`;
+    expect(incluidos.map((f) => Number(f.hallazgo_id))).toEqual([Number((await hallazgo("enteRespondido")).id)]);
+    const tareas = (await tareasDeMejoramiento(await sesionDe(sql, "coordinadora.sgc"), { sql, ahora: t })).tareas.map((x) => x.id);
+    expect(tareas).toContain(`mej-ente-plan:${p.id}`);
+  });
+
+  it("un plan interno con hallazgos y su objetivo, y un plan sin ninguno", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const interno = await plan(PLANES_DE_LA_DEMO.interno);
+    expect(interno.origen).toBe("auditoria_interna");
+    expect(interno.objetivo_id).not.toBeNull();
+    expect((await hallazgosDelPlan(Number(interno.id))).length).toBeGreaterThanOrEqual(2);
+    const vacio = await plan(PLANES_DE_LA_DEMO.vacio);
+    expect(await hallazgosDelPlan(Number(vacio.id))).toEqual([]);
+    const codigos = await sql`SELECT codigo FROM mejora_planes ORDER BY creado_en, id`;
+    const orden = codigos.map((f) => f.codigo as string);
+    expect(orden).toEqual([...orden].sort());
+  });
+
+  it("un objetivo en un plan y en dos hallazgos sueltos", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const sueltos = await sql`SELECT hallazgo_id FROM mejora_clasificacion WHERE plan_id IS NULL AND objetivo_id IS NOT NULL`;
+    expect(sueltos.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("las cuatro marcas: una pendiente con su análisis y un hallazgo sugerido, una que espera el análisis, una con hallazgo y una con «no requiere»", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const t = await sembradaEn(sql);
+    const coordinadora = await sesionDe(sql, "coordinadora.sgc");
+    const [ind] = await sql`SELECT DISTINCT i.id FROM indicadores i JOIN indicador_versiones iv ON iv.indicador_id = i.id
+      WHERE iv.nombre = ${INDICADOR_DE_LAS_MARCAS}`;
+    const panel = await marcasDelIndicador(coordinadora, Number(ind.id), { sql, ahora: t });
+    expect(panel?.marcas.map((m) => m.estado)).toEqual(["pendiente", "espera_analisis"]);
+    const [pendiente] = panel!.marcas;
+    expect(pendiente.causa).not.toBeNull();
+    expect(pendiente.accionPropuesta).not.toBeNull();
+    expect(panel!.candidatos.map((c) => c.titulo)).toContain(HALLAZGOS_DE_LA_DEMO.sugeridoDeLaMarca.titulo);
+    const tareas = (await tareasDeMejoramiento(coordinadora, { sql, ahora: t })).tareas.map((x) => x.id);
+    expect(tareas).toContain(`mej-marca:${pendiente.medicionId}`);
+    const salidas = await sql`SELECT mm.salida, i.codigo, mm.hallazgo_id, mm.justificacion FROM mejora_marcas mm
+      JOIN indicadores i ON i.id = mm.indicador_id ORDER BY mm.id`;
+    const conHallazgo = salidas.filter((f) => f.salida === "hallazgo");
+    expect(conHallazgo.map((f) => Number(f.hallazgo_id))).toEqual([Number((await hallazgo("desdeVerificacion")).id)]);
+    const noRequiere = salidas.filter((f) => f.salida === "no_requiere");
+    expect(noRequiere).toHaveLength(1);
+    expect((noRequiere[0].justificacion as string).length).toBeGreaterThanOrEqual(10);
+    // Ninguna salida es posterior a la siembra.
+    const [{ tarde }] = await sql`SELECT count(*)::int AS tarde FROM mejora_marcas WHERE decidido_en > ${t}`;
+    expect(tarde).toBe(0);
+  });
+
+  it("una no conformidad «Por formular» nacida de un hallazgo de verificación, y otro hallazgo de verificación con la sugerencia", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const t = await sembradaEn(sql);
+    const nc = await hallazgo("desdeVerificacion");
+    expect({ estado: nc.estado, clase: nc.clase, origen: nc.origen }).toEqual({
+      estado: "por_formular",
+      clase: "no_conformidad",
+      origen: "control_documental",
+    });
+    expect(nc.verificacion_hallazgo_id).not.toBeNull();
+    const otros = await sql`SELECT id, punto_uso_id, reaperturas FROM hallazgos WHERE id <> ${nc.verificacion_hallazgo_id} ORDER BY id`;
+    const filas = otros.map((f) => ({ id: Number(f.id), puntoUsoId: Number(f.punto_uso_id), reaperturas: Number(f.reaperturas) }));
+    const enganche = await engancheDeVerificacion(await sesionDe(sql, "coordinadora.sgc"), filas, { sql, ahora: t });
+    const conSugerencia = filas.filter((f) => enganche.get(f.id)?.sugerir);
+    expect(conSugerencia.length).toBeGreaterThanOrEqual(1);
+    expect(conSugerencia.every((f) => enganche.get(f.id)?.puedeAbrir === true)).toBe(true);
+  });
+
+  it("un impacto de norma vencido y escalado, sin hallazgo, con su sugerencia", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const t = await sembradaEn(sql);
+    const impactos = await sql`SELECT i.id FROM impactos_normativos i
+      WHERE i.estado = 'pendiente' AND i.vence_en < ${t} AND i.escalado_en IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM mejora_hallazgos h WHERE h.impacto_id = i.id)`;
+    expect(impactos.length).toBeGreaterThanOrEqual(1);
+    const ids = impactos.map((f) => Number(f.id));
+    const enganche = await engancheDeImpactos(await sesionDe(sql, "coordinadora.sgc"), "documento", ids, { sql, ahora: t });
+    expect(ids.some((id) => enganche.get(id)?.sugerir === true)).toBe(true);
+  });
+
+  it("una actividad abierta con dos trámites enlazados, uno publicado y otro en curso", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const h = await hallazgo("conTramites");
+    expect(h.estado).toBe("en_ejecucion");
+    const enlaces = await sql`SELECT e.actividad_id, a.estado AS actividad, tr.etapa FROM mejora_actividad_tramites e
+      JOIN mejora_actividades a ON a.id = e.actividad_id JOIN tramites tr ON tr.id = e.tramite_id
+      WHERE e.hallazgo_id = ${h.id} ORDER BY tr.id`;
+    expect(enlaces).toHaveLength(2);
+    expect(new Set(enlaces.map((e) => Number(e.actividad_id))).size).toBe(1);
+    expect(["abierta", "en_proceso"]).toContain(enlaces[0].actividad);
+    expect(enlaces.map((e) => e.etapa).filter((e) => e === "publicado")).toHaveLength(1);
+    expect(enlaces.some((e) => !["publicado", "eliminado", "rechazado", "cancelado"].includes(e.etapa as string))).toBe(true);
+  });
+
+  it("un hallazgo «Por cerrar» cuyo análisis marcó «documentos», sin un trámite enlazado", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const h = await hallazgo("porCerrar");
+    expect(h.estado).toBe("por_cerrar");
+    const [ronda] = await sql`SELECT cambios FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
+    expect((ronda.cambios as { documentos: boolean }).documentos).toBe(true);
+    const [{ n }] = await sql`SELECT count(*)::int AS n FROM mejora_actividad_tramites WHERE hallazgo_id = ${h.id}`;
+    expect(n).toBe(0);
   });
 });

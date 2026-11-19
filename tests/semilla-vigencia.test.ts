@@ -80,9 +80,10 @@ describe("vigencia sembrada", () => {
 
     expect(filas).toHaveLength(34);
     expect(en("vencida")).toEqual(["AIN-FO-01", "ATE-DE-01", "GTH-PR-01"]);
-    expect(en("atencion")).toEqual(["SGC-PR-01"]);
+    // Desde la 15B, `GES-PL-01` también, por el impacto vencido de la Ley 1438 sobre la Ley 100 (`tests/semilla-mejoramiento.test.ts`).
+    expect(en("atencion")).toEqual(["GES-PL-01", "SGC-PR-01"]);
     expect(en("en_tramite")).toEqual(["CEX-CA-01", "CEX-GU-01", "GBS-PR-01", "GTH-PR-02"]);
-    expect(en("al_dia")).toHaveLength(26);
+    expect(en("al_dia")).toHaveLength(25);
     // Ninguno sin desde cuándo contar: una vigente sin próxima revisión saldría en atención.
     expect(filas.every((f) => f.proximaRevision !== null)).toBe(true);
 
@@ -232,8 +233,13 @@ describe("vigencia sembrada", () => {
       expect(n.con_requisito, n.nombre).toBeGreaterThanOrEqual(1);
     }
     expect(normas.filter((n) => n.enlazados > 0)).toHaveLength(12);
+    // Desde la 15B, la Ley 1438 de 2011 modifica además la Ley 100 de 1993, con sus dos impactos vencidos y escalados
+    // (`tests/semilla-mejoramiento.test.ts`): aquí se mira lo de la 13C.
     const noVigentes = normas.filter((n) => n.estado !== "vigente").map((n) => [n.nombre, n.estado, n.estado_en]);
-    expect(noVigentes).toEqual([["Resolución 2003 de 2014", "derogada", "2019-11-25"]]);
+    expect(noVigentes.sort()).toEqual([
+      ["Ley 100 de 1993", "modificada", "2011-01-19"],
+      ["Resolución 2003 de 2014", "derogada", "2019-11-25"],
+    ]);
 
     const relaciones = await sql`
       SELECT r.id, r.tipo, concat_ws(' ', ta.nombre, a.numero, 'de', a.anio::text) AS norma,
@@ -244,13 +250,15 @@ describe("vigencia sembrada", () => {
       WHERE r.eliminada_en IS NULL ORDER BY r.tipo`;
     expect(relaciones.map((r) => [r.tipo, r.norma, r.afectada])).toEqual([
       ["deroga", "Resolución 3100 de 2019", "Resolución 2003 de 2014"],
+      ["modifica", "Ley 1438 de 2011", "Ley 100 de 1993"],
       ["reglamenta", "Resolución 3100 de 2019", "Decreto 780 de 2016"],
     ]);
-    const cambios = await sql`SELECT c.estado_anterior, c.estado_nuevo, c.fecha::text AS fecha, c.relacion_id, c.creado_en,
+    const cambios = await sql`SELECT c.id, c.estado_anterior, c.estado_nuevo, c.fecha::text AS fecha, c.relacion_id, c.creado_en,
         (SELECT count(*)::int FROM impactos_normativos i WHERE i.cambio_id = c.id) AS impactos
-      FROM norma_cambios c`;
+      FROM norma_cambios c ORDER BY c.fecha DESC`;
     expect(cambios.map((c) => [c.estado_anterior, c.estado_nuevo, c.fecha, Number(c.relacion_id), c.impactos])).toEqual([
       ["vigente", "derogada", "2019-11-25", Number(relaciones[0].id), 2],
+      ["vigente", "modificada", "2011-01-19", Number(relaciones[1].id), 2],
     ]);
 
     const impactos = await sql`
@@ -259,6 +267,7 @@ describe("vigencia sembrada", () => {
       JOIN procesos p ON p.id = i.proceso_id
       LEFT JOIN documentos d ON d.id = i.documento_id
       LEFT JOIN usuarios u ON u.id = i.resuelto_por
+      WHERE i.cambio_id = ${cambios[0].id}
       ORDER BY p.sigla`;
     expect(impactos.map((i) => [i.codigo, i.sigla, i.estado, i.resolucion, i.resolvio])).toEqual([
       ["CEX-GU-01", "CEX", "pendiente", null, null],
@@ -363,9 +372,13 @@ describe("vigencia sembrada", () => {
     const miembros = await sql`SELECT m.tipo, m.referencia_id FROM lista_miembros m
       JOIN listas_distribucion l ON l.id = m.lista_id WHERE l.nombre = 'Todo el hospital'`;
     expect(miembros).toEqual([{ tipo: "todos", referencia_id: null }]);
-    const hallazgos = await sql`SELECT h.estado, pu.nombre FROM hallazgos h
-      JOIN verificaciones v ON v.id = h.verificacion_id JOIN puntos_uso pu ON pu.id = v.punto_uso_id`;
-    expect(hallazgos).toEqual([{ estado: "abierto", nombre: "Urgencias" }]);
+    // El de la 13B, de la primera verificación de Urgencias; el segundo, reabierto, es de la 15B (`tests/semilla-mejoramiento.test.ts`).
+    const hallazgos = await sql`SELECT h.estado, pu.nombre, h.reaperturas FROM hallazgos h
+      JOIN verificaciones v ON v.id = h.verificacion_id JOIN puntos_uso pu ON pu.id = v.punto_uso_id ORDER BY h.id`;
+    expect(hallazgos.map((h) => ({ ...h }))).toEqual([
+      { estado: "abierto", nombre: "Urgencias", reaperturas: 0 },
+      { estado: "abierto", nombre: "Urgencias", reaperturas: 1 },
+    ]);
   });
 
   it("el informe tiene su formato propio elegido, con sus márgenes, y sirve", async (ctx) => {
@@ -408,7 +421,7 @@ describe("la guarda de la demo", () => {
   it("se entera de los pasos del recorrido que no crean filas: los casos de la demo saltan en vez de fallar", async (ctx) => {
     await exigirDemoIntacta(ctx, sql);
     const [{ id: revisionId }] = await sql`SELECT id FROM revisiones_anuales WHERE estado = 'abierta'`;
-    const [{ id: impactoId }] = await sql`SELECT id FROM impactos_normativos WHERE estado = 'pendiente'`;
+    const [{ id: impactoId }] = await sql`SELECT id FROM impactos_normativos WHERE estado = 'pendiente' ORDER BY id LIMIT 1`;
     const [{ id: cex }] = await sql`SELECT id FROM procesos WHERE sigla = 'CEX'`;
     const enUnMes = fechaEnZona(fechaLimite(new Date(), 30, zonaHoraria()), zonaHoraria());
     const pasos: Record<string, (tx: TransactionSql) => Promise<unknown>> = {
