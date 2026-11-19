@@ -460,7 +460,8 @@ describe("GET /mejoramiento/excel", () => {
 
       const rastros = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${b.admin.usuarioId} AND accion = 'mejora_exporto_hallazgos' ORDER BY id`;
       expect(rastros.map((r) => r.detalle)).toEqual([
-        { filtros: { procesoId: b.procesoId, estado: "abiertos", pagina: 2 } },
+        // La página que traía la dirección no va: el Excel no pagina.
+        { filtros: { procesoId: b.procesoId, estado: "abiertos" } },
         { filtros: { procesoId: b.procesoId, estado: "todos" } },
       ]);
     }));

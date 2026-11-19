@@ -53,7 +53,8 @@ export async function GET(peticion: NextRequest): Promise<Response> {
     accion: "mejora_exporto_hallazgos",
     entidad: "mejora_hallazgo",
     entidadId: null,
-    detalle: { filtros: { ...filtro, estado: filtro.estado ?? ESTADO_POR_OMISION } },
+    // Sin la página: el Excel no pagina, la dirección pudo traerla de la lista.
+    detalle: { filtros: { ...filtro, pagina: undefined, estado: filtro.estado ?? ESTADO_POR_OMISION } },
   });
 
   return new Response(new Uint8Array(buffer), {

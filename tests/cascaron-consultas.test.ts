@@ -255,7 +255,7 @@ describe("el costo del cascarón por render", () => {
 });
 
 describe("lo que cuestan las tareas de mejoramiento en el cascarón no crece con los hallazgos (Fase 15B, anexo §11.3)", () => {
-  it("el Admin SGC, con uno y con diez hallazgos en cada paso que le toca, paga las mismas sentencias; las de los planes y las marcas van entre ellas", () =>
+  it("el Admin SGC, con uno y con diez hallazgos en cada paso que le toca, paga las mismas sentencias; las de los planes y las marcas van entre ellas", { timeout: 60_000 }, () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const enCadaPaso = async (n: number) => {

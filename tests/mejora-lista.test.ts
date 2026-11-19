@@ -18,9 +18,11 @@ import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { cargaResuelta } from "@/db/consultas/mejoramiento/carga-confirmada";
 import { bloquearHallazgo } from "@/db/consultas/mejoramiento/flujo";
 import { filasParaExcel, listarHallazgos, turnoEnTexto } from "@/db/consultas/mejoramiento/lectura";
+import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
 import { rechazarHallazgo, sostenerHallazgo } from "@/db/consultas/mejoramiento/recorrido";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import type { DatosDeHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { tareasConSuHallazgo } from "@/db/consultas/mejoramiento/tareas";
 import { evaluablesDesde } from "@/db/consultas/mejoramiento/verificacion";
 import { filtroDeConsulta, TAMANO_DE_PAGINA } from "@/lib/mejoramiento/filtro";
 import {
@@ -30,6 +32,7 @@ import {
   datosDeCarga,
   datosDeHallazgo,
   hallazgoEn,
+  llevarHasta,
   HORA_DE_ESCENA,
   otroProcesoConLider,
   type BaseDeMejora,
@@ -373,6 +376,66 @@ describe("el turno de una página es el de cada hallazgo (`turnosEnTexto` frente
         expect(despues.get(h.verificaAlguien)).toBe("Quien puede verificar");
         expect(despues.get(h.verificaNadie)).toBe("Nadie puede verificarlo");
         expect(despues.get(h.enAprobacion)).toBe("Gerencia");
+      }),
+  );
+});
+
+describe("las tareas de una página, por lote: en el mismo estado, cada hallazgo con su regla (anexo §11.3)", () => {
+  it(
+    "arbitrar, validar, verificar y decidir un ajuste: unas filas le tocan a la persona y otras, en el mismo estado, no",
+    { timeout: 180_000 },
+    () =>
+      revertida(sql, async (tx) => {
+        const b = await baseDeMejora(tx);
+        const o = c(HORA_DE_ESCENA, tx);
+        const sinLider = await procesoNuevo(tx);
+        // El arbitraje: lo de Control Interno lo arbitra el Admin SGC; lo que registró y sostuvo un Admin SGC, Gerencia.
+        const arbitraElAdmin = (await hallazgoEn(tx, b, "arbitraje")).id;
+        const { id: arbitraGerencia } = await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId), o);
+        await rechazarHallazgo(b.lider, { hallazgoId: arbitraGerencia, justificacion: "El hecho no corresponde a este proceso" }, o);
+        await sostenerHallazgo(b.admin, { hallazgoId: arbitraGerencia, replica: "La evidencia muestra que sí corresponde" }, o);
+        // La validación: la corrección de la líder la valida el Admin SGC; la que registró él mismo (proceso sin líder), no.
+        const validaElAdmin = (await hallazgoEn(tx, b, "por_validar")).id;
+        const corrigioElAdmin = (await hallazgoEn(tx, b, "por_validar", { procesoId: sinLider })).id;
+        // La verificación: en uno el Admin SGC ejecutó una actividad.
+        const verificaElAdmin = (await hallazgoEn(tx, b, "por_verificar")).id;
+        const ejecutoElAdmin = (await hallazgoEn(tx, b, "por_verificar")).id;
+        await actividadPorSql(tx, ejecutoElAdmin, b.admin.usuarioId, { estado: "terminada", avance: 100 });
+        // Los ajustes: los decide el rol que aprobó el plan (el Admin SGC en la revisión; Gerencia, si pasó por ella).
+        const aproboElAdmin = (await hallazgoEn(tx, b, "en_ejecucion")).id;
+        const aproboGerencia = (await hallazgoEn(tx, b, "en_aprobacion")).id;
+        await llevarHasta(tx, b, aproboGerencia, "en_ejecucion");
+        const pide = async (hallazgoId: number) => {
+          const [a] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${hallazgoId} ORDER BY id LIMIT 1`;
+          const r = await pedirAjuste(
+            b.lider,
+            { hallazgoId, tipo: "reprogramar", actividadId: Number(a.id), finNuevo: "2026-12-30", causa: "El proveedor no entrega antes" },
+            o,
+          );
+          return r.id;
+        };
+        const ajusteDelAdmin = await pide(aproboElAdmin);
+        const ajusteDeGerencia = await pide(aproboGerencia);
+
+        const ids = async (s: SesionFlujo) => new Set((await tareasConSuHallazgo(s, { sql: tx, ahora: new Date(HORA_DE_ESCENA) })).map((t) => t.tarea.id));
+        const delAdmin = await ids(b.admin);
+        expect(delAdmin.has(`mej-arbitrar:${arbitraElAdmin}`)).toBe(true);
+        expect(delAdmin.has(`mej-arbitrar:${arbitraGerencia}`)).toBe(false);
+        expect(delAdmin.has(`mej-validar:${validaElAdmin}`)).toBe(true);
+        expect(delAdmin.has(`mej-validar:${corrigioElAdmin}`)).toBe(false);
+        expect(delAdmin.has(`mej-verificar:${verificaElAdmin}`)).toBe(true);
+        expect(delAdmin.has(`mej-verificar:${ejecutoElAdmin}`)).toBe(false);
+        expect(delAdmin.has(`mej-ajuste:${ajusteDelAdmin}`)).toBe(true);
+        expect(delAdmin.has(`mej-ajuste:${ajusteDeGerencia}`)).toBe(false);
+        const deGerencia = await ids(b.gerencia);
+        expect(deGerencia.has(`mej-arbitrar:${arbitraGerencia}`)).toBe(true);
+        expect(deGerencia.has(`mej-arbitrar:${arbitraElAdmin}`)).toBe(false);
+        expect(deGerencia.has(`mej-ajuste:${ajusteDeGerencia}`)).toBe(true);
+        expect(deGerencia.has(`mej-ajuste:${ajusteDelAdmin}`)).toBe(false);
+        // Control Interno valida la corrección del Admin SGC y verifica donde él ejecutó.
+        const deControl = await ids(b.control);
+        expect(deControl.has(`mej-validar:${corrigioElAdmin}`)).toBe(true);
+        expect(deControl.has(`mej-verificar:${ejecutoElAdmin}`)).toBe(true);
       }),
   );
 });
