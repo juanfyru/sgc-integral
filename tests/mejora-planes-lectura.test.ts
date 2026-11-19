@@ -17,7 +17,7 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { cambiarDePlan, ponerEnPlan, sacarDelPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { leerHallazgo } from "@/db/consultas/mejoramiento/lectura";
-import { anularPlan } from "@/db/consultas/mejoramiento/planes";
+import { anularPlan, dejarEventoDePlan } from "@/db/consultas/mejoramiento/planes";
 import { candidatosParaPlan, leerPlan, listarPlanes, veAlgunPlan } from "@/db/consultas/mejoramiento/planes-lectura";
 import { retirarHallazgo } from "@/db/consultas/mejoramiento/recorrido";
 import { anularHallazgo, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
@@ -134,6 +134,19 @@ describe("listarPlanes y leerPlan: la líder de un proceso del plan", () => {
       const todo = JSON.stringify(plan);
       for (const h of [e.b1, e.b2]) expect(todo).not.toContain(h.codigo);
       expect(todo).not.toContain("Escena B");
+    }));
+
+  it("del historial sin hallazgo, la líder lee solo la creación, la edición y la anulación: ni los archivos ni la respuesta al ente", () =>
+    revertida(sql, async (tx) => {
+      const e = await escena(tx);
+      for (const tipo of ["archivo", "archivo_quitado", "respuesta"]) {
+        await dejarEventoDePlan(tx, { planId: e.plan.id, tipo, detalle: {}, usuarioId: e.b.admin.usuarioId, ahora: new Date(HORA_DE_ESCENA) });
+      }
+      const deGerencia = (await leerPlan(e.b.gerencia, e.plan.id, lee(tx)))!.historial.map((h) => h.tipo);
+      expect(deGerencia).toEqual(expect.arrayContaining(["archivo", "archivo_quitado", "respuesta", "creado"]));
+      const deLaLider = (await leerPlan(e.b.lider, e.plan.id, lee(tx)))!.historial.map((h) => h.tipo);
+      expect(deLaLider).toContain("creado");
+      for (const tipo of ["archivo", "archivo_quitado", "respuesta"]) expect(deLaLider).not.toContain(tipo);
     }));
 
   it("el avance y el estado salen de lo que ve: con todo lo suyo terminado, «Cerrado»", () =>
