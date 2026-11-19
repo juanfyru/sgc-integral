@@ -28,6 +28,7 @@ import {
   type HallazgoValidado,
 } from "@/lib/esquemas/mejoramiento";
 import { leerContenido } from "@/lib/mejoramiento/analisis";
+import { CARGA_SIN_ENGANCHE } from "@/lib/mejoramiento/enganches";
 import { rolQueAproboEnPapel } from "@/lib/mejoramiento/reglas";
 import { ErrorMejora, type MetodoAnalisis, type TipoAccion } from "@/lib/mejoramiento/tipos";
 import { requerirPermiso } from "@/lib/permisos";
@@ -89,6 +90,8 @@ function leerCarga(d: DatosDeCarga): { v: HallazgoValidado; carga: CargaValidada
   const { registradoEnPapel, correccion, analisis, acciones, criterios, criterioOtro, indicadorEficaciaId, fechaEvaluacion, aprobacion, ...identificacion } = d;
   const v = leer(EsquemaHallazgo, identificacion);
   if (v.derivadoDe !== null || v.reporteId !== null) throw new ErrorMejora(SOLO_POR_EL_CAMINO_NORMAL);
+  // El enlace a un hallazgo de verificación o a un impacto de norma solo lo escribe el registro (Fase 15B, anexo §7.2 y §8).
+  if (v.verificacionHallazgoId !== null || v.impactoId !== null || v.impactoIndicadorId !== null) throw new ErrorMejora(CARGA_SIN_ENGANCHE);
   const leido = EsquemaCarga.safeParse({
     clase: v.clase,
     detectadoEn: v.detectadoEn,

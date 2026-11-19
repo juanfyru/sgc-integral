@@ -74,6 +74,7 @@ import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHal
 import { InsigniasDelHallazgo } from "@/componentes/mejoramiento/InsigniasDelHallazgo";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
 import { SeccionClasificacion } from "@/componentes/mejoramiento/SeccionClasificacion";
+import { AccionCorrectivaRequerida } from "@/componentes/mejoramiento/enganches/AccionCorrectivaRequerida";
 import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
 import { SeccionRespuestaAlEnte } from "@/componentes/mejoramiento/SeccionRespuestaAlEnte";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
@@ -732,6 +733,9 @@ export default async function PaginaHallazgo({
               ) : null}
             </SeccionCorreccion>
           ) : null}
+          {/* La acción correctiva de la no conformidad de un hallazgo de verificación, requerida desde que nació (anexo 15B §7.2,
+              maqueta 6), a quien ve el hallazgo completo. */}
+          {completo && h.verificacionHallazgoId !== null ? <AccionCorrectivaRequerida decision={h.decision} zona={zona} /> : null}
           {await Promise.all(
             h.rondasAnteriores.map(async (r) => {
               // Los archivos de la ronda (solo a quien ve el hallazgo completo): los del análisis y los de su verificación y su

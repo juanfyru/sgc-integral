@@ -38,10 +38,20 @@ import PaginaImpactosDelCambio from "@/app/(app)/normograma/impactos/[cambioId]/
 import { SalidasDeParecidos } from "@/componentes/mejoramiento/ParecidosDelProceso";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { cambiarProceso, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { rotuloDeImpacto, rotuloDeVerificacion } from "@/db/consultas/mejoramiento/prellenado";
+import { cambiarProceso, reclasificarHallazgo, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { OCURRENCIA_DESDE_UN_IMPACTO, SUGERENCIA_DE_IMPACTO } from "@/lib/mejoramiento/enganches";
 import { indicadorDePrueba } from "./utiles/indicadores";
-import { baseDeMejora, c, datosDeHallazgo, impactoDePrueba, otroProcesoConLider, revisionDePrueba } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeHallazgo,
+  hallazgoDeVerificacion,
+  impactoDePrueba,
+  otroProcesoConLider,
+  revisionDePrueba,
+} from "./utiles/mejoramiento";
+import { usuarioDePrueba } from "./utiles/tramites";
 import { revertida } from "./utiles/transaccion";
 
 const sql = obtenerSql();
@@ -172,6 +182,72 @@ describe("el registro y la edición del hallazgo de un impacto", () => {
       const comun = (await registrarHallazgo(b.admin, datosDeHallazgo(b.procesoId), c(AHORA, tx))).id;
       const normal = await pintar(tx, b.admin, () => PaginaEditarHallazgo({ params: Promise.resolve({ id: String(comun) }) }));
       for (const campo of ["origen", "requisitoNormaId", "procesoId"]) expect(normal).toMatch(new RegExp(`<select[^>]*name="${campo}"`));
+    }));
+});
+
+describe("la carga forzada con un enganche que nace nuevo (ronda 1)", () => {
+  it("?impacto=, ?impactoIndicador= y ?verificacion= con modo=en-curso: la carga de siempre, sin rótulo, ocultos ni fijos del enganche", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const imp = await impactoDePrueba(tx, b.admin, { procesoId: b.procesoId, conDocumento: true });
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const rev = await revisionDePrueba(tx, b.admin, ind.id);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [b.procesoId] });
+      const carga = (sp: Record<string, string>) =>
+        pintar(tx, b.admin, () => PaginaNuevoHallazgo({ searchParams: Promise.resolve({ ...sp, modo: "en-curso" }) }));
+
+      const deImpacto = await carga({ impacto: String(imp.id) });
+      expect(deImpacto).toContain("Registrar un hallazgo ya en curso");
+      expect(deImpacto).not.toContain('name="impactoId"');
+      expect(deImpacto).not.toContain(rotuloDeImpacto(imp.norma.nombre));
+      expect(deImpacto).not.toContain(imp.norma.nombre);
+      for (const campo of ["origen", "procesoId", "requisitoNormaId"]) expect(deImpacto).toMatch(new RegExp(`<select[^>]*name="${campo}"`));
+      expect(deImpacto).not.toContain(`impacto=${imp.id}`);
+
+      const deRevision = await carga({ impactoIndicador: String(rev.id) });
+      expect(deRevision).not.toContain('name="impactoIndicadorId"');
+      expect(deRevision).not.toContain(rotuloDeImpacto(rev.norma.nombre));
+      expect(deRevision).toMatch(/<select[^>]*name="origen"/);
+
+      const deVerificacion = await carga({ verificacion: String(vh.id) });
+      expect(deVerificacion).not.toContain('name="verificacionHallazgoId"');
+      expect(deVerificacion).not.toContain(rotuloDeVerificacion(vh.punto.nombre));
+      expect(deVerificacion).toMatch(/<select[^>]*name="clase"/);
+      expect(deVerificacion).toMatch(/<select[^>]*name="origen"/);
+    }));
+});
+
+describe("la edición del hallazgo de un impacto al que una reclasificación le quitó la norma (ronda 1)", () => {
+  it("pinta «Sin norma» como texto fijo, con su campo oculto vacío, y no ofrece elegir una", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const imp = await impactoDePrueba(tx, b.admin, { procesoId: b.procesoId });
+      const d = datosDeHallazgo(b.procesoId);
+      const { id } = await registrarHallazgo(b.admin, { ...d, impactoId: imp.id }, c(AHORA, tx));
+      await reclasificarHallazgo(
+        b.admin,
+        {
+          hallazgoId: id,
+          clase: "no_conformidad",
+          criticidad: "media",
+          origen: "control_documental",
+          fuente: d.fuente ?? null,
+          titulo: d.titulo,
+          requisitoClausula: d.requisitoClausula ?? "7.5.3",
+          requisitoNormaId: null,
+          requisitoDocumentoId: null,
+          reincidenteDe: null,
+          fechaLimiteEnte: null,
+          nota: null,
+          justificacion: "La norma derogada no es el requisito: lo es la cláusula",
+        },
+        c(AHORA, tx),
+      );
+      const html = await pintar(tx, b.admin, () => PaginaEditarHallazgo({ params: Promise.resolve({ id: String(id) }) }));
+      expect(html).toContain('<p class="text-sm text-foreground">Sin norma</p><input type="hidden" name="requisitoNormaId" value=""/>');
+      expect(html).not.toMatch(/<select[^>]*name="requisitoNormaId"/);
+      expect(html).not.toContain(imp.norma.nombre);
     }));
 });
 

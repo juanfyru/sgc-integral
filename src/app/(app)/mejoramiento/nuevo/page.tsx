@@ -60,6 +60,16 @@ function ComoSeRegistra({ enCurso, parametros }: { enCurso: boolean; parametros:
 /** Los enganches cuyo hallazgo nace nuevo, enlazado: no se ofrece cargarlo como uno en curso. */
 const NACEN_NUEVOS = ["verificacionHallazgoId", "impactoId", "impactoIndicadorId"] as const;
 
+/**
+ * Los parámetros que la carga admite: los de la dirección sin los enganches que nacen nuevos (`?verificacion=`, `?impacto=`,
+ * `?impactoIndicador=`, anexo 15B §7.2 y §8). Una carga forzada con ellos los ignora sin decir por qué: ni rótulo, ni ocultos, ni fijos.
+ */
+function sinLoQueNaceNuevo(p: ParametrosDeRegistro): ParametrosDeRegistro {
+  const resto: ParametrosDeRegistro = { ...p };
+  for (const k of ["verificacion", "impacto", "impactoIndicador"] as const) delete resto[k];
+  return resto;
+}
+
 /** La norma que el prellenado deja fija (la de un impacto, anexo 15B §8), o nula. */
 const normaFija = (p: Prellenado) => (p.fijos.includes("requisitoNormaId") ? (p.valores.requisitoNormaId ?? null) : null);
 
@@ -95,6 +105,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
   const carga = puede(sesion, "mejora.gestionar");
   if (parametros.modo === "en-curso") {
     if (!carga) notFound();
+    const deLaCarga = sinLoQueNaceNuevo(deRegistro);
     const sql = obtenerSql();
     const [procesos, queRigen, documentos, usuarios, indicadores, enlaces, objetivos, prellenado, contexto] = await Promise.all([
       procesosDelAlcance(sesion),
@@ -104,7 +115,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
       indicadoresElegibles(sql, sesion),
       opcionesDeLaCarga(sesion, { sql }),
       objetivosActivos({ sql }),
-      prellenadoDeRegistro(sesion, deRegistro, { sql, ahora }),
+      prellenadoDeRegistro(sesion, deLaCarga, { sql, ahora }),
       contextoDeMejora(sql, ahora),
     ]);
     const normas = await conLaNorma(queRigen, normaFija(prellenado), { sql });
@@ -115,7 +126,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
           titulo="Registrar un hallazgo ya en curso"
           descripcion="El que se tramitó en papel y ya tiene su plan aprobado: queda «Cargado», con sus fechas reales. Uno sin plan aprobado se registra como hallazgo nuevo."
         />
-        <ComoSeRegistra enCurso parametros={deRegistro} />
+        <ComoSeRegistra enCurso parametros={deLaCarga} />
         <FormularioCarga
           accion={cargarHallazgoAccion}
           procesos={procesos}

@@ -17,10 +17,18 @@ export function valoresIniciales(prellenado: Prellenado | undefined, valores: Re
   return { ...enTexto(prellenado?.valores), ...valores, ...fijosEnTexto(prellenado) };
 }
 
-/** Los campos fijos del prellenado con su valor, como texto del formulario. */
+/**
+ * Los campos fijos del prellenado con su valor, como texto del formulario. Uno fijo que vale nulo sigue fijo, vacío (la norma que una
+ * reclasificación quitó del hallazgo de un impacto, anexo 15B §8): se pinta como texto, sin ofrecer elegirlo, porque el servidor
+ * conserva lo de la fila.
+ */
 export function fijosEnTexto(prellenado: Prellenado | undefined): Record<string, string> {
-  const valores = enTexto(prellenado?.valores);
-  return Object.fromEntries((prellenado?.fijos ?? []).filter((k) => k in valores).map((k) => [k, valores[k]]));
+  const valores: Record<string, unknown> = prellenado?.valores ?? {};
+  return Object.fromEntries(
+    (prellenado?.fijos ?? [])
+      .filter((k) => Object.hasOwn(valores, k))
+      .map((k) => [k, valores[k] === null || valores[k] === undefined ? "" : String(valores[k])]),
+  );
 }
 
 function enTexto(valores: Prellenado["valores"] | undefined): Record<string, string> {

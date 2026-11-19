@@ -16,6 +16,7 @@ import { legible } from "@/db/consultas/mejoramiento/legible";
 import { aceptarHallazgo, rechazarHallazgo, retirarHallazgo } from "@/db/consultas/mejoramiento/recorrido";
 import { anularHallazgo, editarHallazgo, registrarHallazgo, type DatosDeHallazgo } from "@/db/consultas/mejoramiento/registro";
 import {
+  CARGA_SIN_ENGANCHE,
   CORRECCION_EN_DISTRIBUCION,
   INDICE_NO_CONFORMIDAD_DE_VERIFICACION,
   PROCESO_DEL_PUNTO,
@@ -225,17 +226,19 @@ describe("registrarHallazgo con un hallazgo de verificación", () => {
       expect(await procesosDelPunto(tx, 9_000_000_000)).toEqual([]);
     }));
 
-  it("la carga de un hallazgo en curso no escribe el enlace aunque el envío lo traiga", () =>
+  it("la carga de un hallazgo en curso rechaza el enlace que traiga el envío: no carga nada que diga que quedó enlazado", () =>
     revertida(sql, async (tx) => {
       const e = await escena(tx);
-      const r = await cargarHallazgo(
-        e.b.admin,
-        datosDeCarga(e.b.procesoId, e.b.lider.usuarioId, { verificacionHallazgoId: e.vh.id, accionJustificacion: JUSTIFICACION }),
-        c(AHORA, tx),
-      );
-      const [f] = await tx`SELECT verificacion_hallazgo_id, accion_justificacion FROM mejora_hallazgos WHERE id = ${r.id}`;
-      expect(f).toEqual({ verificacion_hallazgo_id: null, accion_justificacion: null });
+      await expect(
+        cargarHallazgo(
+          e.b.admin,
+          datosDeCarga(e.b.procesoId, e.b.lider.usuarioId, { verificacionHallazgoId: e.vh.id, accionJustificacion: JUSTIFICACION }),
+          c(AHORA, tx),
+        ),
+      ).rejects.toThrow(CARGA_SIN_ENGANCHE);
       expect(await deVerificacion(tx, e.vh.id)).toHaveLength(0);
+      // Sin el enlace, se carga.
+      await cargarHallazgo(e.b.admin, datosDeCarga(e.b.procesoId, e.b.lider.usuarioId), c(AHORA, tx));
     }));
 
   it("en un proceso sin líder nace ya en «Por formular»", () =>

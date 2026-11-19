@@ -282,7 +282,11 @@ export function FormularioHallazgo({
             etiqueta="Norma del normograma"
             nombre="requisitoNormaId"
             valor={fijos.requisitoNormaId}
-            texto={normas.find((n) => String(n.id) === fijos.requisitoNormaId)?.nombre ?? fijos.requisitoNormaId}
+            texto={
+              fijos.requisitoNormaId === ""
+                ? "Sin norma"
+                : (normas.find((n) => String(n.id) === fijos.requisitoNormaId)?.nombre ?? fijos.requisitoNormaId)
+            }
           />
         ) : (
           <Campo etiqueta="Norma del normograma" nombre="requisitoNormaId">

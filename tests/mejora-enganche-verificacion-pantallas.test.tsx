@@ -1,11 +1,13 @@
 /**
  * Lo que pintan las pantallas de la no conformidad de un hallazgo de verificación (Fase 15B, anexo §7, maqueta 6): la pieza de la
- * fila de Distribución (`NoConformidadDeVerificacion`, en la tabla de hallazgos) y la sección «Corrección» enlazada. Sin base: los
- * datos llegan ya decididos por `engancheDeVerificacion` y `correccionEnlazada`.
+ * fila de Distribución (`NoConformidadDeVerificacion`, en la tabla de hallazgos), la sección «Corrección» enlazada y, aparte, la acción
+ * correctiva requerida (`AccionCorrectivaRequerida`). Sin base: los datos llegan ya decididos por `engancheDeVerificacion`,
+ * `correccionEnlazada` y la lectura del hallazgo.
  */
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TablaHallazgos } from "@/componentes/distribucion/verificaciones/TablaHallazgos";
+import { AccionCorrectivaRequerida } from "@/componentes/mejoramiento/enganches/AccionCorrectivaRequerida";
 import { NoConformidadDeVerificacion } from "@/componentes/mejoramiento/enganches/NoConformidadDeVerificacion";
 import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
 import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
@@ -97,7 +99,7 @@ describe("SeccionCorreccion con la corrección de un hallazgo de verificación",
       ),
     );
 
-  it("a quien la ve: en qué va, qué se corrigió, quién, cuándo y el enlace; la acción correctiva requerida con su justificación", () => {
+  it("a quien la ve: en qué va, qué se corrigió, quién, cuándo y el enlace; la acción correctiva va aparte, no aquí", () => {
     const html = pintar({
       visible: true,
       estado: "Por validar",
@@ -111,7 +113,9 @@ describe("SeccionCorreccion con la corrección de un hallazgo de verificación",
     expect(html).toContain("Se retiró la copia vieja y se entregó la vigente");
     expect(html).toContain("Carlos Rojas");
     expect(html).toMatch(/<a [^>]*href="\/distribucion\/verificaciones\/4"[^>]*>Ver el hallazgo de verificación<\/a>/);
-    expect(html).toContain("Es la tercera copia obsoleta del año en este punto");
+    // La acción correctiva, requerida desde que nació, la pinta `AccionCorrectivaRequerida`, a la vista (maqueta 6).
+    expect(html).not.toContain("Es la tercera copia obsoleta del año en este punto");
+    expect(html).not.toContain("¿Requiere acción correctiva?");
     expect(html).not.toContain("Aún no se registra la corrección</span>");
     expect(html).not.toContain(CORRECCION_EN_DISTRIBUCION);
   });
@@ -121,5 +125,32 @@ describe("SeccionCorreccion con la corrección de un hallazgo de verificación",
     expect(html).toContain(CORRECCION_EN_DISTRIBUCION);
     expect(html).not.toContain("/distribucion/");
     expect(html).not.toContain("Ver el hallazgo de verificación");
+  });
+});
+
+describe("AccionCorrectivaRequerida (anexo 15B §7.2, maqueta 6)", () => {
+  const pintar = (decision: DetalleDeHallazgo["decision"]) =>
+    sinNada(renderToStaticMarkup(<AccionCorrectivaRequerida decision={decision} zona="America/Bogota" />));
+
+  it("la acción requerida desde que nació, con su justificación y quién la decidió y cuándo", () => {
+    const html = pintar({
+      accionRequerida: true,
+      justificacion: "Es la tercera copia obsoleta del año en este punto",
+      decididaEn: new Date("2026-11-18T15:00:00Z"),
+      decididaPor: "Marta Ríos",
+    });
+    expect(html).toMatch(/<h2 [^>]*>Acción correctiva<\/h2>/);
+    expect(html).toContain("Requerida: «Es la tercera copia obsoleta del año en este punto»");
+    expect(html).toContain("La decidió al abrir la no conformidad: Marta Ríos, ");
+    // Sin el nombre (una fila anterior), la fecha sola.
+    expect(pintar({ accionRequerida: true, justificacion: "Tercera copia obsoleta", decididaEn: new Date("2026-11-18T15:00:00Z") })).toContain(
+      "La decidió al abrir la no conformidad: ",
+    );
+  });
+
+  it("sin la acción requerida o sin su justificación no pinta nada", () => {
+    expect(pintar({ accionRequerida: null, justificacion: null, decididaEn: null })).toBe("");
+    expect(pintar({ accionRequerida: false, justificacion: "Hecho aislado", decididaEn: new Date("2026-11-18T15:00:00Z") })).toBe("");
+    expect(pintar({ accionRequerida: true, justificacion: null, decididaEn: null })).toBe("");
   });
 });

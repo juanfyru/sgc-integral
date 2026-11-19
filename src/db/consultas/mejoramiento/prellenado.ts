@@ -89,7 +89,8 @@ export const rotuloDeVerificacion = (punto: string) =>
 export const rotuloDeImpacto = (norma: string) =>
   `Nace del impacto de ${norma}: queda enlazado a él, y el impacto se sigue resolviendo por sus propias reglas.`;
 
-type Lectura = { sql: Cliente; sesion: SesionFlujo; alcance: () => Promise<Alcance> };
+/** `ahora`: la hora de quien llama (`opciones.ahora`), para las ramas que la necesitan. */
+type Lectura = { sql: Cliente; sesion: SesionFlujo; alcance: () => Promise<Alcance>; ahora: Date };
 
 /**
  * El proceso que se propone, solo si la persona puede registrar en él: activo y en su alcance (`alcanceProcesos`: el líder, los
@@ -246,7 +247,7 @@ async function deLaVerificacion(l: Lectura, valor: string): Promise<Prellenado> 
  */
 async function delImpacto(l: Lectura, clase: ClaseDeImpacto, valor: string): Promise<Prellenado> {
   const id = idDe(valor);
-  const i = id === null ? null : await impactoParaAbrir(l.sql, l.sesion, clase, id);
+  const i = id === null ? null : await impactoParaAbrir(l.sql, l.sesion, clase, id, l.ahora);
   if (!i || i.yaTiene) return PRELLENADO_VACIO;
   return {
     valores: {
@@ -324,7 +325,7 @@ export async function prellenadoDeRegistro(
 ): Promise<Prellenado> {
   const sql = opciones?.sql ?? obtenerSql();
   let alcance: Promise<Alcance> | null = null;
-  const l: Lectura = { sql, sesion, alcance: () => (alcance ??= alcanceProcesos(sesion, { sql })) };
+  const l: Lectura = { sql, sesion, alcance: () => (alcance ??= alcanceProcesos(sesion, { sql })), ahora: opciones?.ahora ?? new Date() };
   const partes = await Promise.all([
     delPlan(l, p.plan),
     delDocumento(l, p.documento),

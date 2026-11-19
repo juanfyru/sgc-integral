@@ -197,13 +197,19 @@ export async function engancheDeImpactos(
 /**
  * El impacto `id` de la clase, para el registro (dentro de su transacción) y su prellenado: nulo si no existe o si quien registra no
  * puede abrirlo (`abre`), y también si ya tiene un hallazgo que cuenta que quien registra no ve: para él, ese hallazgo no existe, y la
- * respuesta es la de un impacto que no existe.
+ * respuesta es la de un impacto que no existe. `ahora` es la hora de quien llama (su `opciones.ahora`).
  */
-export async function impactoParaAbrir(sql: Cliente, sesion: SesionFlujo, clase: ClaseDeImpacto, id: number): Promise<ImpactoParaAbrir | null> {
+export async function impactoParaAbrir(
+  sql: Cliente,
+  sesion: SesionFlujo,
+  clase: ClaseDeImpacto,
+  id: number,
+  ahora: Date,
+): Promise<ImpactoParaAbrir | null> {
   if (!valido(id)) return null;
   const alcance = await alcanceDeQuienAbre(sql, sesion);
   if (alcance === null) return null;
-  const [f] = await leerImpactos(sql, sesion, clase, [id], new Date());
+  const [f] = await leerImpactos(sql, sesion, clase, [id], ahora);
   if (!f || !abre(sesion, alcance, clase, f) || (f.hallazgo !== null && !f.hallazgo.visible)) return null;
   return {
     clase,
@@ -221,16 +227,17 @@ export async function impactoParaAbrir(sql: Cliente, sesion: SesionFlujo, clase:
  * El enlace desde un hallazgo con el impacto del que nació (anexo §8: «quedan enlazados en los dos sentidos, cada lado con su regla de
  * visibilidad»), con la regla de la página adonde lleva: el de un documento o un proceso, a quien ve ese impacto (`puedeVerImpacto` y
  * el documento que toca), a la página del cambio de norma en su proceso; la revisión de un indicador, a quien ve el indicador, a su
- * página. Nulo si el hallazgo no nació de un impacto.
+ * página. Nulo si el hallazgo no nació de un impacto. `ahora` es la hora de quien lee.
  */
 export async function enlaceDelImpacto(
   sql: Cliente,
   sesion: SesionFlujo,
   x: { impactoId: number | null; impactoIndicadorId: number | null },
+  ahora: Date,
 ): Promise<EnlaceDelImpacto | null> {
   const clase: ClaseDeImpacto | null = x.impactoId !== null ? "documento" : x.impactoIndicadorId !== null ? "indicador" : null;
   if (clase === null) return null;
-  const [f] = await leerImpactos(sql, sesion, clase, [(x.impactoId ?? x.impactoIndicadorId) as number], new Date());
+  const [f] = await leerImpactos(sql, sesion, clase, [(x.impactoId ?? x.impactoIndicadorId) as number], ahora);
   if (!f || !f.ve) return { visible: false };
   if (clase === "documento") {
     if (!puedeVerImpacto(sesion, f.procesoId, await alcanceProcesos(sesion, { sql }))) return { visible: false };

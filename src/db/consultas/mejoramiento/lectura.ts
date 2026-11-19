@@ -838,7 +838,11 @@ export type DetalleDeHallazgo = {
     validadaPor: string | null;
     validadaEn: Date | null;
   };
-  decision: { accionRequerida: boolean | null; justificacion: string | null; decididaEn: Date | null };
+  /**
+   * La decisión sobre la acción correctiva. `decididaPor`, el nombre de quien la tomó, lo lee `leerHallazgo` (en la no conformidad de un
+   * hallazgo de verificación, quien la abrió: anexo §7.2).
+   */
+  decision: { accionRequerida: boolean | null; justificacion: string | null; decididaEn: Date | null; decididaPor?: string | null };
   /** El hallazgo de verificación de Distribución del que nació (Fase 15B, anexo §7.2), o nulo: decide el recorrido (`baseDeDetalle`). */
   verificacionHallazgoId: number | null;
   /**
@@ -1295,7 +1299,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       uz.nombre AS cerrador, ue.nombre AS respondio, to_char(h.respuesta_ente_en, 'YYYY-MM-DD') AS respuesta_ente,
       to_char(h.detectado_en, 'YYYY-MM-DD') AS detectado, to_char(h.fecha_limite_ente, 'YYYY-MM-DD') AS limite_ente,
       to_char(h.correccion_implementada_en, 'YYYY-MM-DD') AS implementada,
-      rep.id AS reporte_id, urep.nombre AS reportero
+      rep.id AS reporte_id, urep.nombre AS reportero, uad.nombre AS accion_decidio
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
     JOIN usuarios ur ON ur.id = h.registrado_por
@@ -1303,6 +1307,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     LEFT JOIN usuarios uv ON uv.id = h.validada_por
     LEFT JOIN usuarios uz ON uz.id = h.cerrado_por
     LEFT JOIN usuarios ue ON ue.id = h.respuesta_ente_por
+    LEFT JOIN usuarios uad ON uad.id = h.accion_decidida_por
     LEFT JOIN LATERAL (SELECT r.id, r.reportado_por FROM mejora_reportes r
       WHERE r.hallazgo_id = h.id AND r.estado = 'convertido' ORDER BY r.id LIMIT 1) rep ON true
     LEFT JOIN usuarios urep ON urep.id = rep.reportado_por
@@ -1533,7 +1538,12 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
             : { visible: false, clase: "verificacion", rotulo: ROTULO_DE_VERIFICACION },
         ];
   // El impacto de norma del que nació (anexo §8), con la regla de la página adonde lleva: a quien no lo ve, solo que hay uno.
-  const impacto = await enlaceDelImpacto(sql, sesion, { impactoId: idONulo(f.impacto_id), impactoIndicadorId: idONulo(f.impacto_indicador_id) });
+  const impacto = await enlaceDelImpacto(
+    sql,
+    sesion,
+    { impactoId: idONulo(f.impacto_id), impactoIndicadorId: idONulo(f.impacto_indicador_id) },
+    ahora,
+  );
   const deImpacto: EnlaceDelHallazgo[] =
     impacto === null
       ? []
@@ -1631,6 +1641,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       accionRequerida: h.accionRequerida,
       justificacion: (f.accion_justificacion as string | null) ?? null,
       decididaEn: (f.accion_decidida_en as Date | null) ?? null,
+      decididaPor: (f.accion_decidio as string | null) ?? null,
     },
     verificacionHallazgoId: h.verificacionHallazgoId,
     correccionEnlazada: h.verificacionHallazgoId === null ? null : enlazada ? { visible: true, ...enlazada } : { visible: false },

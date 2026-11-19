@@ -27,6 +27,7 @@ import {
 } from "@/db/consultas/mejoramiento/registro";
 import { resolverImpacto } from "@/db/consultas/normograma/impactos";
 import {
+  CARGA_SIN_ENGANCHE,
   IMPACTO_NO_EXISTE,
   IMPACTO_YA_TIENE_HALLAZGO,
   INDICE_HALLAZGO_DE_IMPACTO,
@@ -324,16 +325,29 @@ describe("registrarHallazgo con un impacto sobre un documento", () => {
       });
     }));
 
-  it("la carga de un hallazgo en curso no escribe el enlace", () =>
+  it("si una reclasificación le quitó la norma, la edición la conserva nula aunque el envío traiga una (ronda 1)", () =>
     revertida(sql, async (tx) => {
       const e = await escena(tx);
-      const { id } = await cargarHallazgo(
-        e.b.admin,
-        { ...datosDeCarga(e.b.procesoId, e.b.lider.usuarioId), impactoId: e.imp.id },
-        c(AHORA, tx),
-      );
-      const [f] = await tx`SELECT impacto_id FROM mejora_hallazgos WHERE id = ${id}`;
-      expect(f.impacto_id).toBeNull();
+      const r = await registrarHallazgo(e.b.admin, datos(e), c(AHORA, tx));
+      await tx`UPDATE mejora_hallazgos SET requisito_norma_id = NULL WHERE id = ${r.id}`;
+      await editarHallazgo(e.b.admin, r.id, datos(e, { requisitoNormaId: e.imp.norma.id, titulo: "Formato sin el requisito nuevo" }), c(AHORA, tx));
+      const [f] = await tx`SELECT requisito_norma_id, titulo FROM mejora_hallazgos WHERE id = ${r.id}`;
+      expect(f).toEqual({ requisito_norma_id: null, titulo: "Formato sin el requisito nuevo" });
+      expect((await enlacesDelHallazgo(r.id, { sql: tx })).fijosDelImpacto?.requisitoNormaId).toBeNull();
+    }));
+
+  it("la carga de un hallazgo en curso rechaza el enlace al impacto o a la revisión: no carga nada que diga que quedó enlazado", () =>
+    revertida(sql, async (tx) => {
+      const e = await escena(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: e.b.procesoId });
+      const rev = await revisionDePrueba(tx, e.b.admin, ind.id);
+      for (const enlace of [{ impactoId: e.imp.id }, { impactoIndicadorId: rev.id }]) {
+        await expect(cargarHallazgo(e.b.admin, { ...datosDeCarga(e.b.procesoId, e.b.lider.usuarioId), ...enlace }, c(AHORA, tx))).rejects.toThrow(
+          CARGA_SIN_ENGANCHE,
+        );
+      }
+      expect(await delImpacto(tx, e.imp.id)).toHaveLength(0);
+      expect(await deLaRevision(tx, rev.id)).toHaveLength(0);
     }));
 });
 

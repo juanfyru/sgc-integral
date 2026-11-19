@@ -30,8 +30,18 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { OCURRENCIA_DESDE_UN_IMPACTO } from "@/lib/mejoramiento/enganches";
-import { baseDeMejora, c, datosDeHallazgo, hallazgoEn, impactoDePrueba, otroProcesoConLider } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeHallazgo,
+  hallazgoDeVerificacion,
+  hallazgoEn,
+  impactoDePrueba,
+  medicionMarcada,
+  otroProcesoConLider,
+} from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
+import { usuarioDePrueba } from "./utiles/tramites";
 
 const sql = obtenerSql();
 afterAll(async () => {
@@ -105,6 +115,70 @@ describe("registrarHallazgoAccion desde un impacto de norma", () => {
       const rechazo = await como(tx, b.lider, () => registrarHallazgoAccion(null, formulario(campos)));
       expect(rechazo).toMatchObject({ ok: false, error: OCURRENCIA_DESDE_UN_IMPACTO });
       expect(await tx`SELECT 1 FROM mejora_ocurrencias WHERE hallazgo_id = ${parecido.id}`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM mejora_hallazgos WHERE impacto_id = ${imp.id}`).toHaveLength(0);
+    }));
+});
+
+describe("registrarHallazgoAccion con otro enganche y un impacto forzados en el mismo envío (ronda 1)", () => {
+  it("con un hallazgo de verificación: manda él; el proceso es el del punto y no se escribe nada del impacto", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const imp = await impactoDePrueba(tx, b.admin, { procesoId: otro.procesoId });
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [b.procesoId] });
+      const campos = forzado(b.procesoId, {
+        requisitoClausula: "7.5.3",
+        verificacionHallazgoId: String(vh.id),
+        accionJustificacion: "Es la tercera copia obsoleta del año en este punto",
+        impactoId: String(imp.id),
+        relacion: "distinto",
+      });
+      const destino = await como(tx, b.admin, () => registrarHallazgoAccion(null, formulario(campos))).then(
+        (r) => r,
+        (err: Error) => err.message,
+      );
+      const [f] = await tx`SELECT id, proceso_id, origen, requisito_norma_id, impacto_id, impacto_indicador_id FROM mejora_hallazgos
+        WHERE verificacion_hallazgo_id = ${vh.id}`;
+      expect(destino).toBe(`REDIRECT:/mejoramiento/${f.id}`);
+      expect(Number(f.proceso_id)).toBe(b.procesoId);
+      expect(f).toMatchObject({ origen: "control_documental", requisito_norma_id: null, impacto_id: null, impacto_indicador_id: null });
+      expect(await tx`SELECT 1 FROM mejora_hallazgos WHERE impacto_id = ${imp.id}`).toHaveLength(0);
+    }));
+
+  it("con la medición marcada del panel: manda ella; queda su salida, y nada del impacto", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const imp = await impactoDePrueba(tx, b.admin, { procesoId: otro.procesoId });
+      const mm = await medicionMarcada(tx, { ahora: "2026-11-03T15:00:00Z", analizada: true, procesoId: b.procesoId });
+      const d = datosDeHallazgo(b.procesoId, { detectadoEn: "2026-11-04" });
+      const campos = {
+        clase: d.clase,
+        origen: "indicador",
+        detectadoEn: d.detectadoEn,
+        procesoId: String(b.procesoId),
+        criticidad: d.criticidad ?? "",
+        titulo: d.titulo,
+        descripcion: d.descripcion,
+        requisitoClausula: d.requisitoClausula ?? "",
+        indicadorId: String(mm.ind.id),
+        medicionId: String(mm.medicionId),
+        marcaMedicionId: String(mm.medicionId),
+        impactoId: String(imp.id),
+        relacion: "distinto",
+      };
+      const destino = await como(tx, b.admin, () => registrarHallazgoAccion(null, formulario(campos))).then(
+        (r) => r,
+        (err: Error) => err.message,
+      );
+      const [f] = await tx`SELECT id, proceso_id, origen, requisito_norma_id, impacto_id FROM mejora_hallazgos WHERE medicion_id = ${mm.medicionId}`;
+      expect(destino).toBe(`REDIRECT:/mejoramiento/${f.id}`);
+      expect(Number(f.proceso_id)).toBe(b.procesoId);
+      expect(f).toMatchObject({ origen: "indicador", requisito_norma_id: null, impacto_id: null });
+      expect(await tx`SELECT salida, hallazgo_id FROM mejora_marcas WHERE medicion_id = ${mm.medicionId}`).toEqual([
+        { salida: "hallazgo", hallazgo_id: f.id },
+      ]);
       expect(await tx`SELECT 1 FROM mejora_hallazgos WHERE impacto_id = ${imp.id}`).toHaveLength(0);
     }));
 });

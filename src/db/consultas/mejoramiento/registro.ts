@@ -263,9 +263,10 @@ export async function registrarHallazgo(
   const deVerificacion = llega(d.verificacionHallazgoId);
   if (deVerificacion) requerirPermiso(sesion, "mejora.gestionar");
   const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
   // El impacto de norma (anexo §8), con la precedencia de los enganches; su origen, su norma y su proceso, antes de leer el envío.
   const impacto = impactoQueLlega(d, deVerificacion || llega(d.marcaMedicionId));
-  const previo = impacto ? await impactoDelRegistro(sql, sesion, impacto) : null;
+  const previo = impacto ? await impactoDelRegistro(sql, sesion, impacto, ahora) : null;
   const leido = EsquemaHallazgo.safeParse({
     ...d,
     ...(deVerificacion ? FIJOS_DE_VERIFICACION : {}),
@@ -279,7 +280,6 @@ export async function registrarHallazgo(
   if (recibido.verificacionHallazgoId !== null && (justificacion === null || justificacion.length < 10)) {
     throw new ErrorMejora(SIN_JUSTIFICAR_LA_ACCION);
   }
-  const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(sql, async (tx) => {
       await bloquearPlanDelRegistro(tx, sesion, recibido.planId);
@@ -302,7 +302,7 @@ export async function registrarHallazgo(
           ? await verificacionDelRegistro(tx, sesion, conPanel.verificacionHallazgoId, conPanel.procesoId)
           : null;
       // Lo fijo del impacto, otra vez y con el impacto bloqueado: esta lectura manda (anexo §8).
-      const delImpacto = impacto ? await impactoBloqueado(tx, sesion, impacto) : null;
+      const delImpacto = impacto ? await impactoBloqueado(tx, sesion, impacto, ahora) : null;
       const v: HallazgoValidado = delImpacto ? { ...conPanel, ...fijosDelImpacto(delImpacto) } : conPanel;
       if (v.derivadoDe !== null) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${v.derivadoDe} FOR KEY SHARE`;
       const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
@@ -408,17 +408,27 @@ const fijosDelImpacto = (i: Pick<ImpactoParaAbrir, "normaId" | "procesoId">) => 
  * El impacto del que nace el hallazgo, para quien registra (`impactoParaAbrir`): si no puede abrirlo, no existe; si ya tiene uno que
  * cuenta, `IMPACTO_YA_TIENE_HALLAZGO` (la garantía es el índice único parcial: su `23505` lo traduce `legible`).
  */
-async function impactoDelRegistro(sql: Cliente, sesion: SesionFlujo, x: { clase: ClaseDeImpacto; id: number }): Promise<ImpactoParaAbrir> {
-  const i = await impactoParaAbrir(sql, sesion, x.clase, x.id);
+async function impactoDelRegistro(
+  sql: Cliente,
+  sesion: SesionFlujo,
+  x: { clase: ClaseDeImpacto; id: number },
+  ahora: Date,
+): Promise<ImpactoParaAbrir> {
+  const i = await impactoParaAbrir(sql, sesion, x.clase, x.id, ahora);
   if (!i) throw new ErrorMejora(IMPACTO_NO_EXISTE);
   if (i.yaTiene) throw new ErrorMejora(IMPACTO_YA_TIENE_HALLAZGO);
   return i;
 }
 
 /** Lo mismo dentro de la transacción del registro, con el impacto `FOR KEY SHARE` (el candado que tomaría la llave foránea al insertar). */
-async function impactoBloqueado(tx: TransactionSql, sesion: SesionFlujo, x: { clase: ClaseDeImpacto; id: number }): Promise<ImpactoParaAbrir> {
+async function impactoBloqueado(
+  tx: TransactionSql,
+  sesion: SesionFlujo,
+  x: { clase: ClaseDeImpacto; id: number },
+  ahora: Date,
+): Promise<ImpactoParaAbrir> {
   await tx`SELECT 1 FROM ${tx(x.clase === "documento" ? "impactos_normativos" : "impactos_indicadores")} WHERE id = ${x.id} FOR KEY SHARE`;
-  return impactoDelRegistro(tx, sesion, x);
+  return impactoDelRegistro(tx, sesion, x, ahora);
 }
 
 /**
@@ -429,10 +439,10 @@ async function impactoBloqueado(tx: TransactionSql, sesion: SesionFlujo, x: { cl
 export async function fijosDelEnvio(
   sesion: SesionFlujo,
   d: { impactoId?: unknown; impactoIndicadorId?: unknown; verificacionHallazgoId?: unknown; marcaMedicionId?: unknown },
-  opciones?: { sql?: Cliente },
+  opciones?: { sql?: Cliente; ahora?: Date },
 ): Promise<Record<"origen" | "requisitoNormaId" | "procesoId", string> | null> {
   const x = impactoQueLlega(d, llega(d.verificacionHallazgoId) || llega(d.marcaMedicionId));
-  const i = x ? await impactoParaAbrir(opciones?.sql ?? obtenerSql(), sesion, x.clase, x.id) : null;
+  const i = x ? await impactoParaAbrir(opciones?.sql ?? obtenerSql(), sesion, x.clase, x.id, opciones?.ahora ?? new Date()) : null;
   if (!i || i.yaTiene) return null;
   const f = fijosDelImpacto(i);
   return { origen: f.origen, requisitoNormaId: String(f.requisitoNormaId), procesoId: String(f.procesoId) };

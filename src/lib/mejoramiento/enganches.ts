@@ -82,6 +82,13 @@ export const SUGERENCIA_DE_IMPACTO = "Este impacto está vencido y ya se escaló
 export const OCURRENCIA_DESDE_UN_IMPACTO =
   "Desde un impacto de norma se registra un hallazgo nuevo, enlazado a él: no se añade como ocurrencia";
 
+/**
+ * Un hallazgo ya en curso (la carga, spec 15 §15) no nace enlazado a un hallazgo de verificación ni a un impacto de norma: esos nacen
+ * nuevos, por el registro. La carga los rechaza en vez de ignorarlos, así nada dice que quedó enlazado sin estarlo.
+ */
+export const CARGA_SIN_ENGANCHE =
+  "Un hallazgo ya en curso no nace de un hallazgo de verificación ni de un impacto de norma: regístrelo como hallazgo nuevo";
+
 /** El estado de un hallazgo de verificación en palabras, como lo dice Distribución (`InsigniaHallazgo`). */
 export const ETIQUETA_ESTADO_DE_VERIFICACION: Record<string, string> = {
   abierto: "Abierto",
