@@ -435,6 +435,36 @@ describe("la lista por omisión y sus páginas (anexo §11.1)", () => {
     expect(sinEtiquetas(ultima)).not.toContain("Siguiente");
     expect(renderToStaticMarkup(<PaginasDeLaLista pagina={1} paginas={1} anterior={null} siguiente={null} />)).toBe("");
   });
+
+  it("el formulario cambia de llave con el filtro (no con la página): al navegar en el cliente se rehace con los valores nuevos", () => {
+    // `renderToStaticMarkup` no navega: lo que se prueba es la llave que hace que React rehaga el formulario, y con él los valores
+    // iniciales de sus campos, cuando el filtro de la dirección cambia (la insignia, una cifra, el botón de volver).
+    const llave = (filtro: Parameters<typeof FiltrosDeHallazgos>[0]["filtro"]) => FiltrosDeHallazgos({ filtro, procesos: [] }).key;
+    expect(llave({})).toBe("por-omision");
+    expect(llave({ estado: "todos" })).toBe("estado=todos");
+    expect(llave({ estado: "todos" })).not.toBe(llave({}));
+    expect(llave({ q: "nevera" })).not.toBe(llave({ q: "neveras" }));
+    expect(llave({ estado: "todos", pagina: 2 })).toBe(llave({ estado: "todos" }));
+  });
+
+  it("una lista vacía por el filtro lo dice; si quedaron fuera terminados que la persona ve, cómo verlos; sin filtro, la de siempre", () => {
+    const porOmision = renderToStaticMarkup(
+      <ListaDeHallazgos filas={[]} contexto={CONTEXTO} porElFiltro={{ terminados: "/mejoramiento?proceso=3&estado=todos" }} />,
+    );
+    expect(sinEtiquetas(porOmision)).toContain("Ningún hallazgo coincide con el filtro");
+    expect(sinEtiquetas(porOmision)).toContain("La lista muestra los abiertos: los terminados se ven con «Todos» o eligiendo su estado.");
+    expect(porOmision).toContain('href="/mejoramiento?proceso=3&amp;estado=todos"');
+    expect(sinEtiquetas(porOmision)).toContain("Ver también los terminados");
+    expect(porOmision).not.toContain("Aún no hay hallazgos");
+
+    const otroFiltro = renderToStaticMarkup(<ListaDeHallazgos filas={[]} contexto={CONTEXTO} porElFiltro={{ terminados: null }} />);
+    expect(sinEtiquetas(otroFiltro)).toContain("Ningún hallazgo coincide con el filtro");
+    expect(sinEtiquetas(otroFiltro)).toContain("Cambie o quite los filtros para ver otros hallazgos.");
+    expect(otroFiltro).not.toContain("terminados");
+    expect(otroFiltro).not.toContain("<a");
+
+    expect(sinEtiquetas(renderToStaticMarkup(<ListaDeHallazgos filas={[]} contexto={CONTEXTO} />))).toContain("Aún no hay hallazgos");
+  });
 });
 
 describe("el panel de parecidos", () => {

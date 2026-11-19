@@ -8,7 +8,7 @@ import { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
-import { adminsActivos, lideresDeProceso, lideresDeProcesos } from "@/db/consultas/tramites";
+import { lideresDeProceso, lideresDeProcesos } from "@/db/consultas/tramites";
 import {
   componentesVisibles,
   ejecutoEnElHallazgo,
@@ -65,7 +65,6 @@ import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura"
 
 export type { AjusteDeDetalle } from "./ajustes-lectura";
 import {
-  activosDeRol,
   activosDeUnaVez,
   arbitrosDeVarios,
   quienTieneElTurno,
@@ -179,87 +178,20 @@ const TURNO_SIN_EL_FORMATO = "El Administrador del SGC: falta el formato firmado
 /** Lo que le toca a quien elaboró el plan en revisión cuando no queda ningún Admin SGC que lo revise (F15-DC15). */
 const SIN_REVISOR = "devolverlo y reenviarlo: no hay otro Administrador del SGC activo que lo revise";
 
-/** La resolución de turnos dentro de una llamada: cada clave se resuelve una vez (ver `resolverTurno`). */
-type Memoria = Map<string, Promise<unknown>>;
-const recordar = <T>(m: Memoria, clave: string, f: () => Promise<T>): Promise<T> => {
-  if (!m.has(clave)) m.set(clave, f());
-  return m.get(clave) as Promise<T>;
-};
-
-/**
- * Quién tiene el turno de un hallazgo y cómo se dice (la página del hallazgo, `turnoEnTexto`). En la espera de eficacia nadie lo
- * tiene hasta la fecha mínima; desde ella, quien puede verificar (spec §8.1; `yaSePuedeEvaluar`, R4). Un hallazgo cargado sin su
- * formato firmado (`faltaElFormato`) no avanza hasta que el Admin SGC lo adjunta: el turno es suyo, sea cual sea el paso (spec §15).
- * Las listas resuelven el texto de una página entera de una vez (`turnosEnTexto`); `tests/mejora-lista.test.ts` exige que digan lo
- * mismo que esta, fila por fila.
- */
-async function resolverTurno(
-  tx: Cliente,
-  h: HallazgoBase,
-  m: Memoria,
-  x?: { yaSePuedeEvaluar?: boolean; faltaElFormato?: boolean },
-): Promise<{ ids: number[]; texto: string }> {
-  if (x?.faltaElFormato && !esTerminal(h.estado)) {
-    return { ids: await recordar(m, "admins", () => adminsActivos({ sql: tx })), texto: TURNO_SIN_EL_FORMATO };
-  }
-  if (h.estado === "en_espera" && x?.yaSePuedeEvaluar) {
-    const ids = await recordar(m, `verificadores:${h.id}`, () => quienesVerifican(tx, h.id));
-    return { ids, texto: ids.length > 0 ? QUIEN_VERIFICA : NADIE_VERIFICA_TURNO };
-  }
-  const turno = turnoDe(h.estado);
-  if (!turno) return { ids: [], texto: esTerminal(h.estado) ? "Sin pendientes" : "Nadie por ahora" };
-  // Quién tiene el turno depende solo de esto: el proceso (en «Por aceptar», también quien lo registró, que no acepta), quien
-  // registró, el hallazgo o nada.
-  const clave =
-    turno === "lideres" ? `lideres:${h.procesoId}${h.estado === "por_aceptar" ? `:sin:${h.registradoPor}` : ""}`
-    : turno === "registrador" ? `registrador:${h.registradoPor}`
-    // El árbitro depende también de quién lo sostuvo; los validadores, de quién registró la corrección y decidió; los
-    // verificadores, de quién ejecutó en ese hallazgo (`quienesVerifican`); quienes revisan el plan, de quién lo elaboró
-    // (`revisoresDe`).
-    : turno === "responsables" || turno === "arbitro" || turno === "validadores" || turno === "verificadores" ? `${turno}:${h.id}`
-    : turno === "admin" && h.estado === "en_revision" ? `revisores:${h.id}`
-    : turno;
-  const ids = await recordar(m, clave, () => quienTieneElTurno(tx, h));
-  switch (turno) {
-    case "lideres": {
-      if (ids.length === 0 && h.estado === "por_aceptar") return { ids, texto: NADIE_ACEPTA_TURNO };
-      const lideres = await recordar(m, `hay-lideres:${h.procesoId}`, () => lideresDeProceso(h.procesoId, { sql: tx }));
-      return { ids, texto: lideres.length > 0 ? "La líder del proceso" : ADMIN };
-    }
-    case "registrador":
-      return { ids, texto: ids.includes(h.registradoPor) ? "Quien lo registró" : ADMIN };
-    case "arbitro": {
-      if (ids.length === 0) return { ids, texto: NADIE_ARBITRA_TURNO };
-      const gerencia = await recordar(m, "gerencia-activa", () => activosDeRol(tx, ["gerencia"]));
-      return { ids, texto: ids.every((id) => gerencia.includes(id)) ? "Gerencia" : ADMIN };
-    }
-    case "admin": {
-      // Sin nadie que revise lo enviado, el turno es de quien lo elaboró, para devolverlo y reenviarlo (`QUIENES.admin`).
-      if (h.estado !== "en_revision") return { ids, texto: ADMIN };
-      const revisores = await recordar(m, `solo-revisores:${h.id}`, () => revisoresDe(tx, h));
-      return { ids, texto: revisores.length > 0 ? ADMIN : QUIEN_LO_ELABORO };
-    }
-    case "gerencia":
-      return { ids, texto: "Gerencia" };
-    case "responsables":
-      return { ids, texto: "Los responsables de las actividades" };
-    case "verificadores":
-      return { ids, texto: ids.length > 0 ? QUIEN_VERIFICA : NADIE_VERIFICA_TURNO };
-    case "validadores":
-      return { ids, texto: "Quien puede validar" };
-  }
-}
-
 /**
  * Con quién está el hallazgo, en palabras, según los usuarios activos de hoy (nunca se guarda): si el turno es del líder y
- * el proceso ya no tiene ninguno activo, es del Administrador del SGC.
+ * el proceso ya no tiene ninguno activo, es del Administrador del SGC. La página del hallazgo; la misma regla que las listas
+ * (`turnosEnTexto`, con una lista de uno). En la espera de eficacia nadie lo tiene hasta la fecha mínima; desde ella, quien puede
+ * verificar (spec §8.1; `yaSePuedeEvaluar`, R4). Un hallazgo cargado sin su formato firmado (`faltaElFormato`) no avanza hasta que
+ * el Admin SGC lo adjunta: el turno es suyo, sea cual sea el paso (spec §15).
  */
 export async function turnoEnTexto(
   tx: Cliente,
   h: HallazgoBase,
   x?: { yaSePuedeEvaluar?: boolean; faltaElFormato?: boolean },
 ): Promise<string> {
-  return (await resolverTurno(tx, h, new Map(), x)).texto;
+  const turnos = await turnosEnTexto(tx, [{ h, yaSePuedeEvaluar: x?.yaSePuedeEvaluar === true, faltaElFormato: x?.faltaElFormato === true }]);
+  return turnos.get(h.id) ?? "";
 }
 
 /**
@@ -362,10 +294,10 @@ function aFilaDeLista(f: Row, turno: string, porEvaluar: ReadonlySet<number>): F
   };
 }
 
-/** Lo que el turno de una fila necesita saber además del hallazgo (lo mismo que recibe `resolverTurno`). */
+/** Lo que el turno de un hallazgo necesita saber además de su fila: si ya se puede evaluar y si le falta el formato firmado. */
 type ParaElTurno = { h: HallazgoBase; yaSePuedeEvaluar: boolean; faltaElFormato: boolean };
 
-/** La clase de turno de una fila, como la decide `resolverTurno`: el formato firmado que falta y la espera ya evaluable van antes. */
+/** La clase de turno de una fila: el formato firmado que falta y la espera ya evaluable van antes que la del estado. */
 function claseDeTurno(x: ParaElTurno): ReturnType<typeof turnoDe> | "formato" {
   if (x.faltaElFormato && !esTerminal(x.h.estado)) return "formato";
   if (x.h.estado === "en_espera" && x.yaSePuedeEvaluar) return "verificadores";
@@ -380,12 +312,13 @@ async function activosEntre(sql: Cliente, ids: readonly number[]): Promise<Set<n
 }
 
 /**
- * El turno en palabras de varios hallazgos a la vez (Fase 15B, anexo §11.1): el mismo texto que `resolverTurno` da hallazgo por
- * hallazgo, con una consulta por clase de turno para todos (los líderes de sus procesos, quienes lo registraron, quienes arbitran,
+ * El turno en palabras de varios hallazgos a la vez (Fase 15B, anexo §11.1; con uno solo, la página del hallazgo: `turnoEnTexto`),
+ * con una consulta por clase de turno para todos (los líderes de sus procesos, quienes lo registraron, quienes arbitran,
  * quienes revisan y quienes verifican, con las mismas reglas por lote: `lideresDeProcesos`, `arbitrosDeVarios`, `revisoresDeVarios`,
  * `quienesVerificanDe`) y los Admin SGC y los de Gerencia una sola vez: lo que cuesta una página no crece con sus filas. Los turnos
  * cuyo texto no depende de quién lo tiene (los responsables, quien valida, Gerencia, el Admin SGC fuera de la revisión, el formato
- * firmado que falta) no consultan nada. `tests/mejora-lista.test.ts` lo compara, fila por fila, con `turnoEnTexto`.
+ * firmado que falta) no consultan nada. `tests/mejora-lista.test.ts` fija el texto de cada caso y compara la página entera con
+ * cada hallazgo solo.
  */
 async function turnosEnTexto(
   sql: Cliente,
@@ -526,8 +459,19 @@ function condicionesDeLaLista(
   return condiciones.reduce((a, b) => sql`${a} AND ${b}`);
 }
 
-/** Una página de la lista: sus filas, las cifras de todo lo que la persona ve, cuántos trae el filtro y en qué página se está. */
-export type PaginaDeHallazgos = { filas: FilaDeHallazgo[]; cifras: CifrasDeLista; total: number; pagina: number; paginas: number };
+/**
+ * Una página de la lista: sus filas, las cifras de todo lo que la persona ve, cuántos trae el filtro y en qué página se está.
+ * `terminadosFuera`: el filtro no trae nada solo porque muestra los abiertos (el de por omisión, o «Abiertos» elegido), y entre lo
+ * que la persona ve hay terminados que cumplen el resto del filtro; lo dice el estado vacío de la lista.
+ */
+export type PaginaDeHallazgos = {
+  filas: FilaDeHallazgo[];
+  cifras: CifrasDeLista;
+  total: number;
+  pagina: number;
+  paginas: number;
+  terminadosFuera: boolean;
+};
 
 /**
  * La lista de hallazgos que la persona ve, una página a la vez (Fase 15B, anexo §11.1): por omisión los abiertos, `TAMANO_DE_PAGINA`
@@ -584,12 +528,23 @@ export async function listarHallazgos(sesion: SesionFlujo, filtro: FiltroDeLista
     if (total > 0) filas = await deLaPagina(pagina);
   }
   const conTurno = await filasConSuTurno(sql, filas, reglas.porEvaluar, activos);
+  // Sin filas por mostrar solo los abiertos: ¿hay terminados, entre lo que la persona ve, que cumplan el resto del filtro? Solo con la
+  // lista vacía (una sentencia más), y con la visibilidad en el mismo `WHERE`: nada dice de lo que no ve.
+  const soloAbiertos = filtro.estado === undefined || filtro.estado === "abiertos";
+  const terminadosFuera =
+    total === 0 && soloAbiertos
+      ? (
+          await sql`SELECT EXISTS (SELECT 1 FROM mejora_hallazgos h
+            WHERE ${visible} AND ${condicionesDeLaLista(sql, sesion, { ...filtro, estado: "todos" }, reglas, deSusTareas)}) AS hay`
+        )[0]?.hay === true
+      : false;
   return {
     filas: conTurno.map((fila) => ({ ...fila, vencido: undefined }) as FilaDeHallazgo),
     cifras,
     total,
     pagina,
     paginas: Math.max(1, Math.ceil(total / TAMANO_DE_PAGINA)),
+    terminadosFuera,
   };
 }
 

@@ -1,7 +1,7 @@
 /**
  * La lista de hallazgos por páginas (Fase 15B, anexo §11.1, F15B-DC37): por omisión los abiertos, 50 por página con el orden y el
  * corte en la consulta, las cifras de todo lo que la persona ve, el código exacto de un terminado, el Excel de todo el filtro, el
- * turno resuelto por lote (el mismo de `turnoEnTexto`, hallazgo por hallazgo) y lo que cuesta una página, que no crece con las
+ * turno resuelto por lote (fijado caso por caso, y el mismo que el de cada hallazgo solo) y lo que cuesta una página, que no crece con las
  * filas (Review Focus 8). Contra la BD de trabajo, dentro de una transacción que se revierte.
  */
 import { existsSync } from "node:fs";
@@ -53,6 +53,8 @@ const LISTA = "2026-12-09T15:00:00Z";
 const TEMPRANO = "2026-11-17T15:00:00Z";
 const RECIENTE = "2026-12-09T13:00:00Z";
 const AYER = "2026-12-07T15:00:00Z";
+/** El turno de un hallazgo cargado sin su formato firmado en su propia página (que no le pasa el formato que falta). */
+const CARGA_EN_LA_PAGINA = "Los responsables de las actividades";
 const lee = (tx: TransactionSql, ahora = LISTA) => ({ sql: tx, ahora: new Date(ahora) });
 
 describe("el orden de la lista (fijado antes de pasar el orden a la consulta)", () => {
@@ -193,6 +195,26 @@ describe("la lista por páginas: por omisión los abiertos (anexo §11.1)", () =
       expect(await listarHallazgos(ajeno, { q: cerrado.codigo, estado: "todos" }, lee(tx))).toMatchObject({ filas: [], total: 0 });
     }));
 
+  it("una lista vacía dice si quedaron fuera terminados que la persona ve, sin decir nada de los que no ve (ronda 1)", { timeout: 60_000 }, () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      // Todo lo que ve el líder está terminado.
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { titulo: "Neveras sin registro" }), c(TEMPRANO, tx));
+      await tx`UPDATE mejora_hallazgos SET estado = 'anulado', vence_en = NULL WHERE id = ${id}`;
+      expect(await listarHallazgos(b.lider, {}, lee(tx))).toMatchObject({ filas: [], total: 0, terminadosFuera: true });
+      expect((await listarHallazgos(b.lider, { estado: "abiertos" }, lee(tx))).terminadosFuera).toBe(true);
+      // El resto del filtro manda: un texto que el terminado no tiene, ninguno.
+      expect((await listarHallazgos(b.lider, { q: "contratos" }, lee(tx))).terminadosFuera).toBe(false);
+      expect((await listarHallazgos(b.lider, { q: "neveras" }, lee(tx))).terminadosFuera).toBe(true);
+      // Con otro estado elegido, o con filas, no hay nada que decir.
+      expect((await listarHallazgos(b.lider, { estado: "por_aceptar" }, lee(tx))).terminadosFuera).toBe(false);
+      expect((await listarHallazgos(b.lider, { estado: "todos" }, lee(tx))).terminadosFuera).toBe(false);
+      // A quien no lo ve, nada: el líder de otro proceso no ve ningún terminado que «quedó fuera».
+      const ajeno = (await otroProcesoConLider(tx)).lider;
+      expect(await listarHallazgos(ajeno, {}, lee(tx))).toMatchObject({ filas: [], terminadosFuera: false });
+      expect((await listarHallazgos(ajeno, { q: "neveras" }, lee(tx))).terminadosFuera).toBe(false);
+    }));
+
   it("las cifras cuentan todo lo que la persona ve, igual en la página 1 y en la 2", { timeout: 60_000 }, () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
@@ -277,7 +299,7 @@ describe("lo que cuesta una página no crece con sus filas (Review Focus 8)", ()
   );
 });
 
-describe("el turno de una página es el de cada hallazgo (`turnosEnTexto` frente a `turnoEnTexto`)", () => {
+describe("el turno de una página es el de cada hallazgo (la página entera frente a `turnoEnTexto`, uno por uno)", () => {
   /** Cada fila de la lista dice el turno que la página del hallazgo le daría, con lo mismo que esta sabe (la espera, el formato). */
   async function comparar(tx: TransactionSql, quien: SesionFlujo, q: string, ahora: string): Promise<Map<number, string>> {
     const { filas } = await listarHallazgos(quien, { q, estado: "todos" }, lee(tx, ahora));
@@ -345,37 +367,64 @@ describe("el turno de una página es el de cada hallazgo (`turnosEnTexto` frente
         await tx`UPDATE mejora_hallazgos SET estado = 'anulado', vence_en = NULL WHERE id = ${h.anulado}`;
 
         const AHORA = "2027-02-01T15:00:00Z";
+        // Cada fila, con su texto literal: el que daba la página del hallazgo hasta la ronda 1 de la Tarea 14 (`resolverTurno`), fijado
+        // con él antes de quitarlo; desde entonces la página usa `turnosEnTexto` con una lista de uno.
+        const nombres = Object.fromEntries(Object.entries(h).map(([k, v]) => [v, k]));
+        const porNombre = (turnos: Map<number, string>) => Object.fromEntries([...turnos].map(([id, t]) => [nombres[id], t]));
+        const ADMIN = "Administrador del SGC";
         const antes = await comparar(tx, b.admin, marca, AHORA);
-        expect(antes.size).toBe(Object.keys(h).length);
-        expect(antes.get(h.aceptaLaLider)).toBe("La líder del proceso");
-        expect(antes.get(h.corrigeElAdmin)).toBe("Administrador del SGC");
-        expect(antes.get(h.aceptaElAdminSinLider)).toBe("La líder del proceso");
-        expect(antes.get(h.nadieAcepta)).toBe("La líder del proceso");
-        expect(antes.get(h.rechazoActivo)).toBe("Quien lo registró");
-        expect(antes.get(h.rechazoInactivo)).toBe("Administrador del SGC");
-        expect(antes.get(h.arbitrajeDeControl)).toBe("Administrador del SGC");
-        expect(antes.get(h.arbitrajeDelAdmin)).toBe("Gerencia");
-        expect(antes.get(h.verificaAlguien)).toBe("Quien puede verificar");
-        expect(antes.get(h.esperaEvaluable)).toBe("Quien puede verificar");
-        expect(antes.get(h.esperaTemprana)).toBe("Nadie por ahora");
-        expect(antes.get(h.cargaSinFormato)).toBe("El Administrador del SGC: falta el formato firmado");
-        expect(antes.get(h.anulado)).toBe("Sin pendientes");
+        expect(porNombre(antes)).toEqual({
+          aceptaLaLider: "La líder del proceso",
+          corrigeElAdmin: ADMIN,
+          aceptaElAdminSinLider: "La líder del proceso",
+          nadieAcepta: "La líder del proceso",
+          rechazoActivo: "Quien lo registró",
+          rechazoInactivo: ADMIN,
+          arbitrajeDeControl: ADMIN,
+          arbitrajeDelAdmin: "Gerencia",
+          revisionDeLaLider: ADMIN,
+          revisionDelAdmin: ADMIN,
+          verificaAlguien: "Quien puede verificar",
+          verificaNadie: "Quien puede verificar",
+          esperaEvaluable: "Quien puede verificar",
+          esperaTemprana: "Nadie por ahora",
+          enEjecucion: "Los responsables de las actividades",
+          porValidar: "Quien puede validar",
+          enAprobacion: "Gerencia",
+          porDecidir: ADMIN,
+          cargaSinFormato: "El Administrador del SGC: falta el formato firmado",
+          anulado: "Sin pendientes",
+        });
+        // La página del hallazgo no le pasa el formato que falta: dice el turno de su paso, como siempre.
+        expect(await turnoEnTexto(tx, await bloquearHallazgo(tx, h.cargaSinFormato))).toBe(CARGA_EN_LA_PAGINA);
 
         // Con un solo Admin SGC activo y nadie más que pueda verificar o arbitrar, las respuestas se separan dentro de cada estado.
         await tx`UPDATE usuarios SET activo = false
           WHERE (rol IN ('admin_sgc', 'control_interno', 'gerencia') AND activo AND id <> ${b.admin.usuarioId})
             OR id = ${otroProceso.lider.usuarioId}`;
         const despues = await comparar(tx, b.admin, marca, AHORA);
-        expect(despues.get(h.aceptaLaLider)).toBe("La líder del proceso");
-        expect(despues.get(h.aceptaElAdminSinLider)).toBe("Administrador del SGC");
-        expect(despues.get(h.nadieAcepta)).toBe("Nadie puede aceptarlo");
-        expect(despues.get(h.arbitrajeDeControl)).toBe("Administrador del SGC");
-        expect(despues.get(h.arbitrajeDelAdmin)).toBe("Nadie puede arbitrarlo");
-        expect(despues.get(h.revisionDeLaLider)).toBe("Administrador del SGC");
-        expect(despues.get(h.revisionDelAdmin)).toBe("Quien lo elaboró");
-        expect(despues.get(h.verificaAlguien)).toBe("Quien puede verificar");
-        expect(despues.get(h.verificaNadie)).toBe("Nadie puede verificarlo");
-        expect(despues.get(h.enAprobacion)).toBe("Gerencia");
+        expect(porNombre(despues)).toEqual({
+          aceptaLaLider: "La líder del proceso",
+          corrigeElAdmin: ADMIN,
+          aceptaElAdminSinLider: ADMIN,
+          nadieAcepta: "Nadie puede aceptarlo",
+          rechazoActivo: ADMIN,
+          rechazoInactivo: ADMIN,
+          arbitrajeDeControl: ADMIN,
+          arbitrajeDelAdmin: "Nadie puede arbitrarlo",
+          revisionDeLaLider: ADMIN,
+          revisionDelAdmin: "Quien lo elaboró",
+          verificaAlguien: "Quien puede verificar",
+          verificaNadie: "Nadie puede verificarlo",
+          esperaEvaluable: "Quien puede verificar",
+          esperaTemprana: "Nadie por ahora",
+          enEjecucion: "Los responsables de las actividades",
+          porValidar: "Quien puede validar",
+          enAprobacion: "Gerencia",
+          porDecidir: ADMIN,
+          cargaSinFormato: "El Administrador del SGC: falta el formato firmado",
+          anulado: "Sin pendientes",
+        });
       }),
   );
 });

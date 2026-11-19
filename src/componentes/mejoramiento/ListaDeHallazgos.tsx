@@ -65,12 +65,39 @@ function Estado({ fila }: { fila: FilaDeHallazgo }) {
 
 const textoAvance = (a: number | null) => (a === null ? "—" : `${a} %`);
 
+/** Sin filas por el filtro (Fase 15B, anexo §11.1): qué decir y, si lo que falta son los terminados, cómo verlos. */
+export const NINGUNO_COINCIDE = "Ningún hallazgo coincide con el filtro";
+export const CAMBIE_EL_FILTRO = "Cambie o quite los filtros para ver otros hallazgos.";
+export const LOS_TERMINADOS_SE_VEN = "La lista muestra los abiertos: los terminados se ven con «Todos» o eligiendo su estado.";
+
 /**
  * La lista de hallazgos (spec 15 §16.1, maqueta 1): una tabla desde 640 px y tarjetas por debajo. Cada fila dice en qué va
- * el hallazgo y quién tiene el turno; el estado y las marcas siempre llevan su texto.
+ * el hallazgo y quién tiene el turno; el estado y las marcas siempre llevan su texto. Con `porElFiltro` (la página de Mejoramiento,
+ * a quien ve algún hallazgo), una lista vacía es la de un filtro que no trae nada, no la de alguien que no ve ninguno: lo dice y, si
+ * lo que quedó fuera son terminados que la persona ve (`terminados`: el mismo filtro con «Todos»), dice cómo verlos.
  */
-export function ListaDeHallazgos({ filas, contexto }: { filas: readonly FilaDeHallazgo[]; contexto: Contexto }) {
+export function ListaDeHallazgos({
+  filas,
+  contexto,
+  porElFiltro,
+}: {
+  filas: readonly FilaDeHallazgo[];
+  contexto: Contexto;
+  porElFiltro?: { terminados: string | null };
+}) {
   if (filas.length === 0) {
+    if (porElFiltro) {
+      return porElFiltro.terminados ? (
+        <EstadoVacio
+          icono={ClipboardCheck}
+          titulo={NINGUNO_COINCIDE}
+          texto={LOS_TERMINADOS_SE_VEN}
+          accion={{ href: porElFiltro.terminados, etiqueta: "Ver también los terminados" }}
+        />
+      ) : (
+        <EstadoVacio icono={ClipboardCheck} titulo={NINGUNO_COINCIDE} texto={CAMBIE_EL_FILTRO} />
+      );
+    }
     return (
       <EstadoVacio
         icono={ClipboardCheck}

@@ -5,6 +5,7 @@ import { claseControl } from "@/componentes/ui/Campo";
 import type { FiltroDeLista } from "@/db/consultas/mejoramiento/lectura";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
 import {
+  consultaDeFiltro,
   ESTADO_POR_OMISION,
   ETIQUETA_ESTADO_ESPECIAL,
   FILTROS_POR_ENLACE,
@@ -87,8 +88,18 @@ export function FiltrosDeHallazgos({
   const opcionesDePlan = conElegido(planes, filtro.plan, nombres.plan);
   const opcionesDeObjetivo = conElegido(objetivos, filtro.objetivo, nombres.objetivo);
   const soloAbiertos = (filtro.estado ?? ESTADO_POR_OMISION) === ESTADO_POR_OMISION;
+  // Los campos no son controlados: su valor inicial es el del filtro. La llave cambia con el filtro para que, al llegar a otro por
+  // una navegación del cliente (la insignia, las cifras, «Anterior», el botón de volver), React rehaga el formulario con los valores
+  // nuevos en vez de conservar los de antes. La página no cuenta: con ella los valores son los mismos.
   return (
-    <form method="get" action="/mejoramiento" role="search" aria-label="Filtrar hallazgos" className="flex flex-wrap items-end gap-3">
+    <form
+      key={consultaDeFiltro(filtro) || "por-omision"}
+      method="get"
+      action="/mejoramiento"
+      role="search"
+      aria-label="Filtrar hallazgos"
+      className="flex flex-wrap items-end gap-3"
+    >
       {soloAbiertos ? (
         <p className="flex w-full flex-wrap items-center gap-2 text-sm">
           <Link

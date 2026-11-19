@@ -23,7 +23,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
-import { consultaDeFiltro, filtroDeConsulta, rutaDePagina } from "@/lib/mejoramiento/filtro";
+import { consultaDeFiltro, filtroDeConsulta, rutaDeListaFiltrada, rutaDePagina, TODOS_LOS_ESTADOS } from "@/lib/mejoramiento/filtro";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Mejoramiento" };
@@ -55,7 +55,7 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
   }
   const filtro = filtroDeConsulta(await searchParams);
   const ahora = new Date();
-  const [{ filas, cifras, total, pagina, paginas }, procesos, contexto, porClasificar, vePlanes, imprime, deLaClasificacion, nombres] = await Promise.all([
+  const [{ filas, cifras, total, pagina, paginas, terminadosFuera }, procesos, contexto, porClasificar, vePlanes, imprime, deLaClasificacion, nombres] = await Promise.all([
     listarHallazgos(sesion, filtro, { ahora }),
     procesosDelAlcance(sesion),
     contextoDeMejora(obtenerSql(), ahora),
@@ -142,7 +142,12 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
             objetivos={deLaClasificacion.objetivos}
             nombres={nombres}
           />
-          <ListaDeHallazgos filas={filas} contexto={contexto} />
+          {/* Quien llega aquí ve algún hallazgo: una lista vacía es la de su filtro. */}
+          <ListaDeHallazgos
+            filas={filas}
+            contexto={contexto}
+            porElFiltro={{ terminados: terminadosFuera ? rutaDeListaFiltrada({ ...filtro, estado: TODOS_LOS_ESTADOS }) : null }}
+          />
           <PaginasDeLaLista
             pagina={pagina}
             paginas={paginas}
