@@ -65,10 +65,10 @@ describe("el grupo «Normas» de la paleta", () => {
     const indicador = { ...documento, grupo: "indicador" as const, codigo: "GTH-IND-01", ruta: "/indicadores/GTH-IND-01" };
     const hallazgo = { ...documento, grupo: "hallazgo" as const, codigo: "HZ-2026-004", tipo: "Por aceptar", ruta: "/mejoramiento/4" };
     const otra = { ...norma, codigo: "Resolución 2003 de 2014", ruta: "/normograma/8", tipo: "Derogada" };
-    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra], indicadores: [], hallazgos: [] });
+    expect(gruposDeResultados([norma, documento, otra])).toEqual({ documentos: [documento], normas: [norma, otra], indicadores: [], hallazgos: [], planes: [] });
     expect(gruposDeResultados([indicador, norma, documento]).indicadores).toEqual([indicador]);
     expect(gruposDeResultados([hallazgo, indicador, documento]).hallazgos).toEqual([hallazgo]);
-    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [], indicadores: [], hallazgos: [] });
+    expect(gruposDeResultados([])).toEqual({ documentos: [], normas: [], indicadores: [], hallazgos: [], planes: [] });
   });
 });
 

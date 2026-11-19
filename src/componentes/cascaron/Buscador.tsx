@@ -53,7 +53,7 @@ export function GrupoPaleta({ titulo, vacio, children }: { titulo: string; vacio
 
 type Opcion =
   | { id: string; clase: "ir"; entrada: EntradaNav; ruta: string }
-  | { id: string; clase: "documento" | "norma" | "indicador" | "hallazgo"; resultado: ResultadoRapido; ruta: string }
+  | { id: string; clase: "documento" | "norma" | "indicador" | "hallazgo" | "plan"; resultado: ResultadoRapido; ruta: string }
   | { id: string; clase: "todos"; ruta: string };
 
 export function Buscador({ entradas }: { entradas: EntradaNav[] }) {
@@ -150,6 +150,7 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     normas: normasVisibles,
     indicadores: indicadoresVisibles,
     hallazgos: hallazgosVisibles,
+    planes: planesVisibles,
   } = gruposDeResultados(resultados);
 
   const opciones: Opcion[] = [
@@ -165,6 +166,9 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
     ),
     ...hallazgosVisibles.map(
       (resultado, i): Opcion => ({ id: `${idBase}-hallazgo-${i}`, clase: "hallazgo", resultado, ruta: resultado.ruta }),
+    ),
+    ...planesVisibles.map(
+      (resultado, i): Opcion => ({ id: `${idBase}-plan-${i}`, clase: "plan", resultado, ruta: resultado.ruta }),
     ),
     ...(buscaDocumentos
       ? [{ id: `${idBase}-todos`, clase: "todos", ruta: `/buscar?q=${encodeURIComponent(consulta)}` } as Opcion]
@@ -204,6 +208,7 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
   const filasNormas = opciones.filter((o) => o.clase === "norma");
   const filasIndicadores = opciones.filter((o) => o.clase === "indicador");
   const filasHallazgos = opciones.filter((o) => o.clase === "hallazgo");
+  const filasPlanes = opciones.filter((o) => o.clase === "plan");
   const filaTodos = opciones.find((o) => o.clase === "todos");
 
   const propsOpcion = (o: Opcion) => ({
@@ -303,6 +308,19 @@ function Paleta({ entradas, cerrar }: { entradas: EntradaNav[]; cerrar: () => vo
         <GrupoPaleta titulo="Hallazgos" vacio={filasHallazgos.length === 0}>
           {filasHallazgos.map((o) =>
             o.clase === "hallazgo" ? (
+              <li key={o.id} {...propsOpcion(o)}>
+                <span className="shrink-0 font-mono text-xs">{o.resultado.codigo}</span>
+                <span className="min-w-0 flex-1 truncate">{o.resultado.titulo}</span>
+                <span className="max-w-40 shrink-0 truncate rounded border border-border px-1.5 text-xs text-muted-foreground">
+                  {o.resultado.tipo}
+                </span>
+              </li>
+            ) : null,
+          )}
+        </GrupoPaleta>
+        <GrupoPaleta titulo="Planes de mejoramiento" vacio={filasPlanes.length === 0}>
+          {filasPlanes.map((o) =>
+            o.clase === "plan" ? (
               <li key={o.id} {...propsOpcion(o)}>
                 <span className="shrink-0 font-mono text-xs">{o.resultado.codigo}</span>
                 <span className="min-w-0 flex-1 truncate">{o.resultado.titulo}</span>

@@ -5,12 +5,22 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
-import { buscarHallazgos } from "@/db/consultas/mejoramiento/busqueda";
+import { buscarHallazgos, buscarPlanes } from "@/db/consultas/mejoramiento/busqueda";
+import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { enviarReporte } from "@/db/consultas/mejoramiento/reportes";
 import { HALLAZGOS_EN_LA_PALETA } from "@/lib/busqueda-rapida";
-import { baseDeMejora, c, datosDeCarga, datosDeHallazgo, escaneoDeLaCarga, HORA_DE_ESCENA, otroProcesoConLider } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeCarga,
+  datosDeHallazgo,
+  escaneoDeLaCarga,
+  HORA_DE_ESCENA,
+  otroProcesoConLider,
+  planDeMejoraDePrueba,
+} from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
 import { usuarioDePrueba } from "./utiles/tramites";
 
@@ -100,5 +110,28 @@ describe("buscarHallazgos", () => {
       expect(await buscarHallazgos("z", b.admin, 10, { sql: tx })).toEqual([]);
       expect(await buscarHallazgos(`${m}%`, b.admin, 10, { sql: tx })).toEqual([]);
       expect(await buscarHallazgos(m, b.admin, HALLAZGOS_EN_LA_PALETA, { sql: tx })).toHaveLength(HALLAZGOS_EN_LA_PALETA);
+    }));
+});
+
+describe("buscarPlanes (Fase 15B, anexo §3.6)", () => {
+  it("encuentra un plan por su código y por su nombre a quien lo ve: Gerencia y la líder de un proceso del plan; no el líder de otro", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = (await otroProcesoConLider(tx)).lider;
+      const m = marca();
+      const plan = await planDeMejoraDePrueba(tx, b.control, { nombre: `Auditoría de cumplimiento ${m}` });
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(HORA_DE_ESCENA, tx));
+      await ponerEnPlan(b.control, { planId: plan.id, hallazgoIds: [id] }, c(HORA_DE_ESCENA, tx));
+
+      for (const quien of [b.gerencia, b.lider]) {
+        expect((await buscarPlanes(`AUDITORIA DE CUMPLIMIENTO ${m}`, quien, 10, { sql: tx })).map((p) => p.id)).toEqual([plan.id]);
+        expect((await buscarPlanes(plan.codigo.toLowerCase(), quien, 10, { sql: tx })).map((p) => p.id)).toContain(plan.id);
+      }
+      const [encontrado] = await buscarPlanes(m, b.gerencia, 10, { sql: tx });
+      expect(encontrado).toMatchObject({ id: plan.id, codigo: plan.codigo, nombre: `Auditoría de cumplimiento ${m}`, anulado: false });
+      expect(await buscarPlanes(m, otro, 10, { sql: tx })).toEqual([]);
+      expect(await buscarPlanes(plan.codigo, otro, 10, { sql: tx })).toEqual([]);
+      expect(await buscarPlanes(m, b.consulta, 10, { sql: tx })).toEqual([]);
+      expect(await buscarPlanes("z", b.gerencia, 10, { sql: tx })).toEqual([]);
     }));
 });

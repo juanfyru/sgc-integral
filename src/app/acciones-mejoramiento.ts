@@ -12,7 +12,9 @@ import { guardarAnalisis, guardarCausas, quitarAnalisis, responderPreguntas } fr
 import { aprobarPlan, devolverPlan, enviarPlan, firmarRevision } from "@/db/consultas/mejoramiento/aprobacion";
 import { quitarArchivoDeMejora } from "@/db/consultas/mejoramiento/archivos";
 import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
+import { cambiarDePlan, ponerEnPlan, ponerObjetivo, sacarDelPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import { guardarAccion, guardarCriterio, quitarAccion } from "@/db/consultas/mejoramiento/plan";
+import { anularPlan, crearPlan, editarPlan } from "@/db/consultas/mejoramiento/planes";
 import {
   aceptarHallazgo,
   arbitrarHallazgo,
@@ -42,32 +44,38 @@ import {
   CAMPOS_DE_LA_CARGA,
   EsquemaActividad,
   EsquemaAnulacion,
+  EsquemaAnulacionDePlan,
   EsquemaCambioDeProceso,
   EsquemaCorreccion,
   EsquemaCriterio,
   EsquemaDescarte,
   EsquemaDevolucion,
   EsquemaDevolverPlan,
+  EsquemaEdicionDePlan,
   EsquemaEscalar,
   EsquemaFormularioAccion,
   EsquemaFormularioAjuste,
   EsquemaFormularioAnalisis,
   EsquemaFormularioArbitraje,
   EsquemaFormularioCarga,
+  EsquemaFormularioCambiarDePlan,
   EsquemaFormularioCausas,
   EsquemaFormularioCierre,
   EsquemaFormularioDecidirAjuste,
   EsquemaFormularioDecision,
   EsquemaFormularioEvaluacion,
   EsquemaFormularioFirmaDelPlan,
+  EsquemaFormularioPonerEnPlan,
   EsquemaFormularioPreguntas,
   EsquemaFormularioResponderEscalada,
   EsquemaFormularioRevisarPlan,
   EsquemaFormularioSumarReporte,
   EsquemaFormularioVerificacion,
   EsquemaHallazgo,
+  EsquemaObjetivoDelHallazgo,
   EsquemaOcurrencia,
   EsquemaPasoDelHallazgo,
+  EsquemaPlan,
   EsquemaQuitarAccion,
   EsquemaQuitarAnalisis,
   EsquemaReasignar,
@@ -75,6 +83,7 @@ import {
   EsquemaReclasificacion,
   EsquemaReporte,
   EsquemaRespuestaAlEnte,
+  EsquemaSacarDelPlan,
   EsquemaSeguimiento,
   EsquemaSostener,
   RELACION_DE_REGISTRO,
@@ -83,7 +92,7 @@ import {
   idsDeLaVerificacion,
 } from "@/lib/esquemas/mejoramiento";
 import { RUTA_REPORTES_RECIBIDOS, rutaDeReportar } from "@/lib/mejoramiento/reportes";
-import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { parsearFormulario } from "@/lib/validacion";
 
@@ -665,5 +674,68 @@ export async function cerrarHallazgoAccion(_previo: EstadoAccion, formData: Form
     } catch (err) {
       return destinoDeFirma(err);
     }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Los planes de mejoramiento y la clasificación de un hallazgo (Fase 15B, anexo §3.2 a §3.4 y §10.4). Todas con `mejora.planes`;
+// el dominio lo vuelve a exigir y comprueba, dentro de su transacción y con el plan bloqueado, que exista y no esté anulado. Es
+// clasificación: ninguna avisa a nadie. Las que no navegan dejan que la página se vuelva a leer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Crea un plan (`PM-AAAA-NN`) y lleva a su página. */
+export async function crearPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
+    const { id } = await crearPlan(sesion, parsearFormulario(datos, EsquemaPlan));
+    return rutaDePlan(id);
+  });
+}
+
+/** Edita todo menos el código y la vigencia, y vuelve a la página del plan. No cambia ningún hallazgo. */
+export async function editarPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
+    const id = idNumerico(datos, "id");
+    await editarPlan(sesion, id, parsearFormulario(datos, EsquemaEdicionDePlan, { omitir: ["id"] }));
+    return rutaDePlan(id);
+  });
+}
+
+/** Anula un plan sin hallazgos, con su motivo (al historial del plan, no a la bitácora). */
+export async function anularPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
+    await anularPlan(sesion, parsearFormulario(datos, EsquemaAnulacionDePlan));
+  });
+}
+
+/**
+ * Pone uno o varios hallazgos en un plan: desde el selector del plan (vuelve a su página) o desde la página de un hallazgo. La
+ * casilla del objetivo desmarcada llega como «no» explícito: el dominio, por omisión, entiende «sí».
+ */
+export async function ponerEnPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
+    const { volverAlPlan, ...d } = parsearFormulario(datos, EsquemaFormularioPonerEnPlan);
+    await ponerEnPlan(sesion, d);
+    return volverAlPlan ? rutaDePlan(d.planId) : undefined;
+  });
+}
+
+/** Saca un hallazgo de su plan, con motivo. */
+export async function sacarDelPlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
+    await sacarDelPlan(sesion, parsearFormulario(datos, EsquemaSacarDelPlan));
+  });
+}
+
+/** Mueve un hallazgo de su plan a otro, con motivo y un evento en cada plan. */
+export async function cambiarDePlanAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
+    await cambiarDePlan(sesion, parsearFormulario(datos, EsquemaFormularioCambiarDePlan));
+  });
+}
+
+/** Pone, cambia o quita (vacío) el objetivo de un hallazgo, en cualquier estado; su rastro va a la bitácora. */
+export async function ponerObjetivoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
+  return mutacion(formData, "mejora.planes", async (_usuarioId, datos, sesion) => {
+    await ponerObjetivo(sesion, parsearFormulario(datos, EsquemaObjetivoDelHallazgo));
   });
 }

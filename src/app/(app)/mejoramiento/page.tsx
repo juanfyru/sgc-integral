@@ -13,6 +13,7 @@ import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { contarMisActividades } from "@/db/consultas/mejoramiento/actividades";
 import { listarHallazgos, veAlgunHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { veAlgunPlan } from "@/db/consultas/mejoramiento/planes-lectura";
 import { procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { contarReportesPorClasificar } from "@/db/consultas/mejoramiento/reportes";
 import { rutaDeReportar } from "@/lib/mejoramiento/reportes";
@@ -51,11 +52,12 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
   }
   const filtro = filtroDeConsulta(await searchParams);
   const ahora = new Date();
-  const [{ filas, cifras }, procesos, contexto, porClasificar] = await Promise.all([
+  const [{ filas, cifras }, procesos, contexto, porClasificar, vePlanes] = await Promise.all([
     listarHallazgos(sesion, filtro, { ahora }),
     procesosDelAlcance(sesion),
     contextoDeMejora(obtenerSql(), ahora),
     contarReportesPorClasificar(sesion),
+    veAlgunPlan(sesion),
   ]);
   const registra = puede(sesion, "mejora.registrar");
   // El Excel lleva los filtros puestos (spec §16.3); es una descarga auditada: un enlace simple, sin precarga.
@@ -89,7 +91,7 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
           ) : null
         }
       />
-      <PestanasMejoramiento activa="hallazgos" visibles={pestanasVisibles(sesion, { veHallazgos: veAlgo })} numeros={{ reportes: porClasificar }} />
+      <PestanasMejoramiento activa="hallazgos" visibles={pestanasVisibles(sesion, { veHallazgos: veAlgo, vePlanes })} numeros={{ reportes: porClasificar }} />
       {veAlgo ? (
         <>
           <section aria-label="Cifras de los hallazgos" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

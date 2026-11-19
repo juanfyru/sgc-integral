@@ -22,8 +22,12 @@ const panel = paginas("src/app/(app)/admin/(panel)");
 const catalogos = paginas("src/app/(app)/admin/(catalogos)");
 
 // Las guardas de página que llaman ellas mismas `exigirSesion()` antes de su regla de alcance (anexo 14C, §4.7: la página
-// de un dato compartido). Una página que llama una de ellas cumple la regla del portal; la guarda lo prueba abajo.
-const GUARDAS_CON_SESION: Record<string, string> = { exigirDato: "src/app/(app)/indicadores/datos/_comun.ts" };
+// de un dato compartido; anexo 15B, §3.6: la de un plan de mejoramiento). Una página que llama una de ellas cumple la regla del
+// portal; la guarda lo prueba abajo.
+const GUARDAS_CON_SESION: Record<string, string> = {
+  exigirDato: "src/app/(app)/indicadores/datos/_comun.ts",
+  exigirPlan: "src/app/(app)/mejoramiento/_comun.ts",
+};
 const llamaSuGuarda = new RegExp(`exigir(Sesion|Permiso)\\(|(${Object.keys(GUARDAS_CON_SESION).join("|")})\\(`);
 
 describe("cada página comprueba la sesión", () => {
@@ -43,6 +47,21 @@ describe("cada página comprueba la sesión", () => {
     const dato = readFileSync(path.join(raiz, "src/app/(app)/indicadores/datos/[id]/page.tsx"), "utf8");
     expect(dato).toContain("exigirDato(");
     expect(dato).not.toContain("exigirPermiso(");
+  });
+  it("las páginas de un plan de mejoramiento llaman exigirSesion() y su guarda, o responden «no encontrado» sin `mejora.planes`", () => {
+    const leer = (ruta: string) => readFileSync(path.join(raiz, "src/app/(app)/mejoramiento/planes", ruta), "utf8");
+    for (const ruta of ["[id]/page.tsx", "[id]/editar/page.tsx", "[id]/anadir/page.tsx"]) {
+      const fuente = leer(ruta);
+      expect(fuente).toContain("exigirSesion(");
+      expect(fuente).toContain("exigirPlan(");
+      expect(fuente).not.toContain("exigirPermiso(");
+    }
+    for (const ruta of ["nuevo/page.tsx", "[id]/editar/page.tsx", "[id]/anadir/page.tsx"]) {
+      const fuente = leer(ruta);
+      expect(fuente).toContain('puede(sesion, "mejora.planes")');
+      expect(fuente).toContain("notFound(");
+    }
+    expect(leer("page.tsx")).toContain("exigirSesion(");
   });
   it.each(paginas("src/app/(cuenta)"))("cuenta: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toContain("exigirSesionConPendientes(");

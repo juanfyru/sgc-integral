@@ -3,6 +3,7 @@
  * lectura pasa por `filtroHallazgos` (`src/lib/alcance.ts`): quien no ve un hallazgo no lo recibe, no lo cuenta, y un
  * identificador que no existe y uno que no se ve responden igual (nulo). El turno y lo vencido se calculan al leer.
  */
+import type { PendingQuery, Row } from "postgres";
 import { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -15,6 +16,7 @@ import {
   filtroHallazgos,
   participacionEnHallazgo,
   puedeVerHallazgo,
+  puedeVerPlan,
   puedeVerificar,
   quienesVerifican,
   vistaCompletaDeHallazgo,
@@ -52,6 +54,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { avanceDeAccion, avanceDeHallazgo } from "./actividades";
 import { quienDecideAjustes } from "./ajustes";
+import { clasificacionDe } from "./clasificacion";
 import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura";
 
 export type { AjusteDeDetalle } from "./ajustes-lectura";
@@ -250,6 +253,71 @@ const COLUMNAS_BASE = (sql: Cliente) => sql`h.id, h.codigo, h.clase, h.criticida
   h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.registrado_por`;
 
 /**
+ * Lo vencido y lo que ya se puede evaluar de los hallazgos de `donde` (un fragmento sobre `h` que ya lleva la visibilidad de quien
+ * mira), con una sola regla para la lista y para los hallazgos de un plan (Fase 15B, anexo §3.5): una actividad vencida, el paso
+ * en curso vencido o, en la espera de eficacia, su evaluación vencida. Desde cuándo se evalúa cada hallazgo en espera, en una pasada
+ * para todos (R4: nunca una por fila), y si ya venció su evaluación (`venceLaEvaluacionDe`, la regla de la pasada: la espera no
+ * guarda `vence_en`).
+ */
+async function reglasDeLaLista(sql: Cliente, donde: PendingQuery<Row[]>, ahora: Date) {
+  const zona = zonaHoraria();
+  const hoy = fechaEnZona(ahora, zona);
+  const enEspera = await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${donde} AND h.estado = 'en_espera'`;
+  const minimas = await fechasMinimasDe(sql, enEspera.map((f) => Number(f.id)), zona);
+  const porEvaluar = [...minimas].flatMap(([id, fm]) => (yaSePuedeEvaluar(fm.minima, ahora, zona) ? [id] : []));
+  const contexto = minimas.size > 0 ? await contextoDeMejora(sql, ahora) : null;
+  const evaluacionVencida = contexto
+    ? [...minimas].flatMap(([id, fm]) => (venceLaEvaluacionDe(fm, contexto).getTime() < ahora.getTime() ? [id] : []))
+    : [];
+  const algoVencido = sql`(${ACTIVIDAD_VENCIDA(sql, hoy)} OR h.vence_en < ${ahora} OR h.id = ANY(${sql.array(evaluacionVencida)}::bigint[]))`;
+  return { hoy, porEvaluar, algoVencido };
+}
+
+/** Las columnas de una fila de la lista, sobre `h` y su proceso `p`. */
+const COLUMNAS_DE_LA_LISTA = (sql: Cliente, hoy: string, algoVencido: PendingQuery<Row[]>) => sql`${COLUMNAS_BASE(sql)}, h.titulo,
+  h.vence_en, h.cargado, p.nombre AS proceso, ${ACTIVIDAD_VENCIDA(sql, hoy)} AS actividad_vencida, ${algoVencido} AS algo_vencido,
+  ${AVANCE(sql)} AS avance, ${cargaResuelta(sql)} AS carga_resuelta`;
+
+/** Una fila de la lista con si tiene algo vencido (solo abierta), para ordenarla y contarla. */
+type FilaConVencido = FilaDeHallazgo & { vencido: boolean };
+
+/** Una fila leída con `COLUMNAS_DE_LA_LISTA`, como la pinta la lista. El turno, con la memoria de la llamada. */
+async function aFilaDeLista(sql: Cliente, f: Row, memoria: Memoria, porEvaluar: readonly number[]): Promise<FilaConVencido> {
+  const h = aBase(f);
+  const yaSePuede = { yaSePuedeEvaluar: porEvaluar.includes(h.id) };
+  const abierta = !esTerminal(h.estado);
+  return {
+    id: h.id,
+    codigo: h.codigo,
+    titulo: f.titulo as string,
+    clase: h.clase,
+    criticidad: h.criticidad,
+    origen: h.origen,
+    proceso: f.proceso as string,
+    estado: h.estado,
+    etiqueta: etiquetaDeEstado(h, yaSePuede),
+    marcas: marcasDeHallazgo(h, { cargado: f.cargado === true, algunaActividadVencida: f.actividad_vencida === true }),
+    turno: (await resolverTurno(sql, h, memoria, { ...yaSePuede, faltaElFormato: f.carga_resuelta === false })).texto,
+    avance: idONulo(f.avance),
+    vence: abierta ? ((f.vence_en as Date | null) ?? null) : null,
+    prioridadAlta: abierta && esExterno(h.origen),
+    vencido: abierta && f.algo_vencido === true,
+  };
+}
+
+/**
+ * El orden de la lista: los de prioridad alta (externos) primero, luego los que tienen algo vencido, luego por vencimiento
+ * ascendente con los nulos al final.
+ */
+function ordenDeLaLista(a: FilaConVencido, b: FilaConVencido): number {
+  if (a.prioridadAlta !== b.prioridadAlta) return a.prioridadAlta ? -1 : 1;
+  if (a.vencido !== b.vencido) return a.vencido ? -1 : 1;
+  if (a.vence && b.vence) return a.vence.getTime() - b.vence.getTime() || a.id - b.id;
+  if (a.vence || b.vence) return a.vence ? -1 : 1;
+  return a.id - b.id;
+}
+
+/**
  * La lista de hallazgos que la persona ve, con las cifras de lo que ve (no de lo filtrado). Orden por omisión: los
  * de prioridad alta (externos) primero, luego los que tienen algo vencido, luego por vencimiento ascendente con los nulos
  * al final. Los filtros van al `WHERE`; `esperanSuDecision` sale de las tareas de mejoramiento de quien mira, en una sola
@@ -262,23 +330,10 @@ export async function listarHallazgos(
 ): Promise<{ filas: FilaDeHallazgo[]; cifras: CifrasDeLista }> {
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
-  const hoy = fechaEnZona(ahora, zonaHoraria());
   const memoria: Memoria = new Map();
   const visible = filtroHallazgos(sql, sesion);
   const abierto = sql`h.estado NOT IN ${sql([...TERMINALES])}`;
-
-  // Desde cuándo se evalúa cada hallazgo en espera que la persona ve, en una pasada para todos (R4: nunca una por fila), y si ya
-  // venció su evaluación (`venceLaEvaluacionDe`, la regla de la pasada: la espera no guarda `vence_en`).
-  const zona = zonaHoraria();
-  const enEspera = await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${visible} AND h.estado = 'en_espera'`;
-  const minimas = await fechasMinimasDe(sql, enEspera.map((f) => Number(f.id)), zona);
-  const porEvaluar = [...minimas].flatMap(([id, fm]) => (yaSePuedeEvaluar(fm.minima, ahora, zona) ? [id] : []));
-  const yaSePuede = (h: HallazgoBase) => ({ yaSePuedeEvaluar: porEvaluar.includes(h.id) });
-  const contexto = minimas.size > 0 ? await contextoDeMejora(sql, ahora) : null;
-  const evaluacionVencida = contexto
-    ? [...minimas].flatMap(([id, fm]) => (venceLaEvaluacionDe(fm, contexto).getTime() < ahora.getTime() ? [id] : []))
-    : [];
-  const algoVencido = sql`(${ACTIVIDAD_VENCIDA(sql, hoy)} OR h.vence_en < ${ahora} OR h.id = ANY(${sql.array(evaluacionVencida)}::bigint[]))`;
+  const { hoy, porEvaluar, algoVencido } = await reglasDeLaLista(sql, visible, ahora);
 
   // Los que esperan la decisión de quien mira (R2): los hallazgos distintos entre sus tareas de mejoramiento, las mismas de
   // «Mis tareas», en una sola llamada para toda la lista (nunca una por fila); de esos, solo los que ve.
@@ -327,44 +382,58 @@ export async function listarHallazgos(
     filtro.esperanSuDecision ? sql`h.id = ANY(${sql.array(suyos)}::bigint[])` : sql`true`,
   ];
   const filas = await sql`
-    SELECT ${COLUMNAS_BASE(sql)}, h.titulo, h.vence_en, h.cargado, p.nombre AS proceso,
-      ${ACTIVIDAD_VENCIDA(sql, hoy)} AS actividad_vencida, ${algoVencido} AS algo_vencido, ${AVANCE(sql)} AS avance,
-      ${cargaResuelta(sql)} AS carga_resuelta
+    SELECT ${COLUMNAS_DE_LA_LISTA(sql, hoy, algoVencido)}
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
     WHERE ${visible} AND ${condiciones.reduce((a, b) => sql`${a} AND ${b}`)}`;
 
-  const resultado: Array<FilaDeHallazgo & { vencido: boolean }> = [];
-  for (const f of filas) {
-    const h = aBase(f);
-    const abierta = !esTerminal(h.estado);
-    const vence = abierta ? ((f.vence_en as Date | null) ?? null) : null;
-    resultado.push({
-      id: h.id,
-      codigo: h.codigo,
-      titulo: f.titulo as string,
-      clase: h.clase,
-      criticidad: h.criticidad,
-      origen: h.origen,
-      proceso: f.proceso as string,
-      estado: h.estado,
-      etiqueta: etiquetaDeEstado(h, yaSePuede(h)),
-      marcas: marcasDeHallazgo(h, { cargado: f.cargado === true, algunaActividadVencida: f.actividad_vencida === true }),
-      turno: (await resolverTurno(sql, h, memoria, { ...yaSePuede(h), faltaElFormato: f.carga_resuelta === false })).texto,
-      avance: idONulo(f.avance),
-      vence,
-      prioridadAlta: abierta && esExterno(h.origen),
-      vencido: abierta && f.algo_vencido === true,
-    });
-  }
-  resultado.sort((a, b) => {
-    if (a.prioridadAlta !== b.prioridadAlta) return a.prioridadAlta ? -1 : 1;
-    if (a.vencido !== b.vencido) return a.vencido ? -1 : 1;
-    if (a.vence && b.vence) return a.vence.getTime() - b.vence.getTime() || a.id - b.id;
-    if (a.vence || b.vence) return a.vence ? -1 : 1;
-    return a.id - b.id;
-  });
+  const resultado: FilaConVencido[] = [];
+  for (const f of filas) resultado.push(await aFilaDeLista(sql, f, memoria, porEvaluar));
+  resultado.sort(ordenDeLaLista);
   return { filas: resultado.map((fila) => ({ ...fila, vencido: undefined }) as FilaDeHallazgo), cifras };
+}
+
+/** Una fila de la lista de un subconjunto de hallazgos (los de un plan): la de `listarHallazgos`, con su proceso y si tiene algo vencido. */
+export type FilaDeLaLista = FilaDeHallazgo & { procesoId: number; vencido: boolean };
+
+/**
+ * Las filas de la lista de los hallazgos de `donde`, un fragmento sobre `h` que ya lleva la visibilidad de quien mira (Fase 15B:
+ * los hallazgos de un plan que la persona ve completos), con lo vencido, el avance, la etiqueta, las marcas y el turno de
+ * `listarHallazgos` y en su orden. Sin cifras ni filtros: los pone quien llama. Las consultas no crecen con las filas, salvo el
+ * turno de los pasos que dependen de cada hallazgo (`resolverTurno`).
+ */
+export async function filasDeLaLista(sql: Cliente, donde: PendingQuery<Row[]>, opciones: { ahora: Date }): Promise<FilaDeLaLista[]> {
+  const { hoy, porEvaluar, algoVencido } = await reglasDeLaLista(sql, donde, opciones.ahora);
+  const filas = await sql`
+    SELECT ${COLUMNAS_DE_LA_LISTA(sql, hoy, algoVencido)}
+    FROM mejora_hallazgos h
+    JOIN procesos p ON p.id = h.proceso_id
+    WHERE ${donde}`;
+  const memoria: Memoria = new Map();
+  const resultado: Array<FilaConVencido & { procesoId: number }> = [];
+  for (const f of filas) resultado.push({ ...(await aFilaDeLista(sql, f, memoria, porEvaluar)), procesoId: Number(f.proceso_id) });
+  return resultado.sort(ordenDeLaLista);
+}
+
+/**
+ * Lo que la lista sabe de cada hallazgo de `donde` (un fragmento sobre `h` con la visibilidad de quien mira) sin resolver su
+ * turno: su estado, si tiene algo vencido (solo abierto, con la regla de `listarHallazgos`) y su avance (nulo sin plan de acción
+ * aprobado en su ronda en curso). Un número fijo de consultas, sean cuantos sean: las cifras de la lista de planes (Fase 15B).
+ */
+export async function hechosDeLaLista(
+  sql: Cliente,
+  donde: PendingQuery<Row[]>,
+  opciones: { ahora: Date },
+): Promise<Map<number, { estado: EstadoHallazgo; vencido: boolean; avance: number | null }>> {
+  const { algoVencido } = await reglasDeLaLista(sql, donde, opciones.ahora);
+  const filas = await sql`SELECT h.id, h.estado, ${algoVencido} AS algo_vencido, ${AVANCE(sql)} AS avance
+    FROM mejora_hallazgos h WHERE ${donde}`;
+  return new Map(
+    filas.map((f) => {
+      const estado = f.estado as EstadoHallazgo;
+      return [Number(f.id), { estado, vencido: !esTerminal(estado) && f.algo_vencido === true, avance: idONulo(f.avance) }];
+    }),
+  );
 }
 
 /**
@@ -779,6 +848,17 @@ export type DetalleDeHallazgo = {
   loQueSigue: LoQueSigueDelHallazgo;
   /** El de las acciones de la ronda en curso (`avanceDeHallazgo`); nulo sin plan aprobado. */
   avance: number | null;
+  /**
+   * El plan y el objetivo del hallazgo (Fase 15B, anexo §3.6 y §10.4): el plan con su código y su nombre, con enlace solo a quien
+   * ve el plan (`puedeVerPlan`: quien ve el hallazgo solo por su actividad lo lee sin enlace, F15B-DC9), y el enunciado del
+   * objetivo. `puedeClasificar`: quien tiene `mejora.planes` y ve el hallazgo completo (el servidor lo vuelve a comprobar).
+   */
+  clasificacion: {
+    plan: { id: number; codigo: string; nombre: string; enlace: boolean } | null;
+    objetivo: string | null;
+    objetivoId: number | null;
+    puedeClasificar: boolean;
+  };
 };
 
 /**
@@ -1400,6 +1480,8 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
 
   // Un hallazgo cargado sin su formato firmado no avanza (spec §15): «Lo que sigue» lo dice y no ofrece el paso.
   const confirmada = f.cargado !== true || (await cargaConfirmada(sql, h.id));
+  const clasificado = (await clasificacionDe(sql, [h.id])).get(h.id);
+  const conEnlace = clasificado?.planId != null && (await puedeVerPlan(clasificado.planId, sesion, { sql }));
   const ocurrencias = completo
     ? await sql`SELECT o.id, o.descripcion, o.origen, o.reporte_id, to_char(o.fecha, 'YYYY-MM-DD') AS fecha, u.nombre AS quien
         FROM mejora_ocurrencias o JOIN usuarios u ON u.id = o.registrado_por
@@ -1493,5 +1575,14 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     turno,
     loQueSigue: confirmada || esTerminal(h.estado) ? await loQueSigue(sql, h, sesion, turno, evaluable) : sinElFormato(h),
     avance: avanceDeHallazgo(rondasDeDetalle.find((r) => r.numero === h.ronda)?.acciones.map((a) => a.avance) ?? []),
+    clasificacion: {
+      plan:
+        clasificado?.planId != null
+          ? { id: clasificado.planId, codigo: clasificado.planCodigo ?? "", nombre: clasificado.planNombre ?? "", enlace: conEnlace }
+          : null,
+      objetivo: clasificado?.objetivo ?? null,
+      objetivoId: clasificado?.objetivoId ?? null,
+      puedeClasificar: completo && puede(sesion, "mejora.planes"),
+    },
   };
 }

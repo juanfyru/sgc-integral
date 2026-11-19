@@ -6,10 +6,11 @@ export const LARGO_MINIMO_CONSULTA = 2;
 /**
  * Un resultado de la paleta: un documento (código, título resaltado y sigla del tipo) o una norma (su nombre
  * «Resolución 3100 de 2019» en `codigo`, su título y su estado en `tipo`) o un indicador (su código, su nombre y, en
- * `tipo`, su proceso o «Retirado») o un hallazgo de mejoramiento (su código, su título y, en `tipo`, en qué estado va).
+ * `tipo`, su proceso o «Retirado») o un hallazgo de mejoramiento (su código, su título y, en `tipo`, en qué estado va) o un
+ * plan de mejoramiento (su código, su nombre y, en `tipo`, su origen o «Anulado»).
  */
 export type ResultadoRapido = {
-  grupo: "documento" | "norma" | "indicador" | "hallazgo";
+  grupo: "documento" | "norma" | "indicador" | "hallazgo" | "plan";
   codigo: string;
   titulo: string;
   tituloResaltado: string | null;
@@ -32,21 +33,29 @@ export const HALLAZGOS_EN_LA_PALETA = 4;
 /** Hasta cuántos hallazgos trae la página «Buscar», debajo de los indicadores. */
 export const HALLAZGOS_EN_LA_BUSQUEDA = 5;
 
+/** Hasta cuántos planes de mejoramiento trae la paleta, debajo de los hallazgos (anexo 15B §3.6). */
+export const PLANES_EN_LA_PALETA = 3;
+
+/** Hasta cuántos planes de mejoramiento trae la página «Buscar», debajo de los hallazgos. */
+export const PLANES_EN_LA_BUSQUEDA = 5;
+
 /**
- * Los grupos de la paleta en su orden: los documentos, las normas, los indicadores y los hallazgos (las flechas recorren ese
- * orden).
+ * Los grupos de la paleta en su orden: los documentos, las normas, los indicadores, los hallazgos y los planes de mejoramiento
+ * (las flechas recorren ese orden).
  */
 export function gruposDeResultados(resultados: ResultadoRapido[]): {
   documentos: ResultadoRapido[];
   normas: ResultadoRapido[];
   indicadores: ResultadoRapido[];
   hallazgos: ResultadoRapido[];
+  planes: ResultadoRapido[];
 } {
   return {
     documentos: resultados.filter((r) => r.grupo === "documento"),
     normas: resultados.filter((r) => r.grupo === "norma"),
     indicadores: resultados.filter((r) => r.grupo === "indicador"),
     hallazgos: resultados.filter((r) => r.grupo === "hallazgo"),
+    planes: resultados.filter((r) => r.grupo === "plan"),
   };
 }
 

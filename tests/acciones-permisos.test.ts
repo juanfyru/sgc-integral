@@ -50,6 +50,24 @@ describe("«No afecta» en una revisión por cambio de norma lo registra quien a
   });
 });
 
+describe("los planes de mejoramiento y la clasificación de un hallazgo son de quien tiene `mejora.planes` (anexo 15B, §3.2)", () => {
+  const src = readFileSync("src/app/acciones-mejoramiento.ts", "utf8");
+  for (const nombre of [
+    "crearPlanAccion",
+    "editarPlanAccion",
+    "anularPlanAccion",
+    "ponerEnPlanAccion",
+    "sacarDelPlanAccion",
+    "cambiarDePlanAccion",
+    "ponerObjetivoAccion",
+  ]) {
+    it(nombre, () => {
+      const accion = exportadas(src).find((a) => a.nombre === nombre);
+      expect(accion?.cuerpo).toMatch(/mutacion\(\s*formData,\s*"mejora\.planes"/);
+    });
+  }
+});
+
 describe("toda acción de cuenta exige sesión salvo ingresar", () => {
   const src = readFileSync("src/app/acciones-cuenta.ts", "utf8");
   for (const { nombre, cuerpo } of exportadas(src)) {

@@ -1507,9 +1507,30 @@ export const EsquemaPonerEnPlan = z
 
 export const EsquemaSacarDelPlan = z.object({ hallazgoId: idDeHallazgo, motivo: motivoDelPlan }).strict();
 
+/**
+ * El formulario de «Añadir hallazgos» y de «Poner en un plan» (anexo §3.4): las casillas `hallazgoIds` (una o varias) y la del
+ * objetivo del plan (`si`). Una casilla desmarcada no viaja: sin ella el formulario dice «no», y la acción lo manda así, porque el
+ * dominio, por omisión, entiende «sí». `volverAlPlan` (`si`), desde el selector: la acción lleva de vuelta a la página del plan.
+ */
+export const EsquemaFormularioPonerEnPlan = z
+  .object({
+    planId: idDePlan,
+    hallazgoIds: variosValores("Elija al menos un hallazgo").pipe(z.array(idDeHallazgo).min(1, "Elija al menos un hallazgo")),
+    conObjetivo: marca,
+    volverAlPlan: marca,
+  })
+  .strict()
+  .transform((d) => ({ planId: d.planId, hallazgoIds: d.hallazgoIds, conObjetivo: d.conObjetivo === "si", volverAlPlan: d.volverAlPlan === "si" }));
+
 export const EsquemaCambiarDePlan = z
   .object({ hallazgoId: idDeHallazgo, planId: idDePlan, motivo: motivoDelPlan, conObjetivo: conElObjetivoDelPlan })
   .strict();
+
+/** El formulario de «Cambiar de plan»: la casilla del objetivo (`si`); desmarcada no viaja y vale «no», como al poner en un plan. */
+export const EsquemaFormularioCambiarDePlan = z
+  .object({ hallazgoId: idDeHallazgo, planId: idDePlan, motivo: motivoDelPlan, conObjetivo: marca })
+  .strict()
+  .transform((d) => ({ ...d, conObjetivo: d.conObjetivo === "si" }));
 
 /** El objetivo de un hallazgo: uno del maestro, o ninguno (lo quita). */
 export const EsquemaObjetivoDelHallazgo = z

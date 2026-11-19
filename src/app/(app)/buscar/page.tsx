@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { CalendarRange, ClipboardCheck, FileSearch, Filter, Gauge, Scale, SearchX, TimerOff } from "lucide-react";
+import { CalendarRange, ClipboardCheck, FileSearch, Filter, FolderKanban, Gauge, Scale, SearchX, TimerOff } from "lucide-react";
 import { CampoBusqueda } from "@/componentes/busqueda/CampoBusqueda";
 import { TarjetaResultado } from "@/componentes/busqueda/TarjetaResultado";
 import { InsigniaNorma } from "@/componentes/normograma/TablaNormas";
@@ -15,12 +15,13 @@ import {
   type RespuestaBusqueda,
 } from "@/db/consultas/busqueda";
 import { buscarIndicadores, type ResultadoIndicador } from "@/db/consultas/indicadores/busqueda";
-import { buscarHallazgos, type ResultadoHallazgo } from "@/db/consultas/mejoramiento/busqueda";
+import { buscarHallazgos, buscarPlanes, type ResultadoHallazgo, type ResultadoPlan } from "@/db/consultas/mejoramiento/busqueda";
 import { buscarNormas, type ResultadoNorma } from "@/db/consultas/normograma/busqueda";
 import { obtenerDetalleProceso } from "@/db/consultas/procesos";
-import { HALLAZGOS_EN_LA_BUSQUEDA, INDICADORES_EN_LA_BUSQUEDA } from "@/lib/busqueda-rapida";
+import { HALLAZGOS_EN_LA_BUSQUEDA, INDICADORES_EN_LA_BUSQUEDA, PLANES_EN_LA_BUSQUEDA } from "@/lib/busqueda-rapida";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
-import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
+import { rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { crearLimitador } from "@/lib/limite";
 import { exigirSesion } from "@/lib/paginas";
 
@@ -98,6 +99,7 @@ export default async function PaginaBuscar({
   let normas: ResultadoNorma[] = [];
   let indicadores: ResultadoIndicador[] = [];
   let hallazgos: ResultadoHallazgo[] = [];
+  let planes: ResultadoPlan[] = [];
 
   if (conCriterios) {
     if (!permitirBusqueda(String(sesion.usuarioId))) {
@@ -105,12 +107,13 @@ export default async function PaginaBuscar({
     } else {
       // El normograma se lee con cualquier sesión: las normas no retiradas que coinciden con el texto, sin los filtros
       // de documento (tipo, proceso, fechas), que no les aplican.
-      // Los hallazgos, con la regla de la lista (`filtroHallazgos`): solo los que la persona ve.
-      [respuesta, normas, indicadores, hallazgos] = await Promise.all([
+      // Los hallazgos y los planes, con la regla de su lista (`filtroHallazgos`, `filtroPlanes`): solo los que la persona ve.
+      [respuesta, normas, indicadores, hallazgos, planes] = await Promise.all([
         buscarDocumentos(filtros, sesion),
         filtros.q?.trim() ? buscarNormas(filtros.q, NORMAS_EN_LA_BUSQUEDA) : Promise.resolve([]),
         filtros.q?.trim() ? buscarIndicadores(filtros.q, sesion, INDICADORES_EN_LA_BUSQUEDA) : Promise.resolve([]),
         filtros.q?.trim() ? buscarHallazgos(filtros.q, sesion, HALLAZGOS_EN_LA_BUSQUEDA) : Promise.resolve([]),
+        filtros.q?.trim() ? buscarPlanes(filtros.q, sesion, PLANES_EN_LA_BUSQUEDA) : Promise.resolve([]),
       ]);
       if (filtros.q?.trim()) {
         await registrarBusqueda(filtros.q, respuesta.total).catch((err) =>
@@ -371,6 +374,7 @@ export default async function PaginaBuscar({
             {normas.length > 0 ? <GrupoNormas normas={normas} /> : null}
             {indicadores.length > 0 ? <GrupoIndicadores indicadores={indicadores} /> : null}
             {hallazgos.length > 0 ? <GrupoHallazgos hallazgos={hallazgos} /> : null}
+            {planes.length > 0 ? <GrupoPlanes planes={planes} /> : null}
           </section>
         </div>
       )}
@@ -454,6 +458,34 @@ function GrupoHallazgos({ hallazgos }: { hallazgos: ResultadoHallazgo[] }) {
               </Link>
             </span>
             <Insignia variante="neutra">{h.etiqueta}</Insignia>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** El grupo «Planes de mejoramiento» debajo de los hallazgos: el código, el nombre y su origen, con el enlace a su página. */
+function GrupoPlanes({ planes }: { planes: ResultadoPlan[] }) {
+  return (
+    <section aria-labelledby="titulo-planes" className="mt-8">
+      <h2 id="titulo-planes" className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        <FolderKanban className="size-4 text-muted-foreground" aria-hidden="true" />
+        Planes de mejoramiento
+      </h2>
+      <ul className="space-y-2">
+        {planes.map((p) => (
+          <li key={p.id} className="flex min-w-0 flex-wrap items-start justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+            <span className="min-w-0 flex-1">
+              <Link
+                href={rutaDePlan(p.id)}
+                className="rounded font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
+              >
+                <span className="font-mono text-xs">{p.codigo}</span> {p.nombre}
+              </Link>
+              <span className="block break-words text-muted-foreground">{ETIQUETA_ORIGEN[p.origen]}</span>
+            </span>
+            {p.anulado ? <Insignia variante="sin-dato">Anulado</Insignia> : null}
           </li>
         ))}
       </ul>

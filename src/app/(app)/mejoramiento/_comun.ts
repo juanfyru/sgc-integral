@@ -4,7 +4,9 @@ import { obtenerSql } from "@/db/cliente";
 import { leerActividad, type DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades";
 import { indicadorDeEficacia } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
 import { leerHallazgo, type DetalleDeHallazgo, type RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
+import { leerPlan, type DetalleDePlan } from "@/db/consultas/mejoramiento/planes-lectura";
 import { puedeVerIndicador } from "@/lib/alcance";
+import { exigirSesion } from "@/lib/paginas";
 import type { SesionValida } from "@/lib/sesion";
 
 /**
@@ -39,6 +41,21 @@ export async function exigirActividad(sesion: SesionValida, segmento: string): P
 }
 
 /**
+ * El plan de mejoramiento del segmento `[id]` (Fase 15B, anexo §3.6): exige la sesión y, si el id no es un número, el plan no
+ * existe o la persona no lo ve (`leerPlan`, con `filtroPlanes`), responde «no encontrado», nunca «sin permiso»: para ella no
+ * existe. Lo que ve del plan (solo los hallazgos que ve completos) ya viene decidido en `plan`.
+ */
+export async function exigirPlan(segmento: string, opciones?: { ahora?: Date }): Promise<{ sesion: SesionValida; plan: DetalleDePlan }> {
+  const sesion = await exigirSesion();
+  if (!/^\d{1,15}$/.test(segmento)) notFound();
+  const id = Number(segmento);
+  if (!Number.isSafeInteger(id)) notFound();
+  const plan = await leerPlan(sesion, id, opciones);
+  if (!plan) notFound();
+  return { sesion, plan };
+}
+
+/**
  * El indicador enlazado al criterio de eficacia de una ronda, nombrado solo a quien lo ve (spec 15 §11.2, `puedeVerIndicador`); a
  * los demás, «un indicador». Lo leen la página del hallazgo y su impreso.
  */
@@ -51,4 +68,4 @@ export async function indicadorParaQuienLee(r: Pick<RondaDeDetalle, "indicadorEf
 }
 
 /** Las rutas del módulo viven en `src/lib/mejoramiento/rutas.ts`; las páginas y las acciones las toman de aquí. */
-export { rutaDeActividad, rutaDeFormular, rutaDeHallazgo, rutaDeImprimir } from "@/lib/mejoramiento/rutas";
+export { rutaDeActividad, rutaDeFormular, rutaDeHallazgo, rutaDeImprimir, rutaDePlan } from "@/lib/mejoramiento/rutas";

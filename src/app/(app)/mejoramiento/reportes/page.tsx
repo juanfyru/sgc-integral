@@ -10,6 +10,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { archivosDe, archivosQuitables } from "@/db/consultas/mejoramiento/archivos";
 import { veAlgunHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { veAlgunPlan } from "@/db/consultas/mejoramiento/planes-lectura";
 import { abiertosParecidosAlReporte } from "@/db/consultas/mejoramiento/parecidos";
 import { contarReportesPorClasificar, misReportes, reportesRecibidos } from "@/db/consultas/mejoramiento/reportes";
 import { rutaDeReportar } from "@/lib/mejoramiento/reportes";
@@ -36,7 +37,11 @@ export default async function PaginaReportes({ searchParams }: { searchParams: P
   const sql = obtenerSql();
   const ahora = new Date();
   const zona = zonaHoraria();
-  const [veHallazgos, porClasificar] = await Promise.all([veAlgunHallazgo(sesion), contarReportesPorClasificar(sesion)]);
+  const [veHallazgos, porClasificar, vePlanes] = await Promise.all([
+    veAlgunHallazgo(sesion),
+    contarReportesPorClasificar(sesion),
+    veAlgunPlan(sesion),
+  ]);
   const gestiona = puede(sesion, "mejora.gestionar");
 
   let contenido: React.ReactNode;
@@ -102,7 +107,7 @@ export default async function PaginaReportes({ searchParams }: { searchParams: P
       />
       <PestanasMejoramiento
         activa={recibidos ? "reportes" : "mis-reportes"}
-        visibles={pestanasVisibles(sesion, { veHallazgos })}
+        visibles={pestanasVisibles(sesion, { veHallazgos, vePlanes })}
         numeros={{ reportes: porClasificar }}
       />
       {contenido}

@@ -292,9 +292,20 @@ describe("PestanasMejoramiento", () => {
     // Quien registra o ve todo se queda en la lista aunque esté vacía (Tarea 18, ronda 1, ruling 3): su pestaña está.
     expect(pestanasVisibles({ rol: "lider_proceso" }, { veHallazgos: false })).toEqual(["hallazgos", "actividades", "mis-reportes"]);
     expect(pestanasVisibles({ rol: "gerencia" }, { veHallazgos: false })).toEqual(["hallazgos", "reportes", "actividades", "mis-reportes"]);
-    for (const rol of ["admin_sgc", "gerencia", "control_interno"] as const) {
-      expect(pestanasVisibles({ rol }, { veHallazgos: true })).toEqual(["hallazgos", "reportes", "actividades", "mis-reportes"]);
+    expect(pestanasVisibles({ rol: "gerencia" }, { veHallazgos: true })).toEqual(["hallazgos", "reportes", "actividades", "mis-reportes"]);
+    // «Planes» (Fase 15B, anexo §3.6): quien crea planes (`mejora.planes`) siempre; los demás, si ven alguno.
+    for (const rol of ["admin_sgc", "control_interno"] as const) {
+      expect(pestanasVisibles({ rol }, { veHallazgos: true })).toEqual(["hallazgos", "reportes", "actividades", "planes", "mis-reportes"]);
     }
+    expect(pestanasVisibles({ rol: "gerencia" }, { veHallazgos: true, vePlanes: true })).toEqual([
+      "hallazgos",
+      "reportes",
+      "actividades",
+      "planes",
+      "mis-reportes",
+    ]);
+    expect(pestanasVisibles({ rol: "lider_proceso" }, { veHallazgos: true, vePlanes: true })).toContain("planes");
+    expect(pestanasVisibles({ rol: "lider_proceso" }, { veHallazgos: true, vePlanes: false })).not.toContain("planes");
     const enlaces = renderToStaticMarkup(
       <PestanasMejoramiento activa="mis-reportes" visibles={["reportes", "mis-reportes"]} numeros={{ reportes: 2 }} />,
     );

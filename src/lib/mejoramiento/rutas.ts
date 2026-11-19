@@ -10,6 +10,24 @@ export const rutaDeActividad = (id: number) => `/mejoramiento/actividades/${id}`
 /** La página donde se formula la causa raíz y el plan de un hallazgo. */
 export const rutaDeFormular = (id: number) => `/mejoramiento/${id}/formular`;
 
+/** La pestaña «Planes» (Fase 15B, anexo §3.9). */
+export const RUTA_PLANES = "/mejoramiento/planes";
+
+/** El formulario de un plan nuevo. */
+export const RUTA_NUEVO_PLAN = "/mejoramiento/planes/nuevo";
+
+/** La página de un plan de mejoramiento. */
+export const rutaDePlan = (id: number) => `/mejoramiento/planes/${id}`;
+
+/** El formulario para editar un plan. */
+export const rutaDeEditarPlan = (id: number) => `/mejoramiento/planes/${id}/editar`;
+
+/** El selector de hallazgos para añadir a un plan. */
+export const rutaDeAnadirAPlan = (id: number) => `/mejoramiento/planes/${id}/anadir`;
+
+/** El Excel para el ente de un plan (anexo §4): una descarga auditada, un enlace simple (su ruta llega en la Tarea 6). */
+export const rutaDelExcelDelPlan = (id: number) => `/mejoramiento/planes/${id}/excel`;
+
 /** Los impresos de un hallazgo (spec §16.4): el SGC-FO-AC-01 o, con `analisis`, el formato de ese análisis. */
 export const rutaDeImprimir = (id: number, analisis?: number) =>
   `/mejoramiento/${id}/imprimir${analisis === undefined ? "" : `?analisis=${analisis}`}`;

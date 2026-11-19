@@ -1,19 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { buscarDocumentos } from "@/db/consultas/busqueda";
 import { buscarIndicadores } from "@/db/consultas/indicadores/busqueda";
-import { buscarHallazgos } from "@/db/consultas/mejoramiento/busqueda";
+import { buscarHallazgos, buscarPlanes } from "@/db/consultas/mejoramiento/busqueda";
 import { buscarNormas } from "@/db/consultas/normograma/busqueda";
 import {
   HALLAZGOS_EN_LA_PALETA,
   INDICADORES_EN_LA_PALETA,
   LARGO_MINIMO_CONSULTA,
   NORMAS_EN_LA_PALETA,
+  PLANES_EN_LA_PALETA,
   normalizarConsulta,
   type ResultadoRapido,
 } from "@/lib/busqueda-rapida";
 import { crearLimitador } from "@/lib/limite";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
-import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
+import { rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { ETIQUETA_ESTADO_NORMA } from "@/lib/normograma/tipos";
 import { sesionDePeticion } from "@/lib/sesion-actual";
 
@@ -25,7 +27,8 @@ const permitirBusqueda = crearLimitador({ limite: 60, ventanaMs: 60_000 });
 /**
  * Búsqueda rápida de la paleta Ctrl K: los documentos con versión vigente que el usuario puede ver y, debajo, hasta
  * cuatro normas no retiradas (el normograma se lee con cualquier sesión), debajo, hasta cuatro indicadores de los que
- * ve (activos o retirados) y, debajo, hasta cuatro hallazgos de mejoramiento de los que ve (`filtroHallazgos`).
+ * ve (activos o retirados), debajo, hasta cuatro hallazgos de mejoramiento de los que ve (`filtroHallazgos`) y, debajo, hasta
+ * tres planes de mejoramiento de los que ve (`filtroPlanes`).
  */
 export async function GET(peticion: NextRequest) {
   const sesion = await sesionDePeticion(peticion);
@@ -44,11 +47,12 @@ export async function GET(peticion: NextRequest) {
     return NextResponse.json({ resultados: [] satisfies ResultadoRapido[] });
   }
 
-  const [{ resultados }, normas, indicadores, hallazgos] = await Promise.all([
+  const [{ resultados }, normas, indicadores, hallazgos, planes] = await Promise.all([
     buscarDocumentos({ q, limite: 8 }, sesion),
     buscarNormas(q, NORMAS_EN_LA_PALETA),
     buscarIndicadores(q, sesion, INDICADORES_EN_LA_PALETA),
     buscarHallazgos(q, sesion, HALLAZGOS_EN_LA_PALETA),
+    buscarPlanes(q, sesion, PLANES_EN_LA_PALETA),
   ]);
   return NextResponse.json({
     resultados: [
@@ -90,6 +94,16 @@ export async function GET(peticion: NextRequest) {
           tituloResaltado: null,
           tipo: h.etiqueta,
           ruta: rutaDeHallazgo(h.id),
+        }),
+      ),
+      ...planes.map(
+        (p): ResultadoRapido => ({
+          grupo: "plan",
+          codigo: p.codigo,
+          titulo: p.nombre,
+          tituloResaltado: null,
+          tipo: p.anulado ? "Anulado" : ETIQUETA_ORIGEN[p.origen],
+          ruta: rutaDePlan(p.id),
         }),
       ),
     ],

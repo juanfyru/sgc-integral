@@ -6,6 +6,7 @@ import {
   anularHallazgoAccion,
   aprobarPlanAccion,
   arbitrarHallazgoAccion,
+  cambiarDePlanAccion,
   cerrarHallazgoAccion,
   arbitrarHallazgoGerenciaAccion,
   cambiarProcesoAccion,
@@ -20,6 +21,8 @@ import {
   evaluarEficaciaAccion,
   firmarRevisionAccion,
   pedirAjusteAccion,
+  ponerEnPlanAccion,
+  ponerObjetivoAccion,
   reasignarActividadAccion,
   rechazarHallazgoAccion,
   reclasificarHallazgoAccion,
@@ -28,6 +31,7 @@ import {
   registrarRespuestaAlEnteAccion,
   responderEscaladaAccion,
   retirarHallazgoAccion,
+  sacarDelPlanAccion,
   sostenerHallazgoAccion,
   validarCorreccionAccion,
   verificarImplementacionAccion,
@@ -69,6 +73,7 @@ import { Recorrido, type PasoDeRecorrido } from "@/componentes/mejoramiento/Reco
 import { HistorialDelHallazgo } from "@/componentes/mejoramiento/HistorialDelHallazgo";
 import { InsigniasDelHallazgo } from "@/componentes/mejoramiento/InsigniasDelHallazgo";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
+import { SeccionClasificacion } from "@/componentes/mejoramiento/SeccionClasificacion";
 import { SeccionCorreccion } from "@/componentes/mejoramiento/SeccionCorreccion";
 import { SeccionRespuestaAlEnte } from "@/componentes/mejoramiento/SeccionRespuestaAlEnte";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
@@ -88,9 +93,11 @@ import {
   cerradosDelProceso,
   documentosVigentesVisibles,
   normasQueRigen,
+  objetivosActivos,
   procesosDelAlcance,
   usuariosActivos,
 } from "@/db/consultas/mejoramiento/opciones";
+import { planesParaClasificar } from "@/db/consultas/mejoramiento/planes-lectura";
 import { parecidosDeOtrosProcesos } from "@/db/consultas/mejoramiento/parecidos";
 import { examinarPlan } from "@/db/consultas/mejoramiento/plan";
 import { ofreceRechazo, puedeExigirLaAccion } from "@/db/consultas/mejoramiento/recorrido";
@@ -100,6 +107,7 @@ import { leerCambios } from "@/lib/mejoramiento/analisis";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { diaCorto, fechaDeDia } from "@/lib/mejoramiento/formato";
 import { esExterno } from "@/lib/mejoramiento/origenes";
+import { cuentaParaElPlan } from "@/lib/mejoramiento/planes";
 import { fechaDelAjustePasada, razonDeGerencia, tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import { rutaDeFormular, rutaDeImprimir } from "@/lib/mejoramiento/rutas";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
@@ -226,6 +234,10 @@ export default async function PaginaHallazgo({
     : [[], [], []];
   const puedeEditar = completo && h.estado === "por_aceptar" && h.registradoPorId === sesion.usuarioId && puede(sesion, "mejora.registrar");
   const puedeCambiarProceso = gestiona && h.estado === "por_aceptar";
+  // La clasificación (Fase 15B, anexo §3.4 y §10.4): los planes y los objetivos que se ofrecen, solo a quien clasifica.
+  const [planesElegibles, objetivosElegibles] = h.clasificacion.puedeClasificar
+    ? await Promise.all([planesParaClasificar(sesion), objetivosActivos()])
+    : [[], []];
   const procesos = puedeCambiarProceso ? await procesosDelAlcance(sesion) : [];
   // Las notas que se añadieron al reclasificar: la descripción no se reescribe.
   const notas = completo
@@ -928,6 +940,20 @@ export default async function PaginaHallazgo({
           ) : null}
           <FechasDelHallazgo fechas={h.fechas} zona={zona} />
           <EnlacesDelHallazgo enlaces={h.enlaces} />
+          <SeccionClasificacion
+            key={`clasificacion-${h.clasificacion.plan?.id ?? 0}-${h.clasificacion.objetivoId ?? 0}`}
+            hallazgoId={h.id}
+            codigo={h.codigo}
+            clasificacion={h.clasificacion}
+            cuenta={cuentaParaElPlan(h.estado)}
+            planes={planesElegibles}
+            objetivos={objetivosElegibles}
+            acciones={
+              h.clasificacion.puedeClasificar
+                ? { poner: ponerEnPlanAccion, cambiar: cambiarDePlanAccion, sacar: sacarDelPlanAccion, objetivo: ponerObjetivoAccion }
+                : undefined
+            }
+          />
           {completo ? (
             <Ocurrencias
               key={`ocurrencias-${h.ocurrencias.length}`}
