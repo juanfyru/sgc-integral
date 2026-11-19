@@ -146,4 +146,19 @@ describe("hallazgos de esta copia", () => {
         await c.limpiar();
       }
     }));
+
+  it("la fila de cada hallazgo gana «Abrir no conformidad» para el Admin SGC, y nada para el responsable del punto (Fase 15B, anexo §7.1)", () =>
+    revertida(sql, async (tx) => {
+      const c = await copiaConHallazgo(tx);
+      try {
+        const deAdmin = await pagina(tx, c.admin, c.copiaId);
+        expect(deAdmin).toMatch(new RegExp(`<a [^>]*href="/mejoramiento/nuevo\\?verificacion=${c.hallazgoId}"[^>]*>Abrir no conformidad</a>`));
+        const deResponsable = await pagina(tx, c.responsable, c.copiaId);
+        expect(deResponsable).toContain("Hallazgos de esta copia (1)");
+        expect(deResponsable).not.toContain("Abrir no conformidad");
+        expect(deResponsable).not.toContain("/mejoramiento/");
+      } finally {
+        await c.limpiar();
+      }
+    }));
 });

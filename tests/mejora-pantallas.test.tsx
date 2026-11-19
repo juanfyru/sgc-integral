@@ -262,6 +262,48 @@ describe("FormularioHallazgo", () => {
   it("repuebla lo escrito tras un rechazo", () => {
     expect(pintar({ titulo: "Un título escrito", descripcion: "Descripción larga escrita" })).toContain("Un título escrito");
   });
+
+  it("desde un hallazgo de verificación (Fase 15B, anexo §7.2): la clase y el origen fijos, solo los procesos del punto, la justificación de la acción y el hallazgo oculto", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        {...props}
+        procesos={[
+          { id: 3, nombre: "Farmacia" },
+          { id: 4, nombre: "Urgencias" },
+          { id: 5, nombre: "Laboratorio clínico" },
+        ]}
+        prellenado={{
+          valores: {
+            clase: "no_conformidad",
+            origen: "control_documental",
+            fuente: "Verificación del punto Urgencias",
+            descripcion: "Copia obsoleta del protocolo de triage en el puesto de enfermería",
+            detectadoEn: "2026-11-10",
+          },
+          fijos: ["clase", "origen"],
+          ocultos: { verificacionHallazgoId: "77" },
+          rotulo: "Nace del hallazgo de verificación de Urgencias",
+          procesos: [4, 5],
+        }}
+      />,
+    );
+    expect(html).toMatch(/<input type="hidden" name="verificacionHallazgoId" value="77"\/>/);
+    expect(html).toMatch(/<input type="hidden" name="clase" value="no_conformidad"\/>/);
+    expect(html).toMatch(/<input type="hidden" name="origen" value="control_documental"\/>/);
+    expect(html).not.toMatch(/<select[^>]*name="clase"/);
+    expect(html).not.toMatch(/<select[^>]*name="origen"/);
+    const justificacion = html.match(/<textarea[^>]*name="accionJustificacion"[^>]*>/)![0];
+    expect(justificacion).toContain("required");
+    expect(justificacion).toContain('minLength="10"');
+    const procesos = html.match(/<select[^>]*name="procesoId"[^>]*>[\s\S]*?<\/select>/)![0];
+    expect(procesos).toContain("Urgencias");
+    expect(procesos).toContain("Laboratorio clínico");
+    expect(procesos).not.toContain("Farmacia");
+    // Sin el enganche no la pide y ofrece todos los procesos.
+    const normal = pintar();
+    expect(normal).not.toContain('name="accionJustificacion"');
+    expect(normal).toContain("Farmacia");
+  });
 });
 
 describe("LoQueSigue", () => {
