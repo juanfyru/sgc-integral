@@ -201,8 +201,9 @@ async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: str
  *
  * Orden de candados, el del módulo (primero el plan, después el hallazgo, después lo demás): el plan `FOR UPDATE`
  * (`bloquearPlanDelRegistro`, la primera sentencia, como en todo camino que clasifica: §3.4), el candado de la medición
- * (`bloquearMarca`, con la llave de lo que llega y antes de cualquier lectura que decida: así un registro nunca tiene la fila de un
- * hallazgo mientras lo espera), el hallazgo de origen (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar,
+ * (`bloquearMarca`: el de `medicionId` y el de `marcaMedicionId` si llegan distintas, en orden ascendente, con la llave de lo que
+ * llega y antes de cualquier lectura que decida; así un registro nunca tiene la fila de un hallazgo mientras lo espera, y la salida
+ * se escribe siempre sobre una medición bloqueada), el hallazgo de origen (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar,
  * pero antes del reporte—, el reporte `FOR UPDATE` y el consecutivo del año. Así no se cruza con `sumarReporte`, que bloquea el
  * hallazgo (`FOR UPDATE`) y después el reporte, ni con `ponerEnPlan` y `ponerObjetivo`, que bloquean el plan y después el hallazgo,
  * ni con `resolverConOcurrencia`, que toma la medición y después el hallazgo.
@@ -222,8 +223,10 @@ export async function registrarHallazgo(
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       await bloquearPlanDelRegistro(tx, sesion, recibido.planId);
-      const medicionDelCandado = recibido.marcaMedicionId ?? recibido.medicionId;
-      if (medicionDelCandado !== null) await bloquearMarca(tx, medicionDelCandado);
+      // Las dos que llegan, en orden ascendente y sin leer nada antes: la salida se escribe sobre una de ellas (la del panel, si se
+      // atiende; si no, la elegida), y siempre con su candado tomado.
+      const medicionesDelCandado = [...new Set([recibido.medicionId, recibido.marcaMedicionId].filter((x): x is number => x !== null))];
+      for (const id of medicionesDelCandado.sort((a, b) => a - b)) await bloquearMarca(tx, id);
       // Desde el panel de la marca, lo fijo (la medición y su indicador) sale de la base, nunca del envío (anexo §10.3).
       const panel = recibido.marcaMedicionId !== null ? await marcaDelPanel(tx, sesion, recibido.marcaMedicionId) : null;
       const v: HallazgoValidado = panel

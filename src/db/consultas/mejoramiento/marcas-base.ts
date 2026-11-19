@@ -21,17 +21,20 @@ import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { puede } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 
-/** El mayor id que admite la llave del candado (`::int`): una medición con un id mayor no existe en la tabla de `int4`. */
+/**
+ * El mayor id que admite la llave del candado (`::int`, la forma de `bloquearLote`). `mediciones.id` es `bigint`, pero ninguna
+ * instalación llega a ese número de mediciones: un id mayor se trata como uno que no existe.
+ */
 const MAXIMO_INT4 = 2_147_483_647;
 
-/** Un id de medición que puede existir y entra en la llave del candado. */
+/** Un id de medición que entra en la llave del candado (y que esta instalación puede tener). */
 export const idDeMedicionValido = (id: number) => Number.isSafeInteger(id) && id > 0 && id <= MAXIMO_INT4;
 
 /**
  * El candado de la medición (anexo §6.4): serializa las decisiones sobre una misma marca, que se vuelven a comprobar con él tomado.
  * Lo toman `resolverConOcurrencia` y `resolverNoRequiere` como su primera sentencia, y `registrarHallazgo` justo después del plan,
- * antes de cualquier otro candado. Su llave viene de lo que llega, sin leer nada antes. Un id fuera de `int4` no tiene medición: no
- * se toma (el `::int` daría un error crudo) y la lectura que sigue no la encuentra.
+ * antes de cualquier otro candado. Su llave viene de lo que llega, sin leer nada antes. Con un id fuera de la llave no se toma (el
+ * `::int` daría un error crudo) y la lectura que sigue lo trata como una medición que no existe (`leerMarca`).
  */
 export async function bloquearMarca(tx: TransactionSql, medicionId: number): Promise<void> {
   if (!idDeMedicionValido(medicionId)) return;

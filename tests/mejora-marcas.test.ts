@@ -680,6 +680,41 @@ describe("dos decisiones sobre la misma medición", () => {
     }));
 });
 
+describe("el registro bloquea toda medición que llega (Review Focus 2 y 5)", () => {
+  it("con un marcaMedicionId que no se atiende y otra medición elegida, bloquea las dos y la salida va a la elegida", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      // Una marca de otro proceso, restringida: el líder no la ve, así que el panel no se le atiende.
+      const ajena = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: otro.procesoId, indicador: { nivelAcceso: "restringido" } });
+      const propia = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      const registro = contadaConSuTransaccion(tx);
+      const h = await registrarHallazgo(b.lider, queCita(b, propia, { marcaMedicionId: ajena.medicionId }), c(DESPUES, registro.sql));
+      const candados = registro.dentro.flatMap((s, i) => (CANDADO.test(s) ? [i] : []));
+      const insercion = registro.dentro.findIndex((s) => s.includes("INSERT INTO mejora_hallazgos"));
+      expect(candados).toHaveLength(2);
+      expect(Math.max(...candados)).toBeLessThan(insercion);
+      expect(registro.dentro.slice(0, candados[0]).filter((s) => !/mejora_planes/.test(s))).toEqual([]);
+      const [fila] = await tx`SELECT indicador_id, medicion_id FROM mejora_hallazgos WHERE id = ${h.id}`;
+      expect([Number(fila.indicador_id), Number(fila.medicion_id)]).toEqual([propia.ind.id, propia.medicionId]);
+      expect((await salidasDe(tx, propia.medicionId)).map((x) => Number(x.hallazgo_id))).toEqual([h.id]);
+      expect(await salidasDe(tx, ajena.medicionId)).toHaveLength(0);
+    }));
+
+  it("toma el candado de la medición antes del FOR KEY SHARE del hallazgo de origen", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const mm = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      const origen = await deControl(tx, b, mm.ind.id);
+      const registro = contadaConSuTransaccion(tx);
+      await registrarHallazgo(b.admin, queCita(b, mm, { derivadoDe: origen.id }), c(DESPUES, registro.sql));
+      const candado = registro.dentro.findIndex((s) => CANDADO.test(s));
+      const deOrigen = registro.dentro.findIndex((s) => /FROM mejora_hallazgos WHERE id = \? FOR KEY SHARE/.test(s));
+      expect(candado).toBeGreaterThanOrEqual(0);
+      expect(deOrigen).toBeGreaterThan(candado);
+    }));
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lo que se ve de una salida (anexo §6.5)
 // ─────────────────────────────────────────────────────────────────────────────

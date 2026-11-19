@@ -211,7 +211,7 @@ describe("prellenadoDeRegistro: a qué se refiere y el proceso", () => {
     });
   });
 
-  it("los enganches que añaden las tareas siguientes todavía no ponen nada y no estorban a los demás parámetros", async () => {
+  it("la medición manda sobre los demás enganches, y una que no se admite no pone nada ni estorba a los demás parámetros", async () => {
     await revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
       const p = await planDeMejoraDePrueba(tx, b.control);
