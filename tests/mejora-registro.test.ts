@@ -17,17 +17,31 @@ import { asegurarMediciones } from "@/db/consultas/indicadores/mediciones";
 import { actuaPorElProceso, avisarDelTurno, quienTieneElTurno } from "@/db/consultas/mejoramiento/avisos";
 import { leerHallazgo, listarHallazgos, NADIE_ARBITRA } from "@/db/consultas/mejoramiento/lectura";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
+import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { bloquearHallazgo, dejarEvento, legible, transicionarHallazgo } from "@/db/consultas/mejoramiento/flujo";
-import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { DATO_YA_NO_EXISTE } from "@/db/consultas/mejoramiento/legible";
+import { editarHallazgo, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
+import { OBJETIVO_INACTIVO } from "@/lib/mejoramiento/planes";
 import { formularAntesDe, venceEn } from "@/lib/mejoramiento/plazos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { indicadorDePrueba } from "./utiles/indicadores";
-import { baseDeMejora, c, datosDeHallazgo, hallazgoEn, otroProcesoConLider } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeCarga,
+  datosDeHallazgo,
+  hallazgoEn,
+  objetivoDePrueba,
+  otroProcesoConLider,
+  planDeMejoraDePrueba,
+} from "./utiles/mejoramiento";
 import { medicionDe, procesoNuevo } from "./utiles/mixto";
+import { contada } from "./utiles/sentencias";
 import { revertida } from "./utiles/transaccion";
+import { documentoLibre, tipoLibre, TIPO_LIBRE } from "./utiles/tramites";
 
 const sql = obtenerSql();
 afterAll(() => sql.end());
@@ -286,10 +300,11 @@ describe("registrarHallazgo", () => {
       expect([primero.codigo, segundo.codigo]).toEqual([codigoDe(2026, n), codigoDe(2026, n + 1)]);
       if (n === 1) expect([primero.codigo, segundo.codigo]).toEqual(["HZ-2026-001", "HZ-2026-002"]);
 
-      // Un registro que falla después de tomar el número (la llave foránea del documento) no lo quema.
-      await expect(registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { documentoId: 0x7fffffff }), c(AHORA, tx))).rejects.toThrow(
-        ErrorMejora,
-      );
+      // Un registro que falla después de tomar el número (la llave foránea del documento del requisito, que nada revisa antes) no
+      // lo quema.
+      await expect(
+        registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { requisitoDocumentoId: 0x7fffffff }), c(AHORA, tx)),
+      ).rejects.toThrow(new ErrorMejora(DATO_YA_NO_EXISTE));
       const tercero = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(AHORA, tx));
       expect(tercero.codigo).toBe(codigoDe(2026, n + 2));
 
@@ -661,6 +676,206 @@ describe("lo que la página dice del turno (puntos de control)", () => {
       expect(leido!.loQueSigue.turno).not.toContain("El Administrador del SGC");
       const { filas } = await listarHallazgos(b.control, { procesoId: b.procesoId }, { sql: tx, ahora });
       expect(filas.find((f) => f.id === h.id)?.turno).toBe("Nadie puede arbitrarlo");
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 15B: el plan, el objetivo y a qué se refiere (anexo §3.4 camino 1, §10.3 y §10.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un documento vigente del proceso, general o restringido. */
+async function documentoDe(tx: TransactionSql, procesoId: number, nivel: "general" | "restringido" = "general") {
+  await tipoLibre(tx);
+  const [{ sigla }] = await tx`SELECT sigla FROM procesos WHERE id = ${procesoId}`;
+  const d = await documentoLibre(tx, { proceso: sigla as string, tipo: TIPO_LIBRE });
+  if (nivel === "restringido") await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${d.id}`;
+  return d;
+}
+
+/** Una medición de octubre de 2026 del indicador, ya reportada y con resultado (por SQL, dentro de `revertida`). */
+async function medicionConResultado(tx: TransactionSql, ind: { id: number; versionId: number }): Promise<number> {
+  const [m] = await tx`INSERT INTO mediciones (indicador_id, version_id, periodo, desde, hasta, vence_en, estado, resultado, semaforo)
+    VALUES (${ind.id}, ${ind.versionId}, '2026-10', '2026-10-01T05:00:00Z', '2026-11-01T04:59:59.999Z', '2026-11-11T04:59:59.999Z',
+      'reportada', 75, 'critico')
+    RETURNING id`;
+  return Number(m.id);
+}
+
+const clasificacionDe = async (tx: TransactionSql, hallazgoId: number) =>
+  (await tx`SELECT plan_id, objetivo_id FROM mejora_clasificacion WHERE hallazgo_id = ${hallazgoId}`)[0] ?? null;
+
+/**
+ * Las sentencias de un camino del dominio que abre su propia transacción: `enTransaccion` sobre la del test es un savepoint, y
+ * dentro de él cuenta `contada`.
+ */
+function contadaEnSuTransaccion(tx: TransactionSql): { sql: TransactionSql; sentencias: string[] } {
+  const sentencias: string[] = [];
+  const envoltura = new Proxy(tx, {
+    get(objetivo, clave, propio) {
+      if (clave !== "savepoint") return Reflect.get(objetivo, clave, propio);
+      return (fn: (sp: TransactionSql) => Promise<unknown>) =>
+        objetivo.savepoint(async (sp) => {
+          const contador = contada(sp);
+          try {
+            return await fn(contador.sql);
+          } finally {
+            sentencias.push(...contador.sentencias);
+          }
+        });
+    },
+  });
+  return { sql: envoltura, sentencias };
+}
+
+const CANDADO_DEL_PLAN = /FROM mejora_planes WHERE id = \? AND anulado_en IS NULL FOR UPDATE/;
+
+describe("el registro dentro de un plan y con su objetivo (Fase 15B)", () => {
+  it("con planId, como Control Interno: el hallazgo queda en el plan y el plan tiene su evento «entra»", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const p = await planDeMejoraDePrueba(tx, b.control);
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { planId: p.id }), c(AHORA, tx));
+      expect(await clasificacionDe(tx, id)).toMatchObject({ plan_id: p.id, objetivo_id: null });
+      const entra = await tx`SELECT hallazgo_id, usuario_id, detalle FROM mejora_plan_eventos WHERE plan_id = ${p.id} AND tipo = 'entra'`;
+      expect(entra).toHaveLength(1);
+      expect(Number(entra[0].hallazgo_id)).toBe(id);
+      expect(Number(entra[0].usuario_id)).toBe(b.control.usuarioId);
+      expect(entra[0].detalle).toMatchObject({ alRegistrar: true });
+    });
+  });
+
+  it("con planId, como líder (sin mejora.planes): nace sin plan y sin error; con un plan que no existe, igual", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const p = await planDeMejoraDePrueba(tx, b.control);
+      const delLider = await registrarHallazgo(b.lider, datosDeHallazgo(b.procesoId, { planId: p.id }), c(AHORA, tx));
+      expect(await clasificacionDe(tx, delLider.id)).toBeNull();
+      const sinPlan = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { planId: 2_000_000_000 }), c(AHORA, tx));
+      expect(await clasificacionDe(tx, sinPlan.id)).toBeNull();
+      expect(await tx`SELECT 1 FROM mejora_plan_eventos WHERE plan_id = ${p.id} AND tipo = 'entra'`).toHaveLength(0);
+    });
+  });
+
+  it("con objetivoId, como líder: queda con ese objetivo; con uno inactivo, OBJETIVO_INACTIVO y no nace", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const objetivo = await objetivoDePrueba(tx);
+      const { id } = await registrarHallazgo(b.lider, datosDeHallazgo(b.procesoId, { objetivoId: objetivo.id }), c(AHORA, tx));
+      expect(await clasificacionDe(tx, id)).toMatchObject({ plan_id: null, objetivo_id: objetivo.id });
+      const [rastro] = await tx`SELECT detalle FROM auditoria WHERE accion = 'mejora_objetivo' AND entidad_id = ${id}`;
+      expect(rastro.detalle).toMatchObject({ antes: null, despues: { id: objetivo.id }, alRegistrar: true });
+
+      const inactivo = await objetivoDePrueba(tx, false);
+      const cuantos = async () => (await tx`SELECT count(*)::int AS n FROM mejora_hallazgos WHERE proceso_id = ${b.procesoId}`)[0].n as number;
+      const antes = await cuantos();
+      await expect(
+        registrarHallazgo(b.lider, datosDeHallazgo(b.procesoId, { objetivoId: inactivo.id }), c(AHORA, tx)),
+      ).rejects.toThrow(new ErrorMejora(OBJETIVO_INACTIVO));
+      expect(await cuantos()).toBe(antes);
+    });
+  });
+
+  it("el plan es el primer candado de la transacción: antes que el hallazgo de origen", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const p = await planDeMejoraDePrueba(tx, b.control);
+      const origen = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c(AHORA, tx));
+      const { sql: contador, sentencias } = contadaEnSuTransaccion(tx);
+      const { id } = await registrarHallazgo(
+        b.control,
+        datosDeHallazgo(b.procesoId, { planId: p.id, derivadoDe: origen.id }),
+        c(AHORA, contador),
+      );
+      expect(sentencias[0]).toMatch(CANDADO_DEL_PLAN);
+      const llave = sentencias.findIndex((s) => s.includes("FROM mejora_hallazgos WHERE id = ? FOR KEY SHARE"));
+      expect(llave).toBeGreaterThan(0);
+      expect(await clasificacionDe(tx, id)).toMatchObject({ plan_id: p.id });
+    });
+  });
+
+  it("la carga de un hallazgo en curso: entra al plan con su objetivo, con el plan como primer candado", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const p = await planDeMejoraDePrueba(tx, b.admin);
+      const objetivo = await objetivoDePrueba(tx);
+      const { sql: contador, sentencias } = contadaEnSuTransaccion(tx);
+      const { id } = await cargarHallazgo(
+        b.admin,
+        datosDeCarga(b.procesoId, b.lider.usuarioId, { planId: p.id, objetivoId: objetivo.id }),
+        c(AHORA, contador),
+      );
+      expect(sentencias[0]).toMatch(CANDADO_DEL_PLAN);
+      expect(await clasificacionDe(tx, id)).toMatchObject({ plan_id: p.id, objetivo_id: objetivo.id });
+      expect(await tx`SELECT 1 FROM mejora_plan_eventos WHERE plan_id = ${p.id} AND hallazgo_id = ${id} AND tipo = 'entra'`).toHaveLength(1);
+    });
+  });
+});
+
+describe("a qué se refiere: el alcance de quien registra (Fase 15B, anexo §10.3)", () => {
+  it("un documento que no ve se rechaza con el mismo mensaje que uno que no existe", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      const ajeno = await documentoDe(tx, otro, "restringido");
+      await expect(registrarHallazgo(b.lider, datosDeHallazgo(b.procesoId, { documentoId: ajeno.id }), c(AHORA, tx))).rejects.toThrow(
+        new ErrorMejora(DATO_YA_NO_EXISTE),
+      );
+      await expect(registrarHallazgo(b.lider, datosDeHallazgo(b.procesoId, { documentoId: 0x7fffffff }), c(AHORA, tx))).rejects.toThrow(
+        new ErrorMejora(DATO_YA_NO_EXISTE),
+      );
+      // Quien lo ve lo enlaza: Control Interno ve los restringidos, y el líder, uno general de otro proceso.
+      const conRestringido = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { documentoId: ajeno.id }), c(AHORA, tx));
+      expect(Number((await hallazgo(tx, conRestringido.id)).documento_id)).toBe(ajeno.id);
+      const general = await documentoDe(tx, otro);
+      const conGeneral = await registrarHallazgo(b.lider, datosDeHallazgo(b.procesoId, { documentoId: general.id }), c(AHORA, tx));
+      expect(Number((await hallazgo(tx, conGeneral.id)).documento_id)).toBe(general.id);
+    });
+  });
+
+  it("un indicador que no ve, y una medición de un indicador que no ve: el mismo mensaje que si no existieran", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      const restringido = await indicadorDePrueba(tx, { procesoId: otro, nivelAcceso: "restringido" });
+      const medicionId = await medicionConResultado(tx, restringido);
+      const registrar = (cambios: Parameters<typeof datosDeHallazgo>[1]) =>
+        registrarHallazgo(b.lider, datosDeHallazgo(b.procesoId, cambios), c(AHORA, tx));
+      const SOLO_INDICADOR = new ErrorMejora("Solo se puede enlazar un indicador activo o retirado");
+      const SOLO_MEDICION = new ErrorMejora("Solo se puede enlazar una medición que ya tiene resultado");
+
+      await expect(registrar({ indicadorId: restringido.id })).rejects.toThrow(SOLO_INDICADOR);
+      await expect(registrar({ indicadorId: 0x7fffffff })).rejects.toThrow(SOLO_INDICADOR);
+      await expect(registrar({ medicionId })).rejects.toThrow(SOLO_MEDICION);
+      await expect(registrar({ medicionId: 0x7fffffff })).rejects.toThrow(SOLO_MEDICION);
+
+      // Quien los ve, los enlaza.
+      const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { indicadorId: restringido.id, medicionId }), c(AHORA, tx));
+      const fila = await hallazgo(tx, id);
+      expect([Number(fila.indicador_id), Number(fila.medicion_id)]).toEqual([restringido.id, medicionId]);
+    });
+  });
+
+  it("editar no vuelve a mirar con el alcance de hoy un enlace que el hallazgo ya tenía; uno nuevo, sí", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      const d = await documentoDe(tx, otro);
+      // Control Interno lo registra «Por aceptar» con un documento general; después el documento pasa a restringido.
+      const datos = datosDeHallazgo(b.procesoId, { documentoId: d.id });
+      const { id } = await registrarHallazgo(b.control, datos, c(AHORA, tx));
+      expect((await hallazgo(tx, id)).estado).toBe("por_aceptar");
+      const control = { ...b.control, rol: "lider_proceso" as const };
+      await tx`UPDATE usuarios SET rol = 'lider_proceso' WHERE id = ${b.control.usuarioId}`;
+      await tx`INSERT INTO usuario_procesos (usuario_id, proceso_id) VALUES (${b.control.usuarioId}, ${b.procesoId})`;
+      await tx`UPDATE documentos SET nivel_acceso = 'restringido' WHERE id = ${d.id}`;
+      await editarHallazgo(control, id, { ...datos, titulo: "Un título corregido" }, c(AHORA, tx));
+      expect((await hallazgo(tx, id)).titulo).toBe("Un título corregido");
+
+      const nuevo = await documentoDe(tx, otro, "restringido");
+      await expect(editarHallazgo(control, id, { ...datos, documentoId: nuevo.id, titulo: "Otro título" }, c(AHORA, tx))).rejects.toThrow(
+        new ErrorMejora(DATO_YA_NO_EXISTE),
+      );
     });
   });
 });

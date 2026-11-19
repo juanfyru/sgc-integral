@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
 import type { OpcionesDeLaCarga } from "@/db/consultas/mejoramiento/opciones";
+import type { Prellenado } from "@/db/consultas/mejoramiento/prellenado";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
+import { AQueSeRefiere, CampoObjetivo, fijosEnTexto, RotuloYOcultos, TextoFijo, valoresIniciales } from "@/componentes/mejoramiento/AQueSeRefiere";
 import { Boton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
-import { ORIGENES, esExterno, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
+import { ETIQUETA_ORIGEN, ORIGENES, esExterno, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
 import { AVISO_SIN_PACIENTES, ETIQUETA_CLASE, ETIQUETA_CRITERIO, ETIQUETA_CRITICIDAD, ETIQUETA_TIPO_ACCION, textoDeUsuario } from "@/lib/mejoramiento/textos";
 import { CLASES, CRITERIOS_EFICACIA, CRITICIDADES, TIPOS_ACCION, type Clase, type Criticidad, type Origen, type TipoAccion } from "@/lib/mejoramiento/tipos";
 
@@ -24,6 +26,10 @@ type Props = {
   indicadores: ReadonlyArray<{ id: number; codigo: string; nombre: string }>;
   /** Lo que la identificación enlaza, como en el registro: subproceso, reincidencia, indicador y medición (`opcionesDeLaCarga`). */
   enlaces: OpcionesDeLaCarga;
+  /** Los objetivos activos del maestro (`objetivosActivos`, Fase 15B). */
+  objetivos?: ReadonlyArray<{ id: number; etiqueta: string }>;
+  /** Lo que llega puesto desde la dirección, como en el registro (`prellenadoDeRegistro`): un plan vale igual para la carga. */
+  prellenado?: Prellenado;
   /** Hoy en la zona de la instalación (`yyyy-mm-dd`): el tope de toda fecha del papel. */
   hoy: string;
 };
@@ -64,16 +70,24 @@ const TITULO = "font-display text-base font-semibold";
  * Registrar un hallazgo ya en curso (spec 15 §15): el plan que se aprobó en papel, por bloques en el orden del SGC-FO-AC-01
  * (identificación, corrección, análisis, plan y aprobación en papel). Las causas y las acciones con sus actividades se editan en
  * filas y viajan como JSON (`causas`, `acciones`); lo demás, con los nombres de `EsquemaHallazgo` y `CAMPOS_DE_LA_CARGA`. Guardado,
- * lleva a la página del hallazgo, que pide el formato firmado.
+ * lleva a la página del hallazgo, que pide el formato firmado. La identificación gana, como la del registro, «A qué se refiere», el
+ * «Objetivo» y lo que trae `prellenado` (Fase 15B).
  */
-export function FormularioCarga({ accion, procesos, normas, documentos, usuarios, indicadores, enlaces, hoy }: Props) {
+export function FormularioCarga({ accion, procesos, normas, documentos, usuarios, indicadores, enlaces, objetivos = [], prellenado, hoy }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
-  const [clase, setClase] = useState<string>("");
-  const [origen, setOrigen] = useState<string>("");
-  const [criticidad, setCriticidad] = useState<string>("");
-  const [procesoId, setProcesoId] = useState<string>("");
-  const [indicadorId, setIndicadorId] = useState<string>("");
-  const [medicionId, setMedicionId] = useState<string>("");
+  const fijos = fijosEnTexto(prellenado);
+  const fijo = (k: string) => Object.hasOwn(fijos, k);
+  const inicial = valoresIniciales(prellenado, undefined);
+  const de = (k: string) => {
+    const x = inicial[k];
+    return typeof x === "string" ? x : "";
+  };
+  const [clase, setClase] = useState<string>(de("clase"));
+  const [origen, setOrigen] = useState<string>(de("origen"));
+  const [criticidad, setCriticidad] = useState<string>(de("criticidad"));
+  const [procesoId, setProcesoId] = useState<string>(de("procesoId"));
+  const [indicadorId, setIndicadorId] = useState<string>(de("indicadorId"));
+  const [medicionId, setMedicionId] = useState<string>(de("medicionId"));
   const [requerida, setRequerida] = useState<string>("si");
   const [causas, setCausas] = useState<string[]>([""]);
   const [acciones, setAcciones] = useState<Accion[]>([accionVacia("correctiva")]);
@@ -84,7 +98,6 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
   const apruebaGerencia = externo || (esNc && criticidad === "alta");
   const subprocesos = enlaces.subprocesos.filter((s) => String(s.procesoId) === procesoId);
   const cerrados = enlaces.cerrados.filter((x) => String(x.procesoId) === procesoId);
-  const mediciones = enlaces.mediciones.filter((m) => String(m.indicadorId) === indicadorId);
 
   const cambiarAccion = (i: number, cambio: Partial<Accion>) => setAcciones((l) => l.map((a, j) => (j === i ? { ...a, ...cambio } : a)));
   const cambiarActividad = (i: number, k: number, cambio: Partial<Actividad>) =>
@@ -121,6 +134,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
     <form action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
       <input type="hidden" name="causas" value={causasEnJson} />
       <input type="hidden" name="acciones" value={accionesEnJson} />
+      <RotuloYOcultos prellenado={prellenado} />
       <div className={NOTA}>
         <p>Lo que se hizo en papel quedará marcado como hecho fuera de la plataforma, sin firma del sistema.</p>
         <p className="mt-1">
@@ -142,42 +156,59 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
           1. Identificación
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Campo etiqueta="Clase" nombre="clase">
-            <select required value={clase} onChange={(e) => setClase(e.target.value)} className={claseControl}>
-              <option value="">Elija la clase</option>
-              {CLASES.map((c: Clase) => (
-                <option key={c} value={c}>
-                  {ETIQUETA_CLASE[c]}
-                </option>
-              ))}
-            </select>
-          </Campo>
-          <Campo etiqueta="Origen" nombre="origen">
-            <select required value={origen} onChange={(e) => setOrigen(e.target.value)} className={claseControl}>
-              <option value="">Elija el origen</option>
-              {ORIGENES.map((o) => (
-                <option key={o.clave} value={o.clave}>
-                  {o.etiqueta}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          {fijo("clase") ? (
+            <TextoFijo etiqueta="Clase" nombre="clase" valor={fijos.clase} texto={ETIQUETA_CLASE[fijos.clase as Clase] ?? fijos.clase} />
+          ) : (
+            <Campo etiqueta="Clase" nombre="clase">
+              <select required value={clase} onChange={(e) => setClase(e.target.value)} className={claseControl}>
+                <option value="">Elija la clase</option>
+                {CLASES.map((c: Clase) => (
+                  <option key={c} value={c}>
+                    {ETIQUETA_CLASE[c]}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
+          {fijo("origen") ? (
+            <TextoFijo etiqueta="Origen" nombre="origen" valor={fijos.origen} texto={ETIQUETA_ORIGEN[fijos.origen as Origen] ?? fijos.origen} />
+          ) : (
+            <Campo etiqueta="Origen" nombre="origen">
+              <select required value={origen} onChange={(e) => setOrigen(e.target.value)} className={claseControl}>
+                <option value="">Elija el origen</option>
+                {ORIGENES.map((o) => (
+                  <option key={o.clave} value={o.clave}>
+                    {o.etiqueta}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
           <Campo etiqueta="Fecha en que se detectó" nombre="detectadoEn">
-            <input type="date" required max={hoy} className={claseControl} />
+            <input type="date" required max={hoy} defaultValue={de("detectadoEn")} className={claseControl} />
           </Campo>
           <Campo etiqueta="Fecha en que se registró en papel" nombre="registradoEnPapel">
             <input type="date" required max={hoy} className={claseControl} />
           </Campo>
-          <Campo etiqueta="Proceso" nombre="procesoId">
-            <select required value={procesoId} onChange={(e) => setProcesoId(e.target.value)} className={claseControl}>
-              <option value="">Elija el proceso</option>
-              {procesos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          {fijo("procesoId") ? (
+            <TextoFijo
+              etiqueta="Proceso"
+              nombre="procesoId"
+              valor={fijos.procesoId}
+              texto={procesos.find((p) => String(p.id) === fijos.procesoId)?.nombre ?? fijos.procesoId}
+            />
+          ) : (
+            <Campo etiqueta="Proceso" nombre="procesoId">
+              <select required value={procesoId} onChange={(e) => setProcesoId(e.target.value)} className={claseControl}>
+                <option value="">Elija el proceso</option>
+                {procesos.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
           {subprocesos.length > 0 ? (
             <Campo etiqueta="Subproceso (opcional)" nombre="subprocesoId">
               <select key={`subproceso-${procesoId}`} defaultValue="" className={claseControl}>
@@ -216,7 +247,7 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
           ) : null}
           {conReferencia ? (
             <Campo etiqueta="Referencia del caso" nombre="referenciaCaso" ayuda="El número del caso, por ejemplo el de la PQRSF o el del evento.">
-              <input type="text" required maxLength={100} autoComplete="off" className={claseControl} />
+              <input type="text" required maxLength={100} defaultValue={de("referenciaCaso")} autoComplete="off" className={claseControl} />
             </Campo>
           ) : null}
           {externo ? (
@@ -224,37 +255,53 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
               etiqueta={origen === "ente_control" ? "Fecha límite de respuesta al ente" : "Fecha límite de respuesta al ente (opcional)"}
               nombre="fechaLimiteEnte"
             >
-              <input type="date" required={origen === "ente_control"} className={claseControl} />
+              <input type="date" required={origen === "ente_control"} defaultValue={de("fechaLimiteEnte")} className={claseControl} />
             </Campo>
           ) : null}
         </div>
         <Campo etiqueta="Fuente: qué auditoría, visita o caso" nombre="fuente">
-          <input type="text" required={!(origen === "indicador" && medicionId !== "")} maxLength={200} autoComplete="off" className={claseControl} />
+          <input
+            type="text"
+            required={!(origen === "indicador" && medicionId !== "")}
+            maxLength={200}
+            defaultValue={de("fuente")}
+            autoComplete="off"
+            className={claseControl}
+          />
         </Campo>
         <Campo etiqueta="Título" nombre="titulo">
-          <input type="text" required maxLength={150} autoComplete="off" className={claseControl} />
+          <input type="text" required maxLength={150} defaultValue={de("titulo")} autoComplete="off" className={claseControl} />
         </Campo>
         <Campo etiqueta="Descripción, con la evidencia objetiva" nombre="descripcion" ayuda={AVISO_SIN_PACIENTES}>
-          <textarea required minLength={10} maxLength={4000} rows={4} className={claseControl} />
+          <textarea required minLength={10} maxLength={4000} rows={4} defaultValue={de("descripcion")} className={claseControl} />
         </Campo>
         <fieldset className="flex min-w-0 flex-col gap-3 rounded-md border border-border p-3">
           <legend className="px-1 text-sm font-medium">{esNc ? "Requisito incumplido" : "Requisito incumplido (opcional)"}</legend>
           {esNc ? <p className="text-xs text-muted-foreground">Indique al menos uno: la cláusula, una norma o un documento interno.</p> : null}
           <Campo etiqueta="Cláusula o requisito" nombre="requisitoClausula" ayuda="Por ejemplo «ISO 9001: 8.5.1».">
-            <input type="text" maxLength={200} autoComplete="off" className={claseControl} />
+            <input type="text" maxLength={200} defaultValue={de("requisitoClausula")} autoComplete="off" className={claseControl} />
           </Campo>
-          <Campo etiqueta="Norma del normograma" nombre="requisitoNormaId">
-            <select defaultValue="" className={claseControl}>
-              <option value="">Ninguna</option>
-              {normas.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.nombre}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          {fijo("requisitoNormaId") ? (
+            <TextoFijo
+              etiqueta="Norma del normograma"
+              nombre="requisitoNormaId"
+              valor={fijos.requisitoNormaId}
+              texto={normas.find((n) => String(n.id) === fijos.requisitoNormaId)?.nombre ?? fijos.requisitoNormaId}
+            />
+          ) : (
+            <Campo etiqueta="Norma del normograma" nombre="requisitoNormaId">
+              <select defaultValue={de("requisitoNormaId")} className={claseControl}>
+                <option value="">Ninguna</option>
+                {normas.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.nombre}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
           <Campo etiqueta="Documento interno" nombre="requisitoDocumentoId">
-            <select defaultValue="" className={claseControl}>
+            <select defaultValue={de("requisitoDocumentoId")} className={claseControl}>
               <option value="">Ninguno</option>
               {documentos.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -265,41 +312,20 @@ export function FormularioCarga({ accion, procesos, normas, documentos, usuarios
           </Campo>
         </fieldset>
         <Campo etiqueta="Riesgo asociado (opcional)" nombre="riesgo">
-          <input type="text" maxLength={200} autoComplete="off" className={claseControl} />
+          <input type="text" maxLength={200} defaultValue={de("riesgo")} autoComplete="off" className={claseControl} />
         </Campo>
-        {enlaces.indicadores.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Campo etiqueta="Indicador al que se refiere (opcional)" nombre="indicadorId">
-              <select
-                value={indicadorId}
-                onChange={(e) => {
-                  setIndicadorId(e.target.value);
-                  setMedicionId("");
-                }}
-                className={claseControl}
-              >
-                <option value="">Ninguno</option>
-                {enlaces.indicadores.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.codigo} · {x.nombre}
-                  </option>
-                ))}
-              </select>
-            </Campo>
-            {mediciones.length > 0 ? (
-              <Campo etiqueta="Medición (opcional)" nombre="medicionId">
-                <select value={medicionId} onChange={(e) => setMedicionId(e.target.value)} className={claseControl}>
-                  <option value="">Ninguna</option>
-                  {mediciones.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.etiqueta}
-                    </option>
-                  ))}
-                </select>
-              </Campo>
-            ) : null}
-          </div>
-        ) : null}
+        <AQueSeRefiere
+          documentos={documentos}
+          indicadores={enlaces.indicadores}
+          mediciones={enlaces.mediciones}
+          documentoId={de("documentoId")}
+          indicadorId={indicadorId}
+          medicionId={medicionId}
+          alCambiarIndicador={setIndicadorId}
+          alCambiarMedicion={setMedicionId}
+          fijos={fijos}
+        />
+        <CampoObjetivo objetivos={objetivos} valor={de("objetivoId")} />
       </section>
 
       {esNc ? (

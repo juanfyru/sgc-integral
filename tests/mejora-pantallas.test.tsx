@@ -2706,3 +2706,127 @@ describe("los formularios del módulo caben a 390 px (recorrido de cierre, D1 y 
     expect(fuera).toEqual([]);
   });
 });
+
+describe("el registro gana «A qué se refiere» y el objetivo (Fase 15B, anexo §10.3 y §10.4)", () => {
+  const listas = {
+    procesos: [{ id: 3, nombre: "Farmacia" }],
+    documentos: [{ id: 4, codigo: "FAR-PR-04", titulo: "Cadena de frío" }],
+    indicadores: [{ id: 9, codigo: "FAR-ID-001", nombre: "Oportunidad de dispensación" }],
+    mediciones: [{ id: 21, indicadorId: 9, etiqueta: "Octubre de 2026" }],
+    objetivos: [{ id: 2, etiqueta: "Institucional · Fortalecer la sostenibilidad financiera" }],
+  };
+  const base = { accion: vi.fn(async () => null), hoy: "2026-11-18", diasParaAceptar: 3, ...listas };
+  const vacio = { valores: {}, fijos: [], ocultos: {}, rotulo: null };
+
+  it("pinta «A qué se refiere» (documento, indicador y, con él, sus mediciones con resultado) y «Objetivo» con los activos", () => {
+    const sinIndicador = renderToStaticMarkup(<FormularioHallazgo {...base} />);
+    expect(sinIndicador).toContain("A qué se refiere");
+    expect(sinIndicador).toMatch(/<select[^>]*name="documentoId"/);
+    expect(sinIndicador).toMatch(/<select[^>]*name="indicadorId"/);
+    expect(sinIndicador).toContain("FAR-ID-001 · Oportunidad de dispensación");
+    // La medición aparece al elegir el indicador.
+    expect(sinIndicador).not.toContain('name="medicionId"');
+    expect(sinIndicador).toContain(">Objetivo (opcional)<");
+    expect(sinIndicador).toMatch(/<select[^>]*name="objetivoId"/);
+    expect(sinIndicador).toContain("Institucional · Fortalecer la sostenibilidad financiera");
+
+    const conIndicador = renderToStaticMarkup(<FormularioHallazgo {...base} valores={{ indicadorId: "9" }} />);
+    expect(conIndicador).toMatch(/<select[^>]*name="medicionId"/);
+    expect(conIndicador).toContain("Octubre de 2026");
+  });
+
+  it("un campo fijo aparece como texto con su campo oculto, no como control", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        {...base}
+        prellenado={{ valores: { clase: "no_conformidad", indicadorId: 9, medicionId: 21 }, fijos: ["clase", "indicadorId", "medicionId"], ocultos: {}, rotulo: null }}
+      />,
+    );
+    for (const [nombre, valor] of [["clase", "no_conformidad"], ["indicadorId", "9"], ["medicionId", "21"]]) {
+      expect(html).toMatch(new RegExp(`<input type="hidden" name="${nombre}" value="${valor}"/>`));
+      expect(html).not.toMatch(new RegExp(`<select[^>]*name="${nombre}"`));
+    }
+    const texto = sinEtiquetas(html);
+    expect(texto).toContain("No conformidad");
+    expect(texto).toContain("FAR-ID-001 · Oportunidad de dispensación");
+    expect(texto).toContain("Octubre de 2026");
+    // Lo que depende de la clase fija sigue a la vista: la criticidad de la no conformidad.
+    expect(html).toContain(">Criticidad<");
+  });
+
+  it("dentro de un plan: el rótulo arriba, el plan oculto y lo propuesto editable", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        {...base}
+        prellenado={{
+          valores: { origen: "auditoria_externa", fuente: "Auditoría de cumplimiento vigencia 2025", fechaLimiteEnte: "2026-12-15", objetivoId: 2 },
+          fijos: [],
+          ocultos: { planId: "5" },
+          rotulo: "Se registra dentro del plan PM-2026-05",
+        }}
+      />,
+    );
+    expect(html).toContain("Se registra dentro del plan PM-2026-05");
+    expect(html).toMatch(/<input type="hidden" name="planId" value="5"\/>/);
+    expect(html).toMatch(/<select[^>]*name="origen"/);
+    expect(html).toMatch(/<option value="auditoria_externa" selected="">/);
+    expect(html).toContain('value="Auditoría de cumplimiento vigencia 2025"');
+    expect(html).toContain('value="2026-12-15"');
+    expect(html).toMatch(/<option value="2" selected="">Institucional/);
+  });
+
+  it("lo que la página trae (un reporte, un derivado) manda sobre lo propuesto, salvo lo fijo", () => {
+    const html = renderToStaticMarkup(
+      <FormularioHallazgo
+        {...base}
+        procesos={[{ id: 3, nombre: "Farmacia" }, { id: 4, nombre: "Urgencias" }]}
+        valores={{ procesoId: "4", descripcion: "Lo que vio quien reportó, con la evidencia" }}
+        prellenado={{ ...vacio, valores: { procesoId: 3, documentoId: 4 } }}
+      />,
+    );
+    expect(html).toMatch(/<option value="4" selected="">Urgencias/);
+    expect(html).toMatch(/<option value="4" selected="">FAR-PR-04/);
+    const fijo = renderToStaticMarkup(
+      <FormularioHallazgo {...base} valores={{ clase: "observacion" }} prellenado={{ ...vacio, valores: { clase: "no_conformidad" }, fijos: ["clase"] }} />,
+    );
+    expect(fijo).toMatch(/<input type="hidden" name="clase" value="no_conformidad"\/>/);
+  });
+
+  it("en edición no pinta «A qué se refiere» ni «Objetivo» (la edición conserva los enlaces y el objetivo va en «Clasificación»)", () => {
+    const html = renderToStaticMarkup(<FormularioHallazgo {...base} valores={{ titulo: "Un título" }} edicion={{ hallazgoId: 41 }} />);
+    expect(html).not.toContain("A qué se refiere");
+    expect(html).not.toContain('name="objetivoId"');
+    expect(html).not.toContain('name="documentoId"');
+  });
+
+  it("la carga de un hallazgo en curso también: «A qué se refiere», «Objetivo» y lo que trae el plan", () => {
+    const html = renderToStaticMarkup(
+      <FormularioCarga
+        accion={vi.fn(async () => null)}
+        procesos={listas.procesos}
+        normas={[]}
+        documentos={listas.documentos}
+        usuarios={[]}
+        indicadores={[]}
+        enlaces={{ subprocesos: [], cerrados: [], indicadores: listas.indicadores, mediciones: listas.mediciones }}
+        objetivos={listas.objetivos}
+        hoy="2026-11-18"
+        prellenado={{
+          valores: { origen: "auditoria_interna", fuente: "Auditoría interna de calidad de noviembre", objetivoId: 2, documentoId: 4 },
+          fijos: [],
+          ocultos: { planId: "5" },
+          rotulo: "Se registra dentro del plan PM-2026-05",
+        }}
+      />,
+    );
+    expect(html).toContain("A qué se refiere");
+    expect(html).toMatch(/<option value="4" selected="">FAR-PR-04/);
+    expect(html).toMatch(/<select[^>]*name="indicadorId"/);
+    expect(html).toContain(">Objetivo (opcional)<");
+    expect(html).toMatch(/<option value="2" selected="">Institucional/);
+    expect(html).toContain("Se registra dentro del plan PM-2026-05");
+    expect(html).toMatch(/<input type="hidden" name="planId" value="5"\/>/);
+    expect(html).toMatch(/<option value="auditoria_interna" selected="">/);
+    expect(html).toContain('value="Auditoría interna de calidad de noviembre"');
+  });
+});

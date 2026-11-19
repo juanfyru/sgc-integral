@@ -5,10 +5,12 @@ import { useActionState, useState } from "react";
 import type { EstadoAccion } from "@/app/admin/comun";
 import { enviarSinReiniciar } from "@/componentes/admin/sin-reiniciar";
 import { Boton } from "@/componentes/ui/Boton";
+import { AQueSeRefiere, CampoObjetivo, fijosEnTexto, RotuloYOcultos, TextoFijo, valoresIniciales } from "@/componentes/mejoramiento/AQueSeRefiere";
 import { ParecidosDelProceso } from "@/componentes/mejoramiento/ParecidosDelProceso";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
+import type { Prellenado } from "@/db/consultas/mejoramiento/prellenado";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
-import { ORIGENES, esExterno, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
+import { ETIQUETA_ORIGEN, ORIGENES, esExterno, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
 import { AVISO_SIN_PACIENTES, ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
 import { CLASES, CRITICIDADES, type Clase, type Criticidad, type Origen } from "@/lib/mejoramiento/tipos";
 
@@ -19,11 +21,21 @@ type Props = {
   /** Las normas vigentes o modificadas del normograma y los documentos vigentes que quien registra ve. */
   normas?: ReadonlyArray<{ id: number; nombre: string; titulo: string }>;
   documentos?: ReadonlyArray<{ id: number; codigo: string; titulo: string }>;
+  /** «A qué se refiere» (Fase 15B): los indicadores activos o retirados que ve y sus mediciones con resultado. */
+  indicadores?: ReadonlyArray<{ id: number; codigo: string; nombre: string }>;
+  mediciones?: ReadonlyArray<{ id: number; indicadorId: number; etiqueta: string }>;
+  /** Los objetivos activos del maestro (`objetivosActivos`). */
+  objetivos?: ReadonlyArray<{ id: number; etiqueta: string }>;
+  /**
+   * Lo que llega puesto desde la dirección (`prellenadoDeRegistro`): lo propuesto, lo fijo (texto con su campo oculto), los campos
+   * ocultos y el rótulo de arriba. Solo al registrar.
+   */
+  prellenado?: Prellenado;
   /** Hoy en la zona de la instalación (`yyyy-mm-dd`): el tope de la fecha de detección. */
   hoy: string;
   /** El plazo de aceptar, en días hábiles, de la configuración. */
   diasParaAceptar: number;
-  /** Lo escrito antes de un rechazo, o los valores iniciales. */
+  /** Lo escrito antes de un rechazo, o los valores iniciales: mandan sobre lo propuesto del prellenado, no sobre lo fijo. */
   valores?: Record<string, string | string[]>;
   /** Lo que se muestra a la derecha, bajo los parecidos del mismo proceso. */
   lateral?: React.ReactNode;
@@ -49,10 +61,33 @@ const NOTA = "rounded-md border border-border bg-muted px-3 py-2 text-sm";
  * El formulario de registro de un hallazgo (spec 15 §7.1 y §16.2, maqueta 3). Un solo formulario: lo que depende de la clase
  * y del origen aparece y desaparece (la criticidad, la referencia del caso, la fecha límite al ente) y las notas dicen lo
  * que ese hallazgo llevará. Los nombres de los campos son los de `EsquemaHallazgo`, que es estricto.
+ *
+ * Al registrar (no al editar) gana «A qué se refiere» y «Objetivo» (Fase 15B, anexo §10.3 y §10.4), y lo que trae `prellenado`.
+ * Editar no los pinta: la edición conserva los enlaces que el hallazgo ya tiene y el objetivo se cambia en «Clasificación».
  */
-export function FormularioHallazgo({ accion, procesos, normas = [], documentos = [], hoy, diasParaAceptar, valores, lateral, edicion, derivado, reporte }: Props) {
+export function FormularioHallazgo({
+  accion,
+  procesos,
+  normas = [],
+  documentos = [],
+  indicadores = [],
+  mediciones = [],
+  objetivos = [],
+  prellenado,
+  hoy,
+  diasParaAceptar,
+  valores,
+  lateral,
+  edicion,
+  derivado,
+  reporte,
+}: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
-  const v = estado?.valores ?? valores;
+  const conPrellenado = edicion ? undefined : prellenado;
+  // Lo fijo manda también sobre lo que volvió de un rechazo: se muestra y viaja con el valor del prellenado.
+  const fijos = fijosEnTexto(conPrellenado);
+  const fijo = (k: string) => Object.hasOwn(fijos, k);
+  const v = estado?.valores ? { ...estado.valores, ...fijos } : valoresIniciales(conPrellenado, valores);
   const [clase, setClase] = useState<string>(texto(v, "clase"));
   const [origen, setOrigen] = useState<string>(texto(v, "origen"));
   const [criticidad, setCriticidad] = useState<string>(texto(v, "criticidad"));
@@ -68,11 +103,16 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
   const [descripcion, setDescripcion] = useState<string>(texto(v, "descripcion"));
   const [relacion, setRelacion] = useState<string>(texto(v, "relacion", "distinto"));
   const esOcurrencia = relacion.startsWith("ocurrencia:");
+  const [indicadorId, setIndicadorId] = useState<string>(texto(v, "indicadorId"));
+  const [medicionId, setMedicionId] = useState<string>(texto(v, "medicionId"));
+  // La fuente es obligatoria salvo en «Indicador» con la medición enlazada (`fuenteObligatoria`, spec §7.1).
+  const fuenteObligatoria = !(origen === "indicador" && medicionId !== "");
 
   return (
     <div className={edicion && !lateral ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"}>
       <form id="formulario-hallazgo" action={enviar} onSubmit={enviarSinReiniciar(enviar)} className="flex min-w-0 flex-col gap-4">
         {edicion ? <input type="hidden" name="hallazgoId" value={edicion.hallazgoId} /> : null}
+        <RotuloYOcultos prellenado={conPrellenado} />
         {derivado && !edicion ? (
           <>
             <input type="hidden" name="derivadoDe" value={derivado.id} />
@@ -97,39 +137,56 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
         ) : null}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Campo etiqueta="Clase" nombre="clase">
-            <select required value={clase} onChange={(e) => setClase(e.target.value)} className={claseControl}>
-              <option value="">Elija la clase</option>
-              {CLASES.map((c: Clase) => (
-                <option key={c} value={c}>
-                  {ETIQUETA_CLASE[c]}
-                </option>
-              ))}
-            </select>
-          </Campo>
-          <Campo etiqueta="Origen" nombre="origen">
-            <select required value={origen} onChange={(e) => setOrigen(e.target.value)} className={claseControl}>
-              <option value="">Elija el origen</option>
-              {ORIGENES.map((o) => (
-                <option key={o.clave} value={o.clave}>
-                  {o.etiqueta}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          {fijo("clase") ? (
+            <TextoFijo etiqueta="Clase" nombre="clase" valor={fijos.clase} texto={ETIQUETA_CLASE[fijos.clase as Clase] ?? fijos.clase} />
+          ) : (
+            <Campo etiqueta="Clase" nombre="clase">
+              <select required value={clase} onChange={(e) => setClase(e.target.value)} className={claseControl}>
+                <option value="">Elija la clase</option>
+                {CLASES.map((c: Clase) => (
+                  <option key={c} value={c}>
+                    {ETIQUETA_CLASE[c]}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
+          {fijo("origen") ? (
+            <TextoFijo etiqueta="Origen" nombre="origen" valor={fijos.origen} texto={ETIQUETA_ORIGEN[fijos.origen as Origen] ?? fijos.origen} />
+          ) : (
+            <Campo etiqueta="Origen" nombre="origen">
+              <select required value={origen} onChange={(e) => setOrigen(e.target.value)} className={claseControl}>
+                <option value="">Elija el origen</option>
+                {ORIGENES.map((o) => (
+                  <option key={o.clave} value={o.clave}>
+                    {o.etiqueta}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
           <Campo etiqueta="Fecha en que se detectó" nombre="detectadoEn">
             <input type="date" required max={hoy} defaultValue={texto(v, "detectadoEn", hoy)} className={claseControl} />
           </Campo>
-          <Campo etiqueta="Proceso" nombre="procesoId" ayuda={procesos.length === 0 ? "No tiene procesos activos a su cargo." : undefined}>
-            <select required value={procesoId} onChange={(e) => setProcesoId(e.target.value)} className={claseControl}>
-              <option value="">Elija el proceso</option>
-              {procesos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          {fijo("procesoId") ? (
+            <TextoFijo
+              etiqueta="Proceso"
+              nombre="procesoId"
+              valor={fijos.procesoId}
+              texto={procesos.find((p) => String(p.id) === fijos.procesoId)?.nombre ?? fijos.procesoId}
+            />
+          ) : (
+            <Campo etiqueta="Proceso" nombre="procesoId" ayuda={procesos.length === 0 ? "No tiene procesos activos a su cargo." : undefined}>
+              <select required value={procesoId} onChange={(e) => setProcesoId(e.target.value)} className={claseControl}>
+                <option value="">Elija el proceso</option>
+                {procesos.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
           {esNc ? (
             <Campo etiqueta="Criticidad" nombre="criticidad">
               <select required value={criticidad} onChange={(e) => setCriticidad(e.target.value)} className={claseControl}>
@@ -162,7 +219,7 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
         </div>
 
         <Campo etiqueta="Fuente: qué auditoría, visita o caso" nombre="fuente">
-          <input type="text" required maxLength={200} defaultValue={texto(v, "fuente")} autoComplete="off" className={claseControl} />
+          <input type="text" required={fuenteObligatoria} maxLength={200} defaultValue={texto(v, "fuente")} autoComplete="off" className={claseControl} />
         </Campo>
         <Campo etiqueta="Título" nombre="titulo">
           <input
@@ -192,16 +249,25 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
         <Campo etiqueta="Cláusula o requisito" nombre="requisitoClausula" ayuda="Por ejemplo «ISO 9001: 8.5.1».">
           <input type="text" maxLength={200} defaultValue={texto(v, "requisitoClausula")} autoComplete="off" className={claseControl} />
         </Campo>
-        <Campo etiqueta="Norma del normograma" nombre="requisitoNormaId">
-          <select defaultValue={texto(v, "requisitoNormaId")} className={claseControl}>
-            <option value="">Ninguna</option>
-            {normas.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.nombre}
-              </option>
-            ))}
-          </select>
-        </Campo>
+        {fijo("requisitoNormaId") ? (
+          <TextoFijo
+            etiqueta="Norma del normograma"
+            nombre="requisitoNormaId"
+            valor={fijos.requisitoNormaId}
+            texto={normas.find((n) => String(n.id) === fijos.requisitoNormaId)?.nombre ?? fijos.requisitoNormaId}
+          />
+        ) : (
+          <Campo etiqueta="Norma del normograma" nombre="requisitoNormaId">
+            <select defaultValue={texto(v, "requisitoNormaId")} className={claseControl}>
+              <option value="">Ninguna</option>
+              {normas.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.nombre}
+                </option>
+              ))}
+            </select>
+          </Campo>
+        )}
         <Campo etiqueta="Documento interno" nombre="requisitoDocumentoId">
           <select defaultValue={texto(v, "requisitoDocumentoId")} className={claseControl}>
             <option value="">Ninguno</option>
@@ -213,9 +279,23 @@ export function FormularioHallazgo({ accion, procesos, normas = [], documentos =
           </select>
         </Campo>
         </fieldset>
+        {edicion ? null : (
+          <AQueSeRefiere
+            documentos={documentos}
+            indicadores={indicadores}
+            mediciones={mediciones}
+            documentoId={texto(v, "documentoId")}
+            indicadorId={indicadorId}
+            medicionId={medicionId}
+            alCambiarIndicador={setIndicadorId}
+            alCambiarMedicion={setMedicionId}
+            fijos={fijos}
+          />
+        )}
         <Campo etiqueta="Riesgo asociado (opcional)" nombre="riesgo">
           <input type="text" maxLength={200} defaultValue={texto(v, "riesgo")} autoComplete="off" className={claseControl} />
         </Campo>
+        {edicion ? null : <CampoObjetivo objetivos={objetivos} valor={texto(v, "objetivoId")} />}
 
         <div role="status" className="flex flex-col gap-2">
           {reporte && !edicion && esOcurrencia ? (

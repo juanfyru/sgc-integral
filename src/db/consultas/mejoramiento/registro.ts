@@ -7,7 +7,7 @@ import { obtenerSql, type Cliente } from "@/db/cliente";
 import { enTransaccion, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { registrarAuditoria } from "@/db/consultas/admin";
-import { alcanceProcesos, enAlcance, puedeVerHallazgo } from "@/lib/alcance";
+import { alcanceProcesos, enAlcance, filtroAcceso, filtroIndicadores, puedeVerHallazgo } from "@/lib/alcance";
 import {
   EsquemaAnulacion,
   EsquemaCambioDeProceso,
@@ -32,6 +32,8 @@ import { activosDeRol, avisarDeMejora, avisarDelTurno, ENTIDAD_HALLAZGO, lideres
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
 import { cargaPendiente } from "./carga-confirmada";
+import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
+import { DATO_YA_NO_EXISTE } from "./legible";
 import { bloquearReporteRecibido, dejarClasificado } from "./reportes-base";
 
 /** Los campos de la identificación (spec §7.1). Los ids y las fechas también llegan como texto del formulario. */
@@ -68,7 +70,17 @@ export type DatosDeHallazgo = {
    * «Recibido»; queda `convertido`, con este hallazgo, en la misma transacción. Solo al registrar.
    */
   reporteId?: number | null;
+  /**
+   * El plan en que nace (Fase 15B, anexo §3.4, camino 1): solo si quien registra tiene `mejora.planes` y el plan existe y no está
+   * anulado; si no, nace sin plan, sin error. Solo al registrar (y al cargar).
+   */
+  planId?: number | null;
+  /** El objetivo del maestro al que apunta (anexo §10.4): debe estar activo. Solo al registrar (y al cargar). */
+  objetivoId?: number | null;
 };
+
+/** Lo que un hallazgo ya enlaza: al editarlo, un enlace que no cambia no se vuelve a mirar con el alcance de hoy. */
+export type EnlacesPrevios = { documentoId: number | null; indicadorId: number | null; medicionId: number | null };
 
 /**
  * El consecutivo del año, dentro de la transacción del registro: sin huecos (una transacción revertida no lo quema,
@@ -82,8 +94,22 @@ export async function tomarCodigo(tx: TransactionSql, anio: number): Promise<{ c
   return { consecutivo, codigo: "HZ-" + anio + "-" + String(consecutivo).padStart(3, "0") };
 }
 
-/** Lo que el esquema no puede saber: la fecha de hoy, el proceso y lo enlazado. Solo lecturas. También la carga (`carga.ts`). */
-export async function revisarIdentificacion(tx: TransactionSql, v: HallazgoValidado, c: ContextoMejora): Promise<void> {
+/**
+ * Lo que el esquema no puede saber: la fecha de hoy, el proceso y lo enlazado. Solo lecturas. También la carga (`carga.ts`).
+ *
+ * «A qué se refiere» (Fase 15B, anexo §10.3) pasa además por el alcance de quien registra, con la regla del módulo de cada cosa: el
+ * documento, `filtroAcceso`; el indicador y el de la medición, `filtroIndicadores`. Para quien no lo ve, no existe: el mismo
+ * mensaje que un enlace que no existe (el del documento es el de su llave foránea, `DATO_YA_NO_EXISTE`). Al editar, `previos` trae
+ * lo que el hallazgo ya enlazaba: un enlace que no cambia no se vuelve a mirar con el alcance de hoy (un documento que se
+ * restringió después no impide corregir el título).
+ */
+export async function revisarIdentificacion(
+  tx: TransactionSql,
+  sesion: SesionFlujo,
+  v: HallazgoValidado,
+  c: ContextoMejora,
+  previos?: EnlacesPrevios,
+): Promise<void> {
   if (v.detectadoEn > fechaEnZona(c.ahora, c.zona)) throw new ErrorMejora("La fecha en que se detectó no puede ser futura");
   const [proceso] = await tx`SELECT activo FROM procesos WHERE id = ${v.procesoId}`;
   if (!proceso?.activo) throw new ErrorMejora("Elija un proceso activo");
@@ -91,12 +117,19 @@ export async function revisarIdentificacion(tx: TransactionSql, v: HallazgoValid
     const [s] = await tx`SELECT 1 FROM subprocesos WHERE id = ${v.subprocesoId} AND proceso_id = ${v.procesoId}`;
     if (!s) throw new ErrorMejora("El subproceso elegido no es de ese proceso");
   }
+  if (v.documentoId !== null && v.documentoId !== previos?.documentoId) {
+    const [d] = await tx`SELECT 1 FROM documentos d WHERE d.id = ${v.documentoId} AND ${filtroAcceso(tx, sesion)}`;
+    if (!d) throw new ErrorMejora(DATO_YA_NO_EXISTE);
+  }
   if (v.indicadorId !== null) {
-    const [i] = await tx`SELECT 1 FROM indicadores WHERE id = ${v.indicadorId} AND estado IN ('activo', 'retirado')`;
+    const ve = v.indicadorId === previos?.indicadorId ? tx`true` : filtroIndicadores(tx, sesion);
+    const [i] = await tx`SELECT 1 FROM indicadores i WHERE i.id = ${v.indicadorId} AND i.estado IN ('activo', 'retirado') AND ${ve}`;
     if (!i) throw new ErrorMejora("Solo se puede enlazar un indicador activo o retirado");
   }
   if (v.medicionId !== null) {
-    const [m] = await tx`SELECT indicador_id FROM mediciones WHERE id = ${v.medicionId} AND resultado IS NOT NULL`;
+    const ve = v.medicionId === previos?.medicionId ? tx`true` : filtroIndicadores(tx, sesion);
+    const [m] = await tx`SELECT m.indicador_id FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
+      WHERE m.id = ${v.medicionId} AND m.resultado IS NOT NULL AND ${ve}`;
     if (!m) throw new ErrorMejora("Solo se puede enlazar una medición que ya tiene resultado");
     if (v.indicadorId !== null && Number(m.indicador_id) !== v.indicadorId) {
       throw new ErrorMejora("La medición elegida no es de ese indicador");
@@ -149,9 +182,15 @@ async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: str
  * `reporteId`, convierte ese reporte (spec §7.3): lo clasifica el Admin SGC y el reporte debe seguir «Recibido»; el plazo de
  * formular corre desde ahora, la conversión, y no desde el reporte (§13.3).
  *
- * Orden de candados, el del módulo (primero el hallazgo, después lo demás): el hallazgo de origen (`derivadoDe`) `FOR KEY SHARE`
- * —el que tomaría la llave foránea al insertar, pero antes del reporte—, el reporte `FOR UPDATE` y el consecutivo del año. Así
- * no se cruza con `sumarReporte`, que bloquea el hallazgo (`FOR UPDATE`) y después el reporte.
+ * Con `planId` nace dentro de ese plan y con `objetivoId`, con ese objetivo (Fase 15B, anexo §3.4 camino 1 y §10.4):
+ * `clasificarAlNacer`, en la misma transacción. Un plan que no admite (sin `mejora.planes`, anulado o que no existe) se ignora sin
+ * decir por qué; un objetivo inactivo se rechaza (`OBJETIVO_INACTIVO`).
+ *
+ * Orden de candados, el del módulo (primero el plan, después el hallazgo, después lo demás): el plan `FOR UPDATE`
+ * (`bloquearPlanDelRegistro`, la primera sentencia, como en todo camino que clasifica: §3.4), el hallazgo de origen
+ * (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar, pero antes del reporte—, el reporte `FOR UPDATE` y
+ * el consecutivo del año. Así no se cruza con `sumarReporte`, que bloquea el hallazgo (`FOR UPDATE`) y después el reporte, ni con
+ * `ponerEnPlan` y `ponerObjetivo`, que bloquean el plan y después el hallazgo.
  */
 export async function registrarHallazgo(
   sesion: SesionFlujo,
@@ -167,13 +206,14 @@ export async function registrarHallazgo(
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      await bloquearPlanDelRegistro(tx, sesion, v.planId);
       if (v.derivadoDe !== null) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${v.derivadoDe} FOR KEY SHARE`;
       const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
         throw new ErrorPermiso();
       }
       const c = await contextoDeMejora(tx, ahora);
-      await revisarIdentificacion(tx, v, c);
+      await revisarIdentificacion(tx, sesion, v, c);
       await exigirReincidencia(tx, v.reincidenteDe, v.procesoId);
       // Para quien no puede ver el hallazgo de origen, no existe (spec §6.3): la misma frase que para un id que no existe.
       if (v.derivadoDe !== null && !(await puedeVerHallazgo(v.derivadoDe, sesion, { sql: tx }))) throw new ErrorMejora(HALLAZGO_DE_ORIGEN);
@@ -196,6 +236,7 @@ export async function registrarHallazgo(
         },
         c,
       );
+      await clasificarAlNacer(tx, sesion, h.id, { planId: v.planId, objetivoId: v.objetivoId }, c.ahora);
       if (reporte) await dejarClasificado(tx, sesion, reporte, { estado: "convertido", hallazgo: h }, c.ahora);
       if (esExterno(v.origen)) await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
       return { id: h.id, codigo: h.codigo };
@@ -386,10 +427,11 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
         throw new ErrorPermiso();
       }
       const c = await contextoDeMejora(tx, ahora);
-      await revisarIdentificacion(tx, v, c);
-      await exigirReincidencia(tx, v.reincidenteDe, v.procesoId, h.id);
       const f = await leerFila(tx, h.id);
       const antes = identificacionDeFila(f);
+      const previos = { documentoId: antes.documentoId, indicadorId: antes.indicadorId, medicionId: antes.medicionId } as EnlacesPrevios;
+      await revisarIdentificacion(tx, sesion, v, c, previos);
+      await exigirReincidencia(tx, v.reincidenteDe, v.procesoId, h.id);
       const despues = identificacionDeValidado(v);
       const cambios = diferencias(antes, despues);
       if (!hayCambios(cambios)) throw new ErrorMejora("No cambió ningún dato del hallazgo");

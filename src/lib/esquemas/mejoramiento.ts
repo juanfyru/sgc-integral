@@ -201,6 +201,13 @@ export const EsquemaHallazgo = z
     /** El hallazgo distinto que encontró quien verificaba otro (spec §11.4): solo al registrar; editar y reclasificar no lo tocan. */
     derivadoDe: idOpcional(HALLAZGO_DE_ORIGEN),
     reporteId: idOpcional("El reporte no es válido"),
+    /**
+     * El plan en que nace (Fase 15B, anexo §3.4, camino 1): llega oculto desde `?plan=` y lo vuelve a validar el registro (o la
+     * carga) dentro de su transacción; si no pasa, nace sin plan y nadie dice por qué. Solo al registrar.
+     */
+    planId: idOpcional("El plan no es válido"),
+    /** El objetivo del maestro al que apunta (anexo §10.4): activo al elegirlo. Solo al registrar; después, «Clasificación». */
+    objetivoId: idOpcional("El objetivo elegido no es válido"),
   })
   .strict()
   .superRefine((d, ctx) => {

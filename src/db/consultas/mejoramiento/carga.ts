@@ -34,6 +34,7 @@ import { requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona, finDeFecha } from "@/lib/tramites/plazos";
 import { leer } from "./analisis";
 import { cierrePrevistoDelPlan } from "./aprobacion";
+import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
 import { contextoDeMejora } from "./config";
 import { dejarEvento, legible, nacerHallazgo } from "./flujo";
 import { indicadorElegible } from "./indicador-de-eficacia";
@@ -134,6 +135,10 @@ function inicioDelDia(dia: string, zona: string): Date {
  * hoy, la base y lo enlazado, el dominio dentro de la transacción. El rol que aprobó es el declarado, salvo criticidad alta u origen
  * externo, que es Gerencia (`rolQueAproboEnPapel`: decide los ajustes). Sin avisos: el plan llega a sus responsables con el
  * formato firmado (`confirmarCarga`).
+ *
+ * Con `planId` y `objetivoId`, como el registro (Fase 15B, anexo §3.4 camino 1: «vale igual para registrar un hallazgo ya en
+ * curso»): el plan es el primer candado de la transacción (`bloquearPlanDelRegistro`) y la clasificación se escribe después de
+ * `nacerHallazgo` (`clasificarAlNacer`).
  */
 export async function cargarHallazgo(
   sesion: SesionFlujo,
@@ -147,9 +152,10 @@ export async function cargarHallazgo(
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+      await bloquearPlanDelRegistro(tx, sesion, v.planId);
       const c = await contextoDeMejora(tx, ahora);
       const hoy = fechaEnZona(c.ahora, c.zona);
-      await revisarIdentificacion(tx, v, c);
+      await revisarIdentificacion(tx, sesion, v, c);
       await exigirReincidencia(tx, v.reincidenteDe, v.procesoId);
       revisarFechasDeHoy(carga, hoy);
       const actividades = carga.acciones.flatMap((a) => a.actividades);
@@ -183,6 +189,7 @@ export async function cargarHallazgo(
         },
         c,
       );
+      await clasificarAlNacer(tx, sesion, h.id, { planId: v.planId, objetivoId: v.objetivoId }, c.ahora);
       // Sin el formato firmado nadie puede verificar: el plazo de «Por verificar» lo pone el escaneo (`confirmarCarga`).
       if (h.estado === "por_verificar") await tx`UPDATE mejora_hallazgos SET vence_en = NULL WHERE id = ${h.id}`;
 

@@ -550,3 +550,13 @@ export async function planDeMejoraDePrueba(
     c(ahora ?? HORA_DE_ESCENA, tx),
   );
 }
+
+let objetivos = 0;
+
+/** Un objetivo del maestro (Fase 15B), de calidad y activo por omisión. Solo dentro de `revertida`. */
+export async function objetivoDePrueba(tx: TransactionSql, activo = true): Promise<{ id: number; enunciado: string }> {
+  objetivos += 1;
+  const enunciado = `Objetivo de prueba ${Date.now()}-${objetivos}`;
+  const [f] = await tx`INSERT INTO objetivos (clase, enunciado, orden, activo) VALUES ('calidad', ${enunciado}, 999, ${activo}) RETURNING id`;
+  return { id: Number(f.id), enunciado };
+}

@@ -6,8 +6,14 @@
  */
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 
+/**
+ * Un dato elegido que ya no existe (la llave foránea, `23503`). Es también lo que el registro le dice a quien enlaza un documento
+ * que no ve (`revisarIdentificacion`): para quien no lo ve, no existe.
+ */
+export const DATO_YA_NO_EXISTE = "Uno de los datos elegidos ya no existe: vuelva a cargar la página";
+
 const LEGIBLES: Record<string, string> = {
-  "23503": "Uno de los datos elegidos ya no existe: vuelva a cargar la página",
+  "23503": DATO_YA_NO_EXISTE,
   "23505": "Otra persona guardó lo mismo a la vez: vuelva a cargar la página",
   "42501": "El hallazgo ya terminó y no admite cambios",
   "40P01": "Otra persona cambió el hallazgo a la vez: vuelva a intentarlo",

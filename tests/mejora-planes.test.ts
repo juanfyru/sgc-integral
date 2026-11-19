@@ -44,6 +44,7 @@ import {
   c,
   datosDeHallazgo,
   hallazgoEn,
+  objetivoDePrueba,
   otroProcesoConLider,
   planDeMejoraDePrueba,
   type BaseDeMejora,
@@ -57,16 +58,6 @@ afterAll(() => sql.end());
 const AHORA = "2026-11-17T15:00:00Z";
 const o = (tx: TransactionSql) => c(AHORA, tx);
 const MOTIVO = "El hallazgo corresponde a otro evento";
-
-let objetivos = 0;
-
-/** Un objetivo del maestro, activo por omisión. */
-async function objetivoDePrueba(tx: TransactionSql, activo = true): Promise<{ id: number; enunciado: string }> {
-  objetivos += 1;
-  const enunciado = `Objetivo de prueba ${Date.now()}-${objetivos}`;
-  const [f] = await tx`INSERT INTO objetivos (clase, enunciado, orden, activo) VALUES ('calidad', ${enunciado}, 999, ${activo}) RETURNING id`;
-  return { id: Number(f.id), enunciado };
-}
 
 /** Un hallazgo que registra Control Interno en el proceso de la base. */
 async function hallazgoNuevo(tx: TransactionSql, b: BaseDeMejora, titulo = "Formatos de entrega de turno sin diligenciar") {

@@ -10,13 +10,17 @@ import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadoresElegibles } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
 import {
   documentosVigentesVisibles,
+  indicadoresConMediciones,
   normasQueRigen,
+  objetivosActivos,
   opcionesDeLaCarga,
   procesosDelAlcance,
   usuariosActivos,
 } from "@/db/consultas/mejoramiento/opciones";
+import { prellenadoDeRegistro } from "@/db/consultas/mejoramiento/prellenado";
 import { hallazgoDeOrigen } from "@/db/consultas/mejoramiento/registro";
 import { leerReporte } from "@/db/consultas/mejoramiento/reportes";
+import { PARAMETROS_DE_REGISTRO, rutaDeRegistro, type ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -26,17 +30,21 @@ export const metadata: Metadata = { title: "Registrar hallazgo" };
 
 const PESTANA = "rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
-/** «Hallazgo nuevo» o «Ya está en curso» (spec §15): solo quien carga (`mejora.gestionar`) ve las dos. */
-function ComoSeRegistra({ enCurso }: { enCurso: boolean }) {
+/**
+ * «Hallazgo nuevo» o «Ya está en curso» (spec §15): solo quien carga (`mejora.gestionar`) ve las dos. Las dos llevan los parámetros
+ * que trajo la dirección: un plan vale igual para la carga (anexo §3.4, camino 1).
+ */
+function ComoSeRegistra({ enCurso, parametros }: { enCurso: boolean; parametros: ParametrosDeRegistro }) {
+  const nuevo = rutaDeRegistro(parametros);
   const opciones = [
-    { href: "/mejoramiento/nuevo", texto: "Hallazgo nuevo", actual: !enCurso },
-    { href: "/mejoramiento/nuevo?modo=en-curso", texto: "Ya está en curso", actual: enCurso },
+    { href: nuevo, texto: "Hallazgo nuevo", actual: !enCurso },
+    { href: `${nuevo}${nuevo.includes("?") ? "&" : "?"}modo=en-curso`, texto: "Ya está en curso", actual: enCurso },
   ];
   return (
     <nav aria-label="Cómo se registra" className="flex flex-wrap gap-2">
       {opciones.map((o) => (
         <Link
-          key={o.href}
+          key={o.texto}
           href={o.href}
           aria-current={o.actual ? "page" : undefined}
           className={`${PESTANA} ${o.actual ? "bg-marca-relleno text-white" : "border border-border text-foreground hover:bg-muted"}`}
@@ -48,6 +56,16 @@ function ComoSeRegistra({ enCurso }: { enCurso: boolean }) {
   );
 }
 
+/** Los parámetros de registro de la dirección: solo los que llegan como un texto (uno repetido no es ninguno). */
+function parametrosDe(sp: Record<string, string | string[] | undefined>): ParametrosDeRegistro {
+  const p: ParametrosDeRegistro = {};
+  for (const k of PARAMETROS_DE_REGISTRO) {
+    const v = sp[k];
+    if (typeof v === "string") p[k] = v;
+  }
+  return p;
+}
+
 /**
  * Registrar un hallazgo (spec 15 §7.1 y §16.2, maqueta 3): solo quien tiene `mejora.registrar`; para los demás no existe. Desde
  * la evaluación de otro (`?derivado=<id>`, spec §11.4) llega con el proceso de ese y el enlace puestos, si quien registra lo ve;
@@ -56,23 +74,30 @@ function ComoSeRegistra({ enCurso }: { enCurso: boolean }) {
  * con lo que se vio, el día, el proceso y la referencia copiados, y el reporte viaja oculto (lo vuelve a comprobar
  * `registrarHallazgo` dentro de su transacción). Si no, se ignora igual. Con `?modo=en-curso`, quien gestiona carga un hallazgo
  * que se tramitó en papel con su plan ya aprobado (spec §15, `FormularioCarga`); para los demás ese modo no existe.
+ *
+ * Los parámetros de la Fase 15B (`plan`, `documento`, `indicador`, `proceso` y los enganches; anexo §3.4 y §10.3) los resuelve
+ * `prellenadoDeRegistro`, para el registro y para la carga: lo que la persona no puede ver o no puede usar se ignora sin decir por
+ * qué, y lo que viaja oculto lo vuelve a validar el registro.
  */
 export default async function PaginaNuevoHallazgo({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sesion = await exigirSesion();
   if (!puede(sesion, "mejora.registrar")) notFound();
   const ahora = new Date();
   const parametros = await searchParams;
+  const deRegistro = parametrosDe(parametros);
   const carga = puede(sesion, "mejora.gestionar");
   if (parametros.modo === "en-curso") {
     if (!carga) notFound();
     const sql = obtenerSql();
-    const [procesos, normas, documentos, usuarios, indicadores, enlaces, contexto] = await Promise.all([
+    const [procesos, normas, documentos, usuarios, indicadores, enlaces, objetivos, prellenado, contexto] = await Promise.all([
       procesosDelAlcance(sesion),
       normasQueRigen(),
       documentosVigentesVisibles(sesion),
       usuariosActivos(),
       indicadoresElegibles(sql, sesion),
       opcionesDeLaCarga(sesion, { sql }),
+      objetivosActivos({ sql }),
+      prellenadoDeRegistro(sesion, deRegistro, { sql, ahora }),
       contextoDeMejora(sql, ahora),
     ]);
     return (
@@ -82,7 +107,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
           titulo="Registrar un hallazgo ya en curso"
           descripcion="El que se tramitó en papel y ya tiene su plan aprobado: queda «Cargado», con sus fechas reales. Uno sin plan aprobado se registra como hallazgo nuevo."
         />
-        <ComoSeRegistra enCurso />
+        <ComoSeRegistra enCurso parametros={deRegistro} />
         <FormularioCarga
           accion={cargarHallazgoAccion}
           procesos={procesos}
@@ -91,6 +116,8 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
           usuarios={usuarios}
           indicadores={indicadores}
           enlaces={enlaces}
+          objetivos={objetivos}
+          prellenado={prellenado}
           hoy={fechaEnZona(ahora, contexto.zona)}
         />
       </div>
@@ -99,11 +126,15 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
   const idDe = (v: string | string[] | undefined) => (typeof v === "string" && /^\d{1,15}$/.test(v) ? Number(v) : null);
   const derivadoId = idDe(parametros.derivado);
   const reporteId = carga ? idDe(parametros.reporte) : null;
-  const [procesos, normas, documentos, contexto, origen, leido] = await Promise.all([
+  const sql = obtenerSql();
+  const [procesos, normas, documentos, aQueSeRefiere, objetivos, prellenado, contexto, origen, leido] = await Promise.all([
     procesosDelAlcance(sesion),
     normasQueRigen(),
     documentosVigentesVisibles(sesion),
-    contextoDeMejora(obtenerSql(), ahora),
+    indicadoresConMediciones(sesion, { sql }),
+    objetivosActivos({ sql }),
+    prellenadoDeRegistro(sesion, deRegistro, { sql, ahora }),
+    contextoDeMejora(sql, ahora),
     derivadoId === null ? Promise.resolve(null) : hallazgoDeOrigen(sesion, derivadoId),
     reporteId === null ? Promise.resolve(null) : leerReporte(sesion, reporteId),
   ]);
@@ -127,12 +158,16 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
         titulo="Registrar un hallazgo"
         descripcion="Una no conformidad, una observación o una oportunidad de mejora. Al registrarlo, el sistema avisa a quien tiene el turno."
       />
-      {carga && !origen && !reporte ? <ComoSeRegistra enCurso={false} /> : null}
+      {carga && !origen && !reporte ? <ComoSeRegistra enCurso={false} parametros={deRegistro} /> : null}
       <FormularioHallazgo
         accion={registrarHallazgoAccion}
         procesos={procesos}
         normas={normas}
         documentos={documentos}
+        indicadores={aQueSeRefiere.indicadores}
+        mediciones={aQueSeRefiere.mediciones}
+        objetivos={objetivos}
+        prellenado={prellenado}
         hoy={fechaEnZona(ahora, contexto.zona)}
         diasParaAceptar={contexto.config.plazos.aceptar}
         valores={Object.keys(valores).length > 0 ? valores : undefined}

@@ -91,7 +91,8 @@ import { parsearFormulario } from "@/lib/validacion";
  * Registra un hallazgo y lleva a su página. Ante los parecidos del mismo proceso, `relacion` dice la salida que se eligió
  * (spec §7.5): `ocurrencia:<id>` no crea un hallazgo, añade una ocurrencia al abierto; `reincidencia:<id>` lo enlaza a uno
  * cerrado; `distinto` (o ausente) nace normal. Desde un reporte (`reporteId`, spec §7.3), registrar lo convierte y elegir una
- * ocurrencia lo suma a ese hallazgo: el reporte nunca queda sin clasificar.
+ * ocurrencia lo suma a ese hallazgo: el reporte nunca queda sin clasificar. El plan oculto (`planId`) y el objetivo (Fase 15B)
+ * los vuelve a validar `registrarHallazgo` dentro de su transacción; una ocurrencia no los usa: no nace ningún hallazgo.
  */
 export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {

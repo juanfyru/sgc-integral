@@ -44,6 +44,7 @@ import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { SesionValida } from "@/lib/sesion";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
+import { contada } from "./utiles/sentencias";
 import { revertida } from "./utiles/transaccion";
 import { externoDePrueba } from "./utiles/vigencia";
 
@@ -73,33 +74,6 @@ const valida = (s: SesionFlujo): SesionValida => ({
   aceptoDatos: true,
   tema: "sistema",
 });
-
-/**
- * La transacción con un contador: cuenta una sentencia cuando se ejecuta (cuando se espera), no cuando se arma como
- * fragmento de otra. Devuelve el texto de cada una.
- */
-function contada(tx: TransactionSql): { sql: TransactionSql; sentencias: string[] } {
-  const sentencias: string[] = [];
-  const proxy = new Proxy(tx, {
-    apply(objetivo, propio, argumentos: unknown[]) {
-      const consulta = Reflect.apply(objetivo, propio, argumentos) as { then?: (...a: unknown[]) => unknown };
-      const plantilla = argumentos[0];
-      if (consulta && typeof consulta.then === "function" && Array.isArray(plantilla) && "raw" in plantilla) {
-        const original = consulta.then.bind(consulta);
-        let contadaYa = false;
-        consulta.then = (...a: unknown[]) => {
-          if (!contadaYa) {
-            contadaYa = true;
-            sentencias.push((plantilla as string[]).join("?"));
-          }
-          return original(...a);
-        };
-      }
-      return consulta;
-    },
-  });
-  return { sql: proxy as unknown as TransactionSql, sentencias };
-}
 
 /** Las sentencias de un render del cascarón como `sesion`. */
 async function sentenciasDelCascaron(tx: TransactionSql, sesion: SesionFlujo): Promise<string[]> {
