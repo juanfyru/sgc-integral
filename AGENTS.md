@@ -73,8 +73,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     `copia_eventos`, `acuse_eventos`, `ratificaciones`, `externo_verificaciones`,
     `norma_cambios`, `medicion_eventos`, `medicion_observaciones`, `cierres_indicadores`,
     `importaciones_indicadores`, `importacion_eventos`, `reporte_externo_eventos`,
-    `variable_eventos`, `mejora_eventos`, `mejora_seguimientos`, `mejora_ocurrencias` y
-    `mejora_reporte_eventos`).
+    `variable_eventos`, `mejora_eventos`, `mejora_seguimientos`, `mejora_ocurrencias`,
+    `mejora_reporte_eventos`, `mejora_plan_eventos` y `mejora_marcas`).
     `asegurarRolApp` (`src/db/roles-bd.ts`) crea el rol y aplica sus privilegios en cada
     arranque, después de las migraciones. Los secretos (`APP_SECRETO`, `BD_APP_CLAVE`) se
     generan al instalar; sin un `APP_SECRETO` válido el arranque de producción falla.
@@ -108,7 +108,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    `acuse_eventos`, `ratificaciones`, `externo_verificaciones`, `norma_cambios`,
    `medicion_eventos`, `medicion_observaciones`, `importaciones_indicadores`, `importacion_eventos`,
    `reporte_externo_eventos`, `variable_eventos`, `mejora_eventos`, `mejora_seguimientos`,
-   `mejora_ocurrencias` y `mejora_reporte_eventos` son de solo inserción (trigger que rechaza
+   `mejora_ocurrencias`, `mejora_reporte_eventos`, `mejora_plan_eventos` y `mejora_marcas` son de solo
+   inserción (trigger que rechaza
    `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`); los usuarios
    con historia se desactivan,
    nunca se borran, y una verificación cerrada no se modifica. Una revisión anual cerrada tampoco,
@@ -125,6 +126,12 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    hijas nuevas, tampoco eventos, seguimientos ni ocurrencias (`sgc_impedir_si_hallazgo_terminado`,
    sobre `mejora_hallazgos` y sus hijas, también al insertar); lo que lo termina (el resultado, las
    lecciones, el motivo de la anulación) se escribe antes de la transición, en su misma transacción.
+   Desde la 15B lo lleva también `mejora_actividad_tramites` (el enlace de una actividad con un
+   trámite, en `INSERT`, `UPDATE` y `DELETE`); no lo llevan, a propósito, `mejora_clasificacion`, el
+   historial del plan (`mejora_plan_eventos`) ni las respuestas desde el plan
+   (`mejora_plan_respuesta_hallazgos`): un hallazgo terminado entra, sale y cambia de plan sin que su
+   fila cambie, y el trigger no gana excepciones (ver «La clasificación de un hallazgo vive fuera de
+   su fila»).
    Cada acción de la bitácora tiene su frase legible y su nombre de filtro en
    `src/lib/bitacora-detalle.ts` (`describirEvento`, `nombreDeAccion`), armada solo con el
    `detalle` de la fila. `tests/bitacora-detalle.test.ts` lo exige para las acciones con nombre
@@ -251,7 +258,28 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   plazos, reglas, eficacia, huellas, análisis, textos), `src/lib/dias-habiles.ts` (los festivos y la
   cuenta en días hábiles), `src/lib/esquemas/mejoramiento.ts` (los esquemas `zod`) y
   `src/componentes/mejoramiento/`; sus pruebas, `tests/mejora-*.test.ts(x)` con sus ayudantes en
-  `tests/utiles/mejoramiento.ts`. Todo lleva el prefijo `mejora`: tablas `mejora_*`, permisos
+  `tests/utiles/mejoramiento.ts`. Lo de la 15B (anexo 15B) vive en el mismo módulo: **el plan de
+  mejoramiento** en `app/(app)/mejoramiento/planes` (la pestaña, su página, el formulario, el selector
+  `[id]/anadir`, el impreso `[id]/imprimir?proceso=` y el Excel `[id]/excel`) y
+  `app/(app)/mejoramiento/consolidado` (el SGC-FO-14 de un proceso en el año), su subida en
+  `app/api/mejoramiento/planes/[id]/archivos`, y en `src/db/consultas/mejoramiento/` `planes.ts`
+  (crear, editar, anular, su candado y su historial; liviano), `clasificacion.ts` (el plan y el objetivo
+  de un hallazgo), `planes-lectura.ts`, `respuesta-plan.ts`, `filas-de-plan.ts` (las filas del Excel y
+  del SGC-FO-14) y `fo14.ts`, con sus reglas puras en `src/lib/mejoramiento/planes.ts` y
+  `excel-ente.ts`; **la marca** de un indicador en `marcas-base.ts` y `marcas.ts`; **los enganches** en
+  `enganche-verificacion.ts` (el hallazgo de verificación), `enganche-impacto.ts` (el impacto de norma),
+  `tramites-enlace.ts` (el cambio documental), `citas.ts` (la sección «Mejoramiento» de las otras
+  páginas) y `donde-registra.ts`; sus componentes, en `src/componentes/mejoramiento/planes`, `marcas`,
+  `enganches` y `actividad`; sus pruebas, `tests/mejora-planes*`, `tests/mejora-marcas*`,
+  `tests/mejora-enganche-*` y `tests/mejora-tramites*` (`tests/mejora-plan.test.ts` es la del **plan de
+  acción** de la 15A). **El registro** (`/mejoramiento/nuevo`) recibe, además de `derivado`, `reporte` y
+  `modo`, los parámetros `plan`, `documento`, `indicador`, `proceso`, `medicion`, `verificacion`, `impacto`
+  e `impactoIndicador`, y sus campos ocultos `planId`, `objetivoId`, `marcaMedicionId`,
+  `verificacionHallazgoId`, `accionJustificacion`, `impactoId` e `impactoIndicadorId` los vuelve a validar
+  `registrarHallazgo` dentro de su transacción; la página ignora, sin decir por qué, lo que la persona no
+  puede usar (el patrón de `?revision=`), con una precedencia fija entre los enganches (medición, hallazgo
+  de verificación, impacto, revisión de un indicador). `/tramites/nueva` recibe `actividad` y su campo
+  oculto `actividadId`, que valida `crearSolicitud`. Todo lleva el prefijo `mejora`: tablas `mejora_*`, permisos
   `mejora.*`, claves de configuración `mej_*`, acciones de bitácora `mejora_<algo>`, avisos
   `mejora.<algo>` y tareas `mej-<paso>:<id>`. **Ojo con los nombres de la 13B, que no son este
   módulo:** la tabla `hallazgos`, el contexto de archivo `hallazgo`, las rutas `api/hallazgos`, los
@@ -293,8 +321,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `<html>` solo tras validar el hex estricto y el contraste P1/P2 (`src/lib/marca.ts`).
 - **Migraciones versionadas con Drizzle Kit**, ejecutadas en el arranque del contenedor.
   Nunca `db push` contra producción. `src/db/esquema.ts` nunca importa con `@/`
-  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de la 15A son
-  diecinueve (`drizzle/0000` a `drizzle/0018`); la `0015` alteró en su sitio las tablas vacías de la 14C, la
+  (drizzle-kit lo carga sin el alias): solo rutas relativas. Al cierre de la 15B son
+  veinte (`drizzle/0000` a `drizzle/0019`); la `0015` alteró en su sitio las tablas vacías de la 14C, la
   `0016` añade `variable_valores.se_pide` (el periodo de un dato que alguna medición necesita) y la `0017`,
   `indicadores.soporte_obligatorio_desde` y `mediciones.debe_soporte` con su relleno (el `CHECK`
   `indicadores_soporte_desde` va a mano después de los dos `UPDATE` marcados `-- relleno 0017`: en el orden
@@ -303,7 +331,16 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `dias_no_habiles`, las firmas `verifico` y `cerro` y la columna `firmas.mejora_hallazgo_id`, los
   cuatro contextos de archivo, sus triggers (los de solo inserción y `sgc_impedir_si_hallazgo_terminado`,
   escritos a mano) y un índice en cada llave foránea que el módulo consulta (`tests/mejora-esquema.test.ts`
-  lo exige en toda llave foránea de `mejora_*`, salvo las que van a `usuarios`). Solo añade.
+  lo exige en toda llave foránea de `mejora_*`, salvo las que van a `usuarios`). Solo añade. La `0019`
+  (`0019_fase15b-planes-enganches.sql`) añade la 15B: ocho tablas (`mejora_plan_consecutivos`,
+  `mejora_planes`, `mejora_clasificacion`, `mejora_plan_eventos`, `mejora_plan_respuestas`,
+  `mejora_plan_respuesta_hallazgos`, `mejora_marcas` y `mejora_actividad_tramites`), las columnas
+  `verificacion_hallazgo_id`, `impacto_id` e `impacto_indicador_id` de `mejora_hallazgos` (cada una con su
+  índice y un índice único parcial entre los hallazgos que cuentan, `WHERE estado NOT IN ('rechazado',
+  'anulado')`), `documento_id` e `indicador_id` de `mejora_reportes`, el contexto de archivo `mejora_plan`,
+  y a mano los triggers de solo inserción de `mejora_plan_eventos` y `mejora_marcas`, el del hallazgo
+  terminado en `mejora_actividad_tramites` y las claves `mej_formato_plan_documento_id`,
+  `mej_sugerir_hallazgos` y `mej_sugerir_meses`. Solo añade.
 - **Toda página autenticada lleva o hereda de su layout `force-dynamic`** (`export const
   dynamic = "force-dynamic"`; lo declaran `src/app/layout.tsx` y los layouts de
   `(app)`, `(cuenta)` y `(app)/admin/(panel)`): nunca se prerenderiza, y el build de CI no
@@ -335,6 +372,8 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   Consulta (y a todo rol que no es líder) le da `{ todos: true }`, y quien solo consulta no ve ningún
   hallazgo que no le toque. Quien solo figuró en un borrador que nunca se aprobó no ve el hallazgo ni
   cuenta como quien ejecutó: la actividad da alcance, avisos y avance solo con su plan aprobado.
+  Las de los planes de mejoramiento (15B), también allí y sobre las de los hallazgos: `filtroPlanes` y
+  `puedeVerPlan` (ver «El plan de mejoramiento y quién lo ve»).
   La sesión de sistema de los automáticos (rol `admin_sgc`, `usuarioId` 0) no es una excepción: vive
   dentro de `tomarCalculo` (`calculos.ts`), no se exporta y nunca sirve filas a una persona, solo
   cuenta (anexo 14B, §5.5).
@@ -410,10 +449,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
     `api/datos-compartidos/[id]/archivos` (el soporte de un periodo de un dato compartido; el mismo
     handler lo quita con `DELETE` y `?archivo=`) y
     `api/importaciones-indicadores/[id]/archivo` (la plantilla de un lote, solo `.xlsx` y una vez) y
-    las cuatro de mejoramiento, `api/mejoramiento/hallazgos/[id]/archivos` (con `?rol=` `evidencia`,
+    las cinco de mejoramiento, `api/mejoramiento/hallazgos/[id]/archivos` (con `?rol=` `evidencia`,
     `correccion` o `carga`), `api/mejoramiento/rondas/[id]/archivos` (`?rol=` `analisis` o
-    `verificacion`), `api/mejoramiento/actividades/[id]/archivos` y
-    `api/mejoramiento/reportes/[id]/archivos` (quién sube qué lo decide `autorizarSubida`,
+    `verificacion`), `api/mejoramiento/actividades/[id]/archivos`,
+    `api/mejoramiento/reportes/[id]/archivos` y, desde la 15B, `api/mejoramiento/planes/[id]/archivos`
+    (los del plan, de quien tiene `mejora.planes`) (quién sube qué lo decide `autorizarSubida`,
     `src/db/consultas/mejoramiento/archivos.ts`, repetido dentro de `registrarArchivo` con
     `exigirDestinoAbierto`),
     cada una con su caso en `tests/proxy-matcher.test.ts`), usan `recibirArchivo` y comparan
@@ -453,10 +493,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   responsable).
 - **`archivos` admite dueños distintos de una versión** (`contexto`: `version`, `jornada`,
   `verificacion_item`, `norma`, `revision_anual`, `hallazgo`, `medicion`, `reporte_externo`,
-  `importacion_indicadores`, `dato_compartido` y, desde la 15A, `mejora_hallazgo`, `mejora_ronda`,
-  `mejora_actividad` y `mejora_reporte`, con `contexto_id`; los catorce del `CHECK`
-  `archivos_contexto_valido` de `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts`
-  son los trece que reciben evidencias, todos menos `version`): el control
+  `importacion_indicadores`, `dato_compartido`, desde la 15A, `mejora_hallazgo`, `mejora_ronda`,
+  `mejora_actividad` y `mejora_reporte` y, desde la 15B, `mejora_plan`, con `contexto_id`; los quince del
+  `CHECK` `archivos_contexto_valido` de `src/db/esquema.ts`, y `CONTEXTOS_EVIDENCIA` de `src/lib/subida.ts`
+  son los catorce que reciben evidencias, todos menos `version`): el control
   de acceso de un archivo es el de su
   dueño, y las consultas heredadas siguen filtrando por `version_id`. El PDF de una norma se
   lee como la norma; la foto de la corrección de un hallazgo, como el hallazgo (`filtroPuntos`);
@@ -492,7 +532,30 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   evidencia no se quita: la de la corrección fuera de «Por corregir», la de una actividad terminada o
   cancelada, la de la verificación desde que se verificó, la de la evaluación desde que se registró,
   el oficio de la respuesta al ente desde que se registró y el formato firmado de una carga, nunca;
-  una ronda anterior queda congelada (solo la ronda en curso admite archivos).
+  una ronda anterior queda congelada (solo la ronda en curso admite archivos). Los de una actividad los
+  abre su responsable solo con la actividad de un plan aprobado (`fin_original` no nula). Los de un
+  **plan** (`mejora_plan`, rol `evidencia`; anexo 15B §3.7): los suben quienes tienen `mejora.planes`
+  (`api/mejoramiento/planes/[id]/archivos`), los abre solo quien tiene `mejora.ver_todo` (al líder que ve el
+  plan, 404) y los quitan quien los subió o el Admin SGC mientras el plan no esté anulado; el oficio de una
+  respuesta registrada, nunca. Subir uno deja el evento `archivo` en el historial del plan
+  (`alRegistrarArchivoDeMejora`, desde `registrarArchivo`).
+- **Lo que ya se firmó no se quita, y el retiro por datos personales** (anexo 15B §11.2, F15B-DC38 y
+  DC47; ajusta la decisión 9 de la 15A): la regla única es `estaCongelado`
+  (`src/db/consultas/mejoramiento/archivos.ts`), la que usan quitar (`ARCHIVO_FIRMADO`, «Este archivo ya es
+  parte de lo firmado y no se puede quitar») y la página. La evidencia del registro **que ya estaba subida**
+  cuando el plan de acción se envió por primera vez no se quita, por nadie; lo que se sube después, como
+  antes. Los archivos del análisis de la ronda en curso no se quitan mientras el plan esté enviado o
+  aprobado (devuelto a «Por formular», otra vez, hasta el reenvío). «Ya estaba subido» se decide por el
+  orden de las filas de `auditoria`: la subida del archivo frente al primer `mejora_enviar_plan` del
+  hallazgo o, en uno **cargado**, frente a su `mejora_carga_confirmada` (el formato firmado, no
+  `mejora_cargar`: antes de él nada llega a nadie y lo mal subido se quita como antes). Añadir sigue
+  permitido donde lo estaba. La salida para un dato de paciente subido por error es **retirar por datos
+  personales** (`retirarPorDatosPersonales`, `mejora.gestionar`, justificación de al menos 10 caracteres,
+  mientras el hallazgo no ha terminado): solo alcanza lo que esta regla congela (lo que la 15A ya congelaba
+  responde `NO_SE_RETIRA_POR_AQUI`), borra el archivo del almacén y su fila, y deja el evento
+  `archivo_retirado` en el historial del hallazgo (nombre, tamaño, huella, quién lo subió, quién lo retiró,
+  cuándo y por qué); a la bitácora (`mejora_archivo_retirado`) va el acto, sin la justificación ni el
+  nombre. Ninguna huella firmada cambia: los archivos no entran a la huella del plan.
 - **Una versión deja de ser vigente solo por `aplicarPublicacion`, `anularVigenteEn` o
   `deshacerCarga`**, y los tres llaman `alDejarDeSerVigente`: marca sus copias controladas
   como «por recoger», supera sus acuses pendientes y su socialización requerida. Ninguna otra
@@ -527,7 +590,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `ratificaciones`, `externo_verificaciones`, `norma_cambios`, `medicion_eventos`,
   `medicion_observaciones`, `importaciones_indicadores`, `importacion_eventos`,
   `reporte_externo_eventos`, `variable_eventos`, `mejora_eventos`, `mejora_seguimientos`,
-  `mejora_ocurrencias` o `mejora_reporte_eventos` usa un nombre único por corrida
+  `mejora_ocurrencias`, `mejora_reporte_eventos`, `mejora_plan_eventos` o `mejora_marcas` usa un nombre único por corrida
   (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
   Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
@@ -1097,7 +1160,11 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   de «único administrador»: si nadie puede, el acto se rechaza y la pantalla dice por qué. Lo hecho en papel de una
   carga (eventos `fuera`) no hace ejecutor a quien la cargó, ni figurar en un borrador que nunca se aprobó. La
   validación de una corrección tiene su regla aparte, del mismo tipo (`validadoresDeCorreccion`: ni quien la
-  registró, ni su responsable, ni, en el cierre sin acción, quien decidió el «no»).
+  registró, ni su responsable, ni, en el cierre sin acción, quien decidió el «no»). En la no conformidad de un
+  hallazgo de verificación (anexo 15B §7.3, F15B-DC23) «ejecutó» suma, leídos en cada acto (`ejecutaronEn`), quien
+  corrigió ese hallazgo de Distribución según su fila (`corregido_por`), quien responde por él según su fila
+  (`responsable_id`, no el responsable de hoy del punto) y quien lo corrigió antes de una reapertura, que la fila ya
+  no guarda: las filas `hallazgo_corregido` de la bitácora.
 - **Las dos fechas de la eficacia** (spec 15 §11.3, F15-DC24; `src/lib/mejoramiento/eficacia.ts`): **la fecha
   mínima** es la real, se calcula al leer y nunca se guarda (`fechaMinimaDeEficacia`; en la base, `fechaMinimaDe` y
   `fechasMinimasDe`, `espera.ts`). Parte de R, el día en que terminó de verdad la última actividad no cancelada de la
@@ -1135,7 +1202,98 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Lo que un hallazgo cita no se borra** (spec 15 §19.4): una medición citada cuenta como «con datos» (`conDatos`);
   un indicador citado (como indicador del hallazgo, por su medición o como indicador de eficacia de una ronda,
   `citadoEnMejoramiento`) no se borra como borrador ni se deshace con su lote; y una norma citada como requisito
-  tiene historia (`historiaDeNorma`). Lo dicen esas guardas antes de que la llave foránea dé un `23503`.
+  tiene historia (`historiaDeNorma`). Lo dicen esas guardas antes de que la llave foránea dé un `23503`. Desde la 15B
+  cuentan también la salida de una marca (una medición con fila en `mejora_marcas` está «con datos», y
+  `citadoEnMejoramiento` suma las marcas y los reportes que citan el indicador).
+- **La clasificación de un hallazgo vive fuera de su fila** (anexo 15B §3.3, F15B-DC3 ⚠): su plan y su objetivo van
+  en `mejora_clasificacion` (una fila por hallazgo; la llave primaria es el hallazgo, así que **a lo sumo un plan por
+  hallazgo** lo garantiza la base; la fila se borra cuando quedan nulos los dos), escrita solo por `clasificacion.ts`
+  (`ponerEnPlan`, `sacarDelPlan`, `cambiarDePlan`, `ponerObjetivo` y `clasificarAlNacer`, dentro del registro y de la
+  carga). El trigger del hallazgo terminado rechazaría todo cambio en `mejora_hallazgos` o en una hija, y el usuario
+  decidió que un hallazgo cerrado entra, sale y cambia de plan: por eso ni esa tabla ni el historial del plan cuelgan
+  del trigger, y el trigger no gana excepciones. Mover un hallazgo no escribe en `mejora_hallazgos` ni en
+  `mejora_eventos`; deja su evento en el historial del plan (`mejora_plan_eventos`, de solo inserción, con los
+  motivos) y su fila en la bitácora (entidad `mejora_plan`, sin los motivos), y no avisa a nadie (F15B-DC7). El
+  rastro del objetivo va a la bitácora (`mejora_objetivo`). Ni el plan ni el objetivo entran a lo firmado
+  (`huellaDePlan` no los incluye). Uno anulado o rechazado no entra a un plan (`NO_CUENTA_PARA_PLAN`); el que se anula
+  o se rechaza estando en él se queda, marcado, y deja de contar.
+- **El plan de mejoramiento y quién lo ve** (anexo 15B §3.1 a §3.6): el permiso `mejora.planes` (Admin SGC y Control
+  Interno) crea, edita y anula planes, pone, saca y mueve hallazgos, sube y quita archivos del plan y pone el
+  objetivo de un hallazgo. El código `PM-AAAA-NN` es de la vigencia, sale de `mejora_plan_consecutivos` dentro de la
+  transacción (sin huecos ni secuencia) y no se reutiliza. Un plan no tiene recorrido ni firma, no se borra, y se
+  anula solo vacío (`PLAN_CON_HALLAZGOS`). Su estado, sus cifras y su avance se calculan al leer, salvo «Anulado».
+  **Quién lo ve** lo deciden `filtroPlanes` (para un `WHERE` sobre `mejora_planes p`) y `puedeVerPlan`
+  (`src/lib/alcance.ts`): con `mejora.ver_todo`, todos, también los vacíos y los anulados; si no, los que tienen algún
+  hallazgo que la persona ve **completo** (`vistaCompletaDeHallazgo`), y de ellos ve **solo esos hallazgos**, con las
+  cifras, el historial y el SGC-FO-14 calculados con ellos, sin la respuesta al ente, los archivos del plan ni el
+  Excel (404); nada le dice que hay más. Quien ve un hallazgo solo por su actividad no ve el plan: lee su código y su
+  nombre en el hallazgo, sin enlace (F15B-DC9). La página del plan llama `exigirSesion()` y después `exigirPlan`
+  (`app/(app)/mejoramiento/_comun.ts`), con «no encontrado» para el que no existe y para el que no ve.
+- **La respuesta al ente desde el plan, y el orden de candados** (anexo 15B §3.4 y §3.8, F15B-DC41): «espera
+  respuesta» tiene una sola definición, la del acto de la 15A (`esperaRespuesta`, `respuesta-plan.ts`). Un hallazgo
+  que está en un plan se responde **desde el plan** (`registrarRespuestaDelPlan`, `mejora.gestionar`; desde su página,
+  `RESPONDA_DESDE_EL_PLAN`): el oficio es un archivo del plan que no sea ya el de otra respuesta, vale para todos los
+  listos, se confirma lo que se vio (`vistos`; si con todo bloqueado no es la misma lista, `LISTOS_CAMBIARON` y no se
+  escribe nada) y deja en cada hallazgo lo mismo que el acto de la 15A, ahora con el plan. La tarea es una por plan
+  (`mej-ente-plan:<planId>`), y los hallazgos de un plan dejan de dar la suya (`mej-ente`). **El plan va antes que sus
+  hallazgos**: todo camino que clasifica toma el plan `FOR UPDATE` (los dos de un cambio, por id) y después cada
+  hallazgo `FOR UPDATE` por id ascendente y su fila de clasificación; el registro y la carga dentro de un plan empiezan
+  por `bloquearPlanDelRegistro`, antes que cualquier otro candado. Ningún camino toma un plan después de un hallazgo.
+- **La marca «Requiere acción de mejora» de un indicador** (anexo 15B §6): **un pendiente** es una medición ordinaria
+  de un indicador activo, con la marca, sin una salida en vigor (`marcaSinSalida`, `marcas-base.ts`) y que ya se puede
+  decidir: tiene su análisis completo (o su ficha no lo exige), venció su fecha límite o quedó cerrada
+  (`estadoDeLaMarca`, `src/lib/mejoramiento/marcas.ts`, con la regla de los indicadores); se calcula al leer, sin fecha
+  de corte, y un recálculo que le quita la marca lo quita. **Las tres salidas**, una fila cada una en `mejora_marcas` (de
+  solo inserción; varias por medición): un hallazgo nuevo o la ocurrencia de uno abierto que cite el indicador (el Admin
+  SGC o un líder del proceso del indicador) y «no requiere» con justificación (solo `mejora.gestionar`; la
+  justificación queda en la fila y se ve en la página del indicador, no en la bitácora). **A lo sumo una en vigor**
+  (`salidaEnVigor`): un «no requiere», o la que apunta a un hallazgo mientras ese hallazgo cuente; si termina rechazado o
+  anulado, el pendiente vuelve. Una unicidad no alcanza, así que toda salida toma antes que nada
+  `pg_advisory_xact_lock(hashtext('sgc.mejora.marca'), <medicionId>)` (`bloquearMarca`) y vuelve a comprobar
+  (`MARCA_YA_DECIDIDA`). **Por fuera del panel**: quien registra (o carga, o convierte un reporte) un hallazgo que cita
+  una medición marcada sin salida y es de quienes pueden resolverla escribe la salida «hallazgo» en la misma
+  transacción (`salidaAlNacer`), sea ya un pendiente o espere su análisis; si la registra otra persona, el pendiente
+  sigue de quien decide y el panel le propone ese hallazgo. Editar no escribe ni quita salidas. La tarea es
+  `mej-marca:<medicionId>`, del Admin SGC, sin fecha límite y contada en SQL (`tareasDeMarcas`); sin aviso nuevo. A
+  quien no ve el hallazgo de una salida, nada lo dice. Las consultas de `src/db/consultas/indicadores/` no importan
+  nada de mejoramiento: lo llaman las páginas.
+- **Los hallazgos que nacen de otros módulos** (anexo 15B §7 y §8): **la no conformidad de un hallazgo de
+  verificación** de Distribución la abre el Admin SGC (`verificacionHallazgoId`), con la clase y el origen fijos, el
+  proceso entre los del punto y la justificación de la acción, que nace requerida por quien la abre; aceptada va a «Por
+  formular» (`aceptadoVaA`). **El hallazgo de un impacto de norma** (`impactoId` o `impactoIndicadorId`) lo abren el
+  Admin SGC y los líderes del proceso del impacto, con el origen, la norma como requisito y el proceso fijos (también al
+  editarlo). Cada uno tiene **a lo sumo un hallazgo que cuente**, garantizado por un índice único parcial entre los que
+  no terminaron rechazados ni anulados; si el suyo termina así, se abre otro. Los fijos los vuelve a sacar de la base el
+  registro, dentro de su transacción: el campo oculto no se cree. Las sugerencias (el hallazgo de verificación reabierto o
+  el punto que acumula `mej_sugerir_hallazgos` en `mej_sugerir_meses` meses; el impacto pendiente, vencido y escalado)
+  son avisos en pantalla, ni tareas ni campana (`engancheDeVerificacion`, `engancheDeImpactos`). En Distribución no
+  cambia ningún texto ni ninguna regla.
+- **Dónde se registra un hallazgo** tiene una sola regla, `src/db/consultas/mejoramiento/donde-registra.ts`
+  (`exigirProcesoDondeRegistra`, `procesoAdmiteRegistro`, `enElAlcanceDeRegistro`): la usan el registro, la carga, la
+  edición y el botón **Abrir hallazgo** de las otras páginas (`puedeRegistrarEn`, `citas.ts`), que nunca ofrece lo que el
+  registro rechazaría.
+- **El enlace de una actividad con un trámite** (anexo 15B §9, F15B-DC29 y DC30): `mejora_actividad_tramites` (un
+  trámite, a lo sumo una actividad; cuelga del trigger del hallazgo terminado) lo escriben solo `tramites-enlace.ts`
+  (`enlazarTramite`, `quitarEnlace`) y `crearSolicitud`, que valida la actividad **antes de insertar nada**
+  (`validarActividadParaTramite`; si no vale, `ACTIVIDAD_NO_ADMITE` y no escribe nada) y escribe el trámite y el enlace
+  juntos (`enlazarAlCrear`). **El motor del trámite no llama a mejoramiento:** ni `transicionar` ni
+  `aplicarPublicacion` escriben nada de este módulo, y una falla de aquí no tumba una publicación. El estado del trámite
+  se lee al pintar, al comprobar la evidencia y al cerrar; **el aviso sale en la pasada** de vencimientos de
+  mejoramiento (`mejora.tramite_terminado` al responsable, el evento `tramite_terminado` y la marca `avisado_en`), solo
+  de un hallazgo sin terminar; de uno terminado no hace nada. Un trámite que terminó bien (publicado o eliminado) vale
+  como evidencia para terminar la actividad, como un archivo. `tramites-enlace.ts` y `citas.ts` son livianos: el primero
+  no importa `flujo.ts`, `lectura.ts`, `actividades.ts`, `admin.ts` ni `tramites-flujo.ts` (que lo importa) y el segundo
+  no llega a `lectura.ts` (que lo importa); lo exige `tests/mejora-ciclos.test.ts`.
+- **Lo que comprueba el cierre** (anexo 15B §9.6, F15B-DC31): al firmar «Cerró» (también en el acto que evalúa
+  «eficaz» y cierra), con la segunda pregunta de **la ronda que se cierra**: si marcó «documentos» y la ronda tiene un
+  trámite enlazado que terminó bien (`tramitesQueTerminaronBien`), «cómo se atendieron los cambios» deja de ser
+  obligatorio y el evento del cierre guarda esos trámites; sin ninguno, o si marcó riesgos o controles, se pide como
+  siempre. La huella de «Cerró» no cambia de forma.
+- **La lista de hallazgos** (anexo 15B §11.1): por omisión, solo los abiertos (el código exacto de un terminado se
+  encuentra igual), de 50 en 50 (`TAMANO_DE_PAGINA`, `src/lib/mejoramiento/filtro.ts`), con el orden y el corte en SQL;
+  las cifras y el Excel cuentan todo. El turno se resuelve **por página**, con una sola tabla del turno
+  (`turnosEnTexto`, `lectura.ts`; también la página del hallazgo la usa con una lista de uno): el número de sentencias
+  de una página no crece con las filas (lo acota `tests/mejora-lista.test.ts`).
 - **Tests y demo:** `tramiteEn` crea su documento: ningún test abre un trámite sobre uno de
   la demo. `tests/semilla-tramites.test.ts` lee el estado de la demo y salta con mensaje si
   ya avanzó; `SEMILLA_RECIEN=1 npm test` exige la demo recién sembrada. La demo trae fichas
@@ -1173,7 +1331,24 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   entidad: siempre le quedan dos) y se siembran en el orden de su registro, para que los códigos salgan en el
   orden de sus fechas; al final corre `revisarVencimientosDeMejoramiento` a esa misma hora: sembrada la demo,
   otra pasada no tiene nada nuevo que avisar. Lo comprueba `tests/semilla-mejoramiento.test.ts`, contra el reloj de
-  la siembra (`sembradaEn`) y detrás de su guarda (ningún paso ni evento de un reporte después de la siembra).
+  la siembra (`sembradaEn`) y detrás de su guarda (ningún paso ni evento de un reporte después de la siembra). Desde
+  la 15B (anexo 15B §15.1) son veinte hallazgos y tres planes (`PLANES_DE_LA_DEMO`, creados en el orden de sus
+  códigos): el interno con su objetivo, el del ente (uno cerrado, uno de otro origen, uno sin plan de acción aprobado
+  y dos externos, uno respondido desde el plan con su oficio y otro listo, con su tarea `mej-ente-plan:`) y uno vacío.
+  Las cuatro marcas salen de un indicador nuevo de Consulta Externa (`INDICADOR_DE_LAS_MARCAS`, 45 días de plazo: su
+  penúltimo mes es el pendiente con su análisis y un hallazgo que lo cita, y su último, el que espera el análisis,
+  dentro de plazo el día que se siembre), del Crítico de `SGC-IND-01` («no requiere», al día siguiente de su análisis)
+  y del de `SGC-ID-002`, que nace con la foto de la hora de la siembra y lo resuelve, a esa misma hora, la no
+  conformidad del hallazgo de verificación de Urgencias. Además, otro hallazgo de verificación en Urgencias,
+  corregido y reabierto (una verificación posterior a la de la 13B y no conforme, así la conformidad que fotografía
+  `SGC-ID-002` no cambia), la Ley 1438 que modifica la Ley 100 con dos impactos vencidos y escalados (solo
+  `impactosVencidos` de la 13C, a su hora: la pasada completa avisaría lo de otros módulos), una actividad de Talento
+  Humano con dos trámites (el publicado de `GTH-CA-01` y el de `GTH-PR-02` en revisión), un «Por cerrar» cuyo análisis
+  marcó «documentos» sin trámites y el objetivo de dos hallazgos sin plan. Lo que cruza hallazgos ya sembrados va
+  después de ellos, cada paso con su hora en el pasado: las funciones del dominio leen la base como está. La guarda
+  de mejoramiento cuenta también los planes y, después del reloj, los eventos de un plan, las salidas, los enlaces y
+  la clasificación; la compartida (`SEMBRADO`, `tests/utiles/demo.ts`) cuenta la verificación, el hallazgo, el cambio
+  de norma y los impactos de más, y los tests de la demo de la 13B y la 13C miran lo suyo.
 
 ## Comandos
 

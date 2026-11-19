@@ -18,6 +18,17 @@
  * Los procesos con líder son Gestión del Talento Humano (`lider.gth`) y Consulta Externa (`lider.cex`); en los demás actúa el
  * Admin SGC (`coordinadora.sgc`, F15-DC3) y, como durante la siembra no hay otro Admin SGC, el plan que ella elabora pasa
  * directo a Gerencia (F15-DC15).
+ *
+ * Desde la 15B (anexo 15B, §15.1), seis hallazgos más y tres planes (`PLANES_DE_LA_DEMO`, creados en el orden de sus códigos): el
+ * de la auditoría interna, con hallazgos y su objetivo; el de la visita del ente, con hallazgos de varios procesos (uno cerrado,
+ * uno de otro origen, uno sin plan de acción aprobado y dos externos: uno respondido desde el plan, con su oficio, y otro listo); y
+ * uno sin hallazgos. Las marcas salen de un indicador nuevo de Consulta Externa (`INDICADOR_DE_LAS_MARCAS`: el pendiente con su
+ * análisis y un hallazgo sugerido, y el que espera el análisis), del Crítico de `SGC-IND-01` («no requiere») y del de `SGC-ID-002`
+ * (lo resuelve la no conformidad del hallazgo de verificación de Urgencias, que nace a la hora de la siembra). Además, otro hallazgo
+ * de verificación en Urgencias reabierto (la sugerencia), dos impactos de la Ley 1438 sobre la Ley 100 vencidos y escalados (solo
+ * la pasada de impactos de la 13C), una actividad con dos trámites (uno publicado y otro en revisión), un «Por cerrar» cuyo
+ * análisis marcó «documentos» y objetivos en dos hallazgos sin plan. Lo que cruza hallazgos ya sembrados va después de ellos, cada
+ * paso con su hora en el pasado: las funciones del dominio leen la base como está, no como estaba a la hora del paso.
  */
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";

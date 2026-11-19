@@ -9,7 +9,8 @@ cada cosa y qué formato del hospital reemplaza cada pantalla.
 
 Antes de seguir, vea el Capítulo 3 (la barra lateral, **Mis tareas** y la campana) y el Capítulo 1
 (la clave con que se firma). Las secciones 1 y 2 sirven a todos; las demás, a quien interviene en
-cada paso.
+cada paso. Las secciones 14 a 19 son de la segunda entrega: los planes de mejoramiento que agrupan
+hallazgos, el formato para el ente, el SGC-FO-14 y los hallazgos que nacen de otros módulos.
 
 ## 1. Qué es un hallazgo y quién lo ve
 
@@ -49,15 +50,19 @@ cada paso.
 ### 1.2 Dónde está cada cosa
 
 - **Mejoramiento**, en la barra lateral, en su propio grupo **Mejoramiento**, para toda persona con
-  cuenta. Tiene las pestañas **Hallazgos** (para quien ve alguno o puede registrarlos), **Reportes
-  recibidos** (Administrador del SGC, Gerencia y Control Interno), **Mis actividades** y **Mis
-  reportes** (para todos).
+  cuenta. Tiene las pestañas **Hallazgos** (para quien ve alguno o puede registrarlos), **Planes**
+  (para quien ve alguno o puede crearlos, sección 14), **Reportes recibidos** (Administrador del SGC,
+  Gerencia y Control Interno), **Mis actividades** y **Mis reportes** (para todos).
 - **Mis tareas**, en **Inicio**: aceptar, corregir, formular, revisar, aprobar, ejecutar su
-  actividad, verificar, evaluar, cerrar, decidir un ajuste, clasificar un reporte.
+  actividad, verificar, evaluar, cerrar, decidir un ajuste, clasificar un reporte, registrar la
+  respuesta al ente de un plan (sección 14) y decidir la acción de mejora de un indicador (sección
+  17).
 - **Configuración de mejoramiento**, en el grupo **Administración**, solo para el Administrador del
   SGC (sección 10.3).
-- En la búsqueda (`Ctrl K` y **Buscar documentos**), el grupo **Hallazgos**: por código o por
-  título, solo los que usted puede ver.
+- En la búsqueda (`Ctrl K` y **Buscar documentos**), los grupos **Hallazgos** y **Planes**: por
+  código o por título (o nombre), solo los que usted puede ver.
+- En la página de un documento, un proceso, un indicador y una norma, la sección **Mejoramiento**
+  (sección 18).
 
 ### 1.3 Quién ve qué
 
@@ -82,7 +87,19 @@ Barra lateral → **Mejoramiento** → **Hallazgos**. Arriba, seis cifras que so
 **Abiertos**, **Con algo vencido** (alguna actividad vencida), **Esperan su decisión** (los que le
 toca mover a usted), **En espera de eficacia**, **Por evaluar la eficacia** y **Reabiertos**.
 Debajo, los filtros: **Buscar** (código o título), **Proceso**, **Origen**, **Clase**,
-**Criticidad**, **Estado** y **Solo vencidos**; **Filtrar** los aplica y **Quitar** los borra.
+**Criticidad**, **Estado**, **Plan**, **Objetivo** y **Solo vencidos**; **Filtrar** los aplica y
+**Quitar** los borra.
+
+**La lista muestra los abiertos.** Al entrar, el filtro **Estado** está en **Abiertos** y lo dice la
+insignia **Solo abiertos**; con su ✕, o eligiendo **Todos** o un estado terminado, se ven también los
+cerrados, rechazados y anulados. Si escribe en **Buscar** el código exacto de un hallazgo terminado
+(«HZ-2026-001», también en minúsculas), lo encuentra sin quitar el filtro. Las cifras de arriba
+cuentan todo, no solo la página. La lista va de **50 en 50**: primero los externos abiertos,
+después los que tienen algo vencido y, por último, por la fecha en que vencen; abajo, «Página 1 de
+3», con **Anterior** y **Siguiente**. Si llega desde otra página (un documento, un indicador,
+«Objetivos»), la lista dice **Desde otra página:** y qué filtra. Si el filtro no encuentra nada, dice
+**Ningún hallazgo coincide con el filtro** y, si hay terminados que sí coinciden, ofrece **Ver también
+los terminados**.
 
 | Columna | Qué dice |
 |---|---|
@@ -93,8 +110,33 @@ Debajo, los filtros: **Buscar** (código o título), **Proceso**, **Origen**, **
 | **Avance** | El promedio del avance de las actividades, una vez aprobado el plan |
 | **Vence** | La fecha del paso en curso, «quedan N días hábiles» o «Vencido hace N días» |
 
-**Excel** baja la lista con los filtros que tenga puestos (sección 12) y **Registrar hallazgo**
-abre el registro (sección 3). En un teléfono, cada fila es una tarjeta.
+**Excel** baja la lista con los filtros que tenga puestos, todas sus páginas (sección 12), y
+**Registrar hallazgo** abre el registro (sección 3). En un teléfono, cada fila es una tarjeta.
+
+### 1.6 Los archivos
+
+Quién abre cada archivo de un hallazgo lo dice la tabla de la sección 1.3: quien lo ve completo abre
+todos; el responsable de una actividad, solo los de su actividad. Todos se bajan como descarga, y a
+quien no puede abrirlo el SGC le responde «Página no encontrada».
+
+**Lo que ya se firmó no se quita.** La evidencia del registro que ya estaba subida cuando el plan de
+acción se envió por primera vez no tiene **Quitar**, para nadie: desde entonces la identificación es
+parte de lo firmado; lo que se suba después se quita como antes. Los archivos del análisis de la ronda
+en curso no se quitan mientras el plan esté enviado o aprobado; si se lo devuelven y vuelve a **Por
+formular**, se pueden quitar otra vez hasta reenviarlo. En un hallazgo cargado, los dos quedan así
+desde que se adjunta su formato firmado. Añadir archivos sigue permitido donde antes lo estaba. Si lo
+intenta por otro camino, el SGC dice «Este archivo ya es parte de lo firmado y no se puede quitar».
+
+**Retirar por datos personales.** Si uno de esos archivos lleva por error un dato de un paciente o de
+quien se quejó, el Administrador del SGC lo retira con **Retirar por datos personales**, mientras el
+hallazgo no haya terminado: escribe por qué (al menos 10 caracteres) y confirma. El archivo sale del
+almacén; donde estaba queda la línea del retiro, y el historial del hallazgo guarda su nombre, su
+tamaño, su huella, quién lo había subido, quién lo retiró, cuándo y por qué. Ninguna firma cambia: los
+archivos no entran a la huella del plan. La bitácora dice que se retiró un archivo, sin el motivo ni
+el nombre. Lo que ya estaba congelado antes (la evidencia de la corrección, la de una actividad
+terminada, la de la verificación y la evaluación, el oficio de una respuesta registrada, el formato
+firmado de una carga y los archivos de una ronda anterior) no se retira por aquí: «Este archivo no se
+retira por datos personales».
 
 ### 1.5 La página de un hallazgo
 
@@ -485,9 +527,10 @@ hallazgo ni los de otras actividades.
 
 ### 8.3 Terminar
 
-**Terminar** pide el avance en 100 % y **al menos un archivo de evidencia**; sin ellos, el SGC dice
-qué falta. **Sí, terminarla** la cierra. Cuando termina la última actividad de la ronda, el hallazgo
-pasa solo a **Por verificar**.
+**Terminar** pide el avance en 100 % y **al menos un archivo de evidencia** o **un trámite enlazado
+que terminó bien** (publicado o eliminado, sección 19); sin ellos, el SGC dice qué falta. **Sí,
+terminarla** la cierra. Cuando termina la última actividad de la ronda, el hallazgo pasa solo a
+**Por verificar**.
 
 Si quien verifica le devuelve la actividad, la ve **Devuelta**, con su nota y la fecha para
 corregirla. Para terminarla otra vez hace falta un seguimiento y un archivo nuevos, posteriores a la
@@ -586,7 +629,10 @@ este.
 
 - **Eficaz:** el hallazgo queda **Por cerrar**. El Administrador del SGC escribe las **Lecciones
   aprendidas (al menos 10 caracteres)** y, si el análisis pidió cambios en documentos, riesgos o
-  controles, **Cómo se atendieron los cambios**. **Firmar «Cerró».** Queda **Cerrado · eficaz** y
+  controles, **Cómo se atendieron los cambios**. Si lo único que pidió fueron cambios en documentos y
+  la ronda tiene un trámite enlazado que terminó bien, no hace falta escribirlo: el SGC lista esos
+  trámites («Los trámites atienden los cambios en documentos: no hace falta decir cómo se
+  atendieron.») y el cierre los guarda (sección 19). **Firmar «Cerró».** Queda **Cerrado · eficaz** y
   avisa a los líderes del proceso, a quien lo registró y a Gerencia. El visto bueno de Gerencia del
   formato es ese aviso, no una firma.
 - **No eficaz:** la ronda queda congelada y a la vista, plegada como **Ronda 1 · no eficaz** (con su
@@ -720,3 +766,205 @@ la plataforma. Ninguno impide usarla.
     las dos justificaciones y quien las validó; conviene que el procedimiento lo nombre.
 13. **Códigos.** El SGC-FO-14 y el SGC-FO-28 siguen la forma `SGC-FO-NN`; los cuatro de acción
     correctiva, `SGC-FO-AC-NN`. Conviene unificarlos antes de registrarlos como documentos.
+14. **La columna «Estado» del SGC-FO-14.** Sus instrucciones piden el estado de cada actividad, pero su
+    tabla no trae esa columna. La plataforma la imprime (sección 16); conviene añadirla al formato.
+15. **«Código del plan» en el SGC-FO-14.** El formato lo pide por proceso y vigencia. En la plataforma
+    el código `PM-AAAA-NN` es el del plan de un evento (una auditoría, una visita), que puede cruzar
+    procesos: el consolidado de un proceso en el año no lleva código, y donde iría dice «Consolidado
+    del proceso».
+16. **Las fuentes del SGC-FO-14.** El formato lista nueve; la plataforma imprime los catorce orígenes
+    de la sección 3.2, marcados los que tienen filas.
+
+## 14. Planes de mejoramiento
+
+Un **plan de mejoramiento** agrupa los hallazgos de un mismo evento: una auditoría interna, la visita
+de un ente de control, una autoevaluación. Es lo que se le entrega al ente y lo que se imprime en el
+SGC-FO-14. Un hallazgo puede estar en un plan o en ninguno; nunca en dos.
+
+**La pestaña.** **Mejoramiento** → **Planes**: código, plan, origen, vigencia, hallazgos, avance,
+fecha del ente y estado, con búsqueda y los filtros de vigencia, origen y **Solo abiertos**; los
+anulados, con su filtro. La ven el Administrador del SGC y Control Interno, que crean y llenan los
+planes, y quien vea alguno.
+
+**Crear un plan** (Administrador del SGC y Control Interno). **Nuevo plan**: el **nombre** del evento
+(«Auditoría interna de calidad»), el **origen** (uno de los catorce), la **fecha del evento**, la
+**vigencia** (por omisión, el año del evento; no se cambia después: está en el código), el objetivo
+del plan en texto y un **objetivo** del maestro, si quiere, y, con un origen externo, la **fecha
+límite del ente** (obligatoria en «Ente de control»). El SGC le da el código `PM-AAAA-NN`, por
+vigencia y sin huecos; el de un plan anulado no se reutiliza.
+
+**Su página** dice el estado (**Sin hallazgos**, **Abierto**, **Cerrado** o **Anulado**), las cifras
+(hallazgos, abiertos, con algo vencido y el avance, el promedio de los hallazgos con plan de acción
+aprobado), los hallazgos agrupados por proceso, los datos del plan, la respuesta al ente, los
+archivos y el historial. Un hallazgo de otro origen lleva la marca **Origen distinto: …**; uno que se
+anuló o se rechazó estando en el plan sigue en él, marcado, y ya no cuenta.
+
+**Meter hallazgos en el plan,** de tres maneras:
+
+1. **Registrar hallazgo en este plan:** el registro llega con el origen, la fuente (el nombre del
+   plan), la fecha del ente y el objetivo del plan, todos editables.
+2. **Añadir hallazgos:** busque por código o título y filtre por proceso, origen y año; marque
+   varios y añádalos de una vez. Entran en cualquier estado, también cerrados; uno anulado o
+   rechazado, no. Si el plan tiene objetivo, **Poner al hallazgo el objetivo del plan** se lo pone a
+   los que no tienen uno.
+3. Desde el hallazgo, en su sección **Clasificación**: **Poner en un plan**, **Cambiar de plan** o
+   **Sacar del plan** (con su motivo, al menos 10 caracteres). Ahí mismo, **Poner un objetivo**.
+
+Mover un hallazgo entre planes no cambia el hallazgo: conserva su origen, su fuente y su fecha del
+ente, y no se avisa a nadie. El historial del plan dice quién lo puso o lo sacó, cuándo y por qué.
+
+**Editar y anular.** **Editar** cambia todo menos el código y la vigencia; los hallazgos que ya están
+en el plan no cambian. **Anular el plan** pide un motivo y que el plan no tenga hallazgos: sáquelos
+antes. Anulado, conserva su código y su historial y no recibe nada más.
+
+**Quién ve qué.** El Administrador del SGC, Gerencia y Control Interno ven todo el plan. Un líder ve
+el plan si ve completo alguno de sus hallazgos, y entonces ve **solo esos**, con las cifras y el
+historial calculados con ellos; no ve la respuesta al ente, los archivos del plan ni el Excel. Nada
+le dice que el plan tiene más hallazgos, y la dirección de un plan sin hallazgos suyos le responde
+«Página no encontrada». Quien ve un hallazgo solo por su actividad lee el código y el nombre del plan,
+sin enlace.
+
+**Los archivos del plan** (el informe de la auditoría, el acta de la visita, el oficio): los suben
+el Administrador del SGC y Control Interno, en la página del plan; los abre quien ve todo. Se quitan
+mientras el plan no esté anulado, salvo el oficio de una respuesta ya registrada.
+
+**La respuesta al ente, desde el plan.** Un hallazgo externo que está en un plan se responde desde el
+plan, no desde su página (su página lo dice y enlaza al plan). El bloque **Respuesta al ente** dice
+**Listos para responder** (los externos con su plan de acción aprobado y sin respuesta) y **Les falta
+aprobar su plan de acción**, y lista las **Respuestas registradas**. El Administrador del SGC elige el
+oficio entre los archivos del plan, escribe la fecha de envío (no futura ni anterior a la aprobación
+más reciente de los incluidos) y **Registrar la respuesta**: vale para todos los listos de ese momento,
+y cada uno queda respondido como si se hubiera respondido solo. Si mientras tenía el formulario
+abierto cambió la lista, el SGC no registra nada y pide revisar: «Cambiaron los hallazgos listos para
+responder: revise la lista». Los que falten se responden con otra respuesta. La tarea es una por
+plan, **Registrar la respuesta al ente del plan PM-…**, y vence en la fecha del ente más próxima de
+los listos. El líder de un hallazgo respondido así ve en su hallazgo la fecha y quién la registró, no
+el oficio, que es uno solo para todos los procesos del plan.
+
+## 15. El formato para el ente
+
+**Excel para el ente,** en la página del plan, para quien ve todo: una hoja plana, con una fila de
+títulos y los datos, para copiarla al formato del ente (`PM-AAAA-NN-seguimiento-AAAAMMDD.xlsx`). Sus
+trece columnas: **Auditoría o evento** (el nombre del plan), **Vigencia**, **Hallazgo** (título y
+descripción), **Acción de mejora** (la acción y su actividad), **Plazo**, **Fecha de inicio**,
+**Fecha de terminación**, **Avance (%)**, **Observaciones** (lo que dice el último seguimiento),
+**Responsable** (su cargo o, sin cargo, su nombre), **Código** (`HZ-…`), **Causa raíz** y **Estado**
+(el de la actividad, o «Vencida»).
+
+Una fila por actividad de un plan de acción aprobado, de todas las rondas: un hallazgo con dos
+actividades sale en dos filas. Un hallazgo sin plan de acción aprobado sale en una fila, con lo que
+tiene y, en **Observaciones**, en qué va («En revisión», «Cerrado con corrección el …»). El **Plazo**
+lo calcula el SGC: «N meses» si del inicio al día siguiente de la terminación hay meses exactos (del
+1 de agosto al 31 de octubre, «3 meses»), y si no, los días contando los dos extremos (del 2 de
+noviembre al 31 de diciembre, «60 días»). La descarga queda en la bitácora, y lo que escribió una
+persona nunca se interpreta como fórmula.
+
+## 16. El SGC-FO-14
+
+El SGC-FO-14 (plan de mejoramiento) se imprime apaisado, en A4 o Carta, sobre el formato que el
+Administrador del SGC elija en **Configuración de mejoramiento** (sin formato, el encabezado sale sin
+código ni versión). Dos formas:
+
+- **De un plan, por proceso:** **SGC-FO-14 de este proceso**, en cada grupo de la página del plan.
+  Lleva el código, el origen, la vigencia y el objetivo del plan.
+- **Consolidado de un proceso en el año:** desde la lista de hallazgos filtrada por un proceso y
+  desde la sección **Mejoramiento** de la página del proceso (también la de un subproceso, con el de su
+  proceso), con el año. Reúne los hallazgos del proceso de ese año, estén o no en un plan, con la
+  columna **Plan** (su código o «Sin plan»); donde iría el código dice **Consolidado del proceso**
+  (sección 13, punto 15).
+
+Una fila por actividad, con la columna **Estado** que el formato no trae (sección 13, punto 14). Un
+hallazgo sin plan de acción aprobado sale con su fila y, a lo ancho, en qué va («Por formular: plan
+de acción en formulación», «Cerrado con corrección el …»). Los anulados y los rechazados no salen. En
+**Aprobación y control**, una línea por hallazgo: quién elaboró su plan de acción y quién lo aprobó;
+en uno cargado, «Aprobado fuera de la plataforma». Lo imprime quien ve completos todos sus hallazgos:
+quien ve todo, de cualquier proceso; un líder, el de sus procesos.
+
+## 17. Decidir la acción de mejora de un indicador
+
+Cuando una medición queda en Crítico o repite el incumplimiento, el indicador la marca **Requiere
+acción de mejora** (Capítulo 8). Esa marca pide una decisión: ¿se abre un hallazgo, se añade a uno
+que ya existe o no hace falta?
+
+**Cuándo se pide.** Cuando la medición ya tiene su análisis (la causa y la acción propuesta), o cuando
+venció su fecha límite sin él, o cuando quedó cerrada en el cierre del mes. Antes, el panel dice
+**Todavía no es un pendiente** y el día en que se pedirá. Si el valor llega después de la fecha
+límite, se pide desde que llega, y el panel dice «Sin análisis: quien analiza el indicador todavía lo
+puede escribir.».
+
+**La tarea.** El Administrador del SGC ve en **Mis tareas** «Decidir la acción de mejora de {código}
+{nombre}, {periodo}», sin fecha límite. Lleva a la página del indicador, al panel **Requiere acción de
+mejora**: el periodo, el resultado, la causa y la acción propuesta del análisis, y las salidas.
+
+**Las tres salidas.** Elija una y **Guardar la decisión**:
+
+- **Añadir como ocurrencia de HZ-…:** si algún hallazgo abierto cita el indicador, el panel lo
+  propone primero (**Sugerido**: el más reciente; los demás, para elegir). La ocurrencia lleva el
+  último día del periodo y la frase del resultado.
+- **Abrir un hallazgo nuevo:** el registro llega con el origen «Indicador», el proceso, el indicador
+  y la medición fijos, y un título y una descripción propuestos. Al formular, el análisis muestra
+  **Lo que dijo el análisis del indicador** (la causa y la acción propuesta), como punto de partida.
+- **No requiere acción de mejora:** solo el Administrador del SGC, con su justificación (al menos 10
+  caracteres). Es definitiva.
+
+El líder del proceso del indicador ve el panel con las dos primeras; nadie más lo ve. Junto a la
+medición queda **Hallazgo HZ-…** u **Ocurrencia de HZ-…**, con su enlace, solo para quien puede ver
+ese hallazgo; **No requiere acción de mejora**, con su justificación, quién y cuándo, para quien ve el
+indicador. Si el hallazgo que la resolvió termina rechazado o anulado, la decisión se pide otra vez.
+Quien puede decidir y registra a mano un hallazgo que cita la medición la resuelve al registrarlo; si
+lo registra otra persona (Control Interno, un líder de otro proceso), la decisión sigue pendiente y el
+panel le propone ese hallazgo.
+
+## 18. Abrir un hallazgo desde otros módulos
+
+**La sección «Mejoramiento»** de la página de un documento, de un proceso (y de un subproceso), de un
+indicador y de una norma muestra los hallazgos que los citan y que usted ve, con **Ver todos** (la
+lista filtrada) y **Abrir hallazgo** (el registro, con eso ya puesto) para quien puede registrar ahí.
+A quien no ve ninguno, la sección no le muestra lista ni cifra: solo **Reportar**. En **Objetivos**,
+cada objetivo dice cuántos hallazgos abiertos apuntan a él y lleva a la lista filtrada.
+
+**Desde un hallazgo de verificación de un punto de uso** (Distribución, Capítulo 6), el Administrador
+del SGC tiene **Abrir no conformidad** en la fila del hallazgo (la lista de hallazgos, la verificación
+cerrada y la copia), en cualquier estado. La no conformidad llega con la clase y el origen («Control
+documental») fijos, la descripción y la fecha del hallazgo de verificación, el proceso entre los del
+punto y la **Justificación de la acción correctiva** (por qué esta falla necesita tratar su causa, al
+menos 10 caracteres). Aceptada, va directo a **Por formular**, y su sección de corrección muestra la
+del hallazgo de verificación. Quien corrigió el hallazgo de verificación, o responde por él, no puede
+verificar esa no conformidad. Si el hallazgo de verificación se reabrió o su punto acumula varios
+hallazgos en el año (los dos números, en **Configuración de mejoramiento**), la fila lo sugiere: «Este
+hallazgo se reabrió una vez. Puede abrir una no conformidad para tratar la causa.». Tiene a lo sumo
+una no conformidad que cuente; si esa termina rechazada o anulada, se puede abrir otra. Después, la
+fila dice **No conformidad HZ-…** y en qué va. En Distribución no cambia nada más.
+
+**Desde un impacto de norma** (Capítulo 7): **Abrir hallazgo** junto a cada impacto, en la página del
+cambio de norma, o junto a la revisión pendiente de un indicador, en su página. Llega con el origen
+«Control documental», la norma como requisito incumplido y el proceso del impacto, fijos. Lo abren el
+Administrador del SGC y los líderes del proceso del impacto. Si el impacto venció y ya se escaló al
+jefe, lo sugiere: «Este impacto está vencido y ya se escaló. Puede abrir un hallazgo.». Un impacto
+tiene a lo sumo un hallazgo que cuente, y se sigue resolviendo por sus propias reglas.
+
+## 19. El cambio documental de una actividad
+
+Cuando una actividad pide cambiar un documento, el cambio es un trámite (Capítulo 5) y queda
+enlazado a la actividad.
+
+- **Pedir cambio documental,** en la página de la actividad, para quien la ve y puede solicitar
+  trámites (el Administrador del SGC y los líderes), con la actividad de un plan aprobado y sin
+  terminar. Lleva a la solicitud con el documento que cita el hallazgo (y el tipo «modificar»), el
+  motivo y la descripción de la actividad como justificación, editable. La solicitud advierte: «Lo
+  que escriba aquí lo leerán quienes participan en el trámite». El trámite y el enlace se crean
+  juntos.
+- **Enlazar un trámite** que ya existe: el selector ofrece los trámites que usted ve, que no están
+  enlazados a otra actividad, que no terminaron mal y que se solicitaron desde que se detectó el
+  hallazgo. Un enlace puesto así lo quita quien lo puso o el Administrador del SGC, mientras la
+  actividad no esté terminada.
+- **Si usted es el responsable y no puede solicitar,** la actividad le dice: «Pídale al líder del
+  proceso o al Administrador del SGC que lo solicite desde aquí».
+
+La actividad lista sus trámites con su estado: **Vale como evidencia de esta actividad.** (publicado o
+eliminado), en curso, o **Queda como historia; no vale como evidencia.** (rechazado o cancelado).
+Cuando un trámite enlazado termina, la revisión de vencimientos le avisa al responsable de la
+actividad. La publicación no termina la actividad: la termina su responsable (sección 8.3). La página
+del trámite dice **Atiende una actividad de mejoramiento** a quien ve esa actividad. Al cerrar el
+hallazgo, si el análisis pidió cambios en documentos y un trámite enlazado terminó bien, no hace falta
+escribir cómo se atendieron (sección 9.5).
