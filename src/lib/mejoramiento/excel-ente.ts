@@ -1,7 +1,7 @@
 /**
  * El Excel para el ente (anexo 15B §4): una hoja, una tabla plana de trece columnas (la fila de títulos y los datos debajo) para
  * que el ente pueda copiarla a su propio formato. Puro: las filas llegan leídas (`filasDePlanDeAccion`). Toda celda de texto pasa
- * por `neutralizarFormula`.
+ * por `neutralizarFormula`, una sola vez, al escribir el libro (`construirExcelDelEnte`).
  */
 import ExcelJS from "exceljs";
 import type { FilaDePlanDeAccion } from "@/db/consultas/mejoramiento/filas-de-plan";
@@ -37,29 +37,28 @@ export function estadoDeActividadEnTexto(a: { estado: string; vencida: boolean }
 const fecha = (dia: string) => dia.replaceAll("-", "/");
 
 type Celda = string | number;
-const t = (v: string): string => neutralizarFormula(v);
 
 /** Una fila por cada una de `filas`, con las trece celdas en el orden de `COLUMNAS_DEL_ENTE`. */
 export function filasDelEnte(plan: { nombre: string; vigencia: number }, filas: FilaDePlanDeAccion[]): Array<Array<Celda>> {
   return filas.map((f) => {
-    const hallazgo = t(`${f.hallazgo.titulo} — ${f.hallazgo.descripcion}`);
+    const hallazgo = `${f.hallazgo.titulo} — ${f.hallazgo.descripcion}`;
     const a = f.actividad;
     if (!a || !f.accion) {
-      return [t(plan.nombre), plan.vigencia, hallazgo, "", "", "", "", "", t(f.enQueVa ?? ""), "", t(f.hallazgo.codigo), "", ""];
+      return [plan.nombre, plan.vigencia, hallazgo, "", "", "", "", "", f.enQueVa ?? "", "", f.hallazgo.codigo, "", ""];
     }
     return [
-      t(plan.nombre),
+      plan.nombre,
       plan.vigencia,
       hallazgo,
-      t(`${f.accion.descripcion} · Actividad: ${a.descripcion}`),
+      `${f.accion.descripcion} · Actividad: ${a.descripcion}`,
       plazoEnTexto(a.inicio, a.fin),
       fecha(a.inicio),
       fecha(a.fin),
       a.avance,
-      t(a.ultimoSeguimiento?.realizado ?? ""),
-      t(a.cargo ?? a.responsable),
-      t(f.hallazgo.codigo),
-      t([f.accion.causas, f.accion.metodo ? `Método: ${f.accion.metodo}` : ""].filter(Boolean).join(" · ")),
+      a.ultimoSeguimiento?.realizado ?? "",
+      a.cargo ?? a.responsable,
+      f.hallazgo.codigo,
+      [f.accion.causas, f.accion.metodo ? `Método: ${f.accion.metodo}` : ""].filter(Boolean).join(" · "),
       estadoDeActividadEnTexto(a),
     ];
   });
@@ -73,6 +72,6 @@ export async function construirExcelDelEnte(plan: { nombre: string; vigencia: nu
   cabecera.font = { bold: true };
   hoja.views = [{ state: "frozen", ySplit: 1 }];
   hoja.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUMNAS_DEL_ENTE.length } };
-  for (const f of filasDelEnte(plan, filas)) hoja.addRow(f);
+  for (const f of filasDelEnte(plan, filas)) hoja.addRow(f.map((v) => (typeof v === "string" ? neutralizarFormula(v) : v)));
   return Buffer.from((await wb.xlsx.writeBuffer()) as ArrayBuffer);
 }

@@ -24,7 +24,7 @@ import { obtenerSql } from "@/db/cliente";
 import { ponerEnPlan } from "@/db/consultas/mejoramiento/clasificacion";
 import type { FilaDePlanDeAccion } from "@/db/consultas/mejoramiento/filas-de-plan";
 import { anularHallazgo } from "@/db/consultas/mejoramiento/registro";
-import { COLUMNAS_DEL_ENTE, estadoDeActividadEnTexto, filasDelEnte } from "@/lib/mejoramiento/excel-ente";
+import { COLUMNAS_DEL_ENTE, construirExcelDelEnte, estadoDeActividadEnTexto, filasDelEnte } from "@/lib/mejoramiento/excel-ente";
 import { crearSesion } from "@/lib/sesion";
 import { baseDeMejora, c, hallazgoEn, HORA_DE_ESCENA, planDeMejoraDePrueba } from "./utiles/mejoramiento";
 import { revertida } from "./utiles/transaccion";
@@ -133,11 +133,33 @@ describe("filasDelEnte", () => {
     expect(f[10]).toBe("HZ-2026-004");
   });
 
-  it("neutraliza las fórmulas", () => {
+  it("neutraliza toda celda de texto, en el libro: también el estado, la fecha y el código", async () => {
     const base = filaDe();
-    const [f] = filasDelEnte({ nombre: "=PLAN()", vigencia: 2026 }, [{ ...base, hallazgo: { ...base.hallazgo, titulo: "=1+1" } }]);
-    expect(f[0]).toBe("'=PLAN()");
-    expect(String(f[2]).startsWith("'=1+1")).toBe(true);
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(
+      (await construirExcelDelEnte({ nombre: "=PLAN()", vigencia: 2026 }, [
+        {
+          ...base,
+          hallazgo: { ...base.hallazgo, titulo: "=1+1", codigo: "-HZ" },
+          actividad: { ...base.actividad!, estado: "=cmd" as "abierta", inicio: "+2026-11-02", responsable: "@x", cargo: null },
+        },
+      ])) as unknown as ArrayBuffer,
+    );
+    const fila = libro.worksheets[0].getRow(2);
+    const celdas = Array.from({ length: 13 }, (_, i) => fila.getCell(i + 1).value);
+    expect(celdas[0]).toBe("'=PLAN()");
+    expect(String(celdas[2]).startsWith("'=1+1")).toBe(true);
+    expect(celdas[5]).toBe("'+2026/11/02");
+    expect(celdas[9]).toBe("'@x");
+    expect(celdas[10]).toBe("'-HZ");
+    expect(celdas[12]).toBe("'=cmd");
+    for (const v of celdas) if (typeof v === "string") expect(v).not.toMatch(/^[=+\-@]/);
+  });
+
+  it("una actividad cancelada con el fin pasado sale «Cancelada», no «Vencida»", () => {
+    const base = filaDe();
+    const [f] = filasDelEnte(PLAN, [{ ...base, actividad: { ...base.actividad!, estado: "cancelada", fin: "2026-11-05", vencida: false } }]);
+    expect(f[12]).toBe("Cancelada");
   });
 
   it("el estado: el de la actividad o «Vencida»", () => {

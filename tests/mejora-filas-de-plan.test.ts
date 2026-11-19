@@ -13,10 +13,9 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { filasDePlanDeAccion } from "@/db/consultas/mejoramiento/filas-de-plan";
-import { actividadPorSql, baseDeMejora, hallazgoEn } from "./utiles/mejoramiento";
+import { actividadPorSql, baseDeMejora, evidenciaDeActividad, evidenciaDelHallazgo, hallazgoEn } from "./utiles/mejoramiento";
 import { contada } from "./utiles/sentencias";
 import { revertida } from "./utiles/transaccion";
-import { usuarioDePrueba } from "./utiles/tramites";
 
 const sql = obtenerSql();
 afterAll(() => sql.end());
@@ -38,6 +37,31 @@ describe("filasDePlanDeAccion", () => {
       expect(filas[0].accion?.metodo).toBe("5 porqués");
       expect(filas.map((f) => f.actividad?.descripcion)).toEqual(["Actividad 1 del plan de prueba", "Actividad 2 del plan de prueba"]);
       expect(filas.every((f) => f.rondas === 1 && f.ronda === 1 && f.enQueVa === null)).toBe(true);
+    }));
+
+  it("con dos acciones y dos causas en una acción, cada acción lleva sus causas unidas con «; » y las filas van por acción y actividad", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { actividades: 2 });
+      const [r] = await tx`SELECT id FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = 1`;
+      const [a1] = await tx`SELECT id, accion_id FROM mejora_actividades WHERE hallazgo_id = ${h.id} ORDER BY id LIMIT 1`;
+      const [causa2] = await tx`INSERT INTO mejora_causas (hallazgo_id, ronda_id, orden, texto) VALUES (${h.id}, ${r.id}, 2, 'Segunda causa de la primera acción') RETURNING id`;
+      const [causa3] = await tx`INSERT INTO mejora_causas (hallazgo_id, ronda_id, orden, texto) VALUES (${h.id}, ${r.id}, 3, 'Causa de la segunda acción') RETURNING id`;
+      await tx`INSERT INTO mejora_accion_causas (hallazgo_id, accion_id, causa_id) VALUES (${h.id}, ${a1.accion_id}, ${causa2.id})`;
+      const [ac2] = await tx`INSERT INTO mejora_acciones (hallazgo_id, ronda_id, orden, tipo, descripcion)
+        VALUES (${h.id}, ${r.id}, 2, 'preventiva', 'Segunda acción de prueba') RETURNING id`;
+      await tx`INSERT INTO mejora_accion_causas (hallazgo_id, accion_id, causa_id) VALUES (${h.id}, ${ac2.id}, ${causa3.id})`;
+      await tx`INSERT INTO mejora_actividades (hallazgo_id, accion_id, orden, descripcion, responsable_id, inicio, fin_original, fin)
+        VALUES (${h.id}, ${ac2.id}, 1, 'Actividad de la segunda acción', ${b.lider.usuarioId}, '2026-11-17', '2026-12-15', '2026-12-15')`;
+      const filas = await filasDePlanDeAccion(tx, [h.id], AHORA);
+      expect(filas.map((f) => [f.accion?.numero, f.actividad?.descripcion])).toEqual([
+        ["A1", "Actividad 1 del plan de prueba"],
+        ["A1", "Actividad 2 del plan de prueba"],
+        ["A2", "Actividad de la segunda acción"],
+      ]);
+      expect(filas[0].accion?.causas).toBe("El procedimiento no asigna el registro al turno de noche; Segunda causa de la primera acción");
+      expect(filas[2].accion?.causas).toBe("Causa de la segunda acción");
+      expect(filas[2].accion?.tipo).toBe("preventiva");
     }));
 
   it("un hallazgo por formular y uno en revisión dan una fila sin acción ni actividad que dice en qué van", () =>
@@ -87,7 +111,7 @@ describe("filasDePlanDeAccion", () => {
       const b = await baseDeMejora(tx);
       const h = await hallazgoEn(tx, b, "en_ejecucion", undefined, { actividades: 3 });
       const ids = (await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id} ORDER BY orden, id`).map((x) => Number(x.id));
-      await tx`UPDATE mejora_actividades SET estado = 'cancelada' WHERE id = ${ids[0]}`;
+      await tx`UPDATE mejora_actividades SET estado = 'cancelada', fin = '2026-11-01' WHERE id = ${ids[0]}`;
       await tx`UPDATE mejora_actividades SET estado = 'en_proceso', fin = '2026-11-01', reprogramaciones = 1 WHERE id = ${ids[1]}`;
       await tx`UPDATE mejora_actividades SET estado = 'abierta', fin = '2026-12-30' WHERE id = ${ids[2]}`;
       const filas = await filasDePlanDeAccion(tx, [h.id], AHORA);
@@ -100,14 +124,18 @@ describe("filasDePlanDeAccion", () => {
   it("el último seguimiento, los archivos y el cargo (nulo si no tiene)", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
-      const sinCargo = await usuarioDePrueba(tx, { rol: "consulta" });
-      const h = await hallazgoEn(tx, b, "por_aceptar");
-      const a = await actividadPorSql(tx, h.id, sinCargo.usuarioId);
+      const sinCargo = b.lider;
+      const h = await hallazgoEn(tx, b, "en_ejecucion");
+      const [{ id: a }] = await tx`SELECT id FROM mejora_actividades WHERE hallazgo_id = ${h.id} LIMIT 1`;
       await tx`INSERT INTO mejora_seguimientos (hallazgo_id, actividad_id, fecha, realizado, avance, registrado_por)
         VALUES (${h.id}, ${a}, '2026-11-10', 'Primero', 10, ${sinCargo.usuarioId}), (${h.id}, ${a}, '2026-11-15', 'Segundo', 30, ${sinCargo.usuarioId})`;
       const [f] = await filasDePlanDeAccion(tx, [h.id], AHORA);
       expect(f.actividad?.ultimoSeguimiento).toEqual({ fecha: "2026-11-15", realizado: "Segundo" });
       expect(f.actividad?.archivos).toBe(0);
+      await evidenciaDeActividad(tx, a, sinCargo.usuarioId);
+      await evidenciaDelHallazgo(tx, h.id, b.admin.usuarioId);
+      const [conArchivo] = await filasDePlanDeAccion(tx, [h.id], AHORA);
+      expect(conArchivo.actividad?.archivos).toBe(1);
       expect(f.actividad?.cargo).toBeNull();
       const [cargo] = await tx`SELECT id, nombre FROM cargos ORDER BY id LIMIT 1`;
       await tx`UPDATE usuarios SET cargo_id = ${cargo.id} WHERE id = ${sinCargo.usuarioId}`;
@@ -118,17 +146,19 @@ describe("filasDePlanDeAccion", () => {
   it("ordena por código del hallazgo, ronda, acción y actividad, y no pasa de seis consultas con cincuenta actividades", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
-      const x = await hallazgoEn(tx, b, "por_aceptar");
-      const y = await hallazgoEn(tx, b, "por_aceptar");
-      for (let i = 0; i < 25; i++) await actividadPorSql(tx, x.id, b.lider.usuarioId);
-      for (let i = 0; i < 25; i++) await actividadPorSql(tx, y.id, b.lider.usuarioId);
+      const hallazgos = [];
+      for (let i = 0; i < 6; i++) {
+        const h = await hallazgoEn(tx, b, "por_aceptar");
+        for (let j = 0; j < 9; j++) await actividadPorSql(tx, h.id, b.lider.usuarioId);
+        hallazgos.push(h);
+      }
       const { sql: contador, sentencias } = contada(tx);
-      const filas = await filasDePlanDeAccion(contador, [y.id, x.id], AHORA);
-      expect(filas).toHaveLength(50);
+      const filas = await filasDePlanDeAccion(contador, hallazgos.map((h) => h.id).reverse(), AHORA);
+      expect(filas).toHaveLength(54);
+      // Una consulta por hallazgo daría 24 o más.
       expect(sentencias.length).toBeLessThanOrEqual(6);
       const codigos = filas.map((f) => f.hallazgo.codigo);
       expect(codigos).toEqual([...codigos].sort());
-      expect(codigos[0]).toBe([x.codigo, y.codigo].sort()[0]);
     }));
 
   it("sin hallazgos no consulta nada", async () => {
