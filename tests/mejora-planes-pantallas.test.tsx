@@ -183,6 +183,19 @@ describe("la página del plan (maqueta 2)", () => {
     expect(historial).toContain("María Fernanda Perdomo creó el plan");
   });
 
+  it("«SGC-FO-14 de este proceso» (Tarea 7) sale en el grupo cuyo proceso la persona imprime y que tiene hallazgos que cuentan", () => {
+    const base = detalle();
+    const soloAnulados = { procesoId: 9, proceso: "Gestión Financiera", filas: [base.grupos[0].filas[2]] };
+    const plan = detalle({ grupos: [base.grupos[0], soloAnulados] });
+    const sin = renderToStaticMarkup(<HallazgosDelPlan plan={plan} contexto={CONTEXTO} />);
+    expect(sin).not.toContain("SGC-FO-14");
+    const con = renderToStaticMarkup(<HallazgosDelPlan plan={plan} contexto={CONTEXTO} imprimibles={[7, 9]} />);
+    expect(con).toContain('href="/mejoramiento/planes/2/imprimir?proceso=7"');
+    // El grupo que solo tiene hallazgos que ya no cuentan no lo ofrece: el impreso saldría vacío.
+    expect(con).not.toContain("proceso=9");
+    expect(sinEtiquetas(con)).toContain("SGC-FO-14 de este proceso: Gestión de Bienes y Servicios");
+  });
+
   it("un plan sin hallazgos ofrece añadirlos a quien gestiona y a los demás no", () => {
     const vacio = detalle({ grupos: [], hallazgos: 0, abiertos: 0, conAlgoVencido: 0, avance: null, estado: "sin_hallazgos" });
     expect(sinEtiquetas(renderToStaticMarkup(<HallazgosDelPlan plan={vacio} contexto={CONTEXTO} sacar={accion} />))).toContain("Añadir hallazgos");

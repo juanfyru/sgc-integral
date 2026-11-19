@@ -594,3 +594,19 @@
     -webkit-print-color-adjust: exact;
   }
 }
+
+/* ── Fase 15B: el SGC-FO-14, plan de mejoramiento (anexo §5, maqueta 4) ──────
+   Apaisado, en su propia página con nombre: solo esta hoja gira; la ficha y los impresos de la 15A siguen verticales. Con
+   dieciséis columnas, la tabla de las acciones baja la letra al imprimir para que quepa a lo ancho sin desplazarse. */
+@page ficha-horizontal {
+  size: landscape;
+  margin: 10mm 8mm;
+}
+@media print {
+  .ficha-impresa.ficha-horizontal {
+    page: ficha-horizontal;
+  }
+  .ficha-impresa.ficha-horizontal .fo14-acciones {
+    font-size: 7pt;
+  }
+}

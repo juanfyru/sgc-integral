@@ -9,6 +9,7 @@ import { HistorialDelPlan } from "@/componentes/mejoramiento/planes/HistorialDel
 import { RespuestaAlEnte } from "@/componentes/mejoramiento/planes/RespuestaAlEnte";
 import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
+import { procesosQueImprime } from "@/db/consultas/mejoramiento/fo14";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -37,8 +38,12 @@ export default async function PaginaPlan({
   const { id } = await params;
   // Una sola hora para toda la página: las cifras, lo vencido y lo que falta del plazo se calculan con ella.
   const ahora = new Date();
-  const { plan } = await exigirPlan(id, { ahora });
-  const contexto = await contextoDeMejora(obtenerSql(), ahora);
+  const { sesion, plan } = await exigirPlan(id, { ahora });
+  const [contexto, imprimibles] = await Promise.all([
+    contextoDeMejora(obtenerSql(), ahora),
+    // «SGC-FO-14 de este proceso», solo en los grupos cuyo proceso la persona imprime completo (anexo §5.5).
+    procesosQueImprime(sesion, plan.grupos.map((g) => g.procesoId)),
+  ]);
   const cambio = (await searchParams).respuesta === "cambio";
   const clave = `${plan.estado}-${plan.historial.length}`;
   return (
@@ -55,7 +60,7 @@ export default async function PaginaPlan({
           al lado (maqueta 2) llega solo desde 1536 px; por debajo, los datos, la respuesta, los archivos y el historial van debajo,
           de dos en dos. */}
       <div className="grid min-w-0 grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <HallazgosDelPlan key={`hallazgos-${clave}`} plan={plan} contexto={contexto} sacar={sacarDelPlanAccion} />
+        <HallazgosDelPlan key={`hallazgos-${clave}`} plan={plan} contexto={contexto} sacar={sacarDelPlanAccion} imprimibles={imprimibles} />
         <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2 2xl:flex 2xl:flex-col">
           <DatosDelPlan plan={plan} />
           {plan.respuesta ? (

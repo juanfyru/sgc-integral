@@ -14,6 +14,7 @@ const IMPRESOS: ReadonlyArray<{ impreso: keyof ConfigMejora["formatos"]; etiquet
   { impreso: "registro", etiqueta: "Registro del hallazgo" },
   { impreso: "porques", etiqueta: "Análisis de los cinco porqués" },
   { impreso: "ishikawa", etiqueta: "Diagrama de Ishikawa" },
+  { impreso: "plan", etiqueta: "SGC-FO-14 Plan de mejoramiento" },
 ];
 
 /** El documento del sistema de calidad que da el código y la versión de cada impreso (spec 15 §16.4). */

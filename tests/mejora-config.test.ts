@@ -3,12 +3,24 @@
  * Contra la BD de trabajo, dentro de una transacción que se revierte.
  */
 import { existsSync } from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   process.loadEnvFile(".env.local");
 }
 
+// La acción de los formatos con un `FormData` real (Fase 15B, Tarea 7): el cliente de la app se sustituye por la transacción del
+// test mientras corre (`enCurso`); fuera de ella, el de verdad. Solo la sesión es de mentira.
+const { enCurso, requerirSesion } = vi.hoisted(() => ({ enCurso: { sql: null as unknown }, requerirSesion: vi.fn() }));
+vi.mock("@/db/cliente", async (original) => {
+  const real = await original<typeof import("@/db/cliente")>();
+  return { ...real, obtenerSql: () => (enCurso.sql ?? real.obtenerSql()) as ReturnType<typeof real.obtenerSql> };
+});
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/sesion-actual", () => ({ requerirSesion }));
+vi.mock("@/lib/contexto-peticion", () => ({ contextoDePeticion: async () => ({ ip: "10.0.0.1", userAgent: "prueba" }) }));
+
+import { guardarConfigMejoraAccion } from "@/app/admin/acciones-mejoramiento";
 import { obtenerSql } from "@/db/cliente";
 import {
   agregarDiaDeCalendario,
@@ -177,6 +189,45 @@ describe("encabezadoDeFormato", () => {
 
       await tx`UPDATE documento_versiones SET estado = 'obsoleto' WHERE documento_id = ${doc.id}`;
       expect(await encabezadoDeFormato(tx, "registro")).toBeNull();
+    });
+  });
+
+  it("el SGC-FO-14 (`plan`) lee su propio documento", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const doc = await documentoLibre(tx, { proceso: "CEX", tipo: "FO" });
+      await guardarConfigMejora(admin, { ...CONFIG_MEJORA_DEFECTO, formatos: { registro: null, porques: null, ishikawa: null, plan: doc.id } }, opc(tx));
+      expect(await encabezadoDeFormato(tx, "plan")).toMatchObject({ codigo: doc.codigo });
+      expect(await encabezadoDeFormato(tx, "registro")).toBeNull();
+    });
+  });
+});
+
+describe("guardarConfigMejoraAccion", () => {
+  it("el bloque de formatos guarda el cuarto selector, «SGC-FO-14 Plan de mejoramiento», y vaciarlo lo deja sin documento", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const doc = await documentoLibre(tx, { proceso: "CEX", tipo: "FO" });
+      const antes = await obtenerConfigMejora({ sql: tx });
+      const enviar = async (campos: Record<string, string>) => {
+        const datos = new FormData();
+        for (const [k, v] of Object.entries(campos)) datos.append(k, v);
+        enCurso.sql = tx;
+        requerirSesion.mockResolvedValue(admin);
+        try {
+          return await guardarConfigMejoraAccion(null, datos);
+        } finally {
+          enCurso.sql = null;
+        }
+      };
+      const vacios = { formato_registro: "", formato_porques: "", formato_ishikawa: "" };
+      expect(await enviar({ bloque: "formatos", ...vacios, formato_plan: String(doc.id) })).toBeNull();
+      const despues = await obtenerConfigMejora({ sql: tx });
+      expect(despues.formatos).toEqual({ registro: null, porques: null, ishikawa: null, plan: doc.id });
+      // Los plazos no se tocan al guardar los formatos.
+      expect(despues.plazos).toEqual(antes.plazos);
+      expect(await enviar({ bloque: "formatos", ...vacios, formato_plan: "" })).toBeNull();
+      expect((await obtenerConfigMejora({ sql: tx })).formatos.plan).toBeNull();
     });
   });
 });

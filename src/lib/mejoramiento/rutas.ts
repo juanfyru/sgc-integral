@@ -34,6 +34,12 @@ export const rutaDeAnadirAPlan = (id: number) => `/mejoramiento/planes/${id}/ana
 /** El Excel para el ente de un plan (anexo §4): una descarga auditada, un enlace simple (su ruta llega en la Tarea 6). */
 export const rutaDelExcelDelPlan = (id: number) => `/mejoramiento/planes/${id}/excel`;
 
+/** El SGC-FO-14 de un plan para uno de sus procesos (anexo §5.1): «SGC-FO-14 de este proceso», en cada grupo del plan. */
+export const rutaDelFo14DelPlan = (planId: number, procesoId: number) => `/mejoramiento/planes/${planId}/imprimir?proceso=${procesoId}`;
+
+/** El SGC-FO-14 consolidado de un proceso en un año (anexo §5.1). */
+export const rutaDelConsolidado = (procesoId: number, anio: number) => `/mejoramiento/consolidado?proceso=${procesoId}&anio=${anio}`;
+
 /** Los impresos de un hallazgo (spec §16.4): el SGC-FO-AC-01 o, con `analisis`, el formato de ese análisis. */
 export const rutaDeImprimir = (id: number, analisis?: number) =>
   `/mejoramiento/${id}/imprimir${analisis === undefined ? "" : `?analisis=${analisis}`}`;

@@ -63,6 +63,14 @@ describe("cada página comprueba la sesión", () => {
     }
     expect(leer("page.tsx")).toContain("exigirSesion(");
   });
+  it("los dos SGC-FO-14 (anexo 15B §5.5) llaman exigirSesion() y responden «no encontrado», nunca por permiso", () => {
+    for (const ruta of ["src/app/(app)/mejoramiento/planes/[id]/imprimir/page.tsx", "src/app/(app)/mejoramiento/consolidado/page.tsx"]) {
+      const fuente = readFileSync(path.join(raiz, ruta), "utf8");
+      expect(fuente).toContain("exigirSesion(");
+      expect(fuente).toContain("notFound(");
+      expect(fuente).not.toContain("exigirPermiso(");
+    }
+  });
   it.each(paginas("src/app/(cuenta)"))("cuenta: %s", (ruta) => {
     expect(readFileSync(ruta, "utf8")).toContain("exigirSesionConPendientes(");
   });

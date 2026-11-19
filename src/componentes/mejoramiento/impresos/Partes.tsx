@@ -35,12 +35,15 @@ export const conPorcentajesUnidos = (t: string) => t.replace(/(\d)\s+%/g, `$1${E
 /** Un paso de un hallazgo cargado: se hizo en papel, sin firma del sistema (spec §15). */
 export const HECHO_FUERA = "Hecho fuera de la plataforma, sin firma del sistema";
 
-/** La hoja impresa: un artículo con el título del encabezado como nombre. */
-export function Hoja({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+/**
+ * La hoja impresa: un artículo con el título del encabezado como nombre. `horizontal`: se imprime en su propia página con nombre,
+ * apaisada (el SGC-FO-14, anexo 15B §5); las demás, en la vertical de la ficha.
+ */
+export function Hoja({ titulo, horizontal = false, children }: { titulo: string; horizontal?: boolean; children: React.ReactNode }) {
   return (
     <article
       aria-labelledby={titulo}
-      className="ficha-impresa flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-card p-4 text-sm text-foreground print:rounded-none print:border-0 print:p-0"
+      className={`ficha-impresa${horizontal ? " ficha-horizontal" : ""} flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-card p-4 text-sm text-foreground print:rounded-none print:border-0 print:p-0`}
     >
       {children}
     </article>

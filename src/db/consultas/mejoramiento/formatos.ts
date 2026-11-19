@@ -11,8 +11,9 @@ import { obtenerConfigMejora, type ConfigMejora } from "./config";
 export type EncabezadoDelFormato = { codigo: string; version: number; emitidoEn: Date };
 
 /**
- * El encabezado del formato de un impreso (`registro`: SGC-FO-AC-01; `porques`: SGC-FO-AC-02; `ishikawa`: SGC-FO-AC-03): el código
- * del documento elegido en la configuración, el número de su versión vigente y, como fecha de emisión, el día en que se aprobó
+ * El encabezado del formato de un impreso (`registro`: SGC-FO-AC-01; `porques`: SGC-FO-AC-02; `ishikawa`: SGC-FO-AC-03; y, desde
+ * la 15B, `plan`: SGC-FO-14, el plan de mejoramiento): el código del documento elegido en la configuración, el número de su
+ * versión vigente y, como fecha de emisión, el día en que se aprobó
  * (`fecha_aprobacion`, que toda vigente tiene: la de una carga fuera de la plataforma no es su `publicado_en`), al empezar ese día
  * en la zona de la instalación. `null` si no se eligió ninguno o si el elegido ya no tiene versión vigente: el impreso sale sin
  * esos tres datos.
@@ -35,6 +36,19 @@ export async function lideresDelProceso(sql: Cliente, procesoId: number): Promis
     JOIN procesos p ON p.id = up.proceso_id AND p.activo
     WHERE up.proceso_id = ${procesoId} ORDER BY u.nombre, u.id`;
   return filas.map((f) => f.nombre as string);
+}
+
+/** Un líder activo del proceso con el cargo de su perfil (nulo sin cargo): el «responsable y cargo» del SGC-FO-14 (anexo 15B §5.2). */
+export type ResponsableDelProceso = { nombre: string; cargo: string | null };
+
+/** Los líderes activos del proceso, como `lideresDelProceso`, con su cargo: el SGC-FO-14 los pinta en dos casillas. */
+export async function responsablesDelProceso(sql: Cliente, procesoId: number): Promise<ResponsableDelProceso[]> {
+  const filas = await sql`SELECT u.nombre, cg.nombre AS cargo FROM usuario_procesos up
+    JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
+    JOIN procesos p ON p.id = up.proceso_id AND p.activo
+    LEFT JOIN cargos cg ON cg.id = u.cargo_id
+    WHERE up.proceso_id = ${procesoId} ORDER BY u.nombre, u.id`;
+  return filas.map((f) => ({ nombre: f.nombre as string, cargo: (f.cargo as string | null) ?? null }));
 }
 
 /** Los seguimientos del hallazgo, por actividad, del más antiguo al más reciente: la sección 5 del SGC-FO-AC-01. */

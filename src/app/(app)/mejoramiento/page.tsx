@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ClipboardCheck, FileSpreadsheet, Plus } from "lucide-react";
+import { ClipboardCheck, FileSpreadsheet, Plus, Printer } from "lucide-react";
 import { FiltrosDeHallazgos } from "@/componentes/mejoramiento/FiltrosDeHallazgos";
 import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
@@ -12,12 +12,14 @@ import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { contarMisActividades } from "@/db/consultas/mejoramiento/actividades";
+import { procesosQueImprime } from "@/db/consultas/mejoramiento/fo14";
 import { listarHallazgos, veAlgunHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { veAlgunPlan } from "@/db/consultas/mejoramiento/planes-lectura";
 import { procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { contarReportesPorClasificar } from "@/db/consultas/mejoramiento/reportes";
 import { rutaDeReportar } from "@/lib/mejoramiento/reportes";
-import { adondeVaSinLista } from "@/lib/mejoramiento/rutas";
+import { adondeVaSinLista, rutaDelConsolidado } from "@/lib/mejoramiento/rutas";
+import { fechaEnZona } from "@/lib/tramites/plazos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
@@ -52,16 +54,22 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
   }
   const filtro = filtroDeConsulta(await searchParams);
   const ahora = new Date();
-  const [{ filas, cifras }, procesos, contexto, porClasificar, vePlanes] = await Promise.all([
+  const [{ filas, cifras }, procesos, contexto, porClasificar, vePlanes, imprime] = await Promise.all([
     listarHallazgos(sesion, filtro, { ahora }),
     procesosDelAlcance(sesion),
     contextoDeMejora(obtenerSql(), ahora),
     contarReportesPorClasificar(sesion),
     veAlgunPlan(sesion),
+    filtro.procesoId === undefined ? Promise.resolve([]) : procesosQueImprime(sesion, [filtro.procesoId]),
   ]);
   const registra = puede(sesion, "mejora.registrar");
   // El Excel lleva los filtros puestos (spec §16.3); es una descarga auditada: un enlace simple, sin precarga.
   const consulta = consultaDeFiltro(filtro);
+  // Filtrada por un proceso, el SGC-FO-14 consolidado de ese proceso en el año en curso, solo a quien lo imprime (anexo §5.5).
+  const consolidado =
+    filtro.procesoId !== undefined && imprime.length > 0
+      ? rutaDelConsolidado(filtro.procesoId, Number(fechaEnZona(ahora, contexto.zona).slice(0, 4)))
+      : null;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -73,8 +81,14 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
             : "Hallazgos, planes de acción y su seguimiento."
         }
         acciones={
-          veAlgo || registra ? (
+          veAlgo || registra || consolidado ? (
             <>
+              {consolidado ? (
+                <Link href={consolidado} prefetch={false} className={`${claseBoton("secundario")} ${FOCO}`}>
+                  <Printer aria-hidden="true" className="size-4" />
+                  SGC-FO-14 consolidado
+                </Link>
+              ) : null}
               {veAlgo ? (
                 <a href={`/mejoramiento/excel${consulta ? `?${consulta}` : ""}`} className={`${claseBoton("secundario")} ${FOCO}`}>
                   <FileSpreadsheet aria-hidden="true" className="size-4" />

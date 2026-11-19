@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, Printer } from "lucide-react";
 import { BarraDeAvance } from "@/componentes/mejoramiento/actividad/MisActividades";
 import { InsigniasDelHallazgo } from "@/componentes/mejoramiento/InsigniasDelHallazgo";
 import { textoDeVence } from "@/componentes/mejoramiento/ListaDeHallazgos";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { celda, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
@@ -10,7 +11,7 @@ import { TarjetaCifra } from "@/componentes/ui/TarjetaCifra";
 import type { ContextoMejora } from "@/db/consultas/mejoramiento/config";
 import type { DetalleDePlan, FilaDelPlan } from "@/db/consultas/mejoramiento/planes-lectura";
 import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
-import { rutaDeAnadirAPlan, rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
+import { rutaDeAnadirAPlan, rutaDeHallazgo, rutaDelFo14DelPlan } from "@/lib/mejoramiento/rutas";
 import { cuenta } from "@/lib/plural";
 import type { AccionDelPaso } from "../pasos/Partes";
 import { DialogoSacarDelPlan } from "./DialogoSacarDelPlan";
@@ -70,16 +71,20 @@ const COLUMNAS = (conSacar: boolean): readonly ColumnaTabla[] => [
  * Las cifras y los hallazgos del plan agrupados por proceso (anexo §3.5 y §3.9, maqueta 2): una tabla por proceso desde 640 px y
  * tarjetas por debajo. Llegan ya decididos por la lectura: solo los que quien mira ve completos, y las cifras de esos mismos; los
  * anulados o rechazados que se quedaron en el plan, al final de su grupo y con su marca. «Sacar» (con motivo), a quien gestiona.
+ * «SGC-FO-14 de este proceso» (anexo §5.1), en cada grupo con hallazgos que cuentan cuyo proceso la persona imprime (`imprimibles`).
  */
 export function HallazgosDelPlan({
   plan,
   contexto,
   sacar,
+  imprimibles = [],
 }: {
   plan: DetalleDePlan;
   contexto: Contexto;
   /** La acción de sacar; sin ella (o sin `puede.gestionar`) no hay botón. */
   sacar?: AccionDelPaso;
+  /** Los procesos de los grupos cuyo SGC-FO-14 imprime la persona (`procesosQueImprime`); sin ellos, ningún grupo lo ofrece. */
+  imprimibles?: readonly number[];
 }) {
   const conSacar = plan.puede.gestionar && sacar !== undefined;
   return (
@@ -109,11 +114,23 @@ export function HallazgosDelPlan({
           const cuentan = g.filas.filter((f) => f.cuenta).length;
           const noCuentan = g.filas.length - cuentan;
           const titulo = `${g.proceso} · ${cuenta(cuentan, "hallazgo", "hallazgos")}${noCuentan > 0 ? ` · ${noCuentan} que ya no ${noCuentan === 1 ? "cuenta" : "cuentan"}` : ""}`;
+          const imprime = cuentan > 0 && imprimibles.includes(g.procesoId);
           return (
             <div key={g.procesoId} className="flex min-w-0 flex-col gap-2">
-              <h3 className="flex flex-wrap items-center justify-between gap-2 border-l-4 border-mod-planes pl-3 text-sm font-semibold">
-                <span>{titulo}</span>
-              </h3>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-l-4 border-mod-planes pl-3">
+                <h3 className="text-sm font-semibold">{titulo}</h3>
+                {imprime ? (
+                  <Link
+                    href={rutaDelFo14DelPlan(plan.id, g.procesoId)}
+                    prefetch={false}
+                    className={`${claseBoton("secundario", "sm")} ${FOCO}`}
+                  >
+                    <Printer aria-hidden="true" className="size-4" />
+                    SGC-FO-14 de este proceso
+                    <span className="sr-only">{`: ${g.proceso}`}</span>
+                  </Link>
+                ) : null}
+              </div>
               <div className="hidden sm:block">
                 <TablaDatos titulo={`Hallazgos de ${g.proceso}`} columnas={COLUMNAS(conSacar)} filas={g.filas.length} vacio="Sin hallazgos">
                   {g.filas.map((f) => (

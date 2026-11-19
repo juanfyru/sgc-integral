@@ -12,7 +12,7 @@ import { EsquemaDiaDeCalendario, EsquemaFormularioConfigMejora } from "@/lib/esq
 import { parsearFormulario } from "@/lib/validacion";
 
 const PASOS = ["clasificar", "aceptar", "decision", "correccion", "formular", "reenviar", "revisar", "aprobar", "verificar", "evaluar"] as const;
-const IMPRESOS = ["registro", "porques", "ishikawa"] as const;
+const IMPRESOS = ["registro", "porques", "ishikawa", "plan"] as const;
 
 /** Un bloque a la vez: lo que el formulario no manda se conserva como está guardado. */
 export async function guardarConfigMejoraAccion(_prev: EstadoAccion, formData: FormData): Promise<EstadoAccion> {

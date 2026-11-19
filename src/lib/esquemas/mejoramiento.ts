@@ -109,6 +109,7 @@ export const EsquemaFormularioConfigMejora = z
     formato_registro: z.string().optional(),
     formato_porques: z.string().optional(),
     formato_ishikawa: z.string().optional(),
+    formato_plan: z.string().optional(),
   })
   .strict();
 
