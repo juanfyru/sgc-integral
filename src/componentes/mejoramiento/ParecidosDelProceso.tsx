@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Insignia } from "@/componentes/ui/Insignia";
+import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { DISTINTO, resolverPanelDeParecidos, salidaDe, type ParecidoDeRuta, type RespuestaDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 
@@ -20,6 +21,12 @@ type Props = {
   /** La salida elegida: `ocurrencia:<id>`, `reincidencia:<id>` o `distinto`. */
   relacion: string;
   alCambiar: (relacion: string) => void;
+  /**
+   * El formulario llegó desde el panel de la marca de un indicador (`marcaMedicionId`, Fase 15B anexo §6.2): la ocurrencia de un
+   * parecido abierto no se ofrece (el panel ya ofrece la de los hallazgos que citan el indicador, y deja la salida de la marca), y
+   * `enlace` lleva de vuelta a ese panel. El servidor rechaza esa combinación igual (`OCURRENCIA_DESDE_EL_PANEL`).
+   */
+  desdeElPanel?: { enlace: string | null };
 };
 
 /**
@@ -27,7 +34,7 @@ type Props = {
  * es el mismo problema de uno abierto (una ocurrencia), es reincidencia de uno cerrado, o es distinto. La elegida viaja en
  * el campo `relacion` del formulario. Sin resultados, el campo vale `distinto` y no se dice nada más que una nota.
  */
-export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCambiar }: Props) {
+export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCambiar, desdeElPanel }: Props) {
   const recortado = texto.trim().slice(0, LARGO_DE_LA_CONSULTA);
   const consulta = procesoId !== "" && recortado.length > MINIMO ? `proceso=${encodeURIComponent(procesoId)}&q=${encodeURIComponent(recortado)}` : null;
   const [respuesta, setRespuesta] = useState<RespuestaDeParecidos | null>(null);
@@ -51,7 +58,13 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
     return () => control.abort();
   }, [consulta, procesoId]);
 
-  const { parecidos, buscando, error, vigente } = resolverPanelDeParecidos({ consulta, procesoId, respuesta, relacion });
+  const { parecidos, buscando, error, vigente } = resolverPanelDeParecidos({
+    consulta,
+    procesoId,
+    respuesta,
+    relacion,
+    sinOcurrencia: desdeElPanel !== undefined,
+  });
 
   // El formulario cambia el texto de su botón según la salida: se le dice cuando una salida deja de valer.
   useEffect(() => {
@@ -96,35 +109,7 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
                 </li>
               ))}
             </ul>
-            <fieldset className="flex min-w-0 flex-col gap-2">
-              <legend className="font-medium">¿Qué es lo que va a registrar?</legend>
-              {parecidos.map((p) => (
-                <label key={p.id} className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name="salida-de-parecidos"
-                    checked={vigente === salidaDe(p)}
-                    onChange={() => alCambiar(salidaDe(p))}
-                    className="mt-1 accent-marca"
-                  />
-                  <span>
-                    {p.abierto
-                      ? `Es el mismo problema de ${p.codigo}, que está abierto: se añade como ocurrencia`
-                      : `Es reincidencia de ${p.codigo}, que está cerrado`}
-                  </span>
-                </label>
-              ))}
-              <label className="flex items-start gap-2">
-                <input
-                  type="radio"
-                  name="salida-de-parecidos"
-                  checked={vigente === DISTINTO}
-                  onChange={() => alCambiar(DISTINTO)}
-                  className="mt-1 accent-marca"
-                />
-                <span>Es distinto: se registra como un hallazgo nuevo</span>
-              </label>
-            </fieldset>
+            <SalidasDeParecidos parecidos={parecidos} vigente={vigente} alCambiar={alCambiar} desdeElPanel={desdeElPanel} />
             {vigente.startsWith("ocurrencia:") ? (
               <p className="text-muted-foreground">
                 No nace otro hallazgo: la fecha de detección y la descripción de este formulario quedan como una ocurrencia del que ya existe.
@@ -139,5 +124,72 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Las salidas ante los parecidos (spec 15 §7.5): una ocurrencia de cada abierto, la reincidencia de cada cerrado y «distinto».
+ * Desde el panel de la marca (`desdeElPanel`), los abiertos no dan salida: la nota dice que la ocurrencia se añade desde la página
+ * del indicador, con su enlace.
+ */
+export function SalidasDeParecidos({
+  parecidos,
+  vigente,
+  alCambiar,
+  desdeElPanel,
+}: {
+  parecidos: ParecidoDeRuta[];
+  vigente: string;
+  alCambiar: (relacion: string) => void;
+  desdeElPanel?: { enlace: string | null };
+}) {
+  const conSalida = desdeElPanel ? parecidos.filter((p) => !p.abierto) : parecidos;
+  const abiertos = desdeElPanel ? parecidos.filter((p) => p.abierto) : [];
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-2">
+      <legend className="font-medium">¿Qué es lo que va a registrar?</legend>
+      {conSalida.map((p) => (
+        <label key={p.id} className="flex items-start gap-2">
+          <input
+            type="radio"
+            name="salida-de-parecidos"
+            checked={vigente === salidaDe(p)}
+            onChange={() => alCambiar(salidaDe(p))}
+            className="mt-1 accent-marca"
+          />
+          <span>
+            {p.abierto
+              ? `Es el mismo problema de ${p.codigo}, que está abierto: se añade como ocurrencia`
+              : `Es reincidencia de ${p.codigo}, que está cerrado`}
+          </span>
+        </label>
+      ))}
+      <label className="flex items-start gap-2">
+        <input
+          type="radio"
+          name="salida-de-parecidos"
+          checked={vigente === DISTINTO}
+          onChange={() => alCambiar(DISTINTO)}
+          className="mt-1 accent-marca"
+        />
+        <span>Es distinto: se registra como un hallazgo nuevo</span>
+      </label>
+      {abiertos.length > 0 && desdeElPanel ? (
+        <p className="text-muted-foreground">
+          {`${abiertos.map((p) => p.codigo).join(", ")} ${abiertos.length === 1 ? "está abierto" : "están abiertos"}. ${OCURRENCIA_DESDE_EL_PANEL}.`}
+          {desdeElPanel.enlace ? (
+            <>
+              {" "}
+              <Link
+                href={desdeElPanel.enlace}
+                className="rounded font-medium text-marca underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca"
+              >
+                Ir a la página del indicador
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+    </fieldset>
   );
 }

@@ -11,6 +11,7 @@ import { Campo, claseControl } from "@/componentes/ui/Campo";
 import type { Prellenado } from "@/db/consultas/mejoramiento/prellenado";
 import { fechaDeDia } from "@/lib/mejoramiento/formato";
 import { ETIQUETA_ORIGEN, ORIGENES, esExterno, pideReferenciaDelCaso } from "@/lib/mejoramiento/origenes";
+import { rutaDeMarcas } from "@/lib/mejoramiento/rutas";
 import { AVISO_SIN_PACIENTES, ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
 import { CLASES, CRITICIDADES, type Clase, type Criticidad, type Origen } from "@/lib/mejoramiento/tipos";
 
@@ -107,6 +108,13 @@ export function FormularioHallazgo({
   const [medicionId, setMedicionId] = useState<string>(texto(v, "medicionId"));
   // La fuente es obligatoria salvo en «Indicador» con la medición enlazada (`fuenteObligatoria`, spec §7.1).
   const fuenteObligatoria = !(origen === "indicador" && medicionId !== "");
+  // Desde el panel de la marca de un indicador (Fase 15B, anexo §6.2) no se ofrece la ocurrencia de un parecido: se añade desde ese
+  // panel, que deja la salida de la marca. El enlace vuelve a él, si el indicador fijo está entre los que se ofrecen.
+  const indicadorDelPanel = indicadores.find((i) => String(i.id) === fijos.indicadorId);
+  const desdeElPanel =
+    conPrellenado && Object.hasOwn(conPrellenado.ocultos, "marcaMedicionId")
+      ? { enlace: indicadorDelPanel ? rutaDeMarcas(indicadorDelPanel.codigo) : null }
+      : undefined;
 
   return (
     <div className={edicion && !lateral ? "grid grid-cols-1 gap-6" : "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]"}>
@@ -333,6 +341,7 @@ export function FormularioHallazgo({
               texto={`${titulo} ${descripcion}`}
               relacion={relacion}
               alCambiar={setRelacion}
+              desdeElPanel={desdeElPanel}
             />
           )}
           {lateral}

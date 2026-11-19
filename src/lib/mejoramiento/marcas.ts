@@ -12,6 +12,11 @@ import { ETIQUETA_SEMAFORO, type Semaforo } from "@/lib/indicadores/tipos";
 
 export const MARCA_YA_DECIDIDA = "La acción de mejora de esta medición ya se decidió";
 export const MARCA_SIN_PENDIENTE = "Esta medición todavía no pide decidir su acción de mejora";
+/**
+ * El registro que llegó desde el panel de la marca no añade una ocurrencia a un parecido: el panel ya ofrece la ocurrencia de los
+ * hallazgos que citan el indicador, y por ese camino queda la salida de la marca (`resolverConOcurrencia`).
+ */
+export const OCURRENCIA_DESDE_EL_PANEL = "Para añadirla como ocurrencia, vuelva a la página del indicador";
 /** La justificación de «No requiere acción de mejora» (anexo §6.2): al menos diez caracteres. Va a la fila de la marca, no a la bitácora. */
 export const JUSTIFICACION_CORTA = "Escriba la justificación (al menos 10 caracteres)";
 

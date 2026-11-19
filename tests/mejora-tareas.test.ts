@@ -57,6 +57,7 @@ import {
   planDePrueba,
   terminarTodas,
   type BaseDeMejora,
+  type MedicionMarcada,
 } from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
@@ -666,6 +667,18 @@ describe("la marca «Requiere acción de mejora» de un indicador (Fase 15B, ane
       expect(conSuHallazgo?.hallazgoId).toBeNull();
     }));
 
+  it("con más de cinco pendientes, «Mis tareas» las deja sueltas, cada una hacia su indicador", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const marcadas: MedicionMarcada[] = [];
+      for (let i = 0; i < 6; i++) marcadas.push(await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId }));
+      const { tareas } = await misTareas(b.admin, { sql: tx, ahora: new Date(ANTES) });
+      for (const m of marcadas) {
+        expect(tareas.find((t) => t.id === `mej-marca:${m.medicionId}`)?.enlace).toBe(`/indicadores/${encodeURIComponent(m.ind.codigo)}#accion-de-mejora`);
+      }
+      expect(tareas.some((t) => t.id === "mejora-marcas")).toBe(false);
+    }));
+
   it("desaparece al decidir, con cualquiera de las tres salidas", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);
@@ -736,13 +749,14 @@ describe("«Mis tareas» agrupa las de mejoramiento por fuente", () => {
     expect(agruparTareas(mezcladas, 5, AHORA_G)).toEqual(mezcladas);
   });
 
-  it("las marcas de los indicadores por decidir van a la lista de indicadores que requieren acción de mejora", () => {
-    expect(agruparTareas(seis("marca"), 5, AHORA_G)[0]).toMatchObject({
-      id: "mejora-marcas",
-      modulo: "planes",
-      titulo: "6 acciones de mejora de indicadores por decidir",
-      enlace: "/indicadores?reporte=requiere-accion",
-    });
+  it("las marcas de los indicadores por decidir no se agrupan: ninguna pantalla las reúne, cada una lleva a su indicador", () => {
+    const marcas = [1, 2, 3, 4, 5, 6, 7].map((n) => ({ ...de("marca", n), vence: null, enlace: `/indicadores/ZZ-${n}#accion-de-mejora` }));
+    expect(agruparTareas(marcas, 5, AHORA_G)).toEqual(marcas);
+    // Junto a otras que sí se agrupan, siguen sueltas y en su lugar.
+    const mezcladas = [...marcas, ...seis("corregir")];
+    const agrupadas = agruparTareas(mezcladas, 5, AHORA_G);
+    expect(agrupadas.slice(0, 7)).toEqual(marcas);
+    expect(agrupadas.slice(7).map((t) => t.id)).toEqual(["mejora-corregir"]);
   });
 
   it("las cargas sin su formato firmado van a la lista de «Esperan su decisión»", () => {

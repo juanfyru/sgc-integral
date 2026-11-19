@@ -94,6 +94,7 @@ import {
   idsDeLaVerificacion,
 } from "@/lib/esquemas/mejoramiento";
 import { RUTA_REPORTES_RECIBIDOS, rutaDeReportar } from "@/lib/mejoramiento/reportes";
+import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { LISTOS_CAMBIARON } from "@/lib/mejoramiento/planes";
 import { ANCLA_RESPUESTA_AL_ENTE, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
@@ -104,7 +105,9 @@ import { parsearFormulario } from "@/lib/validacion";
  * (spec §7.5): `ocurrencia:<id>` no crea un hallazgo, añade una ocurrencia al abierto; `reincidencia:<id>` lo enlaza a uno
  * cerrado; `distinto` (o ausente) nace normal. Desde un reporte (`reporteId`, spec §7.3), registrar lo convierte y elegir una
  * ocurrencia lo suma a ese hallazgo: el reporte nunca queda sin clasificar. El plan oculto (`planId`) y el objetivo (Fase 15B)
- * los vuelve a validar `registrarHallazgo` dentro de su transacción; una ocurrencia no los usa: no nace ningún hallazgo.
+ * los vuelve a validar `registrarHallazgo` dentro de su transacción; una ocurrencia no los usa: no nace ningún hallazgo. Desde el
+ * panel de la marca de un indicador (`marcaMedicionId`, anexo 15B §6.2) no se añade una ocurrencia a un parecido: se rechaza con
+ * `OCURRENCIA_DESDE_EL_PANEL` (el formulario ya no la ofrece), porque así no quedaría la salida de la marca.
  */
 export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
@@ -112,6 +115,8 @@ export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: F
     const relacion = RELACION_DE_REGISTRO.exec(String(datos.get("relacion") ?? "distinto"));
     if (!relacion) throw new Error("La salida elegida ante los parecidos no es válida");
     if (relacion[1] === "ocurrencia") {
+      // Desde el panel de la marca, la ocurrencia se añade en el panel (`resolverConOcurrencia`), que deja la salida de la marca.
+      if (d.marcaMedicionId !== null) throw new ErrorMejora(OCURRENCIA_DESDE_EL_PANEL);
       const hallazgoId = Number(relacion[2]);
       if (d.reporteId !== null) {
         await sumarReporte(sesion, { reporteId: d.reporteId, hallazgoId });

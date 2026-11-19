@@ -68,9 +68,6 @@ type Grupo = {
   enlace: (miembros: Tarea[], ahora: Date) => string;
 };
 
-/** La lista de indicadores filtrada por «Requiere acción de mejora» (`REPORTES_DE_LISTA`), adonde van las marcas agrupadas. */
-const RUTA_INDICADORES_QUE_REQUIEREN_ACCION = "/indicadores?reporte=requiere-accion";
-
 const masculino = (fecha: string, vencida: boolean) => (vencida ? `El más atrasado venció el ${fecha}` : `El más próximo vence el ${fecha}`);
 const femenino = (fecha: string, vencida: boolean) => (vencida ? `La más atrasada venció el ${fecha}` : `La más próxima vence el ${fecha}`);
 
@@ -123,9 +120,10 @@ const indicadoresPor = (que: string) => (miembros: Tarea[], ahora: Date) => {
  * por `ficha:`). De mejoramiento (spec 15 §14.1) se agrupa cada fuente `mej-…:`: los reportes por clasificar, que llevan a
  * «Reportes recibidos»; las actividades, que llevan a «Mis actividades» si todas son de quien mira y, con alguna por reasignar
  * (de un responsable inactivo, que «Mis actividades» no muestra), a la lista de los hallazgos que esperan su decisión; cada
- * paso de los hallazgos (`pasoDeMejora`); las respuestas al ente de los planes (Fase 15B, `mej-ente-plan:`), que llevan a la
- * pestaña «Planes»; y las marcas de los indicadores por decidir (Fase 15B, `mej-marca:`), que llevan a la lista de indicadores
- * filtrada por «Requiere acción de mejora».
+ * paso de los hallazgos (`pasoDeMejora`); y las respuestas al ente de los planes (Fase 15B, `mej-ente-plan:`), que llevan a la
+ * pestaña «Planes». No se agrupan las marcas de los indicadores por decidir (Fase 15B, `mej-marca:`), como `adopcion:`: ninguna
+ * pantalla las reúne todas (la lista de indicadores filtrada por «Requiere acción de mejora» mira solo la última medición de cada
+ * uno), así que cada una lleva al panel de su indicador.
  */
 const GRUPOS: readonly Grupo[] = [
   // Una lectura vence siempre después de pedirse: el detalle de la 13B no cambia.
@@ -233,16 +231,6 @@ const GRUPOS: readonly Grupo[] = [
     titulo: (m) => `${m.length} respuestas al ente de planes por registrar`,
     detalle: femenino,
     enlace: () => RUTA_PLANES,
-  },
-  // Una por medición marcada que espera su decisión (anexo 15B §6.5), sin fecha: lleva a la lista de indicadores filtrada por
-  // «Requiere acción de mejora», la única que reúne las marcas (la de hallazgos no las tiene: no son de un hallazgo).
-  {
-    prefijo: "mej-marca:",
-    id: "mejora-marcas",
-    modulo: "planes",
-    titulo: (m) => `${m.length} acciones de mejora de indicadores por decidir`,
-    detalle: femenino,
-    enlace: () => RUTA_INDICADORES_QUE_REQUIEREN_ACCION,
   },
 ];
 

@@ -38,6 +38,7 @@ import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
 import { contextoDeMejora } from "./config";
 import { dejarEvento, legible, nacerHallazgo } from "./flujo";
 import { indicadorElegible } from "./indicador-de-eficacia";
+import { bloquearMarca, salidaAlNacer } from "./marcas-base";
 import { etiquetaDeAccion, etiquetaDeActividad, examinarPlan, INDICADOR_NO_ELEGIBLE, RESPONSABLE_INACTIVO } from "./plan";
 import { exigirReincidencia, filaDe, revisarIdentificacion, tomarCodigo, type DatosDeHallazgo } from "./registro";
 
@@ -138,7 +139,9 @@ function inicioDelDia(dia: string, zona: string): Date {
  *
  * Con `planId` y `objetivoId`, como el registro (Fase 15B, anexo §3.4 camino 1: «vale igual para registrar un hallazgo ya en
  * curso»): el plan es el primer candado de la transacción (`bloquearPlanDelRegistro`) y la clasificación se escribe después de
- * `nacerHallazgo` (`clasificarAlNacer`).
+ * `nacerHallazgo` (`clasificarAlNacer`). Con una medición marcada, como el registro (anexo §6.3): su candado va justo después del
+ * plan y la salida «hallazgo» de la marca se escribe en esta misma transacción (`salidaAlNacer`, sin el panel: la carga no lo
+ * atiende).
  */
 export async function cargarHallazgo(
   sesion: SesionFlujo,
@@ -153,6 +156,9 @@ export async function cargarHallazgo(
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
       await bloquearPlanDelRegistro(tx, sesion, v.planId);
+      // El candado de la medición que cita, en el orden del registro (después del plan y antes de cualquier lectura que decida):
+      // la carga deja la salida de su marca como el registro (anexo 15B §6.3).
+      if (v.medicionId !== null) await bloquearMarca(tx, v.medicionId);
       const c = await contextoDeMejora(tx, ahora);
       const hoy = fechaEnZona(c.ahora, c.zona);
       await revisarIdentificacion(tx, sesion, v, c);
@@ -190,6 +196,8 @@ export async function cargarHallazgo(
         c,
       );
       await clasificarAlNacer(tx, sesion, h.id, { planId: v.planId, objetivoId: v.objetivoId }, c.ahora);
+      // Nunca llega desde el panel de la marca: un `marcaMedicionId` que traiga el formulario se ignora.
+      if (v.medicionId !== null) await salidaAlNacer(tx, sesion, { medicionId: v.medicionId, hallazgoId: h.id, desdeElPanel: false }, c.ahora);
       // Sin el formato firmado nadie puede verificar: el plazo de «Por verificar» lo pone el escaneo (`confirmarCarga`).
       if (h.estado === "por_verificar") await tx`UPDATE mejora_hallazgos SET vence_en = NULL WHERE id = ${h.id}`;
 

@@ -28,7 +28,9 @@ import {
   resolverNoRequiere,
   salidasVisibles,
 } from "@/db/consultas/mejoramiento/marcas";
+import { cargarHallazgo } from "@/db/consultas/mejoramiento/carga";
 import { rechazarHallazgo, retirarHallazgo } from "@/db/consultas/mejoramiento/recorrido";
+import { tareasDeMarcas } from "@/db/consultas/mejoramiento/tareas";
 import { anularHallazgo, registrarHallazgo, type DatosDeHallazgo } from "@/db/consultas/mejoramiento/registro";
 import {
   estadoDeLaMarca,
@@ -49,6 +51,7 @@ import {
   ANALISIS_DE_LA_MARCA,
   baseDeMejora,
   c,
+  datosDeCarga,
   datosDeHallazgo,
   hallazgoEn,
   medicionMarcada,
@@ -712,6 +715,54 @@ describe("el registro bloquea toda medición que llega (Review Focus 2 y 5)", ()
       const deOrigen = registro.dentro.findIndex((s) => /FROM mejora_hallazgos WHERE id = \? FOR KEY SHARE/.test(s));
       expect(candado).toBeGreaterThanOrEqual(0);
       expect(deOrigen).toBeGreaterThan(candado);
+    }));
+});
+
+describe("la carga de un hallazgo ya en curso que cita una medición marcada (anexo §6.3; spec 15 §15)", () => {
+  it("deja la salida «hallazgo» en su transacción, con el candado de la medición después del plan y antes de leer; el pendiente y su tarea desaparecen", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const mm = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      expect(await estadoEnElPanel(tx, b.admin, mm, DESPUES)).toBe("pendiente");
+      expect((await tareasDeMarcas(tx, b.admin, new Date(DESPUES))).map((t) => t.tarea.id)).toContain(`mej-marca:${mm.medicionId}`);
+
+      const carga = contadaConSuTransaccion(tx);
+      const h = await cargarHallazgo(
+        b.admin,
+        datosDeCarga(b.procesoId, b.lider.usuarioId, { origen: "indicador", fuente: null, indicadorId: mm.ind.id, medicionId: mm.medicionId }),
+        c(DESPUES, carga.sql),
+      );
+      expect(carga.fuera).toEqual([]);
+      // Sin plan, el candado es la primera sentencia: antes del FOR SHARE de los responsables, del consecutivo y del hallazgo.
+      expect(carga.dentro[0]).toMatch(CANDADO);
+      const responsables = carga.dentro.findIndex((s) => s.includes("FROM usuarios WHERE activo AND id = ANY(?) FOR SHARE"));
+      const insercion = carga.dentro.findIndex((s) => s.includes("INSERT INTO mejora_hallazgos"));
+      expect(responsables).toBeGreaterThan(0);
+      expect(insercion).toBeGreaterThan(responsables);
+
+      const salidas = await salidasDe(tx, mm.medicionId);
+      expect(salidas.map((s) => [s.salida, Number(s.hallazgo_id), Number(s.decidido_por)])).toEqual([["hallazgo", h.id, b.admin.usuarioId]]);
+      expect(await estadoEnElPanel(tx, b.admin, mm, DESPUES)).toBeNull();
+      expect((await tareasDeMarcas(tx, b.admin, new Date(DESPUES))).map((t) => t.tarea.id)).not.toContain(`mej-marca:${mm.medicionId}`);
+    }));
+
+  it("con una salida en vigor es un hallazgo más: sin rechazo y sin otra salida, aunque traiga el marcaMedicionId del panel", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const mm = await medicionMarcada(tx, { ahora: REPORTA, analizada: true, procesoId: b.procesoId });
+      await resolverNoRequiere(b.admin, { medicionId: mm.medicionId, justificacion: NO_REQUIERE }, c(DESPUES, tx));
+      await cargarHallazgo(
+        b.admin,
+        datosDeCarga(b.procesoId, b.lider.usuarioId, {
+          origen: "indicador",
+          fuente: null,
+          indicadorId: mm.ind.id,
+          medicionId: mm.medicionId,
+          marcaMedicionId: mm.medicionId,
+        }),
+        c(DESPUES, tx),
+      );
+      expect((await salidasDe(tx, mm.medicionId)).map((s) => s.salida)).toEqual(["no_requiere"]);
     }));
 });
 

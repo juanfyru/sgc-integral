@@ -12,15 +12,19 @@ export const salidaDe = (p: ParecidoDeRuta) => `${p.abierto ? "ocurrencia" : "re
 /**
  * Qué muestra el panel de parecidos. Los resultados y la elección anteriores se conservan mientras llega la respuesta de
  * la búsqueda nueva (si no, cualquier cambio del texto perdería la elección y se crearía el duplicado que §7.5 quiere
- * evitar); solo se descartan al cambiar de proceso o cuando una respuesta nueva excluye lo elegido.
+ * evitar); solo se descartan al cambiar de proceso o cuando una respuesta nueva excluye lo elegido. Con `sinOcurrencia` (el
+ * formulario llegó desde el panel de la marca de un indicador, Fase 15B anexo §6.2) la ocurrencia de un parecido abierto no es una
+ * salida: la que llegue elegida vuelve a «distinto».
  */
 export function resolverPanelDeParecidos(x: {
   consulta: string | null;
   procesoId: string;
   respuesta: RespuestaDeParecidos | null;
   relacion: string;
+  sinOcurrencia?: boolean;
 }): { parecidos: ParecidoDeRuta[]; buscando: boolean; error: boolean; vigente: string } {
   if (x.consulta === null) return { parecidos: [], buscando: false, error: false, vigente: DISTINTO };
+  if (x.sinOcurrencia && x.relacion.startsWith("ocurrencia:")) return resolverPanelDeParecidos({ ...x, relacion: DISTINTO });
   const mismoProceso = x.respuesta !== null && x.respuesta.procesoId === x.procesoId;
   const parecidos = mismoProceso ? x.respuesta!.parecidos : [];
   const alDia = mismoProceso && x.respuesta!.consulta === x.consulta;

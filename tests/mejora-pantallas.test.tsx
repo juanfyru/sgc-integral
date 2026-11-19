@@ -25,6 +25,8 @@ import type { DetalleDeActividad } from "@/db/consultas/mejoramiento/actividades
 import type { AjusteDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { SeccionIdentificacion } from "@/componentes/mejoramiento/SeccionIdentificacion";
 import { resolverPanelDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
+import { SalidasDeParecidos } from "@/componentes/mejoramiento/ParecidosDelProceso";
+import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { AnalisisEnLectura } from "@/componentes/mejoramiento/analisis/AnalisisEnLectura";
 import { CriterioDeEficacia } from "@/componentes/mejoramiento/plan/CriterioDeEficacia";
 import { FormularioPlan } from "@/componentes/mejoramiento/plan/FormularioPlan";
@@ -368,6 +370,42 @@ describe("el panel de parecidos", () => {
     expect(resolverPanelDeParecidos({ consulta: null, procesoId: "3", respuesta: previa, relacion: "distinto" })).toMatchObject({
       parecidos: [], buscando: false, error: false, vigente: "distinto",
     });
+  });
+
+  // Fase 15B (anexo §6.2): desde el panel de la marca de un indicador la ocurrencia se añade en el panel, que deja su salida.
+  const cerrado = { ...p, id: 8, codigo: "HZ-2026-008", etiqueta: "Cerrado · eficaz", abierto: false };
+
+  it("desde el panel de la marca, una ocurrencia elegida vuelve a «distinto»; una reincidencia se conserva", () => {
+    const conAmbos = { ...previa, parecidos: [p, cerrado] };
+    expect(resolverPanelDeParecidos({ consulta: "proceso=3&q=uno", procesoId: "3", respuesta: conAmbos, relacion: "ocurrencia:7", sinOcurrencia: true }).vigente).toBe(
+      "distinto",
+    );
+    expect(
+      resolverPanelDeParecidos({ consulta: "proceso=3&q=uno", procesoId: "3", respuesta: conAmbos, relacion: "reincidencia:8", sinOcurrencia: true }).vigente,
+    ).toBe("reincidencia:8");
+    expect(resolverPanelDeParecidos({ consulta: "proceso=3&q=uno", procesoId: "3", respuesta: conAmbos, relacion: "ocurrencia:7" }).vigente).toBe("ocurrencia:7");
+  });
+
+  it("desde el panel de la marca no se ofrece la ocurrencia de un abierto: dice que se añade desde la página del indicador, con su enlace", () => {
+    const pintar = (desdeElPanel?: { enlace: string | null }) =>
+      renderToStaticMarkup(<SalidasDeParecidos parecidos={[p, cerrado]} vigente="distinto" alCambiar={vi.fn()} desdeElPanel={desdeElPanel} />);
+    const normal = pintar();
+    expect(normal).toContain("Es el mismo problema de HZ-2026-007, que está abierto: se añade como ocurrencia");
+    expect(normal).not.toContain(OCURRENCIA_DESDE_EL_PANEL);
+
+    const panel = pintar({ enlace: "/indicadores/CEX-ID-001#accion-de-mejora" });
+    expect(panel).not.toContain("se añade como ocurrencia");
+    expect((panel.match(/type="radio"/g) ?? []).length).toBe(2);
+    expect(panel).toContain("Es reincidencia de HZ-2026-008, que está cerrado");
+    expect(panel).toContain("Es distinto: se registra como un hallazgo nuevo");
+    expect(panel).toContain(`HZ-2026-007 está abierto. ${OCURRENCIA_DESDE_EL_PANEL}.`);
+    expect(panel).toContain('href="/indicadores/CEX-ID-001#accion-de-mejora"');
+    // Sin el indicador entre los que se ofrecen, la nota sin enlace.
+    expect(pintar({ enlace: null })).not.toContain("<a ");
+    // Sin abiertos, nada que decir.
+    expect(renderToStaticMarkup(<SalidasDeParecidos parecidos={[cerrado]} vigente="distinto" alCambiar={vi.fn()} desdeElPanel={{ enlace: null }} />)).not.toContain(
+      OCURRENCIA_DESDE_EL_PANEL,
+    );
   });
 });
 
