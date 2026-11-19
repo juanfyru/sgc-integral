@@ -149,6 +149,26 @@ describe("listarPlanes y leerPlan: la líder de un proceso del plan", () => {
       for (const tipo of ["archivo", "archivo_quitado", "respuesta"]) expect(deLaLider).not.toContain(tipo);
     }));
 
+  it("tampoco lee un archivo ni una respuesta que citen un hallazgo que ve completo: de los suyos, solo que entró o salió", () =>
+    revertida(sql, async (tx) => {
+      const e = await escena(tx);
+      for (const tipo of ["archivo", "respuesta"]) {
+        await dejarEventoDePlan(tx, {
+          planId: e.plan.id,
+          hallazgoId: e.vencido.id,
+          tipo,
+          detalle: { hallazgo: e.vencido.codigo },
+          usuarioId: e.b.admin.usuarioId,
+          ahora: new Date(HORA_DE_ESCENA),
+        });
+      }
+      const deGerencia = (await leerPlan(e.b.gerencia, e.plan.id, lee(tx)))!.historial;
+      expect(deGerencia.filter((h) => h.hallazgo === e.vencido.codigo).map((h) => h.tipo).sort()).toEqual(["archivo", "entra", "respuesta"]);
+      const deLaLider = (await leerPlan(e.b.lider, e.plan.id, lee(tx)))!.historial;
+      expect(deLaLider.filter((h) => h.hallazgo === e.vencido.codigo).map((h) => h.tipo)).toEqual(["entra"]);
+      for (const tipo of ["archivo", "respuesta"]) expect(deLaLider.map((h) => h.tipo)).not.toContain(tipo);
+    }));
+
   it("el avance y el estado salen de lo que ve: con todo lo suyo terminado, «Cerrado»", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);

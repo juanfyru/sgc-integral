@@ -154,13 +154,23 @@ export function HallazgosDelPlan({
                     <span className="text-sm">
                       <EnQueVa f={f} />
                     </span>
-                    {textoAvance(f)}
-                    <span className="flex flex-wrap items-start justify-between gap-3 text-sm">
-                      <Vence vence={f.vence} contexto={contexto} />
-                      {conSacar && sacar ? (
+                    <dl className="flex flex-col gap-2 text-sm">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <dt className="shrink-0 text-muted-foreground">Avance:</dt>
+                        <dd className="min-w-0 flex-1">{textoAvance(f)}</dd>
+                      </div>
+                      <div className="flex min-w-0 items-start gap-2">
+                        <dt className="shrink-0 text-muted-foreground">Vence:</dt>
+                        <dd className="min-w-0">
+                          <Vence vence={f.vence} contexto={contexto} />
+                        </dd>
+                      </div>
+                    </dl>
+                    {conSacar && sacar ? (
+                      <span className="flex justify-end">
                         <DialogoSacarDelPlan hallazgoId={f.id} codigo={f.codigo} plan={plan.codigo} accion={sacar} lugar="tarjeta" />
-                      ) : null}
-                    </span>
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

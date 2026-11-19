@@ -39,9 +39,11 @@ export default async function PaginaPlan({ params }: { params: Promise<{ id: str
           ) : undefined
         }
       />
-      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      {/* La tabla de hallazgos necesita todo el ancho para que se lean todas sus columnas y «Sacar» sin desplazarse: la columna de
+          al lado (maqueta 2) llega solo desde 1536 px; por debajo, los datos y el historial van debajo, uno junto al otro. */}
+      <div className="grid min-w-0 grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <HallazgosDelPlan key={`hallazgos-${clave}`} plan={plan} contexto={contexto} sacar={sacarDelPlanAccion} />
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2 2xl:flex 2xl:flex-col">
           <DatosDelPlan plan={plan} />
           <HistorialDelPlan eventos={plan.historial} zona={zonaHoraria()} />
         </div>

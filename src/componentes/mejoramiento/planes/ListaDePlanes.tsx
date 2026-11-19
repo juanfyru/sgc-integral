@@ -120,7 +120,7 @@ export function ListaDePlanes({ planes, contexto, conFiltros }: { planes: readon
               <td className={celda}>
                 <FechaDelEnte p={p} contexto={contexto} />
               </td>
-              <td className={celda}>
+              <td className={`${celda} whitespace-nowrap`}>
                 <InsigniaEstadoPlan estado={p.estado} />
               </td>
             </tr>
@@ -142,13 +142,22 @@ export function ListaDePlanes({ planes, contexto, conFiltros }: { planes: readon
             <span className="text-sm">
               <Hallazgos p={p} />
             </span>
-            <Avance p={p} />
-            {p.fechaLimiteEnte ? (
-              <span className="text-sm">
-                <span className="block text-xs font-medium text-muted-foreground">Fecha del ente</span>
-                <FechaDelEnte p={p} contexto={contexto} />
-              </span>
-            ) : null}
+            <dl className="flex flex-col gap-2 text-sm">
+              <div className="flex min-w-0 items-center gap-2">
+                <dt className="shrink-0 text-muted-foreground">Avance:</dt>
+                <dd className="min-w-0 flex-1">
+                  <Avance p={p} />
+                </dd>
+              </div>
+              {p.fechaLimiteEnte ? (
+                <div className="flex min-w-0 items-start gap-2">
+                  <dt className="shrink-0 text-muted-foreground">Fecha del ente:</dt>
+                  <dd className="min-w-0">
+                    <FechaDelEnte p={p} contexto={contexto} />
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
           </li>
         ))}
       </ul>

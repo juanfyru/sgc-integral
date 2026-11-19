@@ -220,12 +220,17 @@ function textoDelEvento(tipo: string, d: Record<string, unknown>, hallazgo: stri
   }
 }
 
-/** Los tipos de evento del plan sin hallazgo que lee quien no ve todo: los archivos y la respuesta al ente no son suyos (§3.6). */
+/**
+ * Lo que lee del historial quien no ve todo, en dos listas cerradas: del plan, sin hallazgo, su creación, su edición y su anulación;
+ * de un hallazgo que ve completo, que entró o salió. Los archivos del plan y la respuesta al ente no son suyos (§3.6), aunque el
+ * evento cite uno de sus hallazgos; un tipo nuevo no le llega hasta que se añada aquí.
+ */
 const DEL_PLAN_PARA_TODOS = ["creado", "editado", "anulado"] as const;
+const DE_SUS_HALLAZGOS = ["entra", "sale"] as const;
 
 /**
  * El historial del plan, del más reciente al más antiguo. Quien ve todo, entero; los demás, las líneas del plan (creación,
- * edición, anulación) y las de los hallazgos que ven completos, nunca las de otro hallazgo (§3.6).
+ * edición, anulación) y la entrada y la salida de los hallazgos que ven completos, nunca las de otro hallazgo (§3.6).
  */
 async function historialDe(sql: Cliente, sesion: SesionFlujo, planId: number): Promise<EventoDelPlan[]> {
   const verTodo = puede(sesion, "mejora.ver_todo");
@@ -238,7 +243,7 @@ async function historialDe(sql: Cliente, sesion: SesionFlujo, planId: number): P
         verTodo
           ? sql`true`
           : sql`((e.hallazgo_id IS NULL AND e.tipo IN ${sql([...DEL_PLAN_PARA_TODOS])})
-              OR (e.hallazgo_id IS NOT NULL AND ${vistaCompletaDeHallazgo(sql, sesion)}))`
+              OR (e.hallazgo_id IS NOT NULL AND e.tipo IN ${sql([...DE_SUS_HALLAZGOS])} AND ${vistaCompletaDeHallazgo(sql, sesion)}))`
       }
     ORDER BY e.creado_en DESC, e.id DESC`;
   const detalle = (f: Row): Record<string, unknown> =>

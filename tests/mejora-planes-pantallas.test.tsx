@@ -75,7 +75,7 @@ const detalle = (extra: Partial<DetalleDePlan> = {}): DetalleDePlan => ({
       filas: [
         filaDelPlan(),
         filaDelPlan({ id: 11, codigo: "HZ-2026-011", titulo: "Expedientes contractuales sin foliar", origen: "auditoria_interna", origenDistinto: true }),
-        filaDelPlan({ id: 8, codigo: "HZ-2026-008", titulo: "Registrado dos veces", estado: "anulado", etiqueta: "Anulado", cuenta: false, avance: null }),
+        filaDelPlan({ id: 8, codigo: "HZ-2026-008", titulo: "Registrado dos veces", estado: "anulado", etiqueta: "Anulado", cuenta: false, avance: null, vence: null }),
       ],
     },
   ],
@@ -108,6 +108,9 @@ describe("ListaDePlanes (maqueta 1)", () => {
     expect(html).toContain('data-variante="bien"');
     // La fecha del ente de un plan abierto dice cuánto falta.
     expect(texto).toContain("quedan");
+    // En las tarjetas, el avance y la fecha del ente con su rótulo.
+    expect(texto).toContain("Avance:—");
+    expect(texto).toContain("Fecha del ente:");
   });
 
   it("sin planes, un estado vacío que no dice nada de los que no ve", () => {
@@ -126,6 +129,9 @@ describe("la página del plan (maqueta 2)", () => {
     expect(texto.match(/Origen distinto/g)).toHaveLength(2); // la tabla y la tarjeta del mismo hallazgo
     expect(texto).toContain("Anulado: ya no cuenta en el plan");
     expect(texto).toContain("Gestión de Bienes y Servicios · 2 hallazgos · 1 que ya no cuenta");
+    // En las tarjetas (390 px), cada valor con su rótulo: sin avance ni fecha, «Avance: —» y «Vence: —», nunca un «—» suelto.
+    expect(texto).toContain("Avance:—");
+    expect(texto).toContain("Vence:—");
     expect(texto).toContain("53 %");
   });
 
