@@ -989,7 +989,8 @@ describe("lo que comprueba el cierre con los trámites de la ronda (Fase 15B, an
       const { tramiteId } = await conTramite(tx, b, h.id);
       await marcar(tx, h.id, SOLO_DOCUMENTOS);
       await evaluar(tx, b.control, h.id, LA_MINIMA);
-      await cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, credenciales: CLAVE }, c(CIERRA, tx));
+      // El campo, opcional en la pantalla, llega en blanco: es «nada».
+      await cerrarHallazgo(b.admin, { hallazgoId: h.id, lecciones: LECCIONES, cambiosAtendidos: "   ", credenciales: CLAVE }, c(CIERRA, tx));
       const [f] = await tx`SELECT estado, cambios_atendidos FROM mejora_hallazgos WHERE id = ${h.id}`;
       expect(f).toMatchObject({ estado: "cerrado", cambios_atendidos: null });
       const [cierre] = await eventosDe(tx, h.id, "cerrar");
@@ -1002,7 +1003,7 @@ describe("lo que comprueba el cierre con los trámites de la ronda (Fase 15B, an
       const h = await enEspera(tx, b);
       const { tramiteId } = await conTramite(tx, b, h.id, "eliminado");
       await marcar(tx, h.id, SOLO_DOCUMENTOS);
-      await evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES });
+      await evaluar(tx, b.admin, h.id, LA_MINIMA, { lecciones: LECCIONES, cambiosAtendidos: "" });
       expect((await bloquearHallazgo(tx, h.id)).estado).toBe("cerrado");
       const [evento] = await eventosDe(tx, h.id, "evaluar_eficaz");
       expect((evento.detalle as { tramites?: unknown }).tramites).toEqual([{ tramiteId, documento: null }]);
