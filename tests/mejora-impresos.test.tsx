@@ -417,6 +417,40 @@ describe("RegistroImpreso (SGC-FO-AC-01)", () => {
     for (const t of SECCIONES) expect(html).toContain(`>${t}<`);
     expect(leer(html)).toContain("Sin registrar todavía");
   });
+
+  it("la no conformidad de un hallazgo de verificación (Fase 15B, anexo §7.2): la sección 2 pinta la corrección de ese hallazgo, o que está en Distribución", () => {
+    const sinPropia = {
+      correccion: { requerida: null, descripcion: null, responsable: null, implementadaEn: null, registradaEn: null, validadaPor: null, validadaEn: null },
+      decision: { accionRequerida: true, justificacion: "Es la tercera copia obsoleta del año", decididaEn: new Date("2026-11-18T15:00:00Z") },
+      verificacionHallazgoId: 4,
+    };
+    const seccion2 = (html: string) => leer(html.slice(html.indexOf(">2. Corrección o contención<"), html.indexOf(">3. Análisis de causa raíz<")));
+    const visible = seccion2(
+      registro({
+        hallazgo: detalle({
+          ...sinPropia,
+          correccionEnlazada: {
+            visible: true,
+            estado: "Cerrado",
+            nota: "Se retiró la copia vieja y se entregó la vigente",
+            por: "Carlos Rojas",
+            en: new Date("2026-11-11T15:00:00Z"),
+            enlace: "/distribucion/verificaciones/4",
+            punto: "Urgencias",
+          },
+        }),
+        evidenciaDeCorreccion: [],
+      }),
+    );
+    expect(visible).toContain("La del hallazgo de verificación de Urgencias");
+    expect(visible).toContain("Cerrado");
+    expect(visible).toContain("Se retiró la copia vieja y se entregó la vigente");
+    expect(visible).toContain("Carlos Rojas");
+    expect(visible).toContain("Sí: Es la tercera copia obsoleta del año");
+    const oculta = seccion2(registro({ hallazgo: detalle({ ...sinPropia, correccionEnlazada: { visible: false } }), evidenciaDeCorreccion: [] }));
+    expect(oculta).toContain("La corrección está en un hallazgo de verificación de Distribución");
+    expect(oculta).not.toContain("Urgencias");
+  });
 });
 
 describe("EncabezadoDeFormato", () => {

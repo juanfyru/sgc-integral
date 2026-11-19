@@ -8,6 +8,7 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia } from "@/componentes/ui/Insignia";
 import { obtenerConfigDocumental } from "@/db/consultas/config-documental";
 import { obtenerVerificacion, ultimaVerificacionDe } from "@/db/consultas/distribucion/verificaciones";
+import { engancheDeVerificacion, filasDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { fechasDeCorreccion } from "@/lib/distribucion/verificacion";
 import { exigirSesion } from "@/lib/paginas";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -30,8 +31,10 @@ const DIA_MS = 86_400_000;
 
 export default async function PaginaVerificacion({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { verificacion: v } = await verificacionVisible(id);
+  const { sesion, verificacion: v } = await verificacionVisible(id);
   if (!v) notFound();
+  // Lo de mejoramiento en cada hallazgo de la verificación cerrada (Fase 15B, anexo §7.1).
+  const enganches = v.estado === "cerrada" ? await engancheDeVerificacion(sesion, filasDeVerificacion(v.hallazgos)) : undefined;
 
   // En una cerrada, la última es ella misma: el resumen ya lo dice.
   const ultima = v.estado === "cerrada" ? null : await ultimaVerificacionDe(v.punto.id);
@@ -83,7 +86,7 @@ export default async function PaginaVerificacion({ params }: { params: Promise<{
 
       <ListaChequeo verificacion={v} fechas={fechas} />
 
-      {v.estado === "cerrada" ? <ListaHallazgos hallazgos={v.hallazgos} volver={{ verificacionId: v.id }} /> : null}
+      {v.estado === "cerrada" ? <ListaHallazgos hallazgos={v.hallazgos} volver={{ verificacionId: v.id }} enganches={enganches} /> : null}
     </div>
   );
 }

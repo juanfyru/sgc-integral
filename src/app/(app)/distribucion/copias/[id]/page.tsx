@@ -10,6 +10,7 @@ import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerCopia } from "@/db/consultas/distribucion/copias";
 import { hallazgosDeCopia } from "@/db/consultas/distribucion/hallazgos";
+import { engancheDeVerificacion, filasDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { numeroDeCopia } from "@/lib/distribucion/copias";
 import { AVISOS_COPIA, MENSAJE_VENTANA, type AvisoCopia } from "@/lib/distribucion/respuesta-copia";
 import { ETIQUETA_MOTIVO_ANULACION, ETIQUETA_MOTIVO_POR_RECOGER } from "@/lib/distribucion/tipos";
@@ -55,6 +56,8 @@ export default async function PaginaCopia({
   const numero = numeroDeCopia(copia.numero);
   // Lo que dejó «No se encontró» al recogerla, para quien ve su punto: aquí se corrige y se valida (Ruling 57).
   const hallazgos = await hallazgosDeCopia(copia.id, sesion);
+  // Lo de mejoramiento en cada hallazgo (Fase 15B, anexo §7.1).
+  const enganches = await engancheDeVerificacion(sesion, filasDeVerificacion(hallazgos), { ahora });
 
   return (
     <div className="flex max-w-5xl flex-col gap-6">
@@ -146,7 +149,7 @@ export default async function PaginaCopia({
         <HistorialCopia eventos={copia.eventos} />
       </div>
 
-      <ListaHallazgos hallazgos={hallazgos} volver={{ copiaId: copia.id }} titulo="Hallazgos de esta copia" />
+      <ListaHallazgos hallazgos={hallazgos} volver={{ copiaId: copia.id }} titulo="Hallazgos de esta copia" enganches={enganches} />
     </div>
   );
 }

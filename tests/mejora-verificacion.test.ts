@@ -6,6 +6,7 @@
 import type { TransactionSql } from "postgres";
 import { afterAll, describe, expect, it } from "vitest";
 import { obtenerSql } from "@/db/cliente";
+import { abrirHallazgo, corregirHallazgo, reabrirHallazgo } from "@/db/consultas/distribucion/hallazgos";
 import { ErrorFirma, ErrorTramite, type OpcionesFlujo, type SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { leerActividad, reasignarActividad, registrarSeguimiento, terminarActividad } from "@/db/consultas/mejoramiento/actividades";
 import { pedirAjuste } from "@/db/consultas/mejoramiento/ajustes";
@@ -36,6 +37,7 @@ import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso } from "@/lib/permisos";
 import { zonaHoraria } from "@/lib/zona-horaria";
+import { puntoDePrueba } from "./utiles/distribucion";
 import { indicadorDePrueba, versionTrimestral } from "./utiles/indicadores";
 import {
   baseDeMejora,
@@ -324,6 +326,52 @@ describe("puedeVerificar: quien ejecutó no verifica", () => {
       const aVerificar = turno.filter((a) => (a.titulo as string).startsWith("Verificar la implementación"));
       expect(aVerificar.map((a) => Number(a.usuario_id))).toContain(b.control.usuarioId);
       expect(aVerificar.map((a) => Number(a.usuario_id))).not.toContain(ejecuta.usuarioId);
+    }));
+});
+
+describe("puedeVerificar: la no conformidad de un hallazgo de verificación (anexo 15B §7.3)", () => {
+  it("no verifican quien lo corrigió, quien responde por él según su fila, ni quien lo corrigió antes de una reapertura; sí otro Admin SGC", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await porVerificar(tx, b);
+      const respondia = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const responsableDeHoy = await usuarioDePrueba(tx, { rol: "control_interno" });
+      const antes = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const corrigio = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const reabre = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const despues = await usuarioDePrueba(tx, { rol: "admin_sgc" });
+      const punto = await puntoDePrueba(tx, { responsable: respondia });
+      const { hallazgoId: vh } = await abrirHallazgo(tx, {
+        puntoId: punto.id,
+        origen: "verificacion",
+        descripcion: "Copia obsoleta del protocolo de triage en el puesto de enfermería",
+        retiradoEnElActo: false,
+        responsableId: respondia.usuarioId,
+        ahora: new Date("2026-11-10T15:00:00Z"),
+        plazoDias: 5,
+      });
+      const o = { sql: tx, ahora: new Date("2026-11-11T15:00:00Z") };
+      // Lo corrige uno, otro lo reabre (la reapertura borra `corregido_por`: queda la bitácora) y lo corrige otro.
+      await corregirHallazgo(vh, antes, "Se retiró la copia del puesto", o);
+      await reabrirHallazgo(vh, reabre, "Sigue la copia en el cajón", o);
+      await corregirHallazgo(vh, corrigio, "Se retiró la copia del cajón y se entregó la vigente", o);
+      // Hoy responde por el punto otra persona, que no ha hecho nada.
+      await tx`UPDATE puntos_uso SET responsable_id = ${responsableDeHoy.usuarioId} WHERE id = ${punto.id}`;
+      for (const s of [respondia, antes, corrigio]) expect(await puedeVerificar(h.id, s, { sql: tx })).toBe(true);
+
+      await tx`UPDATE mejora_hallazgos SET verificacion_hallazgo_id = ${vh} WHERE id = ${h.id}`;
+      for (const s of [respondia, antes, corrigio]) expect(await puedeVerificar(h.id, s, { sql: tx })).toBe(false);
+      for (const s of [responsableDeHoy, reabre, despues, b.admin]) expect(await puedeVerificar(h.id, s, { sql: tx })).toBe(true);
+      const quienes = await quienesVerifican(tx, h.id);
+      for (const s of [respondia, antes, corrigio]) expect(quienes).not.toContain(s.usuarioId);
+      expect(quienes).toEqual(expect.arrayContaining([responsableDeHoy.usuarioId, reabre.usuarioId, despues.usuarioId]));
+
+      // Se lee en cada acto: quien lo corrige después de abierta la no conformidad tampoco la verifica.
+      await reabrirHallazgo(vh, reabre, "Apareció otra copia vieja", o);
+      await corregirHallazgo(vh, despues, "Se recogieron todas las copias viejas", o);
+      expect(await puedeVerificar(h.id, despues, { sql: tx })).toBe(false);
+      expect(await puedeVerificar(h.id, corrigio, { sql: tx })).toBe(false);
+      expect(await puedeVerificar(h.id, b.admin, { sql: tx })).toBe(true);
     }));
 });
 

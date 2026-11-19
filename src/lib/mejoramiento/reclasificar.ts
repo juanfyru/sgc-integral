@@ -2,8 +2,11 @@ import { esExterno } from "./origenes";
 import { accionObligada, aceptadoVaA } from "./reglas";
 import type { Clase, Criticidad, EstadoHallazgo, Origen } from "./tipos";
 
-/** Lo de la identificación que decide a dónde va un hallazgo al reclasificarlo. */
-export type Perfil = { clase: Clase; criticidad: Criticidad | null; origen: Origen; reincidenteDe: number | null };
+/**
+ * Lo de la identificación que decide a dónde va un hallazgo al reclasificarlo. `verificacionHallazgoId`, el hallazgo de verificación
+ * del que nació (Fase 15B, anexo §7.2), no se reclasifica: es el mismo antes y después.
+ */
+export type Perfil = { clase: Clase; criticidad: Criticidad | null; origen: Origen; reincidenteDe: number | null; verificacionHallazgoId: number | null };
 
 const DECISION = new Set<EstadoHallazgo>(["por_decidir", "por_validar"]);
 const ACEPTACION = new Set<EstadoHallazgo>(["por_aceptar", "rechazo", "arbitraje"]);
@@ -15,6 +18,8 @@ function destinoPorClase(antes: Perfil, despues: Perfil, estado: EstadoHallazgo,
   }
   // De observación u oportunidad a no conformidad: solo desde «Por formular».
   if (antes.clase !== "no_conformidad" && despues.clase === "no_conformidad" && estado === "por_formular") {
+    // La de un hallazgo de verificación no tiene corrección propia (es la de ese hallazgo) y su acción ya quedó requerida.
+    if (despues.verificacionHallazgoId !== null) return estado;
     if (!correccionRegistrada) return "por_corregir";
     return accionObligada(despues) ? "por_formular" : "por_decidir";
   }
@@ -36,7 +41,7 @@ export function destinoDeReclasificacion(
   if (porClase !== estado) return porClase;
   // El origen pasa a externo: se acepta si aún no se aceptó; si ya se decidía la acción, se formula el plan.
   if (!esExterno(antes.origen) && esExterno(despues.origen)) {
-    if (ACEPTACION.has(estado)) return aceptadoVaA(despues.clase);
+    if (ACEPTACION.has(estado)) return aceptadoVaA(despues);
     if (DECISION.has(estado)) return "por_formular";
     return estado;
   }

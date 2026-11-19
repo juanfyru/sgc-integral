@@ -96,4 +96,9 @@ export type HallazgoBase = {
   accionRequerida: boolean | null;
   resultadoCierre: ResultadoCierre | null;
   registradoPor: number;
+  /**
+   * El hallazgo de verificación de Distribución del que nació (Fase 15B, anexo §7.2): su no conformidad no tiene corrección propia
+   * (es la de ese hallazgo) y, aceptada, va directo a «Por formular» (`aceptadoVaA`).
+   */
+  verificacionHallazgoId: number | null;
 };

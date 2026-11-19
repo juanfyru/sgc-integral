@@ -97,6 +97,7 @@ import {
   idsDeLaVerificacion,
 } from "@/lib/esquemas/mejoramiento";
 import { RUTA_REPORTES_RECIBIDOS, rutaDeReportar } from "@/lib/mejoramiento/reportes";
+import { FIJOS_DE_VERIFICACION } from "@/lib/mejoramiento/enganches";
 import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { LISTOS_CAMBIARON } from "@/lib/mejoramiento/planes";
 import { ANCLA_RESPUESTA_AL_ENTE, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
@@ -110,10 +111,14 @@ import { parsearFormulario } from "@/lib/validacion";
  * ocurrencia lo suma a ese hallazgo: el reporte nunca queda sin clasificar. El plan oculto (`planId`) y el objetivo (Fase 15B)
  * los vuelve a validar `registrarHallazgo` dentro de su transacción; una ocurrencia no los usa: no nace ningún hallazgo. Desde el
  * panel de la marca de un indicador (`marcaMedicionId`, anexo 15B §6.2) no se añade una ocurrencia a un parecido: se rechaza con
- * `OCURRENCIA_DESDE_EL_PANEL` (el formulario ya no la ofrece), porque así no quedaría la salida de la marca.
+ * `OCURRENCIA_DESDE_EL_PANEL` (el formulario ya no la ofrece), porque así no quedaría la salida de la marca. Desde un hallazgo de
+ * verificación (`verificacionHallazgoId`, anexo 15B §7.2) la clase y el origen son fijos: lo que traiga el envío no cuenta.
  */
 export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
+    if (String(datos.get("verificacionHallazgoId") ?? "") !== "") {
+      for (const [campo, valor] of Object.entries(FIJOS_DE_VERIFICACION)) datos.set(campo, valor);
+    }
     const d = parsearFormulario(datos, EsquemaHallazgo, { omitir: ["relacion"] });
     const relacion = RELACION_DE_REGISTRO.exec(String(datos.get("relacion") ?? "distinto"));
     if (!relacion) throw new Error("La salida elegida ante los parecidos no es válida");

@@ -171,6 +171,7 @@ const base = (extra: Partial<HallazgoBase>): HallazgoBase => ({
   accionRequerida: true,
   resultadoCierre: null,
   registradoPor: 1,
+  verificacionHallazgoId: null,
   ...extra,
 });
 

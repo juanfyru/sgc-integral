@@ -77,6 +77,13 @@ export type FilaNueva = {
   reincidenteDe: number | null;
   /** El hallazgo en cuya verificación se encontró este (spec §11.4); quien registra lo ve (`registrarHallazgo`). */
   derivadoDe?: number | null;
+  /** El hallazgo de verificación de Distribución del que nace la no conformidad (Fase 15B, anexo §7.2). */
+  verificacionHallazgoId?: number | null;
+  /**
+   * La acción correctiva requerida desde que nace (anexo §7.2): la fila guarda la decisión, su justificación y quién la tomó, en las
+   * columnas de la decisión de la 15A.
+   */
+  accion?: { justificacion: string; decididaPor: number; decididaEn: Date } | null;
 };
 
 const idONulo = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -97,13 +104,14 @@ export function aBase(f: Row): HallazgoBase {
     accionRequerida: (f.accion_requerida as boolean | null) ?? null,
     resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
     registradoPor: Number(f.registrado_por),
+    verificacionHallazgoId: idONulo(f.verificacion_hallazgo_id),
   };
 }
 
 /** El hallazgo sin candado: para el validador de solo lectura de un acto con firma (F13A-R4), antes de abrir la transacción. */
 export async function hallazgoBase(sql: Cliente, id: number): Promise<HallazgoBase | null> {
   const [f] = await sql`SELECT id, codigo, clase, criticidad, origen, estado, ronda, proceso_id, reincidente_de,
-      correccion_requerida, accion_requerida, resultado_cierre, registrado_por
+      correccion_requerida, accion_requerida, resultado_cierre, registrado_por, verificacion_hallazgo_id
     FROM mejora_hallazgos WHERE id = ${id}`;
   return f ? aBase(f) : null;
 }
@@ -111,7 +119,7 @@ export async function hallazgoBase(sql: Cliente, id: number): Promise<HallazgoBa
 /** El hallazgo `FOR UPDATE`, con su título (el cuerpo de los avisos). */
 async function releer(tx: TransactionSql, id: number): Promise<{ h: HallazgoBase; titulo: string }> {
   const [f] = await tx`SELECT id, codigo, clase, criticidad, origen, estado, ronda, proceso_id, reincidente_de,
-      correccion_requerida, accion_requerida, resultado_cierre, registrado_por, titulo
+      correccion_requerida, accion_requerida, resultado_cierre, registrado_por, verificacion_hallazgo_id, titulo
     FROM mejora_hallazgos WHERE id = ${id} FOR UPDATE`;
   if (!f) throw new ErrorMejora(NO_EXISTE);
   return { h: aBase(f), titulo: f.titulo as string };
@@ -199,7 +207,8 @@ export async function dejarEvento(
 /**
  * La única función que inserta en `mejora_hallazgos`: el estado sale de la tabla (`registrar` o `cargar`), la fila nace
  * con él y en la ronda 1, y la ronda 1 con su plazo de formular (la fecha del ente, si la hay, spec §13.4). De ahí en
- * adelante, lo mismo que una transición, también `sinAvisoDelTurno`.
+ * adelante, lo mismo que una transición, también `sinAvisoDelTurno`. Con `fila.accion` (la no conformidad de un hallazgo de
+ * verificación, Fase 15B §7.2), la acción correctiva nace requerida, con su justificación, quién la decidió y cuándo.
  */
 export async function nacerHallazgo(
   tx: TransactionSql,
@@ -210,21 +219,25 @@ export async function nacerHallazgo(
   c: ContextoMejora,
 ): Promise<HallazgoBase> {
   const { detalle, soloEvento } = detalleDeQuienLlama(x);
+  const verificacionHallazgoId = fila.verificacionHallazgoId ?? null;
+  const decision = fila.accion ?? null;
   // Un hallazgo nuevo no tiene estado: para `registrar` y `cargar`, `DESDE` es «nuevo» y no lo mira.
-  const estado = destinoDe(accion, { ...fila, estado: "por_aceptar", correccionRequerida: null }, x.rumbo ?? {});
+  const estado = destinoDe(accion, { ...fila, estado: "por_aceptar", correccionRequerida: null, verificacionHallazgoId }, x.rumbo ?? {});
   const formularAntes = formularAntesDe({ registradoEn: c.ahora, fechaLimiteEnte: fila.fechaLimiteEnte }, c);
   const vence = vencimientoDe(estado, accion, formularAntes, c);
   const [nuevo] = await tx`INSERT INTO mejora_hallazgos
       (codigo, anio, consecutivo, clase, origen, fuente, referencia_caso, detectado_en, proceso_id, subproceso_id,
        criticidad, titulo, descripcion, requisito_clausula, requisito_norma_id, requisito_documento_id, documento_id,
        indicador_id, medicion_id, riesgo, estado, ronda, registrado_por, registrado_en, reincidente_de, derivado_de, cargado,
-       fecha_limite_ente, vence_en)
+       fecha_limite_ente, vence_en, verificacion_hallazgo_id, accion_requerida, accion_justificacion, accion_decidida_por,
+       accion_decidida_en)
     VALUES (${fila.codigo}, ${fila.anio}, ${fila.consecutivo}, ${fila.clase}, ${fila.origen}, ${fila.fuente},
       ${fila.referenciaCaso}, ${fila.detectadoEn}, ${fila.procesoId}, ${fila.subprocesoId}, ${fila.criticidad},
       ${fila.titulo}, ${fila.descripcion}, ${fila.requisitoClausula}, ${fila.requisitoNormaId},
       ${fila.requisitoDocumentoId}, ${fila.documentoId}, ${fila.indicadorId}, ${fila.medicionId}, ${fila.riesgo},
       ${estado}, 1, ${sesion.usuarioId}, ${c.ahora}, ${fila.reincidenteDe}, ${fila.derivadoDe ?? null}, ${accion === "cargar"},
-      ${fila.fechaLimiteEnte}, ${vence})
+      ${fila.fechaLimiteEnte}, ${vence}, ${verificacionHallazgoId}, ${decision ? true : null}, ${decision?.justificacion ?? null},
+      ${decision?.decididaPor ?? null}, ${decision?.decididaEn ?? null})
     RETURNING id`;
   const id = Number(nuevo.id);
   await tx`INSERT INTO mejora_rondas (hallazgo_id, numero, formular_antes_de) VALUES (${id}, 1, ${formularAntes})`;
@@ -262,9 +275,10 @@ export async function nacerHallazgo(
     procesoId: fila.procesoId,
     reincidenteDe: fila.reincidenteDe,
     correccionRequerida: null,
-    accionRequerida: null,
+    accionRequerida: decision ? true : null,
     resultadoCierre: null,
     registradoPor: sesion.usuarioId,
+    verificacionHallazgoId,
   };
   // Un hallazgo cargado no avisa al nacer: su plan se entrega cuando llega su formato firmado (`confirmarCarga`).
   if (!x.sinAvisoDelTurno) await avisarDelTurno(tx, h, fila.titulo, sesion.usuarioId);

@@ -3,6 +3,7 @@ import type { FirmaDelHallazgo } from "@/db/consultas/mejoramiento/aprobacion";
 import type { EncabezadoDelFormato } from "@/db/consultas/mejoramiento/formatos";
 import type { ActividadDeDetalle, DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import { leerCriterios } from "@/lib/mejoramiento/eficacia";
+import { CORRECCION_EN_DISTRIBUCION } from "@/lib/mejoramiento/enganches";
 import { fechaDeDia, fechaLargaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
 import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
 import {
@@ -134,7 +135,22 @@ function Correccion({ c, id }: { c: Contexto; id: string }) {
   const decision = h.decision;
   const corregir = pasoEnPapel(h, "corregir");
   const sinNada = x.requerida === null && decision.accionRequerida === null;
+  // La de un hallazgo de verificación (Fase 15B, anexo §7.2): la corrección es la de ese hallazgo, a quien lo ve; a los demás, solo
+  // que está en Distribución.
+  const e = h.correccionEnlazada;
+  const enlazada: Array<Campo | null> = !e
+    ? []
+    : e.visible
+      ? [
+          { termino: "Corrección", valor: `La del hallazgo de verificación de ${e.punto}` },
+          { termino: "En qué va", valor: e.estado },
+          { termino: "Qué se corrigió", valor: e.nota ?? "Aún no se registra la corrección en Distribución." },
+          e.por ? { termino: "Quién", valor: e.por } : null,
+          e.en ? { termino: "Cuándo", valor: fechaYHora(e.en, d.zona) } : null,
+        ]
+      : [{ termino: "Corrección", valor: CORRECCION_EN_DISTRIBUCION }];
   const campos: Array<Campo | null> = [
+    ...enlazada,
     x.requerida === null ? null : { termino: "¿Requirió corrección o contención?", valor: x.requerida ? "Sí" : "No" },
     x.descripcion ? { termino: "Descripción", valor: x.descripcion } : null,
     x.responsable ? { termino: "Responsable", valor: x.responsable } : null,

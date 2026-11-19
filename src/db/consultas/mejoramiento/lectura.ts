@@ -68,6 +68,7 @@ import { tareasConSuHallazgo } from "./tareas";
 import { venceLaActividad } from "./vence-actividad";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 import { contextoDeMejora } from "./config";
+import { correccionEnlazada, type CorreccionEnlazada } from "./enganche-verificacion";
 import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
 import { evaluablesDesde, NADIE_PUEDE_VERIFICAR, type FilaDelIndicador } from "./verificacion";
 
@@ -131,6 +132,7 @@ function aBase(f: Record<string, unknown>): HallazgoBase {
     accionRequerida: (f.accion_requerida as boolean | null) ?? null,
     resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
     registradoPor: Number(f.registrado_por),
+    verificacionHallazgoId: idONulo(f.verificacion_hallazgo_id),
   };
 }
 
@@ -253,7 +255,7 @@ const AVANCE = (sql: Cliente) => sql`(
 const comoPatron = (q: string) => "%" + q.trim().replace(/[\\%_]/g, (m) => "\\" + m) + "%";
 
 const COLUMNAS_BASE = (sql: Cliente) => sql`h.id, h.codigo, h.clase, h.criticidad, h.origen, h.estado, h.ronda, h.proceso_id,
-  h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.registrado_por`;
+  h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.registrado_por, h.verificacion_hallazgo_id`;
 
 /**
  * Lo vencido y lo que ya se puede evaluar de los hallazgos de `donde` (un fragmento sobre `h` que ya lleva la visibilidad de quien
@@ -761,8 +763,18 @@ export type FechasDeHallazgo = {
  * de ese módulo; a los demás, solo su clase («un indicador», «un documento restringido»). Un hallazgo que no se ve no está.
  */
 export type EnlaceDelHallazgo =
-  | { visible: true; clase: "hallazgo" | "documento" | "norma" | "indicador"; rotulo: string; codigo: string | null; nombre: string; href: string }
-  | { visible: false; clase: "indicador" | "documento" | "norma"; rotulo: string };
+  | {
+      visible: true;
+      clase: "hallazgo" | "documento" | "norma" | "indicador" | "verificacion";
+      rotulo: string;
+      codigo: string | null;
+      nombre: string;
+      href: string;
+    }
+  | { visible: false; clase: "indicador" | "documento" | "norma" | "verificacion"; rotulo: string };
+
+/** El rótulo del enlace con el hallazgo de verificación de Distribución del que nació (Fase 15B, anexo §7.2). */
+export const ROTULO_DE_VERIFICACION = "Hallazgo de verificación";
 
 export type DetalleDeHallazgo = {
   /** `completo`, o `actividad` si solo es responsable de una actividad: lo ve en texto, sin historial y sin archivos de otros. */
@@ -823,6 +835,14 @@ export type DetalleDeHallazgo = {
     validadaEn: Date | null;
   };
   decision: { accionRequerida: boolean | null; justificacion: string | null; decididaEn: Date | null };
+  /** El hallazgo de verificación de Distribución del que nació (Fase 15B, anexo §7.2), o nulo: decide el recorrido (`baseDeDetalle`). */
+  verificacionHallazgoId: number | null;
+  /**
+   * Su corrección, que es la de ese hallazgo de verificación (anexo §7.2): su estado, su nota, quién y cuándo, a quien lo ve
+   * (`correccionEnlazada`); a los demás, solo `{ visible: false }` («La corrección está en un hallazgo de verificación de
+   * Distribución»). Nula en un hallazgo que no nació de uno.
+   */
+  correccionEnlazada: ({ visible: true } & CorreccionEnlazada) | { visible: false } | null;
   cierre: {
     resultado: ResultadoCierre | null;
     cerradoEn: Date | null;
@@ -1234,6 +1254,29 @@ async function enlacesDe(
 }
 
 /**
+ * Lo que el recorrido de la página necesita del hallazgo leído (`pasosDelRecorrido`): su clase, su estado, la corrección y la decisión
+ * y, desde la 15B, el hallazgo de verificación del que nació. Una reincidencia que quien lee no ve cuenta como reincidencia, sin su id.
+ */
+export function baseDeDetalle(h: DetalleDeHallazgo): HallazgoBase {
+  return {
+    id: h.id,
+    codigo: h.codigo,
+    clase: h.clase,
+    criticidad: h.criticidad,
+    origen: h.origen,
+    estado: h.estado,
+    ronda: h.ronda,
+    procesoId: h.procesoId,
+    reincidenteDe: h.reincidenteDe && "id" in h.reincidenteDe ? h.reincidenteDe.id : h.reincidenteDe ? -1 : null,
+    correccionRequerida: h.correccion.requerida,
+    accionRequerida: h.decision.accionRequerida,
+    resultadoCierre: h.cierre.resultado,
+    registradoPor: h.registradoPorId,
+    verificacionHallazgoId: h.verificacionHallazgoId,
+  };
+}
+
+/**
  * El hallazgo completo para quien lo ve; nulo si no existe **o** si no lo ve (la misma respuesta). Quien lo ve solo por
  * ser responsable de una actividad lo recibe en texto, sin eventos ni ocurrencias, y sin listas de archivos (los
  * archivos llegan en la Tarea 9, con su propia regla: solo los de sus actividades).
@@ -1474,6 +1517,17 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
   }));
 
   const reincidente = await anterior;
+  // El hallazgo de verificación del que nació (anexo §7.2), con la regla de Distribución (`filtroPuntos`): su corrección y su enlace a
+  // quien lo ve; a los demás, solo que está en Distribución.
+  const enlazada = h.verificacionHallazgoId === null ? null : await correccionEnlazada(sesion, h.verificacionHallazgoId, { sql });
+  const deVerificacion: EnlaceDelHallazgo[] =
+    h.verificacionHallazgoId === null
+      ? []
+      : [
+          enlazada
+            ? { visible: true, clase: "verificacion", rotulo: ROTULO_DE_VERIFICACION, codigo: null, nombre: enlazada.punto, href: enlazada.enlace }
+            : { visible: false, clase: "verificacion", rotulo: ROTULO_DE_VERIFICACION },
+        ];
   const enlaces = await enlacesDe(sql, sesion, {
     id: h.id,
     reincidente: reincidente && "id" in reincidente ? reincidente : null,
@@ -1564,6 +1618,8 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
       justificacion: (f.accion_justificacion as string | null) ?? null,
       decididaEn: (f.accion_decidida_en as Date | null) ?? null,
     },
+    verificacionHallazgoId: h.verificacionHallazgoId,
+    correccionEnlazada: h.verificacionHallazgoId === null ? null : enlazada ? { visible: true, ...enlazada } : { visible: false },
     cierre: {
       resultado: h.resultadoCierre,
       cerradoEn: (f.cerrado_en as Date | null) ?? null,
@@ -1576,7 +1632,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     rondas: rondasDeDetalle,
     rondasAnteriores: rondasDeDetalle.filter((r) => r.numero < h.ronda),
     fechas,
-    enlaces,
+    enlaces: [...deVerificacion, ...enlaces],
     ocurrencias: ocurrencias.map((o) => ({
       id: Number(o.id),
       fecha: o.fecha as string,

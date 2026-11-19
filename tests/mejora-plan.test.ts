@@ -14,10 +14,12 @@ import { examinarPlan, guardarAccion, guardarCriterio, quitarAccion, usuariosAsi
 import { listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
 import { anularHallazgo, reclasificarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { fechaMinimaDeEficacia } from "@/lib/mejoramiento/eficacia";
-import { huellaDePlan } from "@/lib/mejoramiento/huellas";
+import { abrirHallazgo } from "@/db/consultas/distribucion/hallazgos";
+import { huellaDePlan, type PlanFirmado } from "@/lib/mejoramiento/huellas";
 import { YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
+import { puntoDePrueba } from "./utiles/distribucion";
 import { indicadorDePrueba } from "./utiles/indicadores";
 import { baseDeMejora, c, hallazgoEn, otroProcesoConLider, type BaseDeMejora } from "./utiles/mejoramiento";
 import { documentoLibre, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./utiles/tramites";
@@ -644,5 +646,67 @@ describe("ronda 1 de la revisión", () => {
       const avisados = await tx`SELECT usuario_id FROM notificaciones WHERE entidad = 'mejora_hallazgo' AND entidad_id = ${h.id} AND tipo = 'mejora.anulado'`;
       expect(avisados.map((f) => Number(f.usuario_id))).not.toContain(persona.usuarioId);
       expect(avisados.map((f) => Number(f.usuario_id))).toContain(b.lider.usuarioId);
+    }));
+});
+
+/**
+ * La identificación firmada y el hallazgo de verificación (anexo 15B §7.2, F15B-DC46): la clave `verificacionHallazgoId` entra solo
+ * cuando el hallazgo la tiene, así ninguna huella ya guardada cambia. El valor fijo es el de este plan antes de la 15B (commit
+ * 68a58ae): si cambia, cambió la huella de todo plan sin el enlace.
+ */
+describe("la huella del plan y el hallazgo de verificación", () => {
+  const PLAN_FIJO: PlanFirmado = {
+    ronda: 1,
+    identificacion: {
+      codigo: "HZ-2026-033", clase: "no_conformidad", criticidad: "media", origen: "control_documental",
+      fuente: "Verificación del punto Urgencias", referenciaCaso: null, detectadoEn: "2026-11-10", proceso: "Urgencias",
+      subproceso: null, titulo: "Copias obsoletas del protocolo de triage", descripcion: "Copia obsoleta del protocolo de triage en el puesto de enfermería.",
+      requisitoClausula: "ISO 9001: 7.5.3", requisitoNorma: null, requisitoDocumento: null, riesgo: null, fechaLimiteEnte: null,
+      reincidenteDe: null, documentoId: 12, documento: "URG-PR-02 Protocolo de triage", indicadorId: null, indicador: null,
+      medicionId: null, medicion: null,
+    },
+    correccion: { requerida: null, descripcion: null, responsable: null, implementadaEn: null },
+    analisis: [{ orden: 1, metodo: "cinco_porques", equipo: "Enfermería", observaciones: null, contenido: { niveles: [{ respuesta: "Nadie recoge la copia vieja" }] } }],
+    causas: [{ orden: 1, texto: "La recogida de copias no tiene responsable", sinAccionPorque: null }],
+    preguntas: { similares: false, similaresDetalle: null, cambios: { documentos: true, riesgos: false, controles: false } },
+    acciones: [{
+      numero: "A1", tipo: "correctiva", descripcion: "Asignar la recogida de copias al jefe de turno", causas: [1], recursos: null,
+      indicadorCumplimiento: "Copias obsoletas en circulación", meta: "0",
+      actividades: [{ numero: "A1.1", descripcion: "Actualizar el procedimiento de distribución", responsableId: 7, responsable: "Jefa de enfermería", inicio: "2026-11-20", fin: "2026-12-15" }],
+    }],
+    criterio: { criterios: ["no_recurrencia"], criterioOtro: null, indicador: null, fechaEvaluacion: null },
+  };
+  const ANTES = "58758bd0476924448154ae0f639a2b7874e38066230cb7f5cf83875c467b6fe3";
+  const conEnlace = (id: number): PlanFirmado => ({ ...PLAN_FIJO, identificacion: { ...PLAN_FIJO.identificacion, verificacionHallazgoId: id } });
+
+  it("sin el enlace, la huella es la de antes; con él cambia, y cambia si cambia el identificador", () => {
+    expect(huellaDePlan(PLAN_FIJO)).toBe(ANTES);
+    expect(huellaDePlan(conEnlace(5))).not.toBe(ANTES);
+    expect(huellaDePlan(conEnlace(5))).not.toBe(huellaDePlan(conEnlace(6)));
+    expect(huellaDePlan(conEnlace(5))).toBe(huellaDePlan(conEnlace(5)));
+  });
+
+  it("examinarPlan pone la clave solo cuando el hallazgo tiene el enlace", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      const sin = await examinar(tx, h.id);
+      expect(Object.hasOwn(sin.plan.identificacion, "verificacionHallazgoId")).toBe(false);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const punto = await puntoDePrueba(tx, { responsable });
+      const { hallazgoId: vh } = await abrirHallazgo(tx, {
+        puntoId: punto.id,
+        origen: "verificacion",
+        descripcion: "Copia obsoleta del protocolo en el puesto de enfermería",
+        retiradoEnElActo: false,
+        responsableId: responsable.usuarioId,
+        ahora: new Date("2026-11-10T15:00:00Z"),
+        plazoDias: 5,
+      });
+      await tx`UPDATE mejora_hallazgos SET verificacion_hallazgo_id = ${vh} WHERE id = ${h.id}`;
+      const con = await examinar(tx, h.id);
+      expect(con.plan.identificacion.verificacionHallazgoId).toBe(vh);
+      expect(con.huella).not.toBe(sin.huella);
+      expect(con.huella).toBe(huellaDePlan(con.plan));
     }));
 });

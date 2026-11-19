@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { NoConformidadDeVerificacion } from "@/componentes/mejoramiento/enganches/NoConformidadDeVerificacion";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { Evidencia } from "@/db/consultas/distribucion/evidencias";
 import type { Hallazgo, HallazgoConAcciones } from "@/db/consultas/distribucion/hallazgos";
+import type { EngancheDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { comoSeCerro } from "@/lib/distribucion/hallazgos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { AccionesHallazgo, type VueltaDeHallazgo } from "./AccionesHallazgo";
@@ -70,16 +72,19 @@ function Cierre({ h, fecha }: { h: Hallazgo; fecha: Intl.DateTimeFormat }) {
 /**
  * Los hallazgos de una verificación o de la recogida de una copia, con su corrección y su cierre (spec 13C §12.5):
  * quien responde por el punto marca «Corregido»; quien realiza verificaciones lo valida o lo reabre. `volver` dice a
- * dónde regresa cada acción.
+ * dónde regresa cada acción. Con `enganches` (Fase 15B, anexo §7.1), cada hallazgo gana lo de mejoramiento
+ * (`NoConformidadDeVerificacion`).
  */
 export function ListaHallazgos({
   hallazgos,
   volver,
   titulo = "Hallazgos",
+  enganches,
 }: {
   hallazgos: HallazgoConAcciones[];
   volver: VueltaDeHallazgo;
   titulo?: string;
+  enganches?: ReadonlyMap<number, EngancheDeVerificacion>;
 }) {
   const fecha = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeZone: zonaHoraria() });
   if (hallazgos.length === 0) return null;
@@ -119,6 +124,7 @@ export function ListaHallazgos({
             />
             <Cierre h={h} fecha={fecha} />
             <AccionesHallazgo hallazgo={h} volver={volver} />
+            <NoConformidadDeVerificacion hallazgoId={h.id} enganche={enganches?.get(h.id)} />
           </li>
         ))}
       </ul>

@@ -23,7 +23,10 @@ const PLAZOS: ReadonlyArray<{ paso: keyof ConfigMejora["plazos"]; etiqueta: stri
   { paso: "evaluar", etiqueta: "Evaluar la eficacia", ayuda: "Corre desde la fecha mínima de eficacia." },
 ];
 
-/** Los plazos de cada paso (en días hábiles) y los dos recordatorios (en días calendario), spec 15 §13.1. */
+/**
+ * Los plazos de cada paso (en días hábiles) y los dos recordatorios (en días calendario), spec 15 §13.1; y, desde la 15B (anexo §7.4),
+ * los dos números de la sugerencia de una no conformidad en Distribución.
+ */
 export function FormularioPlazos({ config }: { config: ConfigMejora }) {
   const [guardado, setGuardado] = useState(false);
   const [estado, enviar, pendiente] = useAccionDeDialogo(guardarConfigMejoraAccion, () => setGuardado(true));
@@ -69,6 +72,21 @@ export function FormularioPlazos({ config }: { config: ConfigMejora }) {
             <input type="number" required min={1} max={365} step={1} defaultValue={valor("recordatorioDias", config.recordatorioDias)} className={CONTROL} />
           </Campo>
         </div>
+        <fieldset className="flex min-w-0 flex-col gap-3">
+          <legend className="text-sm font-medium">Sugerir una no conformidad desde Distribución</legend>
+          <p className="text-sm text-muted-foreground">
+            En la fila de un hallazgo de verificación, al Administrador del SGC, cuando su punto de uso acumula estos hallazgos en estos meses. Es un
+            aviso en pantalla, no una tarea.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Campo etiqueta="Hallazgos del punto" nombre="sugerirHallazgos" id="mej-sugerir-hallazgos" ayuda="De 2 a 20.">
+              <input type="number" required min={2} max={20} step={1} defaultValue={valor("sugerirHallazgos", config.sugerirHallazgos)} className={CONTROL} />
+            </Campo>
+            <Campo etiqueta="En los últimos (meses)" nombre="sugerirMeses" id="mej-sugerir-meses" ayuda="De 1 a 60.">
+              <input type="number" required min={1} max={60} step={1} defaultValue={valor("sugerirMeses", config.sugerirMeses)} className={CONTROL} />
+            </Campo>
+          </div>
+        </fieldset>
         {estado ? (
           <p role="alert" className="text-sm text-estado-critico-texto">
             {estado.error}

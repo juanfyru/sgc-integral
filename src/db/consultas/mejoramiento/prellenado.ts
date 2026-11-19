@@ -12,8 +12,10 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, enAlcance, filtroAcceso, filtroIndicadores, type Alcance } from "@/lib/alcance";
+import { FIJOS_DE_VERIFICACION, fuenteDeVerificacion } from "@/lib/mejoramiento/enganches";
 import type { ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
 import { puede } from "@/lib/permisos";
+import { hallazgoParaAbrir } from "./enganche-verificacion";
 import { leerMarca, puedeResolverMarca, textosDeLaMarca } from "./marcas-base";
 import type { DatosDeHallazgo } from "./registro";
 
@@ -22,13 +24,16 @@ export type { ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
 /**
  * Lo que el formulario de registro recibe puesto: `valores`, lo propuesto (editable, salvo lo que esté en `fijos`); `fijos`, los
  * campos que se muestran como texto con su campo oculto y no se editan; `ocultos`, los campos ocultos que viajan con el envío
- * (el `planId`); y `rotulo`, la línea (o las líneas, separadas por un salto) que el formulario muestra arriba.
+ * (el `planId`); y `rotulo`, la línea (o las líneas, separadas por un salto) que el formulario muestra arriba. `procesos`, si llega,
+ * son los únicos procesos entre los que se elige (los del punto de un hallazgo de verificación, anexo §7.2); sin él, todos los que la
+ * persona alcanza.
  */
 export type Prellenado = {
   valores: Partial<DatosDeHallazgo>;
   fijos: ReadonlyArray<keyof DatosDeHallazgo>;
   ocultos: Record<string, string>;
   rotulo: string | null;
+  procesos?: readonly number[];
 };
 
 /** Lo que pone una parte que no reconoce o no admite su parámetro: nada. Congelado: se comparte entre todas. */
@@ -72,6 +77,10 @@ const claveDe = (v: string | undefined): string | null => {
 
 /** El rótulo de un hallazgo que se registra dentro de un plan. */
 export const rotuloDePlan = (codigo: string) => `Se registra dentro del plan ${codigo}`;
+
+/** El rótulo de la no conformidad que nace de un hallazgo de verificación (anexo §7.2). */
+export const rotuloDeVerificacion = (punto: string) =>
+  `Nace del hallazgo de verificación de ${punto}: la corrección es la de ese hallazgo y, aceptada, pasa directo a «Por formular».`;
 
 type Lectura = { sql: Cliente; sesion: SesionFlujo; alcance: () => Promise<Alcance> };
 
@@ -186,7 +195,43 @@ async function deLaMedicion(l: Lectura, valor: string): Promise<Prellenado> {
 }
 
 /**
- * El enganche que se usa (`engancheDe`). Cada uno añade aquí su rama: `medicion`, esta tarea (la marca «Requiere acción de mejora»,
+ * `verificacion` (anexo §7.2 y §10.3): un hallazgo de verificación de Distribución que la persona ve (`filtroPuntos`) y que no tiene
+ * una no conformidad que cuente, solo para el Admin SGC (`mejora.gestionar`). Fija la clase (no conformidad) y el origen («Control
+ * documental»); propone la fuente («Verificación del punto …»), su documento en «A qué se refiere» (si tiene versión vigente y la
+ * persona lo ve, la regla de `delDocumento`), su descripción y el día en que se abrió; ofrece solo los procesos activos del punto
+ * (`procesos`; sin ninguno, todos) y propone el único, si es uno. El hallazgo viaja oculto (`verificacionHallazgoId`) y el formulario
+ * pide entonces la justificación de la acción correctiva; el registro lo vuelve a validar todo dentro de su transacción.
+ */
+async function deLaVerificacion(l: Lectura, valor: string): Promise<Prellenado> {
+  const id = idDe(valor);
+  if (id === null || !puede(l.sesion, "mejora.gestionar")) return PRELLENADO_VACIO;
+  const vh = await hallazgoParaAbrir(l.sql, l.sesion, id);
+  if (!vh || vh.yaTiene) return PRELLENADO_VACIO;
+  const [d] =
+    vh.documentoId === null
+      ? []
+      : await l.sql`SELECT d.id FROM documentos d
+          WHERE d.id = ${vh.documentoId}
+            AND EXISTS (SELECT 1 FROM documento_versiones v WHERE v.documento_id = d.id AND v.estado = 'vigente')
+            AND ${filtroAcceso(l.sql, l.sesion)}`;
+  return {
+    valores: {
+      ...FIJOS_DE_VERIFICACION,
+      fuente: fuenteDeVerificacion(vh.punto),
+      ...(d ? { documentoId: Number(d.id) } : {}),
+      descripcion: vh.descripcion,
+      detectadoEn: vh.detectadoEn,
+      ...(vh.procesos.length === 1 ? { procesoId: vh.procesos[0] } : {}),
+    },
+    fijos: ["clase", "origen"],
+    ocultos: { verificacionHallazgoId: String(vh.id) },
+    rotulo: rotuloDeVerificacion(vh.punto),
+    ...(vh.procesos.length > 0 ? { procesos: vh.procesos } : {}),
+  };
+}
+
+/**
+ * El enganche que se usa (`engancheDe`). Cada uno añade aquí su rama: `medicion`, la Tarea 8 (la marca «Requiere acción de mejora»,
  * anexo §6.3); `verificacion`, la Tarea 10 (§7.2); `impacto` e `impactoIndicador`, la Tarea 11 (§8). Mientras no la tienen, no
  * ponen nada.
  */
@@ -195,7 +240,8 @@ async function delEnganche(l: Lectura, e: { clave: Enganche; valor: string } | n
   switch (e.clave) {
     case "medicion":
       return deLaMedicion(l, e.valor);
-    case "verificacion": // Tarea 10.
+    case "verificacion":
+      return deLaVerificacion(l, e.valor);
     case "impacto": // Tarea 11.
     case "impactoIndicador": // Tarea 11.
       return PRELLENADO_VACIO;
@@ -204,13 +250,15 @@ async function delEnganche(l: Lectura, e: { clave: Enganche; valor: string } | n
 
 /**
  * Junta las partes en orden: un valor de una parte posterior reemplaza el de una anterior, salvo que el campo sea fijo, que conserva
- * el valor de la parte que lo fija (la última, si lo fijan dos). Los ocultos se juntan igual y los rótulos van uno por línea.
+ * el valor de la parte que lo fija (la última, si lo fijan dos). Los ocultos se juntan igual y los rótulos van uno por línea. Los
+ * `procesos` son los de la última parte que los trae; un proceso propuesto que no está entre ellos no se propone.
  */
 export function combinar(partes: readonly Prellenado[]): Prellenado {
   const valores: Record<string, unknown> = {};
   const fijos: Array<keyof DatosDeHallazgo> = [];
   const ocultos: Record<string, string> = {};
   const rotulos: string[] = [];
+  let procesos: readonly number[] | undefined;
   for (const p of partes) {
     for (const [k, v] of Object.entries(p.valores)) {
       if (!fijos.includes(k as keyof DatosDeHallazgo) || p.fijos.includes(k as keyof DatosDeHallazgo)) valores[k] = v;
@@ -218,8 +266,16 @@ export function combinar(partes: readonly Prellenado[]): Prellenado {
     for (const k of p.fijos) if (!fijos.includes(k)) fijos.push(k);
     Object.assign(ocultos, p.ocultos);
     if (p.rotulo) rotulos.push(p.rotulo);
+    if (p.procesos) procesos = p.procesos;
   }
-  return { valores: valores as Partial<DatosDeHallazgo>, fijos, ocultos, rotulo: rotulos.length > 0 ? rotulos.join("\n") : null };
+  if (procesos && typeof valores.procesoId === "number" && !procesos.includes(valores.procesoId)) delete valores.procesoId;
+  return {
+    valores: valores as Partial<DatosDeHallazgo>,
+    fijos,
+    ocultos,
+    rotulo: rotulos.length > 0 ? rotulos.join("\n") : null,
+    ...(procesos ? { procesos } : {}),
+  };
 }
 
 /**

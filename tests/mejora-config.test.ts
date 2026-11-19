@@ -230,6 +230,33 @@ describe("guardarConfigMejoraAccion", () => {
       expect((await obtenerConfigMejora({ sql: tx })).formatos.plan).toBeNull();
     });
   });
+
+  it("el bloque de los plazos guarda también los dos números de la sugerencia (Fase 15B, anexo §7.4); fuera de rango, se rechaza", async () => {
+    await revertida(sql, async (tx) => {
+      const admin = await sesionAdmin(tx);
+      const antes = await obtenerConfigMejora({ sql: tx });
+      const enviar = async (campos: Record<string, string>) => {
+        const datos = new FormData();
+        for (const [k, v] of Object.entries(campos)) datos.append(k, v);
+        enCurso.sql = tx;
+        requerirSesion.mockResolvedValue(admin);
+        try {
+          return await guardarConfigMejoraAccion(null, datos);
+        } finally {
+          enCurso.sql = null;
+        }
+      };
+      const plazos = Object.fromEntries(Object.entries(antes.plazos).map(([paso, n]) => [`plazo_${paso}`, String(n)]));
+      const comunes = { bloque: "plazos", ...plazos, recordatorioAltaDias: String(antes.recordatorioAltaDias), recordatorioDias: String(antes.recordatorioDias) };
+      expect(await enviar({ ...comunes, sugerirHallazgos: "4", sugerirMeses: "6" })).toBeNull();
+      const despues = await obtenerConfigMejora({ sql: tx });
+      expect([despues.sugerirHallazgos, despues.sugerirMeses]).toEqual([4, 6]);
+      // Los formatos no se tocan al guardar los plazos.
+      expect(despues.formatos).toEqual(antes.formatos);
+      expect(await enviar({ ...comunes, sugerirHallazgos: "1", sugerirMeses: "6" })).toMatchObject({ ok: false });
+      expect((await obtenerConfigMejora({ sql: tx })).sugerirHallazgos).toBe(4);
+    });
+  });
 });
 
 describe("el calendario de la entidad", () => {

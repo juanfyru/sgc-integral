@@ -1,6 +1,10 @@
+import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import type { DetalleDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
+import { CORRECCION_EN_DISTRIBUCION } from "@/lib/mejoramiento/enganches";
 import { fechaDeDia, fechaYHora } from "@/lib/mejoramiento/formato";
+
+const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
@@ -34,11 +38,44 @@ function resumenDe(c: DetalleDeHallazgo["correccion"], archivos: number | null):
   return partes.filter(Boolean).join(" · ");
 }
 
+/** El resumen de la corrección enlazada de un hallazgo de verificación (Fase 15B, anexo §7.2), o el texto fijo a quien no lo ve. */
+function resumenDeLaEnlazada(e: NonNullable<DetalleDeHallazgo["correccionEnlazada"]>): string {
+  if (!e.visible) return CORRECCION_EN_DISTRIBUCION;
+  return [`La del hallazgo de verificación de ${e.punto}`, e.estado, e.nota ? recortar(e.nota, 60) : null].filter(Boolean).join(" · ");
+}
+
+/**
+ * La corrección de la no conformidad que nació de un hallazgo de verificación (anexo §7.2): no tiene corrección propia, es la de ese
+ * hallazgo. A quien lo ve, en qué va, qué se corrigió, quién y cuándo, con el enlace a Distribución; a los demás, solo que está allí.
+ */
+function CorreccionEnlazada({ e, zona }: { e: NonNullable<DetalleDeHallazgo["correccionEnlazada"]>; zona: string }) {
+  if (!e.visible) return <p className="text-sm">{CORRECCION_EN_DISTRIBUCION}</p>;
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm">
+        La corrección es la del hallazgo de verificación de <span className="font-medium">{e.punto}</span>: no se registra otra vez.
+      </p>
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Dato etiqueta="En qué va">{e.estado}</Dato>
+        {e.en ? <Dato etiqueta="Cuándo">{fechaYHora(e.en, zona)}</Dato> : null}
+        <div className="sm:col-span-2">
+          <Dato etiqueta="Qué se corrigió">{e.nota ?? "Aún no se registra la corrección en Distribución."}</Dato>
+        </div>
+        {e.por ? <Dato etiqueta="Quién">{e.por}</Dato> : null}
+      </dl>
+      <Link href={e.enlace} className={`self-start rounded-sm text-sm font-medium text-marca underline-offset-2 hover:underline ${FOCO}`}>
+        Ver el hallazgo de verificación
+      </Link>
+    </div>
+  );
+}
+
 /**
  * «2. Corrección» (spec 15 §8.4 y §16.2, SGC-FO-AC-01 sección 2): si requirió corrección, qué se hizo, quién, cuándo y su
  * evidencia; si no, la justificación. Debajo, la decisión sobre la acción correctiva y, en el camino corto, quién la validó.
  * Plegable: abierta mientras es la etapa en curso. Solo en la no conformidad. Los archivos llegan como hijos (`ArchivosDe`),
- * solo para quien los ve.
+ * solo para quien los ve. La de un hallazgo de verificación (`enlazada`, Fase 15B) pinta la corrección de ese hallazgo, sin
+ * corrección propia, y la acción correctiva requerida desde que se abrió.
  */
 export function SeccionCorreccion({
   correccion: c,
@@ -47,6 +84,7 @@ export function SeccionCorreccion({
   abierta,
   archivos,
   devuelta,
+  enlazada = null,
   children,
 }: {
   correccion: DetalleDeHallazgo["correccion"];
@@ -57,6 +95,8 @@ export function SeccionCorreccion({
   archivos: number | null;
   /** La nota con que se devolvió la corrección, si se devolvió y está otra vez por corregir. */
   devuelta?: string | null;
+  /** La corrección del hallazgo de verificación del que nació (`correccionEnlazada` de la lectura), o nula. */
+  enlazada?: DetalleDeHallazgo["correccionEnlazada"];
   children?: React.ReactNode;
 }) {
   return (
@@ -64,11 +104,12 @@ export function SeccionCorreccion({
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 rounded-lg px-4 py-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca">
         <span className="min-w-0">
           <span className="block font-display text-base font-semibold">2. Corrección</span>
-          <span className="block break-words text-sm text-muted-foreground">{resumenDe(c, archivos)}</span>
+          <span className="block break-words text-sm text-muted-foreground">{enlazada ? resumenDeLaEnlazada(enlazada) : resumenDe(c, archivos)}</span>
         </span>
         <ChevronDown aria-hidden="true" className="mt-1 size-4 shrink-0 transition-transform group-open:rotate-180" />
       </summary>
       <div className="flex flex-col gap-4 border-t border-linea-suave px-4 py-3">
+        {enlazada ? <CorreccionEnlazada e={enlazada} zona={zona} /> : null}
         {devuelta ? (
           <p className="whitespace-pre-line break-words border-l-2 border-mod-planes pl-3 text-sm">
             <span className="font-medium">Se devolvió la corrección:</span> {devuelta}

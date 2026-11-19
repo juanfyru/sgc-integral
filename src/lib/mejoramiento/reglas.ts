@@ -31,8 +31,13 @@ export function llevaPlanSiempre(h: Pick<HallazgoBase, "clase" | "origen">): boo
   return esExterno(h.origen) || h.clase === "observacion" || h.clase === "oportunidad";
 }
 
-export function aceptadoVaA(clase: Clase): "por_corregir" | "por_formular" {
-  return clase === "no_conformidad" ? "por_corregir" : "por_formular";
+/**
+ * A dónde va un hallazgo aceptado (spec §8.3): la no conformidad, a «Por corregir»; la observación y la oportunidad, a «Por
+ * formular». La no conformidad de un hallazgo de verificación (Fase 15B, anexo §7.2) también va a «Por formular»: su corrección es
+ * la de ese hallazgo y la acción correctiva ya quedó requerida al abrirla.
+ */
+export function aceptadoVaA(h: Pick<HallazgoBase, "clase" | "verificacionHallazgoId">): "por_corregir" | "por_formular" {
+  return h.clase === "no_conformidad" && h.verificacionHallazgoId === null ? "por_corregir" : "por_formular";
 }
 
 /** Las cuatro condiciones del spec §8.6: criticidad alta, origen externo, recursos adicionales, elaboró un Admin SGC. */

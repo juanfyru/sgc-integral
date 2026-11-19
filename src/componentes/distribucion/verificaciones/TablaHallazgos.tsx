@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { NoConformidadDeVerificacion } from "@/componentes/mejoramiento/enganches/NoConformidadDeVerificacion";
 import { TablaDatos, celda, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { Hallazgo } from "@/db/consultas/distribucion/hallazgos";
+import type { EngancheDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { comoSeCerro, enlaceDeHallazgo } from "@/lib/distribucion/hallazgos";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -36,13 +38,28 @@ function lineasDeCierre(h: Hallazgo): string[] {
   return [`Cerrado por ${h.cierre.por}: ${h.cierre.nota}`];
 }
 
-/** Los hallazgos abiertos primero, luego los que esperan validación y los cerrados con su cierre. */
-export function TablaHallazgos({ hallazgos, ahora }: { hallazgos: Hallazgo[]; ahora: Date }) {
+/**
+ * Los hallazgos abiertos primero, luego los que esperan validación y los cerrados con su cierre. Con `enganches` (Fase 15B, anexo
+ * §7.1), cada fila gana lo de mejoramiento (`NoConformidadDeVerificacion`); `encima`, lo que va entre el título y la tabla (la
+ * sugerencia del punto filtrado).
+ */
+export function TablaHallazgos({
+  hallazgos,
+  ahora,
+  enganches,
+  encima,
+}: {
+  hallazgos: Hallazgo[];
+  ahora: Date;
+  enganches?: ReadonlyMap<number, EngancheDeVerificacion>;
+  encima?: React.ReactNode;
+}) {
   return (
     <section aria-labelledby="hallazgos-verificaciones" className="flex flex-col gap-3">
       <h2 id="hallazgos-verificaciones" className="text-sm font-semibold">
         Hallazgos
       </h2>
+      {encima}
       <TablaDatos titulo="Hallazgos de verificación" columnas={COLUMNAS} filas={hallazgos.length} vacio="No hay hallazgos.">
         {hallazgos.map((h) => {
           const enlace = enlaceDe(h);
@@ -63,6 +80,7 @@ export function TablaHallazgos({ hallazgos, ahora }: { hallazgos: Hallazgo[]; ah
                     {linea}
                   </div>
                 ))}
+                <NoConformidadDeVerificacion hallazgoId={h.id} enganche={enganches?.get(h.id)} />
               </td>
               <td className={celda}>{h.responsable.nombre}</td>
               <td className={celda}>

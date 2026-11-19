@@ -94,7 +94,7 @@ async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<Ta
   const esAdmin = verdad(sql, s.rol === "admin_sgc");
   const filas = await sql`
     SELECT h.id, h.codigo, h.titulo, h.estado, h.ronda, h.clase, h.criticidad, h.origen, h.proceso_id, h.registrado_por,
-      h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.vence_en, r.elaborado_por
+      h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.verificacion_hallazgo_id, h.vence_en, r.elaborado_por
     FROM mejora_hallazgos h
     LEFT JOIN mejora_rondas r ON r.hallazgo_id = h.id AND r.numero = h.ronda
     WHERE h.estado NOT IN ${sql([...TERMINALES])} AND ${cargaResuelta(sql)} AND (

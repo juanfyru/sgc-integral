@@ -104,11 +104,14 @@ const PASO_DE_ESTADO: Record<EstadoHallazgo, string> = {
   anulado: "registro",
 };
 
-/** Los pasos del recorrido de un hallazgo, sin fechas: la página las añade. */
+/**
+ * Los pasos del recorrido de un hallazgo, sin fechas: la página las añade. La no conformidad de un hallazgo de verificación (Fase
+ * 15B, anexo §7.2) no tiene «Corrección» ni «Decisión»: su corrección es la de ese hallazgo y la acción ya quedó requerida.
+ */
 export function pasosDelRecorrido(
   h: HallazgoBase,
 ): Array<{ clave: string; etiqueta: string; estado: "hecho" | "actual" | "falta" }> {
-  const esNc = h.clase === "no_conformidad";
+  const esNc = h.clase === "no_conformidad" && h.verificacionHallazgoId === null;
   const corto =
     esNc &&
     !llevaPlanSiempre(h) &&

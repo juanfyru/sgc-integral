@@ -69,6 +69,12 @@ export type PlanFirmado = {
     /** El periodo de la medición. */
     medicionId: number | null;
     medicion: string | null;
+    /**
+     * El hallazgo de verificación de Distribución del que nació (Fase 15B, anexo §7.2, F15B-DC46), por su identificador: la corrección
+     * es la de ese hallazgo y puede llegar después de la firma, así que no se copia su contenido. La clave va **solo cuando el
+     * hallazgo la tiene**: sin ella, la identificación firma exactamente lo de antes y ninguna huella ya guardada cambia.
+     */
+    verificacionHallazgoId?: number;
   };
   correccion: { requerida: boolean | null; descripcion: string | null; responsable: string | null; implementadaEn: string | null };
   analisis: Array<{ orden: number; metodo: string; equipo: string | null; observaciones: string | null; contenido: unknown }>;

@@ -158,7 +158,10 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
         titulo="Registrar un hallazgo"
         descripcion="Una no conformidad, una observación o una oportunidad de mejora. Al registrarlo, el sistema avisa a quien tiene el turno."
       />
-      {carga && !origen && !reporte ? <ComoSeRegistra enCurso={false} parametros={deRegistro} /> : null}
+      {/* La no conformidad de un hallazgo de verificación (anexo 15B §7.2) nace nueva: no se carga como un hallazgo en curso. */}
+      {carga && !origen && !reporte && !Object.hasOwn(prellenado.ocultos, "verificacionHallazgoId") ? (
+        <ComoSeRegistra enCurso={false} parametros={deRegistro} />
+      ) : null}
       <FormularioHallazgo
         accion={registrarHallazgoAccion}
         procesos={procesos}

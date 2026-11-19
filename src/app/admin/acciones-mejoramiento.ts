@@ -24,6 +24,8 @@ export async function guardarConfigMejoraAccion(_prev: EstadoAccion, formData: F
       for (const paso of PASOS) nueva.plazos[paso] = Number(f[`plazo_${paso}`]);
       nueva.recordatorioAltaDias = Number(f.recordatorioAltaDias);
       nueva.recordatorioDias = Number(f.recordatorioDias);
+      nueva.sugerirHallazgos = Number(f.sugerirHallazgos);
+      nueva.sugerirMeses = Number(f.sugerirMeses);
     } else {
       for (const impreso of IMPRESOS) {
         const id = f[`formato_${impreso}`];

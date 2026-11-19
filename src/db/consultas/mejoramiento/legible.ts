@@ -1,9 +1,10 @@
 /**
  * Lo que el dominio dice de cada error crudo de PostgreSQL que puede escaparse de una escritura del módulo de mejoramiento:
- * `mutacion` le muestra a la persona el mensaje de cualquier error. Módulo hoja (solo importa `ErrorMejora`): lo usan el motor
- * (`flujo.ts`, que lo reexporta) y los módulos livianos que no pueden importarlo (`archivos.ts`, que importa `admin.ts`, y
- * `config.ts`; `tests/mejora-ciclos.test.ts`).
+ * `mutacion` le muestra a la persona el mensaje de cualquier error. Módulo hoja (solo importa `ErrorMejora` y textos sin
+ * importaciones): lo usan el motor (`flujo.ts`, que lo reexporta) y los módulos livianos que no pueden importarlo (`archivos.ts`, que
+ * importa `admin.ts`, y `config.ts`; `tests/mejora-ciclos.test.ts`).
  */
+import { INDICE_NO_CONFORMIDAD_DE_VERIFICACION, YA_TIENE_NO_CONFORMIDAD } from "@/lib/mejoramiento/enganches";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 
 /**
@@ -20,15 +21,27 @@ const LEGIBLES: Record<string, string> = {
 };
 
 /**
- * Traduce `23503`, `23505`, `42501` y `40P01` a `ErrorMejora` antes de que salgan del dominio. Los demás errores (los del
- * dominio, entre ellos) pasan tal cual.
+ * Los `23505` de un índice único que dicen algo más que «otra persona guardó lo mismo»: la unicidad que garantiza la base, con la
+ * frase del dominio que la comprueba antes (Fase 15B, anexo §7.1: el índice único parcial de la no conformidad de un hallazgo de
+ * verificación).
+ */
+const POR_INDICE: Record<string, string> = {
+  [INDICE_NO_CONFORMIDAD_DE_VERIFICACION]: YA_TIENE_NO_CONFORMIDAD,
+};
+
+/**
+ * Traduce `23503`, `23505`, `42501` y `40P01` a `ErrorMejora` antes de que salgan del dominio; un `23505` de un índice de
+ * `POR_INDICE`, con su propia frase. Los demás errores (los del dominio, entre ellos) pasan tal cual.
  */
 export async function legible<T>(p: Promise<T>): Promise<T> {
   try {
     return await p;
   } catch (err) {
-    const codigo = (err as { code?: unknown } | null)?.code;
+    const e = err as { code?: unknown; constraint_name?: unknown } | null;
+    const codigo = e?.code;
+    const indice = e?.constraint_name;
     // Sin `cause`: el error traducido es igual a cualquier otro `ErrorMejora` con esa frase.
+    if (codigo === "23505" && typeof indice === "string" && Object.hasOwn(POR_INDICE, indice)) throw new ErrorMejora(POR_INDICE[indice]);
     if (typeof codigo === "string" && Object.hasOwn(LEGIBLES, codigo)) throw new ErrorMejora(LEGIBLES[codigo]);
     throw err;
   }

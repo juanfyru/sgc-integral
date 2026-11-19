@@ -18,6 +18,13 @@ import {
   HALLAZGO_DE_ORIGEN,
   type HallazgoValidado,
 } from "@/lib/esquemas/mejoramiento";
+import {
+  FIJOS_DE_VERIFICACION,
+  PROCESO_DEL_PUNTO,
+  SIN_JUSTIFICAR_LA_ACCION,
+  VERIFICACION_NO_EXISTE,
+  YA_TIENE_NO_CONFORMIDAD,
+} from "@/lib/mejoramiento/enganches";
 import { esExterno } from "@/lib/mejoramiento/origenes";
 import { formularAntesDe, venceEn } from "@/lib/mejoramiento/plazos";
 import { destinoDeReclasificacion, type Perfil } from "@/lib/mejoramiento/reclasificar";
@@ -33,6 +40,7 @@ import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
 import { cargaPendiente } from "./carga-confirmada";
 import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
+import { hallazgoParaAbrir, type HallazgoParaAbrir } from "./enganche-verificacion";
 import { DATO_YA_NO_EXISTE } from "./legible";
 import { bloquearMarca, marcaDelPanel, salidaAlNacer } from "./marcas-base";
 import { bloquearReporteRecibido, dejarClasificado } from "./reportes-base";
@@ -85,6 +93,14 @@ export type DatosDeHallazgo = {
    * puede resolver la marca; si no, se ignora. Solo al registrar.
    */
   marcaMedicionId?: number | null;
+  /**
+   * El hallazgo de verificación de Distribución del que nace una no conformidad (Fase 15B, anexo §7.2): solo con `mejora.gestionar`,
+   * uno que quien registra ve y que todavía no tiene una no conformidad que cuente. La clase y el origen quedan fijos; el proceso, entre
+   * los del punto. Solo al registrar: la carga, editar y reclasificar lo ignoran.
+   */
+  verificacionHallazgoId?: number | null;
+  /** Por qué esa falla necesita acción correctiva: obligatoria con `verificacionHallazgoId` (al menos 10 caracteres). */
+  accionJustificacion?: string | null;
 };
 
 /** Lo que un hallazgo ya enlaza: al editarlo, un enlace que no cambia no se vuelve a mirar con el alcance de hoy. */
@@ -199,11 +215,18 @@ async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: str
  * registra puede resolverla, `marcaDelPanel`), la medición y el indicador se vuelven a sacar de la base, el subproceso del indicador
  * llega si el proceso elegido es el suyo, y una salida que otra persona decidió entre tanto rechaza el registro.
  *
+ * Con `verificacionHallazgoId` (anexo §7.2) nace la no conformidad de ese hallazgo de verificación: solo el Admin SGC
+ * (`mejora.gestionar`), con la clase y el origen fijos, el proceso entre los del punto, la justificación de la acción correctiva (al
+ * menos 10 caracteres, `SIN_JUSTIFICAR_LA_ACCION`) y a lo sumo una que cuente (`YA_TIENE_NO_CONFORMIDAD`). La acción nace requerida
+ * (`nacerHallazgo`, `fila.accion`) y, aceptada, va directo a «Por formular» (`aceptadoVaA`). La justificación queda en la fila y en el
+ * evento, nunca en la bitácora.
+ *
  * Orden de candados, el del módulo (primero el plan, después el hallazgo, después lo demás): el plan `FOR UPDATE`
  * (`bloquearPlanDelRegistro`, la primera sentencia, como en todo camino que clasifica: §3.4), el candado de la medición
  * (`bloquearMarca`: el de `medicionId` y el de `marcaMedicionId` si llegan distintas, en orden ascendente, con la llave de lo que
  * llega y antes de cualquier lectura que decida; así un registro nunca tiene la fila de un hallazgo mientras lo espera, y la salida
- * se escribe siempre sobre una medición bloqueada), el hallazgo de origen (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar,
+ * se escribe siempre sobre una medición bloqueada), el hallazgo de verificación (`verificacionHallazgoId`) `FOR KEY SHARE`, el
+ * hallazgo de origen (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar,
  * pero antes del reporte—, el reporte `FOR UPDATE` y el consecutivo del año. Así no se cruza con `sumarReporte`, que bloquea el
  * hallazgo (`FOR UPDATE`) y después el reporte, ni con `ponerEnPlan` y `ponerObjetivo`, que bloquean el plan y después el hallazgo,
  * ni con `resolverConOcurrencia`, que toma la medición y después el hallazgo.
@@ -214,11 +237,19 @@ export async function registrarHallazgo(
   opciones?: OpcionesFlujo,
 ): Promise<{ id: number; codigo: string }> {
   requerirPermiso(sesion, "mejora.registrar");
-  const leido = EsquemaHallazgo.safeParse(d);
+  // La no conformidad de un hallazgo de verificación la abre el Admin SGC (anexo §7.1), antes de leer nada de ese hallazgo; la clase y
+  // el origen son fijos y se ponen antes de leer el envío (anexo §10.3).
+  const deVerificacion = d.verificacionHallazgoId !== undefined && d.verificacionHallazgoId !== null && String(d.verificacionHallazgoId) !== "";
+  if (deVerificacion) requerirPermiso(sesion, "mejora.gestionar");
+  const leido = EsquemaHallazgo.safeParse(deVerificacion ? { ...d, ...FIJOS_DE_VERIFICACION } : d);
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
   const recibido = leido.data;
   // Clasificar un reporte es del Admin SGC (spec §6.1), aunque registrar lo puedan otros.
   if (recibido.reporteId !== null) requerirPermiso(sesion, "mejora.gestionar");
+  const justificacion = recibido.accionJustificacion;
+  if (recibido.verificacionHallazgoId !== null && (justificacion === null || justificacion.length < 10)) {
+    throw new ErrorMejora(SIN_JUSTIFICAR_LA_ACCION);
+  }
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
@@ -237,6 +268,7 @@ export async function registrarHallazgo(
             subprocesoId: recibido.subprocesoId ?? (recibido.procesoId === panel.procesoId ? panel.subprocesoId : null),
           }
         : recibido;
+      const verificacion = v.verificacionHallazgoId !== null ? await verificacionDelRegistro(tx, sesion, v.verificacionHallazgoId, v.procesoId) : null;
       if (v.derivadoDe !== null) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${v.derivadoDe} FOR KEY SHARE`;
       const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
@@ -254,15 +286,27 @@ export async function registrarHallazgo(
       const h = await nacerHallazgo(
         tx,
         sesion,
-        { ...filaDe(v), derivadoDe: v.derivadoDe, codigo, anio, consecutivo },
+        {
+          ...filaDe(v),
+          derivadoDe: v.derivadoDe,
+          codigo,
+          anio,
+          consecutivo,
+          // Con el hallazgo de verificación, la acción correctiva nace requerida por quien la abre (anexo §7.2).
+          verificacionHallazgoId: verificacion?.id ?? null,
+          accion: verificacion ? { justificacion: justificacion as string, decididaPor: sesion.usuarioId, decididaEn: c.ahora } : null,
+        },
         "registrar",
-        // El evento y la bitácora llevan el id del de origen y el del reporte, nunca su texto.
+        // El evento y la bitácora llevan el id del de origen, el del reporte y el del hallazgo de verificación, nunca su texto; la
+        // justificación de la acción, solo el evento (spec §6.4).
         {
           rumbo: { nacioAceptado },
           detalle: {
             ...(v.derivadoDe !== null ? { derivadoDe: v.derivadoDe } : {}),
             ...(reporte ? { reporteId: reporte.id } : {}),
+            ...(verificacion ? { verificacionHallazgoId: verificacion.id } : {}),
           },
+          ...(verificacion ? { soloEnElEvento: { accionJustificacion: justificacion } } : {}),
         },
         c,
       );
@@ -273,6 +317,26 @@ export async function registrarHallazgo(
       return { id: h.id, codigo: h.codigo };
     }),
   );
+}
+
+/**
+ * El hallazgo de verificación del que nace una no conformidad (anexo §7.2), vuelto a mirar dentro de la transacción del registro:
+ * `FOR KEY SHARE` (el candado que tomaría la llave foránea al insertar), que quien registra lo ve (`filtroPuntos`: para quien no lo
+ * ve, no existe), que no tenga ya una no conformidad que cuente (la garantía es el índice único parcial: su `23505` lo traduce
+ * `legible`) y que el proceso elegido sea uno de los del punto, si el punto tiene alguno.
+ */
+async function verificacionDelRegistro(tx: TransactionSql, sesion: SesionFlujo, id: number, procesoId: number): Promise<{ id: number }> {
+  await tx`SELECT 1 FROM hallazgos WHERE id = ${id} FOR KEY SHARE`;
+  const vh = await hallazgoParaAbrir(tx, sesion, id);
+  if (!vh) throw new ErrorMejora(VERIFICACION_NO_EXISTE);
+  if (vh.yaTiene) throw new ErrorMejora(YA_TIENE_NO_CONFORMIDAD);
+  exigirProcesoDelPunto(vh, procesoId);
+  return { id: vh.id };
+}
+
+/** El proceso de la no conformidad de un hallazgo de verificación, entre los del punto; si el punto no tiene ninguno, cualquiera. */
+function exigirProcesoDelPunto(vh: HallazgoParaAbrir, procesoId: number): void {
+  if (vh.procesos.length > 0 && !vh.procesos.includes(procesoId)) throw new ErrorMejora(PROCESO_DEL_PUNTO);
 }
 
 const SOLO_CERRADO = "Solo se marca reincidencia de un hallazgo cerrado";
@@ -352,11 +416,13 @@ function diferencias(a: Identificacion, b: Identificacion): { antes: Partial<Ide
 
 const hayCambios = (d: { antes: object }) => Object.keys(d.antes).length > 0;
 
-const perfilDe = (i: Identificacion): Perfil => ({
+/** El perfil de una identificación; el hallazgo de verificación del que nació no se reclasifica: es el de la fila. */
+const perfilDe = (i: Identificacion, verificacionHallazgoId: number | null): Perfil => ({
   clase: i.clase as Clase,
   criticidad: i.criticidad as Criticidad | null,
   origen: i.origen as Origen,
   reincidenteDe: i.reincidenteDe as number | null,
+  verificacionHallazgoId,
 });
 
 /** El cambio de proceso vuelve a avisar a los líderes del proceso nuevo, como si el hallazgo acabara de llegar a «Por aceptar». */
@@ -448,13 +514,14 @@ export async function registrarOcurrencia(
 /**
  * Mientras el hallazgo está «Por aceptar», quien lo registró corrige cualquier campo de la identificación menos el código;
  * el evento `editado` guarda el antes y el después de lo que cambió. Si cambia el proceso, avisa a sus líderes y el plazo de
- * aceptar se cuenta otra vez desde este acto (como `cambiarProceso`). Si el origen pasa a externo, queda aceptado (§7.4).
+ * aceptar se cuenta otra vez desde este acto (como `cambiarProceso`). Si el origen pasa a externo, queda aceptado (§7.4). La no
+ * conformidad de un hallazgo de verificación (Fase 15B, anexo §7.2) conserva su clase y su origen, que son fijos, y su proceso sigue
+ * entre los del punto.
  */
 export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDeHallazgo, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.registrar");
   const leido = EsquemaHallazgo.safeParse(d);
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
-  const v = leido.data;
   const ahora = opciones?.ahora ?? new Date();
   return legible(
     enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
@@ -463,6 +530,13 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
         throw (await puedeVerHallazgo(id, sesion, { sql: tx })) ? new ErrorPermiso() : new ErrorMejora(NO_EXISTE);
       }
       if (h.estado !== "por_aceptar") throw new ErrorMejora(YA_CAMBIO);
+      const fija = h.verificacionHallazgoId === null ? leido : EsquemaHallazgo.safeParse({ ...d, ...FIJOS_DE_VERIFICACION });
+      if (!fija.success) throw new ErrorMejora(fija.error.issues[0].message);
+      const v = fija.data;
+      if (h.verificacionHallazgoId !== null) {
+        const vh = await hallazgoParaAbrir(tx, sesion, h.verificacionHallazgoId);
+        if (vh) exigirProcesoDelPunto(vh, v.procesoId);
+      }
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
         throw new ErrorPermiso();
       }
@@ -515,7 +589,10 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
           sesion,
           h,
           "reclasificar",
-          { rumbo: { quedaEn: aceptadoVaA(v.clase) }, soloEnElEvento: { justificacion: "El origen pasó a externo al editar el registro" } },
+          {
+            rumbo: { quedaEn: aceptadoVaA({ clase: v.clase, verificacionHallazgoId: h.verificacionHallazgoId }) },
+            soloEnElEvento: { justificacion: "El origen pasó a externo al editar el registro" },
+          },
           c,
         );
         await avisarDelExterno(tx, h, v.titulo, sesion.usuarioId);
@@ -586,7 +663,7 @@ export async function reclasificarHallazgo(
       const despues = identificacionDeValidado(v);
       const cambios = diferencias(antes, despues);
       if (!hayCambios(cambios) && !r.nota) throw new ErrorMejora("No cambió ningún dato de la identificación");
-      const quedaEn = destinoDeReclasificacion(perfilDe(antes), perfilDe(despues), h.estado, {
+      const quedaEn = destinoDeReclasificacion(perfilDe(antes, h.verificacionHallazgoId), perfilDe(despues, h.verificacionHallazgoId), h.estado, {
         correccionRegistrada: f.correccion_registrada_en !== null,
       });
       const cambiaElEstado = quedaEn !== h.estado;

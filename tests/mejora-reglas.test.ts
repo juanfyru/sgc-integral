@@ -24,6 +24,7 @@ const base = {
   reincidenteDe: null,
   estado: "por_aceptar",
   correccionRequerida: null,
+  verificacionHallazgoId: null,
 } as const;
 
 function h(extra: Partial<Vista> = {}): Vista {
@@ -62,11 +63,20 @@ describe("reglas", () => {
     expect(llevaPlanSiempre({ clase: "no_conformidad", origen: "pamec" })).toBe(false);
   });
   it("aceptadoVaA y tipoPropuesto", () => {
-    expect(aceptadoVaA("no_conformidad")).toBe("por_corregir");
-    expect(aceptadoVaA("observacion")).toBe("por_formular");
+    expect(aceptadoVaA({ clase: "no_conformidad", verificacionHallazgoId: null })).toBe("por_corregir");
+    expect(aceptadoVaA({ clase: "observacion", verificacionHallazgoId: null })).toBe("por_formular");
     expect(tipoPropuesto("no_conformidad")).toBe("correctiva");
     expect(tipoPropuesto("observacion")).toBe("preventiva");
     expect(tipoPropuesto("oportunidad")).toBe("mejora");
+  });
+  it("aceptadoVaA: la no conformidad de un hallazgo de verificación va a «Por formular» (anexo 15B §7.2); sin él, a «Por corregir»", () => {
+    expect(aceptadoVaA({ clase: "no_conformidad", verificacionHallazgoId: 7 })).toBe("por_formular");
+    expect(aceptadoVaA({ clase: "no_conformidad", verificacionHallazgoId: null })).toBe("por_corregir");
+    // La observación y la oportunidad, a «Por formular» siempre.
+    for (const clase of ["observacion", "oportunidad"] as const) {
+      expect(aceptadoVaA({ clase, verificacionHallazgoId: null })).toBe("por_formular");
+      expect(aceptadoVaA({ clase, verificacionHallazgoId: 7 })).toBe("por_formular");
+    }
   });
   describe("apruebaGerencia", () => {
     const nada = { requiereRecursos: false, elaboroAdmin: false };
@@ -108,6 +118,10 @@ describe("destinoDe, fila por fila", () => {
   caso("confirmar_hallazgo", "arbitraje", "por_corregir");
   caso("confirmar_hallazgo", "arbitraje", "por_formular", { clase: "observacion", criticidad: null });
   caso("confirmar_rechazo", "arbitraje", "rechazado");
+  // La no conformidad de un hallazgo de verificación (anexo 15B §7.2): aceptada, nace, se acepta o se confirma hacia «Por formular».
+  caso("registrar", "por_aceptar", "por_formular", { verificacionHallazgoId: 7 }, { nacioAceptado: true });
+  caso("aceptar", "por_aceptar", "por_formular", { verificacionHallazgoId: 7 });
+  caso("confirmar_hallazgo", "arbitraje", "por_formular", { verificacionHallazgoId: 7 });
   caso("corregir", "por_corregir", "por_formular", { criticidad: "alta" });
   caso("corregir", "por_corregir", "por_decidir");
   caso("decidir_si", "por_decidir", "por_formular");
@@ -249,7 +263,7 @@ describe("pasosDelRecorrido", () => {
   const hz = (extra: Partial<HallazgoBase>): HallazgoBase => ({
     id: 1, codigo: "HZ-2026-001", clase: "no_conformidad", criticidad: "media", origen: "pamec", estado: "por_formular",
     ronda: 1, procesoId: 1, reincidenteDe: null, correccionRequerida: true, accionRequerida: null, resultadoCierre: null,
-    registradoPor: 1, ...extra,
+    registradoPor: 1, verificacionHallazgoId: null, ...extra,
   });
   const etiquetas = (x: HallazgoBase) => pasosDelRecorrido(x).map((p) => p.etiqueta);
   it("una oportunidad no tiene Corrección ni Decisión", () => {
@@ -265,6 +279,15 @@ describe("pasosDelRecorrido", () => {
     expect(etiquetas(x)).not.toContain("Causa raíz");
     expect(etiquetas(x)).not.toContain("Eficacia");
     expect(p.every((s) => s.estado === "hecho")).toBe(true);
+  });
+  it("la no conformidad de un hallazgo de verificación no tiene Corrección ni Decisión: de la aceptación pasa a la causa raíz", () => {
+    const x = hz({ verificacionHallazgoId: 7, correccionRequerida: null, accionRequerida: true });
+    expect(etiquetas(x)).toEqual(["Registro", "Aceptado", "Causa raíz", "Plan aprobado", "Ejecución", "Verificación", "Eficacia", "Cierre"]);
+    expect(pasosDelRecorrido(x).find((s) => s.estado === "actual")?.etiqueta).toBe("Causa raíz");
+    // Sin el enlace, la misma no conformidad sí los tiene.
+    expect(etiquetas(hz({ correccionRequerida: null, accionRequerida: null }))).toEqual(
+      expect.arrayContaining(["Corrección", "Decisión"]),
+    );
   });
   it("marca un solo paso actual y los anteriores como hechos", () => {
     const p = pasosDelRecorrido(hz({ estado: "en_ejecucion" }));

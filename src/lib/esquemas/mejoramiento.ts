@@ -89,7 +89,8 @@ export const EsquemaConfigMejora = z
 
 /**
  * Los campos planos de los formularios de configuración. Cada formulario manda su `bloque` y solo sus campos:
- * «plazos» (los diez plazos y los dos recordatorios) o «formatos» (un selector por impreso; vacío es «sin documento»,
+ * «plazos» (los diez plazos, los dos recordatorios y, desde la 15B, los dos números de la sugerencia de una no conformidad en
+ * Distribución) o «formatos» (un selector por impreso; vacío es «sin documento»,
  * y `parsearFormulario` descarta los vacíos, por eso el bloque dice qué se envió).
  */
 export const EsquemaFormularioConfigMejora = z
@@ -107,6 +108,8 @@ export const EsquemaFormularioConfigMejora = z
     plazo_evaluar: z.string().optional(),
     recordatorioAltaDias: z.string().optional(),
     recordatorioDias: z.string().optional(),
+    sugerirHallazgos: z.string().optional(),
+    sugerirMeses: z.string().optional(),
     formato_registro: z.string().optional(),
     formato_porques: z.string().optional(),
     formato_ishikawa: z.string().optional(),
@@ -215,6 +218,13 @@ export const EsquemaHallazgo = z
      * registro dentro de su transacción. Solo al registrar: la carga, editar y reclasificar la ignoran.
      */
     marcaMedicionId: idOpcional("La medición elegida no es válida"),
+    /**
+     * El hallazgo de verificación de Distribución del que nace la no conformidad (anexo §7.2): llega oculto desde `?verificacion=` y lo
+     * vuelve a validar el registro dentro de su transacción. Solo al registrar: la carga, editar y reclasificar lo ignoran.
+     */
+    verificacionHallazgoId: idOpcional("El hallazgo de verificación no es válido"),
+    /** Por qué esa falla necesita acción correctiva (anexo §7.2): la exige el registro cuando llega el hallazgo de verificación. */
+    accionJustificacion: textoOpcional("La justificación de la acción correctiva", 1000),
   })
   .strict()
   .superRefine((d, ctx) => {

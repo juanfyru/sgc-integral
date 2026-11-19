@@ -140,7 +140,7 @@ const pasaElUmbral = (vence: Date, c: Contexto) => estadoPlazo(vence, c.ahora, c
 type DeHallazgo = { id: number; grupo: number; h: HallazgoBase; titulo: string; vence: Date | null; minima: string | null };
 
 const COLUMNAS = (sql: Cliente) => sql`h.id, h.codigo, h.clase, h.criticidad, h.origen, h.estado, h.ronda, h.proceso_id,
-  h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.registrado_por, h.titulo, h.vence_en`;
+  h.reincidente_de, h.correccion_requerida, h.accion_requerida, h.resultado_cierre, h.registrado_por, h.verificacion_hallazgo_id, h.titulo, h.vence_en`;
 
 /**
  * Los hallazgos abiertos con la marca nula (`sinMarca`) y la condición del paso (`donde`); con `ids`, solo esos y bloqueados.

@@ -44,7 +44,7 @@ export type Rumbo = {
 /** Hacia dónde va un hallazgo con una acción (spec §8.2). Lanza si el estado actual no admite la acción. */
 export function destinoDe(
   accion: AccionHallazgo,
-  h: Pick<HallazgoBase, "clase" | "criticidad" | "origen" | "reincidenteDe" | "estado" | "correccionRequerida">,
+  h: Pick<HallazgoBase, "clase" | "criticidad" | "origen" | "reincidenteDe" | "estado" | "correccionRequerida" | "verificacionHallazgoId">,
   rumbo: Rumbo,
 ): EstadoHallazgo {
   const desde = DESDE[accion];
@@ -54,10 +54,10 @@ export function destinoDe(
   }
   switch (accion) {
     case "registrar":
-      return rumbo.nacioAceptado ? aceptadoVaA(h.clase) : "por_aceptar";
+      return rumbo.nacioAceptado ? aceptadoVaA(h) : "por_aceptar";
     case "aceptar":
     case "confirmar_hallazgo":
-      return aceptadoVaA(h.clase);
+      return aceptadoVaA(h);
     case "rechazar":
       return "rechazo";
     case "retirar":

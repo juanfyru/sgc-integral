@@ -65,7 +65,7 @@ export async function confirmarCarga(tx: TransactionSql, hallazgoId: number, usu
   const [ya] = await tx`SELECT 1 FROM mejora_eventos WHERE hallazgo_id = ${hallazgoId} AND tipo = 'carga_confirmada' LIMIT 1`;
   if (ya) return;
   const [f] = await tx`SELECT id, codigo, clase, criticidad, origen, estado, ronda, proceso_id, reincidente_de, correccion_requerida,
-      accion_requerida, resultado_cierre, registrado_por, titulo
+      accion_requerida, resultado_cierre, registrado_por, verificacion_hallazgo_id, titulo
     FROM mejora_hallazgos WHERE id = ${hallazgoId}`;
   const h = aBase(f);
   await dejarEvento(tx, { hallazgoId: h.id, ronda: h.ronda, tipo: "carga_confirmada", usuarioId, ocurrioEn: ahora });

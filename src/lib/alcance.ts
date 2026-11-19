@@ -1029,10 +1029,21 @@ export async function puedeValidarCorreccion(
 /**
  * Quienes «ejecutaron» en el hallazgo `hallazgoId` (la lista cerrada de F15-DC22, ver `quienesVerifican`), como dos expresiones de
  * tabla común (`h` y `ejecutaron`) para un `WITH`: una sola regla para quién verifica y para decirle a quien ejecutó por qué no.
+ *
+ * La no conformidad de un hallazgo de verificación (Fase 15B, anexo §7.3, F15B-DC23) suma tres casos de ese hallazgo de Distribución,
+ * leídos en cada acto: quien lo corrigió (`corregido_por` de su fila), quien responde por él según su fila (`responsable_id`; no el
+ * responsable de hoy del punto, si cambió y no ha hecho nada) y quien lo corrigió antes de una reapertura, que la borra de la fila: la
+ * bitácora de Distribución (`hallazgo_corregido`).
  */
 function ejecutaronEn(sql: Cliente, hallazgoId: number) {
-  return sql`h AS (SELECT id, correccion_registrada_por, correccion_responsable_id FROM mejora_hallazgos WHERE id = ${hallazgoId}),
+  return sql`h AS (SELECT id, correccion_registrada_por, correccion_responsable_id, verificacion_hallazgo_id FROM mejora_hallazgos
+      WHERE id = ${hallazgoId}),
     ejecutaron AS (
+      SELECT vh.corregido_por AS id FROM hallazgos vh JOIN h ON vh.id = h.verificacion_hallazgo_id
+      UNION SELECT vh.responsable_id FROM hallazgos vh JOIN h ON vh.id = h.verificacion_hallazgo_id
+      UNION SELECT au.usuario_id FROM auditoria au JOIN h ON au.entidad = 'hallazgo' AND au.entidad_id = h.verificacion_hallazgo_id
+        WHERE au.accion = 'hallazgo_corregido'
+      UNION
       SELECT a.responsable_id AS id FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id WHERE a.fin_original IS NOT NULL
       UNION SELECT a.terminada_por FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id
       UNION SELECT s.registrado_por FROM mejora_seguimientos s JOIN h ON h.id = s.hallazgo_id
@@ -1053,7 +1064,8 @@ function ejecutaronEn(sql: Cliente, hallazgoId: number) {
  * de F15-DC22, en cualquier ronda: ser responsable de una actividad de un plan aprobado o haberlo sido (los eventos
  * `reasignada`, `detalle.antes`), haber registrado un seguimiento, haber terminado una actividad (la fila o el evento
  * `actividad_terminada`: una devolución borra la marca de la fila, el evento queda) y haber registrado la corrección (la fila o
- * un evento `corregir`, también el de una corrección devuelta) o ser su responsable. Lo hecho en papel de un hallazgo cargado
+ * un evento `corregir`, también el de una corrección devuelta) o ser su responsable; en la no conformidad de un hallazgo de
+ * verificación (Fase 15B), también haberlo corregido o responder por él (`ejecutaronEn`). Lo hecho en papel de un hallazgo cargado
  * (spec §15: sus eventos `fuera`) no cuenta a quien lo cargó: lo hizo otro; los responsables declarados de sus actividades, sí.
  * Una sola regla: la usan el turno de «Por verificar», la página, los archivos de la verificación y los actos, dentro de su
  * transacción.

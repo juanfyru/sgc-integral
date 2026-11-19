@@ -227,7 +227,7 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
       h.indicador_id, CASE WHEN ir.id IS NOT NULL THEN concat_ws(' ', ir.codigo, (
         SELECT iv.nombre FROM indicador_versiones iv WHERE iv.indicador_id = ir.id AND iv.estado = 'aprobada' ORDER BY iv.numero DESC LIMIT 1
       )) END AS refiere_indicador,
-      h.medicion_id, mr.periodo AS refiere_medicion
+      h.medicion_id, mr.periodo AS refiere_medicion, h.verificacion_hallazgo_id
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
     LEFT JOIN subprocesos s ON s.id = h.subproceso_id
@@ -317,6 +317,8 @@ export async function examinarPlan(sql: Cliente, hallazgoId: number, c: Contexto
       indicador: texto(f.refiere_indicador),
       medicionId: f.medicion_id === null ? null : Number(f.medicion_id),
       medicion: texto(f.refiere_medicion),
+      // Solo cuando la tiene (anexo 15B §7.2, F15B-DC46): sin ella, la huella es la de antes.
+      ...(f.verificacion_hallazgo_id === null ? {} : { verificacionHallazgoId: Number(f.verificacion_hallazgo_id) }),
     },
     correccion: {
       requerida: (f.correccion_requerida as boolean | null) ?? null,

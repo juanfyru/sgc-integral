@@ -15,10 +15,21 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { resolverNoRequiere } from "@/db/consultas/mejoramiento/marcas";
 import { anularPlan } from "@/db/consultas/mejoramiento/planes";
-import { engancheDe, PRELLENADO_VACIO, prellenadoDeRegistro } from "@/db/consultas/mejoramiento/prellenado";
+import { engancheDe, PRELLENADO_VACIO, prellenadoDeRegistro, rotuloDeVerificacion } from "@/db/consultas/mejoramiento/prellenado";
+import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { rutaDeRegistro } from "@/lib/mejoramiento/rutas";
 import { indicadorDePrueba } from "./utiles/indicadores";
-import { baseDeMejora, c, medicionMarcada, objetivoDePrueba, otroProcesoConLider, planDeMejoraDePrueba } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeHallazgo,
+  DESCRIPCION_DE_VERIFICACION,
+  hallazgoDeVerificacion,
+  medicionMarcada,
+  objetivoDePrueba,
+  otroProcesoConLider,
+  planDeMejoraDePrueba,
+} from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
 import { documentoLibre, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./utiles/tramites";
@@ -272,6 +283,64 @@ describe("prellenadoDeRegistro: la marca de una medición (Tarea 8, anexo §6.2)
       for (const medicion of ["2000000000", "9000000000", "0", "abc"]) {
         expect(await prellenadoDeRegistro(b.admin, { medicion }, { sql: tx })).toEqual(PRELLENADO_VACIO);
       }
+    });
+  });
+});
+
+describe("prellenadoDeRegistro: un hallazgo de verificación (Tarea 10, anexo §7.2)", () => {
+  it("como Admin SGC: fija la clase y el origen; propone la fuente, el documento, la descripción y la fecha; ofrece los procesos del punto", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const d = await documentoDe(tx, b.procesoId);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [b.procesoId], documentoId: d.id });
+      expect(await prellenadoDeRegistro(b.admin, { verificacion: String(vh.id) }, { sql: tx })).toEqual({
+        valores: {
+          clase: "no_conformidad",
+          origen: "control_documental",
+          fuente: `Verificación del punto ${vh.punto.nombre}`,
+          documentoId: d.id,
+          descripcion: DESCRIPCION_DE_VERIFICACION,
+          detectadoEn: "2026-11-10",
+          // El único proceso del punto llega elegido.
+          procesoId: b.procesoId,
+        },
+        fijos: ["clase", "origen"],
+        ocultos: { verificacionHallazgoId: String(vh.id) },
+        rotulo: rotuloDeVerificacion(vh.punto.nombre),
+        procesos: [b.procesoId],
+      });
+
+      // Con dos procesos, los dos y ninguno elegido; sin ninguno, todos (sin la lista) y sin documento.
+      const otro = await procesoNuevo(tx);
+      const dos = await hallazgoDeVerificacion(tx, { responsable, procesos: [otro, b.procesoId] });
+      const conDos = await prellenadoDeRegistro(b.admin, { verificacion: String(dos.id) }, { sql: tx });
+      expect(conDos.procesos).toEqual([b.procesoId, otro].sort((x, y) => x - y));
+      expect(conDos.valores).not.toHaveProperty("procesoId");
+      expect(conDos.valores).not.toHaveProperty("documentoId");
+      const ninguno = await hallazgoDeVerificacion(tx, { responsable });
+      const sinProcesos = await prellenadoDeRegistro(b.admin, { verificacion: String(ninguno.id) }, { sql: tx });
+      expect(sinProcesos).not.toHaveProperty("procesos");
+      expect(sinProcesos.ocultos).toEqual({ verificacionHallazgoId: String(ninguno.id) });
+    });
+  });
+
+  it("como líder o Control Interno, con una no conformidad que ya cuenta, o con un id que no existe: vacío", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const responsable = await usuarioDePrueba(tx, { rol: "consulta" });
+      const vh = await hallazgoDeVerificacion(tx, { responsable, procesos: [b.procesoId] });
+      expect(await prellenadoDeRegistro(b.lider, { verificacion: String(vh.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      expect(await prellenadoDeRegistro(b.control, { verificacion: String(vh.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      for (const verificacion of ["9000000000", "0", "abc"]) {
+        expect(await prellenadoDeRegistro(b.admin, { verificacion }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      }
+      await registrarHallazgo(
+        b.admin,
+        { ...datosDeHallazgo(b.procesoId), verificacionHallazgoId: vh.id, accionJustificacion: "Es la tercera copia obsoleta del año" },
+        c(AHORA, tx),
+      );
+      expect(await prellenadoDeRegistro(b.admin, { verificacion: String(vh.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
     });
   });
 });

@@ -88,7 +88,7 @@ import { archivosDe, archivosQuitables, autorizarSubida } from "@/db/consultas/m
 import { FALTA_EL_FORMATO } from "@/db/consultas/mejoramiento/carga-confirmada";
 import { revisoresDe } from "@/db/consultas/mejoramiento/avisos";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
-import type { ActividadDeDetalle, DetalleDeHallazgo, RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
+import { baseDeDetalle, type ActividadDeDetalle, type DetalleDeHallazgo, type RondaDeDetalle } from "@/db/consultas/mejoramiento/lectura";
 import {
   cerradosDelProceso,
   documentosVigentesVisibles,
@@ -144,21 +144,7 @@ function pasosConFechas(h: DetalleDeHallazgo, zona: string): PasoDeRecorrido[] {
     eficacia: enCurso?.evaluacion?.en,
     cierre: h.cierre.cerradoEn ?? undefined,
   };
-  return pasosDelRecorrido({
-    id: h.id,
-    codigo: h.codigo,
-    clase: h.clase,
-    criticidad: h.criticidad,
-    origen: h.origen,
-    estado: h.estado,
-    ronda: h.ronda,
-    procesoId: h.procesoId,
-    reincidenteDe: h.reincidenteDe && "id" in h.reincidenteDe ? h.reincidenteDe.id : h.reincidenteDe ? -1 : null,
-    correccionRequerida: h.correccion.requerida,
-    accionRequerida: h.decision.accionRequerida,
-    resultadoCierre: h.cierre.resultado,
-    registradoPor: 0,
-  }).map((p) => {
+  return pasosDelRecorrido(baseDeDetalle(h)).map((p) => {
     const f = fechas[p.clave];
     if (p.clave === "eficacia" && p.estado === "actual" && h.fechas.evaluableDesde) return { ...p, nota: `desde el ${fechaDeDia(h.fechas.evaluableDesde)}` };
     return p.estado === "hecho" && f ? { ...p, nota: diaCorto(f, zona) } : p;
@@ -303,8 +289,10 @@ export default async function PaginaHallazgo({
   ) : null;
 
   // «2. Corrección», desde que la no conformidad está por corregir (las etapas que faltan no aparecen). Una corrección ya
-  // registrada se sigue viendo aunque el hallazgo deje de ser no conformidad: queda como historia (spec §7.6).
-  const conCorreccion = h.correccion.requerida !== null || (h.clase === "no_conformidad" && h.estado === "por_corregir");
+  // registrada se sigue viendo aunque el hallazgo deje de ser no conformidad: queda como historia (spec §7.6). La de un hallazgo de
+  // verificación (Fase 15B, anexo §7.2) está desde que nace: es la de ese hallazgo, con la acción correctiva ya requerida.
+  const conCorreccion =
+    h.correccionEnlazada !== null || h.correccion.requerida !== null || (h.clase === "no_conformidad" && h.estado === "por_corregir");
   const correcciones = archivos.filter((a) => a.rol === "correccion");
   const puedeSubirCorreccion =
     completo && h.estado === "por_corregir" && (await autorizarSubida(sesion, { contexto: "mejora_hallazgo", id: h.id, rol: "correccion" })).ok;
@@ -731,8 +719,9 @@ export default async function PaginaHallazgo({
               abierta={EN_LA_CORRECCION.has(h.estado)}
               archivos={completo ? correcciones.length : null}
               devuelta={devuelta}
+              enlazada={h.correccionEnlazada}
             >
-              {completo ? (
+              {completo && h.correccionEnlazada === null ? (
                 <ArchivosDe
                   archivos={correcciones}
                   quitables={quitablesDeCorreccion}

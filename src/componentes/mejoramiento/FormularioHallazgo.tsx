@@ -68,7 +68,7 @@ const NOTA = "rounded-md border border-border bg-muted px-3 py-2 text-sm";
  */
 export function FormularioHallazgo({
   accion,
-  procesos,
+  procesos: delAlcance,
   normas = [],
   documentos = [],
   indicadores = [],
@@ -85,6 +85,11 @@ export function FormularioHallazgo({
 }: Props) {
   const [estado, enviar, pendiente] = useActionState(accion, null);
   const conPrellenado = edicion ? undefined : prellenado;
+  // Desde un hallazgo de verificación (Fase 15B, anexo §7.2), el proceso se elige entre los del punto y se pide la justificación de la
+  // acción correctiva; el servidor lo vuelve a comprobar.
+  const permitidos = conPrellenado?.procesos;
+  const procesos = permitidos ? delAlcance.filter((p) => permitidos.includes(p.id)) : delAlcance;
+  const deVerificacion = conPrellenado !== undefined && Object.hasOwn(conPrellenado.ocultos, "verificacionHallazgoId");
   // Lo fijo manda también sobre lo que volvió de un rechazo: se muestra y viaja con el valor del prellenado.
   const fijos = fijosEnTexto(conPrellenado);
   const fijo = (k: string) => Object.hasOwn(fijos, k);
@@ -251,6 +256,15 @@ export function FormularioHallazgo({
             className={claseControl}
           />
         </Campo>
+        {deVerificacion ? (
+          <Campo
+            etiqueta="Justificación de la acción correctiva"
+            nombre="accionJustificacion"
+            ayuda={`Por qué esta falla necesita tratar su causa, al menos 10 caracteres. ${AVISO_SIN_PACIENTES}`}
+          >
+            <textarea required minLength={10} maxLength={1000} rows={3} defaultValue={texto(v, "accionJustificacion")} className={claseControl} />
+          </Campo>
+        ) : null}
         <fieldset className="flex min-w-0 flex-col gap-3 rounded-md border border-border p-3">
           <legend className="px-1 text-sm font-medium">{esNc ? "Requisito incumplido" : "Requisito incumplido (opcional)"}</legend>
           {esNc ? <p className="text-xs text-muted-foreground">Indique al menos uno: la cláusula, una norma o un documento interno.</p> : null}

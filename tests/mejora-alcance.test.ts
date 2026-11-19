@@ -304,7 +304,7 @@ describe("la lista", () => {
       const h: HallazgoBase = {
         id: a.id, codigo: a.codigo, clase: "no_conformidad", criticidad: "media", origen: "auditoria_interna",
         estado: "por_aceptar", ronda: 1, procesoId: b.procesoId, reincidenteDe: null, correccionRequerida: null,
-        accionRequerida: null, resultadoCierre: null, registradoPor: b.admin.usuarioId,
+        accionRequerida: null, resultadoCierre: null, registradoPor: b.admin.usuarioId, verificacionHallazgoId: null,
       };
       expect(await turnoEnTexto(tx, h)).toBe("La líder del proceso");
       await tx`UPDATE usuarios SET activo = false WHERE id = ${b.lider.usuarioId}`;

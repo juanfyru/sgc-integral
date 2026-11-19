@@ -4,10 +4,16 @@ import type { EnlaceDelHallazgo } from "@/db/consultas/mejoramiento/lectura";
 const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca";
 
 /** Lo que se dice de un enlace que la persona no puede ver (spec §6.3, F15-DC5): solo su clase, sin código, nombre ni ruta. */
-const OCULTO = { indicador: "un indicador", documento: "un documento restringido", norma: "una norma" } as const;
+const OCULTO = {
+  indicador: "un indicador",
+  documento: "un documento restringido",
+  norma: "una norma",
+  verificacion: "uno de Distribución",
+} as const;
 
 /**
- * «Enlaces» de la columna derecha (spec 15 §16.2, maqueta 2): el hallazgo del que reincide, el de origen y los derivados, los
+ * «Enlaces» de la columna derecha (spec 15 §16.2, maqueta 2): el hallazgo de verificación del que nació (Fase 15B, por el nombre de
+ * su punto), el hallazgo del que reincide, el de origen y los derivados, los
  * documentos, la norma y los indicadores. Cada uno llega ya decidido por la lectura: con su código, su nombre y su enlace solo a
  * quien puede verlo; a los demás, «un indicador» o «un documento restringido», sin enlace. Sin enlaces, no aparece.
  */

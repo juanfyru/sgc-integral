@@ -4,6 +4,7 @@
  */
 import type { TransactionSql } from "postgres";
 import { registrarArchivo } from "@/db/consultas/admin";
+import { abrirHallazgo } from "@/db/consultas/distribucion/hallazgos";
 import { analizar } from "@/db/consultas/indicadores/analisis";
 import { asegurarMediciones, reportar } from "@/db/consultas/indicadores/mediciones";
 import type { OpcionesFlujo, SesionFlujo } from "@/db/consultas/flujo/contrato";
@@ -643,4 +644,42 @@ export async function medicionMarcada(
   if (x.analizada) await analizar(analiza, { medicionId, ...ANALISIS_DE_LA_MARCA }, { sql: tx, ahora });
   const [f] = await tx`SELECT vence_en FROM mediciones WHERE id = ${medicionId}`;
   return { ind, medicionId, mide, analiza, venceEn: f.vence_en as Date };
+}
+
+let puntos = 0;
+
+/** La descripción del hallazgo de verificación de `hallazgoDeVerificacion`. */
+export const DESCRIPCION_DE_VERIFICACION = "Copia obsoleta del protocolo de triage en el puesto de enfermería";
+
+/**
+ * Un hallazgo de verificación de Distribución (13B) abierto en un punto de uso nuevo, con `responsable` como responsable del punto y
+ * de la fila, los procesos `procesos` en el punto y, si llega, el documento: por el dominio (`abrirHallazgo`), a `ahora` (por omisión
+ * el martes 10 de noviembre de 2026). Para la no conformidad que nace de él (Fase 15B, anexo §7).
+ */
+export async function hallazgoDeVerificacion(
+  tx: TransactionSql,
+  x: { responsable: SesionFlujo; procesos?: number[]; documentoId?: number; ahora?: string; origen?: "verificacion" | "recogida"; punto?: { id: number; nombre: string } },
+): Promise<{ id: number; punto: { id: number; nombre: string } }> {
+  puntos += 1;
+  const punto =
+    x.punto ??
+    (await (async () => {
+      const nombre = `zz_punto_mejora_${Date.now()}_${puntos}`;
+      const [p] = await tx`INSERT INTO puntos_uso (nombre, responsable_id) VALUES (${nombre}, ${x.responsable.usuarioId}) RETURNING id`;
+      for (const procesoId of x.procesos ?? []) {
+        await tx`INSERT INTO punto_uso_procesos (punto_uso_id, proceso_id) VALUES (${p.id}, ${procesoId})`;
+      }
+      return { id: Number(p.id), nombre };
+    })());
+  const { hallazgoId } = await abrirHallazgo(tx, {
+    puntoId: punto.id,
+    origen: x.origen ?? "verificacion",
+    ...(x.documentoId !== undefined ? { documentoId: x.documentoId } : {}),
+    descripcion: DESCRIPCION_DE_VERIFICACION,
+    retiradoEnElActo: false,
+    responsableId: x.responsable.usuarioId,
+    ahora: new Date(x.ahora ?? "2026-11-10T15:00:00Z"),
+    plazoDias: 5,
+  });
+  return { id: hallazgoId, punto };
 }

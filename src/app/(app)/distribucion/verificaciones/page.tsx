@@ -6,7 +6,9 @@ import { TablaHallazgos } from "@/componentes/distribucion/verificaciones/TablaH
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { hallazgosDe } from "@/db/consultas/distribucion/hallazgos";
 import { estadoDePuntos, fallosPorItem, historialVerificaciones } from "@/db/consultas/distribucion/verificaciones-resumen";
+import { engancheDeVerificacion, filasDeVerificacion } from "@/db/consultas/mejoramiento/enganche-verificacion";
 import { filtroDeVerificaciones } from "@/lib/distribucion/filtro-verificaciones";
+import { textoDeSugerencia } from "@/lib/mejoramiento/enganches";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { exigirDistribucion } from "../_comun";
@@ -35,6 +37,10 @@ export default async function PaginaVerificaciones({
     fallosPorItem(sesion, filtro),
     hallazgosDe({ puntoId: filtro.puntoId }, sesion),
   ]);
+  // Lo de mejoramiento en cada fila (Fase 15B, anexo §7.1) y, con la lista filtrada por un punto, la sugerencia del punto encima (§7.4).
+  const enganches = await engancheDeVerificacion(sesion, filasDeVerificacion(hallazgos), { ahora });
+  const delPunto =
+    filtro.puntoId === undefined ? null : ([...enganches.values()].find((e) => e.sugerir?.por === "acumula")?.sugerir ?? null);
 
   return (
     <div className="flex flex-col gap-8">
@@ -48,7 +54,12 @@ export default async function PaginaVerificaciones({
         puntos={estado.puntos.map((p) => ({ id: p.puntoId, nombre: p.nombre }))}
         filtro={{ punto: filtro.puntoId, desde: desdeTexto, hasta: hastaTexto, resultado: filtro.resultado }}
       />
-      <TablaHallazgos hallazgos={hallazgos} ahora={ahora} />
+      <TablaHallazgos
+        hallazgos={hallazgos}
+        ahora={ahora}
+        enganches={enganches}
+        encima={delPunto ? <p className="border-l-2 border-mod-planes pl-3 text-sm">{textoDeSugerencia(delPunto)}</p> : null}
+      />
     </div>
   );
 }
