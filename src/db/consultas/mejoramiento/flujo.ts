@@ -84,6 +84,12 @@ export type FilaNueva = {
    * columnas de la decisión de la 15A.
    */
   accion?: { justificacion: string; decididaPor: number; decididaEn: Date } | null;
+  /**
+   * El impacto de norma del que nace (Fase 15B, anexo §8): el de un documento o un proceso, o la revisión de un indicador. Quien
+   * registra puede abrirlo (`registrarHallazgo`); a lo sumo uno que cuente por impacto (los índices únicos parciales de la `0019`).
+   */
+  impactoId?: number | null;
+  impactoIndicadorId?: number | null;
 };
 
 const idONulo = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -230,14 +236,14 @@ export async function nacerHallazgo(
        criticidad, titulo, descripcion, requisito_clausula, requisito_norma_id, requisito_documento_id, documento_id,
        indicador_id, medicion_id, riesgo, estado, ronda, registrado_por, registrado_en, reincidente_de, derivado_de, cargado,
        fecha_limite_ente, vence_en, verificacion_hallazgo_id, accion_requerida, accion_justificacion, accion_decidida_por,
-       accion_decidida_en)
+       accion_decidida_en, impacto_id, impacto_indicador_id)
     VALUES (${fila.codigo}, ${fila.anio}, ${fila.consecutivo}, ${fila.clase}, ${fila.origen}, ${fila.fuente},
       ${fila.referenciaCaso}, ${fila.detectadoEn}, ${fila.procesoId}, ${fila.subprocesoId}, ${fila.criticidad},
       ${fila.titulo}, ${fila.descripcion}, ${fila.requisitoClausula}, ${fila.requisitoNormaId},
       ${fila.requisitoDocumentoId}, ${fila.documentoId}, ${fila.indicadorId}, ${fila.medicionId}, ${fila.riesgo},
       ${estado}, 1, ${sesion.usuarioId}, ${c.ahora}, ${fila.reincidenteDe}, ${fila.derivadoDe ?? null}, ${accion === "cargar"},
       ${fila.fechaLimiteEnte}, ${vence}, ${verificacionHallazgoId}, ${decision ? true : null}, ${decision?.justificacion ?? null},
-      ${decision?.decididaPor ?? null}, ${decision?.decididaEn ?? null})
+      ${decision?.decididaPor ?? null}, ${decision?.decididaEn ?? null}, ${fila.impactoId ?? null}, ${fila.impactoIndicadorId ?? null})
     RETURNING id`;
   const id = Number(nuevo.id);
   await tx`INSERT INTO mejora_rondas (hallazgo_id, numero, formular_antes_de) VALUES (${id}, 1, ${formularAntes})`;

@@ -565,6 +565,7 @@ describe("enlacesDelHallazgo", () => {
       const h = await nuevo(tx, b);
       expect(await enlacesDelHallazgo(h.id, { sql: tx })).toEqual({
         subprocesoId: null, documentoId: null, indicadorId: null, medicionId: null, reincidenteDe: null, verificacionHallazgoId: null,
+        fijosDelImpacto: null,
       });
     });
   });

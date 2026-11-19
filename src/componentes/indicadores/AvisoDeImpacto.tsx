@@ -1,5 +1,7 @@
+import { HallazgoDeImpacto } from "@/componentes/mejoramiento/enganches/HallazgoDeImpacto";
 import { Insignia } from "@/componentes/ui/Insignia";
 import type { ImpactoDeIndicador } from "@/db/consultas/indicadores/impactos";
+import type { EngancheDeImpacto } from "@/db/consultas/mejoramiento/enganche-impacto";
 import { ETIQUETA_ESTADO_NORMA, fechaDeNorma, type EstadoNorma } from "@/lib/normograma/tipos";
 import { textoFecha } from "@/lib/vigencia/plazo";
 import { zonaHoraria } from "@/lib/zona-horaria";
@@ -13,9 +15,20 @@ const estadoEnTexto = (estado: string) => ETIQUETA_ESTADO_NORMA[estado as Estado
  * qué norma cambió, a qué estado, cuándo y hasta cuándo hay que revisar la ficha; vencida, lo dice en texto. A quien
  * administra indicadores, «No afecta» con su nota y, en un indicador activo, las otras dos salidas (una versión enviada
  * antes del cambio no lo resuelve: F14B-DC23). En uno retirado (la carrera entre el retiro y la derogación) solo queda
- * «No afecta».
+ * «No afecta». Con `enganches` (Fase 15B, anexo §8, de `engancheDeImpactos`: la página lo lee, las consultas de Indicadores no
+ * importan Mejoramiento), cada revisión gana lo de mejoramiento: la sugerencia, «Abrir hallazgo» o su hallazgo.
  */
-export function AvisoDeImpacto({ impactos, administra, activo }: { impactos: ImpactoDeIndicador[]; administra: boolean; activo: boolean }) {
+export function AvisoDeImpacto({
+  impactos,
+  administra,
+  activo,
+  enganches,
+}: {
+  impactos: ImpactoDeIndicador[];
+  administra: boolean;
+  activo: boolean;
+  enganches?: ReadonlyMap<number, EngancheDeImpacto>;
+}) {
   if (impactos.length === 0) return null;
   const zona = zonaHoraria();
   return (
@@ -39,6 +52,7 @@ export function AvisoDeImpacto({ impactos, administra, activo }: { impactos: Imp
               ) : null}
             </p>
             {administra ? <FormularioNoAfecta impactoId={i.id} norma={i.norma} /> : null}
+            <HallazgoDeImpacto clase="indicador" impactoId={i.id} enganche={enganches?.get(i.id)} />
           </li>
         ))}
       </ul>

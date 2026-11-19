@@ -710,3 +710,48 @@ describe("la huella del plan y el hallazgo de verificación", () => {
       expect(con.huella).toBe(huellaDePlan(con.plan));
     }));
 });
+
+/**
+ * La identificación firmada y el impacto de norma (anexo 15B §7.2 y §8, F15B-DC46): las claves `impactoId` e `impactoIndicadorId` entran
+ * solo cuando el hallazgo las tiene. Un plan sin ellas firma lo de antes: la misma huella fija de antes de la 15B.
+ */
+describe("la huella del plan y el impacto de norma", () => {
+  const PLAN_SIN_ENLACES: PlanFirmado = {
+    ronda: 1,
+    identificacion: {
+      codigo: "HZ-2026-033", clase: "no_conformidad", criticidad: "media", origen: "control_documental",
+      fuente: "Verificación del punto Urgencias", referenciaCaso: null, detectadoEn: "2026-11-10", proceso: "Urgencias",
+      subproceso: null, titulo: "Copias obsoletas del protocolo de triage", descripcion: "Copia obsoleta del protocolo de triage en el puesto de enfermería.",
+      requisitoClausula: "ISO 9001: 7.5.3", requisitoNorma: null, requisitoDocumento: null, riesgo: null, fechaLimiteEnte: null,
+      reincidenteDe: null, documentoId: 12, documento: "URG-PR-02 Protocolo de triage", indicadorId: null, indicador: null,
+      medicionId: null, medicion: null,
+    },
+    correccion: { requerida: null, descripcion: null, responsable: null, implementadaEn: null },
+    analisis: [{ orden: 1, metodo: "cinco_porques", equipo: "Enfermería", observaciones: null, contenido: { niveles: [{ respuesta: "Nadie recoge la copia vieja" }] } }],
+    causas: [{ orden: 1, texto: "La recogida de copias no tiene responsable", sinAccionPorque: null }],
+    preguntas: { similares: false, similaresDetalle: null, cambios: { documentos: true, riesgos: false, controles: false } },
+    acciones: [{
+      numero: "A1", tipo: "correctiva", descripcion: "Asignar la recogida de copias al jefe de turno", causas: [1], recursos: null,
+      indicadorCumplimiento: "Copias obsoletas en circulación", meta: "0",
+      actividades: [{ numero: "A1.1", descripcion: "Actualizar el procedimiento de distribución", responsableId: 7, responsable: "Jefa de enfermería", inicio: "2026-11-20", fin: "2026-12-15" }],
+    }],
+    criterio: { criterios: ["no_recurrencia"], criterioOtro: null, indicador: null, fechaEvaluacion: null },
+  };
+  /** La huella de este plan en HEAD `68a58ae`, antes de la 15B. */
+  const ANTES = "58758bd0476924448154ae0f639a2b7874e38066230cb7f5cf83875c467b6fe3";
+  const con = (extra: Partial<PlanFirmado["identificacion"]>): PlanFirmado => ({
+    ...PLAN_SIN_ENLACES,
+    identificacion: { ...PLAN_SIN_ENLACES.identificacion, ...extra },
+  });
+
+  it("sin impacto, la huella es la de antes; con el de un documento o el de un indicador cambia, y cambia si cambia el identificador", () => {
+    expect(huellaDePlan(PLAN_SIN_ENLACES)).toBe(ANTES);
+    const deDocumento = huellaDePlan(con({ impactoId: 5 }));
+    const deIndicador = huellaDePlan(con({ impactoIndicadorId: 5 }));
+    expect(deDocumento).not.toBe(ANTES);
+    expect(deIndicador).not.toBe(ANTES);
+    expect(deDocumento).not.toBe(deIndicador);
+    expect(huellaDePlan(con({ impactoId: 6 }))).not.toBe(deDocumento);
+    expect(huellaDePlan(con({ impactoId: 5 }))).toBe(deDocumento);
+  });
+});

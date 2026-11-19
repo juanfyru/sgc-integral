@@ -20,6 +20,9 @@ import {
 } from "@/lib/esquemas/mejoramiento";
 import {
   FIJOS_DE_VERIFICACION,
+  IMPACTO_NO_EXISTE,
+  IMPACTO_YA_TIENE_HALLAZGO,
+  ORIGEN_DE_IMPACTO,
   PROCESO_DEL_PUNTO,
   SIN_JUSTIFICAR_LA_ACCION,
   VERIFICACION_NO_EXISTE,
@@ -40,6 +43,7 @@ import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, nacerHallazgo, NO_EXISTE, transicionarHallazgo, type FilaNueva } from "./flujo";
 import { cargaPendiente } from "./carga-confirmada";
 import { bloquearPlanDelRegistro, clasificarAlNacer } from "./clasificacion";
+import { impactoParaAbrir, type ClaseDeImpacto, type ImpactoParaAbrir } from "./enganche-impacto";
 import { hallazgoParaAbrir, procesosDelPunto } from "./enganche-verificacion";
 import { DATO_YA_NO_EXISTE } from "./legible";
 import { bloquearMarca, marcaDelPanel, salidaAlNacer } from "./marcas-base";
@@ -101,6 +105,14 @@ export type DatosDeHallazgo = {
   verificacionHallazgoId?: number | null;
   /** Por qué esa falla necesita acción correctiva: obligatoria con `verificacionHallazgoId` (al menos 10 caracteres). */
   accionJustificacion?: string | null;
+  /**
+   * El impacto de norma del que nace (Fase 15B, anexo §8): el de un documento o un proceso (`impactoId`) o la revisión pendiente de un
+   * indicador (`impactoIndicadorId`), uno que quien registra puede abrir (el Admin SGC o un líder de su proceso) y que todavía no tiene
+   * un hallazgo que cuente. El origen, la norma (como requisito incumplido) y el proceso quedan fijos. Solo al registrar: la carga,
+   * editar y reclasificar lo ignoran.
+   */
+  impactoId?: number | null;
+  impactoIndicadorId?: number | null;
 };
 
 /** Lo que un hallazgo ya enlaza: al editarlo, un enlace que no cambia no se vuelve a mirar con el alcance de hoy. */
@@ -221,12 +233,21 @@ async function avisarDelExterno(tx: TransactionSql, h: HallazgoBase, titulo: str
  * (`nacerHallazgo`, `fila.accion`) y, aceptada, va directo a «Por formular» (`aceptadoVaA`). La justificación queda en la fila y en el
  * evento, nunca en la bitácora.
  *
+ * Con `impactoId` o `impactoIndicadorId` (anexo §8) nace el hallazgo de ese impacto: solo quien puede abrirlo (`impactoParaAbrir`: el
+ * Admin SGC o un líder de su proceso que ve el impacto; la revisión de un indicador, mientras está pendiente), con el origen «Control
+ * documental», la norma del impacto como requisito incumplido y su proceso fijos, y a lo sumo uno que cuente
+ * (`IMPACTO_YA_TIENE_HALLAZGO`). Para quien no puede abrirlo, el impacto no existe (`IMPACTO_NO_EXISTE`), también si su hallazgo es uno
+ * que no ve. Lo fijo se lee antes de leer el envío (lo forzado no cuenta ni en lo que el esquema exige) y otra vez dentro de la
+ * transacción, que es la lectura que manda. Sigue el camino de siempre; el impacto no cambia. Los enganches siguen la precedencia del
+ * prellenado (`ENGANCHES`): desde el panel de la marca o desde un hallazgo de verificación, el impacto se ignora, y con los dos
+ * impactos cuenta el de un documento o un proceso.
+ *
  * Orden de candados, el del módulo (primero el plan, después el hallazgo, después lo demás): el plan `FOR UPDATE`
  * (`bloquearPlanDelRegistro`, la primera sentencia, como en todo camino que clasifica: §3.4), el candado de la medición
  * (`bloquearMarca`: el de `medicionId` y el de `marcaMedicionId` si llegan distintas, en orden ascendente, con la llave de lo que
  * llega y antes de cualquier lectura que decida; así un registro nunca tiene la fila de un hallazgo mientras lo espera, y la salida
- * se escribe siempre sobre una medición bloqueada), el hallazgo de verificación (`verificacionHallazgoId`) `FOR KEY SHARE`, el
- * hallazgo de origen (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar,
+ * se escribe siempre sobre una medición bloqueada), el hallazgo de verificación (`verificacionHallazgoId`) `FOR KEY SHARE`, el impacto
+ * `FOR KEY SHARE`, el hallazgo de origen (`derivadoDe`) `FOR KEY SHARE` —el que tomaría la llave foránea al insertar,
  * pero antes del reporte—, el reporte `FOR UPDATE` y el consecutivo del año. Así no se cruza con `sumarReporte`, que bloquea el
  * hallazgo (`FOR UPDATE`) y después el reporte, ni con `ponerEnPlan` y `ponerObjetivo`, que bloquean el plan y después el hallazgo,
  * ni con `resolverConOcurrencia`, que toma la medición y después el hallazgo.
@@ -239,9 +260,17 @@ export async function registrarHallazgo(
   requerirPermiso(sesion, "mejora.registrar");
   // La no conformidad de un hallazgo de verificación la abre el Admin SGC (anexo §7.1), antes de leer nada de ese hallazgo; la clase y
   // el origen son fijos y se ponen antes de leer el envío (anexo §10.3).
-  const deVerificacion = d.verificacionHallazgoId !== undefined && d.verificacionHallazgoId !== null && String(d.verificacionHallazgoId) !== "";
+  const deVerificacion = llega(d.verificacionHallazgoId);
   if (deVerificacion) requerirPermiso(sesion, "mejora.gestionar");
-  const leido = EsquemaHallazgo.safeParse(deVerificacion ? { ...d, ...FIJOS_DE_VERIFICACION } : d);
+  const sql = opciones?.sql ?? obtenerSql();
+  // El impacto de norma (anexo §8), con la precedencia de los enganches; su origen, su norma y su proceso, antes de leer el envío.
+  const impacto = impactoQueLlega(d, deVerificacion || llega(d.marcaMedicionId));
+  const previo = impacto ? await impactoDelRegistro(sql, sesion, impacto) : null;
+  const leido = EsquemaHallazgo.safeParse({
+    ...d,
+    ...(deVerificacion ? FIJOS_DE_VERIFICACION : {}),
+    ...(previo ? fijosDelImpacto(previo) : {}),
+  });
   if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
   const recibido = leido.data;
   // Clasificar un reporte es del Admin SGC (spec §6.1), aunque registrar lo puedan otros.
@@ -252,7 +281,7 @@ export async function registrarHallazgo(
   }
   const ahora = opciones?.ahora ?? new Date();
   return legible(
-    enTransaccion(opciones?.sql ?? obtenerSql(), async (tx) => {
+    enTransaccion(sql, async (tx) => {
       await bloquearPlanDelRegistro(tx, sesion, recibido.planId);
       // Las dos que llegan, en orden ascendente y sin leer nada antes: la salida se escribe sobre una de ellas (la del panel, si se
       // atiende; si no, la elegida), y siempre con su candado tomado.
@@ -260,7 +289,7 @@ export async function registrarHallazgo(
       for (const id of medicionesDelCandado.sort((a, b) => a - b)) await bloquearMarca(tx, id);
       // Desde el panel de la marca, lo fijo (la medición y su indicador) sale de la base, nunca del envío (anexo §10.3).
       const panel = recibido.marcaMedicionId !== null ? await marcaDelPanel(tx, sesion, recibido.marcaMedicionId) : null;
-      const v: HallazgoValidado = panel
+      const conPanel: HallazgoValidado = panel
         ? {
             ...recibido,
             medicionId: panel.medicionId,
@@ -268,7 +297,13 @@ export async function registrarHallazgo(
             subprocesoId: recibido.subprocesoId ?? (recibido.procesoId === panel.procesoId ? panel.subprocesoId : null),
           }
         : recibido;
-      const verificacion = v.verificacionHallazgoId !== null ? await verificacionDelRegistro(tx, sesion, v.verificacionHallazgoId, v.procesoId) : null;
+      const verificacion =
+        conPanel.verificacionHallazgoId !== null
+          ? await verificacionDelRegistro(tx, sesion, conPanel.verificacionHallazgoId, conPanel.procesoId)
+          : null;
+      // Lo fijo del impacto, otra vez y con el impacto bloqueado: esta lectura manda (anexo §8).
+      const delImpacto = impacto ? await impactoBloqueado(tx, sesion, impacto) : null;
+      const v: HallazgoValidado = delImpacto ? { ...conPanel, ...fijosDelImpacto(delImpacto) } : conPanel;
       if (v.derivadoDe !== null) await tx`SELECT 1 FROM mejora_hallazgos WHERE id = ${v.derivadoDe} FOR KEY SHARE`;
       const reporte = v.reporteId !== null ? await bloquearReporteRecibido(tx, v.reporteId) : null;
       if (sesion.rol === "lider_proceso" && !enAlcance(await alcanceProcesos(sesion, { sql: tx }), v.procesoId)) {
@@ -295,16 +330,19 @@ export async function registrarHallazgo(
           // Con el hallazgo de verificación, la acción correctiva nace requerida por quien la abre (anexo §7.2).
           verificacionHallazgoId: verificacion?.id ?? null,
           accion: verificacion ? { justificacion: justificacion as string, decididaPor: sesion.usuarioId, decididaEn: c.ahora } : null,
+          impactoId: delImpacto?.clase === "documento" ? delImpacto.id : null,
+          impactoIndicadorId: delImpacto?.clase === "indicador" ? delImpacto.id : null,
         },
         "registrar",
-        // El evento y la bitácora llevan el id del de origen, el del reporte y el del hallazgo de verificación, nunca su texto; la
-        // justificación de la acción, solo el evento (spec §6.4).
+        // El evento y la bitácora llevan el id del de origen, el del reporte, el del hallazgo de verificación y el del impacto, nunca su
+        // texto; la justificación de la acción, solo el evento (spec §6.4).
         {
           rumbo: { nacioAceptado },
           detalle: {
             ...(v.derivadoDe !== null ? { derivadoDe: v.derivadoDe } : {}),
             ...(reporte ? { reporteId: reporte.id } : {}),
             ...(verificacion ? { verificacionHallazgoId: verificacion.id } : {}),
+            ...(delImpacto ? (delImpacto.clase === "documento" ? { impactoId: delImpacto.id } : { impactoIndicadorId: delImpacto.id }) : {}),
           },
           ...(verificacion ? { soloEnElEvento: { accionJustificacion: justificacion } } : {}),
         },
@@ -340,6 +378,74 @@ async function verificacionDelRegistro(tx: TransactionSql, sesion: SesionFlujo, 
  */
 function exigirProcesoDelPunto(procesos: readonly number[], procesoId: number): void {
   if (procesos.length > 0 && !procesos.includes(procesoId)) throw new ErrorMejora(PROCESO_DEL_PUNTO);
+}
+
+/** Un campo del envío que llegó: ni ausente, ni nulo, ni vacío. */
+const llega = (v: unknown) => v !== undefined && v !== null && String(v) !== "";
+
+/**
+ * El impacto que llega en el envío (anexo §8), con la precedencia de los enganches del prellenado (`ENGANCHES`): `cede` (llegó una
+ * medición marcada o un hallazgo de verificación, que van antes) lo ignora; con los dos, cuenta el de un documento o un proceso. Un id mal
+ * escrito no es ninguno aquí: lo rechaza el esquema.
+ */
+function impactoQueLlega(d: { impactoId?: unknown; impactoIndicadorId?: unknown }, cede: boolean): { clase: ClaseDeImpacto; id: number } | null {
+  if (cede) return null;
+  for (const [clase, valor] of [["documento", d.impactoId], ["indicador", d.impactoIndicadorId]] as const) {
+    if (!llega(valor)) continue;
+    return /^\d{1,15}$/.test(String(valor)) ? { clase, id: Number(valor) } : null;
+  }
+  return null;
+}
+
+/** Lo que queda fijo en el hallazgo de un impacto (anexo §8): el origen, la norma como requisito incumplido y el proceso del impacto. */
+const fijosDelImpacto = (i: Pick<ImpactoParaAbrir, "normaId" | "procesoId">) => ({
+  origen: ORIGEN_DE_IMPACTO,
+  requisitoNormaId: i.normaId,
+  procesoId: i.procesoId,
+});
+
+/**
+ * El impacto del que nace el hallazgo, para quien registra (`impactoParaAbrir`): si no puede abrirlo, no existe; si ya tiene uno que
+ * cuenta, `IMPACTO_YA_TIENE_HALLAZGO` (la garantía es el índice único parcial: su `23505` lo traduce `legible`).
+ */
+async function impactoDelRegistro(sql: Cliente, sesion: SesionFlujo, x: { clase: ClaseDeImpacto; id: number }): Promise<ImpactoParaAbrir> {
+  const i = await impactoParaAbrir(sql, sesion, x.clase, x.id);
+  if (!i) throw new ErrorMejora(IMPACTO_NO_EXISTE);
+  if (i.yaTiene) throw new ErrorMejora(IMPACTO_YA_TIENE_HALLAZGO);
+  return i;
+}
+
+/** Lo mismo dentro de la transacción del registro, con el impacto `FOR KEY SHARE` (el candado que tomaría la llave foránea al insertar). */
+async function impactoBloqueado(tx: TransactionSql, sesion: SesionFlujo, x: { clase: ClaseDeImpacto; id: number }): Promise<ImpactoParaAbrir> {
+  await tx`SELECT 1 FROM ${tx(x.clase === "documento" ? "impactos_normativos" : "impactos_indicadores")} WHERE id = ${x.id} FOR KEY SHARE`;
+  return impactoDelRegistro(tx, sesion, x);
+}
+
+/**
+ * Lo fijo del impacto que llega en un envío del formulario de registro (anexo §8), como texto del formulario, para que la acción lo
+ * ponga antes de leerlo: así lo forzado no cuenta tampoco en su lectura. Con la precedencia de `registrarHallazgo`. Nulo si no llega un
+ * impacto que quien registra pueda abrir: el registro lo rechaza después, con su frase.
+ */
+export async function fijosDelEnvio(
+  sesion: SesionFlujo,
+  d: { impactoId?: unknown; impactoIndicadorId?: unknown; verificacionHallazgoId?: unknown; marcaMedicionId?: unknown },
+  opciones?: { sql?: Cliente },
+): Promise<Record<"origen" | "requisitoNormaId" | "procesoId", string> | null> {
+  const x = impactoQueLlega(d, llega(d.verificacionHallazgoId) || llega(d.marcaMedicionId));
+  const i = x ? await impactoParaAbrir(opciones?.sql ?? obtenerSql(), sesion, x.clase, x.id) : null;
+  if (!i || i.yaTiene) return null;
+  const f = fijosDelImpacto(i);
+  return { origen: f.origen, requisitoNormaId: String(f.requisitoNormaId), procesoId: String(f.procesoId) };
+}
+
+/**
+ * Lo fijo de un hallazgo que nació de un impacto (anexo §8): el origen, la norma y el proceso de su fila, que la edición conserva. Nulo
+ * si no nació de uno.
+ */
+async function fijosDeSuImpacto(sql: Cliente, id: number): Promise<{ origen: Origen; requisitoNormaId: number | null; procesoId: number } | null> {
+  const [f] = await sql`SELECT origen, requisito_norma_id, proceso_id FROM mejora_hallazgos
+    WHERE id = ${id} AND (impacto_id IS NOT NULL OR impacto_indicador_id IS NOT NULL)`;
+  return f ? { origen: f.origen as Origen, requisitoNormaId: idONulo(f.requisito_norma_id), procesoId: Number(f.proceso_id) } : null;
 }
 
 const SOLO_CERRADO = "Solo se marca reincidencia de un hallazgo cerrado";
@@ -520,8 +626,9 @@ export async function registrarOcurrencia(
  * aceptar se cuenta otra vez desde este acto (como `cambiarProceso`). Si el origen pasa a externo, queda aceptado (§7.4). La no
  * conformidad de un hallazgo de verificación (Fase 15B, anexo §7.2) conserva su clase y su origen, que son fijos y se ponen antes de
  * leer lo enviado (la única validación ya los usa: lo forzado no cuenta ni en lo que el esquema exige), y su proceso sigue entre los
- * del punto (`procesosDelPunto`, sin la regla de quién ve el punto). Lo enviado se lee después de bloquear el hallazgo: ahí se sabe si
- * nació de un hallazgo de verificación.
+ * del punto (`procesosDelPunto`, sin la regla de quién ve el punto). El hallazgo de un impacto de norma (anexo §8) conserva el origen,
+ * la norma y el proceso de su fila (`fijosDeSuImpacto`). Lo enviado se lee después de bloquear el hallazgo: ahí se sabe si nació de un
+ * hallazgo de verificación o de un impacto.
  */
 export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDeHallazgo, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.registrar");
@@ -533,7 +640,11 @@ export async function editarHallazgo(sesion: SesionFlujo, id: number, d: DatosDe
         throw (await puedeVerHallazgo(id, sesion, { sql: tx })) ? new ErrorPermiso() : new ErrorMejora(NO_EXISTE);
       }
       if (h.estado !== "por_aceptar") throw new ErrorMejora(YA_CAMBIO);
-      const leido = EsquemaHallazgo.safeParse(h.verificacionHallazgoId === null ? d : { ...d, ...FIJOS_DE_VERIFICACION });
+      const leido = EsquemaHallazgo.safeParse({
+        ...d,
+        ...(h.verificacionHallazgoId === null ? {} : FIJOS_DE_VERIFICACION),
+        ...((await fijosDeSuImpacto(tx, h.id)) ?? {}),
+      });
       if (!leido.success) throw new ErrorMejora(leido.error.issues[0].message);
       const v = leido.data;
       if (h.verificacionHallazgoId !== null) exigirProcesoDelPunto(await procesosDelPunto(tx, h.verificacionHallazgoId), v.procesoId);
@@ -956,7 +1067,8 @@ export async function registrarRespuestaAlEnte(
 
 /**
  * Lo enlazado que el formulario de edición no pinta: la edición lo conserva en vez de borrarlo. `verificacionHallazgoId` (Fase 15B,
- * anexo §7.2) dice además si la clase y el origen son fijos; no se reenvía: no cambia nunca.
+ * anexo §7.2) dice además si la clase y el origen son fijos, y `fijosDelImpacto` (anexo §8), el origen, la norma y el proceso de un
+ * hallazgo que nació de un impacto; ninguno de los dos se reenvía: no cambian nunca.
  */
 export async function enlacesDelHallazgo(
   id: number,
@@ -968,6 +1080,7 @@ export async function enlacesDelHallazgo(
   medicionId: number | null;
   reincidenteDe: number | null;
   verificacionHallazgoId: number | null;
+  fijosDelImpacto: { origen: Origen; requisitoNormaId: number | null; procesoId: number } | null;
 }> {
   const sql = opciones?.sql ?? obtenerSql();
   const [f] = await sql`SELECT subproceso_id, documento_id, indicador_id, medicion_id, reincidente_de, verificacion_hallazgo_id
@@ -975,6 +1088,7 @@ export async function enlacesDelHallazgo(
   if (!f) throw new ErrorMejora(NO_EXISTE);
   return {
     verificacionHallazgoId: idONulo(f.verificacion_hallazgo_id),
+    fijosDelImpacto: await fijosDeSuImpacto(sql, id),
     subprocesoId: idONulo(f.subproceso_id),
     documentoId: idONulo(f.documento_id),
     indicadorId: idONulo(f.indicador_id),

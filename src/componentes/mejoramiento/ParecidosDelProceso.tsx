@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Insignia } from "@/componentes/ui/Insignia";
-import { OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
+import { OCURRENCIA_DESDE_UN_IMPACTO, OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
 import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { DISTINTO, resolverPanelDeParecidos, salidaDe, type ParecidoDeRuta, type RespuestaDeParecidos } from "@/lib/mejoramiento/parecidos-panel";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
@@ -34,6 +34,12 @@ type Props = {
    * (`OCURRENCIA_DESDE_UNA_VERIFICACION`).
    */
   desdeUnaVerificacion?: boolean;
+  /**
+   * El formulario llegó desde un impacto de norma (`impactoId` o `impactoIndicadorId`, anexo 15B §8): tampoco se ofrece la ocurrencia de
+   * un parecido abierto (no lleva el enlace, y el impacto se quedaría sin su hallazgo); la nota lo dice. El servidor la rechaza igual
+   * (`OCURRENCIA_DESDE_UN_IMPACTO`).
+   */
+  desdeUnImpacto?: boolean;
 };
 
 /**
@@ -41,7 +47,16 @@ type Props = {
  * es el mismo problema de uno abierto (una ocurrencia), es reincidencia de uno cerrado, o es distinto. La elegida viaja en
  * el campo `relacion` del formulario. Sin resultados, el campo vale `distinto` y no se dice nada más que una nota.
  */
-export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCambiar, desdeElPanel, desdeUnaVerificacion = false }: Props) {
+export function ParecidosDelProceso({
+  procesoId,
+  proceso,
+  texto,
+  relacion,
+  alCambiar,
+  desdeElPanel,
+  desdeUnaVerificacion = false,
+  desdeUnImpacto = false,
+}: Props) {
   const recortado = texto.trim().slice(0, LARGO_DE_LA_CONSULTA);
   const consulta = procesoId !== "" && recortado.length > MINIMO ? `proceso=${encodeURIComponent(procesoId)}&q=${encodeURIComponent(recortado)}` : null;
   const [respuesta, setRespuesta] = useState<RespuestaDeParecidos | null>(null);
@@ -70,7 +85,7 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
     procesoId,
     respuesta,
     relacion,
-    sinOcurrencia: desdeElPanel !== undefined || desdeUnaVerificacion,
+    sinOcurrencia: desdeElPanel !== undefined || desdeUnaVerificacion || desdeUnImpacto,
   });
 
   // El formulario cambia el texto de su botón según la salida: se le dice cuando una salida deja de valer.
@@ -122,6 +137,7 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
               alCambiar={alCambiar}
               desdeElPanel={desdeElPanel}
               desdeUnaVerificacion={desdeUnaVerificacion}
+              desdeUnImpacto={desdeUnImpacto}
             />
             {vigente.startsWith("ocurrencia:") ? (
               <p className="text-muted-foreground">
@@ -143,8 +159,8 @@ export function ParecidosDelProceso({ procesoId, proceso, texto, relacion, alCam
 /**
  * Las salidas ante los parecidos (spec 15 §7.5): una ocurrencia de cada abierto, la reincidencia de cada cerrado y «distinto».
  * Desde el panel de la marca (`desdeElPanel`), los abiertos no dan salida: la nota dice que la ocurrencia se añade desde la página
- * del indicador, con su enlace. Desde un hallazgo de verificación (`desdeUnaVerificacion`), tampoco: la nota dice que se registra la
- * no conformidad enlazada.
+ * del indicador, con su enlace. Desde un hallazgo de verificación (`desdeUnaVerificacion`) o desde un impacto de norma
+ * (`desdeUnImpacto`), tampoco: la nota dice que se registra el hallazgo enlazado.
  */
 export function SalidasDeParecidos({
   parecidos,
@@ -152,14 +168,16 @@ export function SalidasDeParecidos({
   alCambiar,
   desdeElPanel,
   desdeUnaVerificacion = false,
+  desdeUnImpacto = false,
 }: {
   parecidos: ParecidoDeRuta[];
   vigente: string;
   alCambiar: (relacion: string) => void;
   desdeElPanel?: { enlace: string | null };
   desdeUnaVerificacion?: boolean;
+  desdeUnImpacto?: boolean;
 }) {
-  const sinOcurrencia = desdeElPanel !== undefined || desdeUnaVerificacion;
+  const sinOcurrencia = desdeElPanel !== undefined || desdeUnaVerificacion || desdeUnImpacto;
   const conSalida = sinOcurrencia ? parecidos.filter((p) => !p.abierto) : parecidos;
   const abiertos = sinOcurrencia ? parecidos.filter((p) => p.abierto) : [];
   const nombrados = `${abiertos.map((p) => p.codigo).join(", ")} ${abiertos.length === 1 ? "está abierto" : "están abiertos"}`;
@@ -209,6 +227,8 @@ export function SalidasDeParecidos({
         </p>
       ) : abiertos.length > 0 && desdeUnaVerificacion ? (
         <p className="text-muted-foreground">{`${nombrados}. ${OCURRENCIA_DESDE_UNA_VERIFICACION}.`}</p>
+      ) : abiertos.length > 0 && desdeUnImpacto ? (
+        <p className="text-muted-foreground">{`${nombrados}. ${OCURRENCIA_DESDE_UN_IMPACTO}.`}</p>
       ) : null}
     </fieldset>
   );

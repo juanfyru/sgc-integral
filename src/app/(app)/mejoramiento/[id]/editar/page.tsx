@@ -6,8 +6,9 @@ import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { procesosDelPunto } from "@/db/consultas/mejoramiento/enganche-verificacion";
-import { documentosVigentesVisibles, normasQueRigen, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
+import { conLaNorma, documentosVigentesVisibles, normasQueRigen, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import type { Prellenado } from "@/db/consultas/mejoramiento/prellenado";
+import { enlacesDelHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { FIJOS_DE_VERIFICACION } from "@/lib/mejoramiento/enganches";
 import { exigirSesion } from "@/lib/paginas";
 import { fechaEnZona } from "@/lib/tramites/plazos";
@@ -20,7 +21,8 @@ export const metadata: Metadata = { title: "Editar hallazgo" };
  * Editar la identificación de un hallazgo (spec 15 §7.6): solo quien lo registró y mientras está «Por aceptar». Para
  * cualquier otra persona, o en otro estado, no existe. La no conformidad de un hallazgo de verificación (Fase 15B, anexo §7.2) muestra
  * la clase y el origen como texto fijo y ofrece solo los procesos activos del punto (todos, si el punto no tiene ninguno): lo mismo que
- * el servidor deja fijo (`editarHallazgo`).
+ * el servidor deja fijo (`editarHallazgo`). El hallazgo de un impacto de norma (anexo §8) muestra fijos el origen, la norma (por su
+ * nombre, aunque ya no rija) y el proceso de su fila.
  */
 export default async function PaginaEditarHallazgo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion();
@@ -29,13 +31,15 @@ export default async function PaginaEditarHallazgo({ params }: { params: Promise
   if (h.estado !== "por_aceptar" || h.registradoPorId !== sesion.usuarioId) notFound();
   const ahora = new Date();
   const sql = obtenerSql();
-  const [procesos, normas, documentos, contexto, delPunto] = await Promise.all([
+  const [procesos, queRigen, documentos, contexto, delPunto, { fijosDelImpacto }] = await Promise.all([
     procesosDelAlcance(sesion),
     normasQueRigen(),
     documentosVigentesVisibles(sesion),
     contextoDeMejora(sql, ahora),
     h.verificacionHallazgoId === null ? Promise.resolve(null) : procesosDelPunto(sql, h.verificacionHallazgoId),
+    enlacesDelHallazgo(h.id, { sql }),
   ]);
+  const normas = fijosDelImpacto ? await conLaNorma(queRigen, fijosDelImpacto.requisitoNormaId, { sql }) : queRigen;
   const valores: Record<string, string> = {
     clase: h.clase,
     origen: h.origen,
@@ -53,10 +57,13 @@ export default async function PaginaEditarHallazgo({ params }: { params: Promise
     fechaLimiteEnte: h.fechaLimiteEnte ?? "",
   };
   // Lo fijo de la no conformidad de un hallazgo de verificación: en la edición, del prellenado solo cuentan lo fijo y los procesos.
+  // Lo fijo del hallazgo de un impacto de norma, igual: el origen, la norma y el proceso de su fila.
   const fijos: Prellenado | undefined =
-    delPunto === null
-      ? undefined
-      : { valores: { ...FIJOS_DE_VERIFICACION }, fijos: ["clase", "origen"], ocultos: {}, rotulo: null, ...(delPunto.length > 0 ? { procesos: delPunto } : {}) };
+    delPunto !== null
+      ? { valores: { ...FIJOS_DE_VERIFICACION }, fijos: ["clase", "origen"], ocultos: {}, rotulo: null, ...(delPunto.length > 0 ? { procesos: delPunto } : {}) }
+      : fijosDelImpacto
+        ? { valores: { ...fijosDelImpacto }, fijos: ["origen", "requisitoNormaId", "procesoId"], ocultos: {}, rotulo: null }
+        : undefined;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">

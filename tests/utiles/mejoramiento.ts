@@ -31,14 +31,17 @@ import {
   sostenerHallazgo,
 } from "@/db/consultas/mejoramiento/recorrido";
 import { registrarHallazgo, type DatosDeHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { asociarProceso, enlazarDocumento } from "@/db/consultas/normograma/asociaciones";
+import { cambiarEstadoNorma } from "@/db/consultas/normograma/normas";
 import { lideresDeProceso } from "@/db/consultas/tramites";
 import { tipoPropuesto } from "@/lib/mejoramiento/reglas";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
-import { fechaEnZona } from "@/lib/tramites/plazos";
+import { fechaEnZona, fechaLimite } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
 import { indicadorDePrueba, type IndicadorDePrueba, type OpcionesIndicadorDePrueba } from "./indicadores";
 import { procesoNuevo } from "./mixto";
-import { sesionDe, usuarioDePrueba } from "./tramites";
+import { normaDePrueba } from "./normograma";
+import { documentoLibre, sesionDe, tipoLibre, TIPO_LIBRE, usuarioDePrueba } from "./tramites";
 import { firmaDePrueba } from "./vigencia";
 
 export type BaseDeMejora = {
@@ -682,4 +685,53 @@ export async function hallazgoDeVerificacion(
     plazoDias: 5,
   });
   return { id: hallazgoId, punto };
+}
+
+/** El cambio de norma de los impactos de prueba: la norma pasa a derogada el lunes 2 de noviembre de 2026, registrado ese día. */
+export const CAMBIO_DE_NORMA = "2026-11-02T15:00:00Z";
+
+/**
+ * Un impacto de norma de la 13C (`impactos_normativos`) en el proceso `procesoId`, por el dominio: una norma nueva enlazada a un
+ * documento vigente del proceso (`conDocumento`, el impacto de un documento) o asociada al proceso (el impacto de un proceso), que
+ * `admin` deroga a `CAMBIO_DE_NORMA`. La norma queda derogada: no está entre las que rigen (`normasQueRigen`). Para el hallazgo que
+ * nace de él (Fase 15B, anexo §8).
+ */
+export async function impactoDePrueba(
+  tx: TransactionSql,
+  admin: SesionFlujo,
+  x: { procesoId: number; conDocumento?: boolean },
+): Promise<{ id: number; cambioId: number; norma: { id: number; nombre: string }; documento: { id: number; codigo: string } | null }> {
+  const norma = await normaDePrueba(tx, admin);
+  const o = { sql: tx, ahora: new Date(CAMBIO_DE_NORMA) };
+  let documento: { id: number; codigo: string } | null = null;
+  if (x.conDocumento) {
+    await tipoLibre(tx);
+    const [p] = await tx`SELECT sigla FROM procesos WHERE id = ${x.procesoId}`;
+    const d = await documentoLibre(tx, { proceso: p.sigla as string, tipo: TIPO_LIBRE });
+    documento = { id: d.id, codigo: d.codigo };
+    await enlazarDocumento(admin, { normaId: norma.id, documentoId: d.id }, o);
+  } else {
+    await asociarProceso(admin, { normaId: norma.id, procesoId: x.procesoId, requisito: null }, o);
+  }
+  const r = await cambiarEstadoNorma(admin, { normaId: norma.id, estado: "derogada", fecha: "2026-11-02", nota: null }, o);
+  const [i] = await tx`SELECT id FROM impactos_normativos WHERE cambio_id = ${r.cambioId} AND proceso_id = ${x.procesoId}`;
+  return { id: Number(i.id), cambioId: Number(r.cambioId), norma, documento };
+}
+
+/**
+ * Una revisión pendiente de un indicador por un cambio de norma (`impactos_indicadores`, anexo 14B §9): la norma la deroga `admin` a
+ * `CAMBIO_DE_NORMA` por el dominio, y la fila se escribe a mano (una ficha aprobada ya no recibe la norma que la haría nacer), con el
+ * plazo de quince días.
+ */
+export async function revisionDePrueba(
+  tx: TransactionSql,
+  admin: SesionFlujo,
+  indicadorId: number,
+): Promise<{ id: number; cambioId: number; norma: { id: number; nombre: string } }> {
+  const norma = await normaDePrueba(tx, admin);
+  const ahora = new Date(CAMBIO_DE_NORMA);
+  const r = await cambiarEstadoNorma(admin, { normaId: norma.id, estado: "derogada", fecha: "2026-11-02", nota: null }, { sql: tx, ahora });
+  const [ii] = await tx`INSERT INTO impactos_indicadores (norma_cambio_id, norma_id, indicador_id, vence_en, creado_en)
+    VALUES (${r.cambioId}, ${norma.id}, ${indicadorId}, ${fechaLimite(ahora, 15, zonaHoraria())}, ${ahora}) RETURNING id`;
+  return { id: Number(ii.id), cambioId: Number(r.cambioId), norma };
 }

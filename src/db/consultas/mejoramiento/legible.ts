@@ -4,7 +4,13 @@
  * importaciones): lo usan el motor (`flujo.ts`, que lo reexporta) y los módulos livianos que no pueden importarlo (`archivos.ts`, que
  * importa `admin.ts`, y `config.ts`; `tests/mejora-ciclos.test.ts`).
  */
-import { INDICE_NO_CONFORMIDAD_DE_VERIFICACION, YA_TIENE_NO_CONFORMIDAD } from "@/lib/mejoramiento/enganches";
+import {
+  IMPACTO_YA_TIENE_HALLAZGO,
+  INDICE_HALLAZGO_DE_IMPACTO,
+  INDICE_HALLAZGO_DE_REVISION,
+  INDICE_NO_CONFORMIDAD_DE_VERIFICACION,
+  YA_TIENE_NO_CONFORMIDAD,
+} from "@/lib/mejoramiento/enganches";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 
 /**
@@ -22,11 +28,13 @@ const LEGIBLES: Record<string, string> = {
 
 /**
  * Los `23505` de un índice único que dicen algo más que «otra persona guardó lo mismo»: la unicidad que garantiza la base, con la
- * frase del dominio que la comprueba antes (Fase 15B, anexo §7.1: el índice único parcial de la no conformidad de un hallazgo de
- * verificación).
+ * frase del dominio que la comprueba antes (Fase 15B: los índices únicos parciales de la no conformidad de un hallazgo de verificación,
+ * anexo §7.1, y del hallazgo de un impacto de norma o de la revisión de un indicador, §8).
  */
 const POR_INDICE: Record<string, string> = {
   [INDICE_NO_CONFORMIDAD_DE_VERIFICACION]: YA_TIENE_NO_CONFORMIDAD,
+  [INDICE_HALLAZGO_DE_IMPACTO]: IMPACTO_YA_TIENE_HALLAZGO,
+  [INDICE_HALLAZGO_DE_REVISION]: IMPACTO_YA_TIENE_HALLAZGO,
 };
 
 /**

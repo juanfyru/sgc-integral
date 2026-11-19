@@ -12,9 +12,10 @@
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, enAlcance, filtroAcceso, filtroIndicadores, type Alcance } from "@/lib/alcance";
-import { FIJOS_DE_VERIFICACION, fuenteDeVerificacion } from "@/lib/mejoramiento/enganches";
+import { FIJOS_DE_VERIFICACION, fuenteDeImpacto, fuenteDeVerificacion, ORIGEN_DE_IMPACTO } from "@/lib/mejoramiento/enganches";
 import type { ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
 import { puede } from "@/lib/permisos";
+import { impactoParaAbrir, type ClaseDeImpacto } from "./enganche-impacto";
 import { hallazgoParaAbrir } from "./enganche-verificacion";
 import { leerMarca, puedeResolverMarca, textosDeLaMarca } from "./marcas-base";
 import type { DatosDeHallazgo } from "./registro";
@@ -81,6 +82,12 @@ export const rotuloDePlan = (codigo: string) => `Se registra dentro del plan ${c
 /** El rótulo de la no conformidad que nace de un hallazgo de verificación (anexo §7.2). */
 export const rotuloDeVerificacion = (punto: string) =>
   `Nace del hallazgo de verificación de ${punto}: la corrección es la de ese hallazgo y, aceptada, pasa directo a «Por formular».`;
+
+/**
+ * El rótulo del hallazgo que nace de un impacto de norma (anexo §8): el de un documento o un proceso, o la revisión de un indicador.
+ */
+export const rotuloDeImpacto = (norma: string) =>
+  `Nace del impacto de ${norma}: queda enlazado a él, y el impacto se sigue resolviendo por sus propias reglas.`;
 
 type Lectura = { sql: Cliente; sesion: SesionFlujo; alcance: () => Promise<Alcance> };
 
@@ -231,9 +238,34 @@ async function deLaVerificacion(l: Lectura, valor: string): Promise<Prellenado> 
 }
 
 /**
+ * `impacto` e `impactoIndicador` (anexo §8 y §10.3): un impacto de norma que la persona puede abrir (`impactoParaAbrir`: el Admin SGC o un
+ * líder activo de su proceso que lo ve; la revisión de un indicador, mientras está pendiente) y que no tiene un hallazgo que cuente. Fija
+ * el origen («Control documental»), la norma como requisito incumplido y el proceso del impacto; propone la fuente («Cambio de {norma}»)
+ * y, en «A qué se refiere», su documento (con versión vigente) o su indicador; la clase la elige la persona. El impacto viaja oculto y el
+ * registro lo vuelve a validar todo dentro de su transacción.
+ */
+async function delImpacto(l: Lectura, clase: ClaseDeImpacto, valor: string): Promise<Prellenado> {
+  const id = idDe(valor);
+  const i = id === null ? null : await impactoParaAbrir(l.sql, l.sesion, clase, id);
+  if (!i || i.yaTiene) return PRELLENADO_VACIO;
+  return {
+    valores: {
+      origen: ORIGEN_DE_IMPACTO,
+      requisitoNormaId: i.normaId,
+      procesoId: i.procesoId,
+      ...(i.documentoId !== null ? { documentoId: i.documentoId } : {}),
+      ...(i.indicadorId !== null ? { indicadorId: i.indicadorId } : {}),
+      fuente: fuenteDeImpacto(i.norma),
+    },
+    fijos: ["origen", "requisitoNormaId", "procesoId"],
+    ocultos: clase === "documento" ? { impactoId: String(i.id) } : { impactoIndicadorId: String(i.id) },
+    rotulo: rotuloDeImpacto(i.norma),
+  };
+}
+
+/**
  * El enganche que se usa (`engancheDe`). Cada uno añade aquí su rama: `medicion`, la Tarea 8 (la marca «Requiere acción de mejora»,
- * anexo §6.3); `verificacion`, la Tarea 10 (§7.2); `impacto` e `impactoIndicador`, la Tarea 11 (§8). Mientras no la tienen, no
- * ponen nada.
+ * anexo §6.3); `verificacion`, la Tarea 10 (§7.2); `impacto` e `impactoIndicador`, la Tarea 11 (§8).
  */
 async function delEnganche(l: Lectura, e: { clave: Enganche; valor: string } | null): Promise<Prellenado> {
   if (e === null) return PRELLENADO_VACIO;
@@ -242,9 +274,10 @@ async function delEnganche(l: Lectura, e: { clave: Enganche; valor: string } | n
       return deLaMedicion(l, e.valor);
     case "verificacion":
       return deLaVerificacion(l, e.valor);
-    case "impacto": // Tarea 11.
-    case "impactoIndicador": // Tarea 11.
-      return PRELLENADO_VACIO;
+    case "impacto":
+      return delImpacto(l, "documento", e.valor);
+    case "impactoIndicador":
+      return delImpacto(l, "indicador", e.valor);
   }
 }
 

@@ -34,6 +34,22 @@ export async function normasQueRigen(opciones?: { sql?: Cliente }): Promise<Arra
   return filas.map((f) => ({ id: Number(f.id), nombre: f.nombre as string, titulo: f.titulo as string }));
 }
 
+/**
+ * Las normas de la lista y, al final, la norma `normaId` si no está entre ellas: la que llega fija del impacto de un hallazgo (Fase 15B,
+ * anexo §8), que suele estar derogada o retirada, para que el formulario la muestre por su nombre. Las normas las lee toda sesión.
+ */
+export async function conLaNorma(
+  normas: Array<{ id: number; nombre: string; titulo: string }>,
+  normaId: number | null | undefined,
+  opciones?: { sql?: Cliente },
+): Promise<Array<{ id: number; nombre: string; titulo: string }>> {
+  if (normaId === null || normaId === undefined || normas.some((n) => n.id === normaId)) return normas;
+  const sql = opciones?.sql ?? obtenerSql();
+  const [f] = await sql`SELECT n.id, ${nombreSql(sql)} AS nombre, n.titulo FROM normas n JOIN tipos_norma tn ON tn.id = n.tipo_norma_id
+    WHERE n.id = ${normaId}`;
+  return f ? [...normas, { id: Number(f.id), nombre: f.nombre as string, titulo: f.titulo as string }] : normas;
+}
+
 /** Los documentos con una versión vigente que la persona puede ver (`filtroAcceso`). */
 export async function documentosVigentesVisibles(
   sesion: SesionFlujo,

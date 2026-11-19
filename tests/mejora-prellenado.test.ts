@@ -15,8 +15,9 @@ import type { TransactionSql } from "postgres";
 import { obtenerSql } from "@/db/cliente";
 import { resolverNoRequiere } from "@/db/consultas/mejoramiento/marcas";
 import { anularPlan } from "@/db/consultas/mejoramiento/planes";
-import { engancheDe, PRELLENADO_VACIO, prellenadoDeRegistro, rotuloDeVerificacion } from "@/db/consultas/mejoramiento/prellenado";
-import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
+import { resolverImpactoNoAfecta } from "@/db/consultas/indicadores/impactos";
+import { engancheDe, PRELLENADO_VACIO, prellenadoDeRegistro, rotuloDeImpacto, rotuloDeVerificacion } from "@/db/consultas/mejoramiento/prellenado";
+import { anularHallazgo, registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { rutaDeRegistro } from "@/lib/mejoramiento/rutas";
 import { indicadorDePrueba } from "./utiles/indicadores";
 import {
@@ -25,10 +26,12 @@ import {
   datosDeHallazgo,
   DESCRIPCION_DE_VERIFICACION,
   hallazgoDeVerificacion,
+  impactoDePrueba,
   medicionMarcada,
   objetivoDePrueba,
   otroProcesoConLider,
   planDeMejoraDePrueba,
+  revisionDePrueba,
 } from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
 import { revertida } from "./utiles/transaccion";
@@ -341,6 +344,91 @@ describe("prellenadoDeRegistro: un hallazgo de verificación (Tarea 10, anexo §
         c(AHORA, tx),
       );
       expect(await prellenadoDeRegistro(b.admin, { verificacion: String(vh.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+    });
+  });
+});
+
+describe("prellenadoDeRegistro: un impacto de norma (Tarea 11, anexo §8)", () => {
+  it("impacto, como líder del proceso del impacto: fija el origen, la norma y el proceso; propone el documento y la fuente", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const imp = await impactoDePrueba(tx, b.admin, { procesoId: b.procesoId, conDocumento: true });
+      expect(await prellenadoDeRegistro(b.lider, { impacto: String(imp.id) }, { sql: tx })).toEqual({
+        valores: {
+          origen: "control_documental",
+          requisitoNormaId: imp.norma.id,
+          procesoId: b.procesoId,
+          documentoId: imp.documento!.id,
+          fuente: `Cambio de ${imp.norma.nombre}`,
+        },
+        fijos: ["origen", "requisitoNormaId", "procesoId"],
+        ocultos: { impactoId: String(imp.id) },
+        rotulo: rotuloDeImpacto(imp.norma.nombre),
+      });
+      // Como Admin SGC, lo mismo; el de un proceso, sin documento.
+      expect((await prellenadoDeRegistro(b.admin, { impacto: String(imp.id) }, { sql: tx })).ocultos).toEqual({ impactoId: String(imp.id) });
+      const deProceso = await impactoDePrueba(tx, b.admin, { procesoId: b.procesoId });
+      const p = await prellenadoDeRegistro(b.lider, { impacto: String(deProceso.id) }, { sql: tx });
+      expect(p.valores).not.toHaveProperty("documentoId");
+      expect(p.fijos).toEqual(["origen", "requisitoNormaId", "procesoId"]);
+      // Un documento o un proceso que llegan también no cambian lo fijo.
+      const otro = await procesoNuevo(tx);
+      const juntos = await prellenadoDeRegistro(b.admin, { impacto: String(imp.id), proceso: await slugDe(tx, otro) }, { sql: tx });
+      expect(juntos.valores.procesoId).toBe(b.procesoId);
+    });
+  });
+
+  it("impacto como líder de otro proceso, como Control Interno, con un hallazgo que ya cuenta o con un id que no existe: vacío", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const imp = await impactoDePrueba(tx, b.admin, { procesoId: b.procesoId, conDocumento: true });
+      const otro = await otroProcesoConLider(tx);
+      expect(await prellenadoDeRegistro(otro.lider, { impacto: String(imp.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      expect(await prellenadoDeRegistro(b.control, { impacto: String(imp.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      for (const impacto of ["9000000000", "0", "abc"]) {
+        expect(await prellenadoDeRegistro(b.admin, { impacto }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      }
+      await registrarHallazgo(b.lider, { ...datosDeHallazgo(b.procesoId), impactoId: imp.id }, c(AHORA, tx));
+      expect(await prellenadoDeRegistro(b.lider, { impacto: String(imp.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      expect(await prellenadoDeRegistro(b.admin, { impacto: String(imp.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+    });
+  });
+
+  it("impactoIndicador, como líder del proceso del indicador: lo mismo, con el indicador propuesto", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const rev = await revisionDePrueba(tx, b.admin, ind.id);
+      expect(await prellenadoDeRegistro(b.lider, { impactoIndicador: String(rev.id) }, { sql: tx })).toEqual({
+        valores: {
+          origen: "control_documental",
+          requisitoNormaId: rev.norma.id,
+          procesoId: b.procesoId,
+          indicadorId: ind.id,
+          fuente: `Cambio de ${rev.norma.nombre}`,
+        },
+        fijos: ["origen", "requisitoNormaId", "procesoId"],
+        ocultos: { impactoIndicadorId: String(rev.id) },
+        rotulo: rotuloDeImpacto(rev.norma.nombre),
+      });
+    });
+  });
+
+  it("impactoIndicador como líder de otro proceso, como Control Interno, con un hallazgo que ya cuenta o ya resuelta: vacío", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const rev = await revisionDePrueba(tx, b.admin, ind.id);
+      const otro = await otroProcesoConLider(tx);
+      expect(await prellenadoDeRegistro(otro.lider, { impactoIndicador: String(rev.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      expect(await prellenadoDeRegistro(b.control, { impactoIndicador: String(rev.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      expect(await prellenadoDeRegistro(b.admin, { impactoIndicador: "9000000000" }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      const r = await registrarHallazgo(b.lider, { ...datosDeHallazgo(b.procesoId), impactoIndicadorId: rev.id }, c(AHORA, tx));
+      expect(await prellenadoDeRegistro(b.lider, { impactoIndicador: String(rev.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
+      await anularHallazgo(b.admin, { hallazgoId: r.id, justificacion: "Se abrió sobre la revisión equivocada" }, c(AHORA, tx));
+      expect(await prellenadoDeRegistro(b.lider, { impactoIndicador: String(rev.id) }, { sql: tx })).not.toEqual(PRELLENADO_VACIO);
+      await resolverImpactoNoAfecta(b.admin, { impactoId: rev.id, nota: "La ficha no cita el artículo derogado" }, { sql: tx, ahora: new Date(AHORA) });
+      expect(await prellenadoDeRegistro(b.lider, { impactoIndicador: String(rev.id) }, { sql: tx })).toEqual(PRELLENADO_VACIO);
     });
   });
 });

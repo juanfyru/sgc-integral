@@ -9,6 +9,7 @@ import { obtenerSql } from "@/db/cliente";
 import { contextoDeMejora } from "@/db/consultas/mejoramiento/config";
 import { indicadoresElegibles } from "@/db/consultas/mejoramiento/indicador-de-eficacia";
 import {
+  conLaNorma,
   documentosVigentesVisibles,
   indicadoresConMediciones,
   normasQueRigen,
@@ -17,7 +18,7 @@ import {
   procesosDelAlcance,
   usuariosActivos,
 } from "@/db/consultas/mejoramiento/opciones";
-import { prellenadoDeRegistro } from "@/db/consultas/mejoramiento/prellenado";
+import { prellenadoDeRegistro, type Prellenado } from "@/db/consultas/mejoramiento/prellenado";
 import { hallazgoDeOrigen } from "@/db/consultas/mejoramiento/registro";
 import { leerReporte } from "@/db/consultas/mejoramiento/reportes";
 import { PARAMETROS_DE_REGISTRO, rutaDeRegistro, type ParametrosDeRegistro } from "@/lib/mejoramiento/rutas";
@@ -56,6 +57,12 @@ function ComoSeRegistra({ enCurso, parametros }: { enCurso: boolean; parametros:
   );
 }
 
+/** Los enganches cuyo hallazgo nace nuevo, enlazado: no se ofrece cargarlo como uno en curso. */
+const NACEN_NUEVOS = ["verificacionHallazgoId", "impactoId", "impactoIndicadorId"] as const;
+
+/** La norma que el prellenado deja fija (la de un impacto, anexo 15B §8), o nula. */
+const normaFija = (p: Prellenado) => (p.fijos.includes("requisitoNormaId") ? (p.valores.requisitoNormaId ?? null) : null);
+
 /** Los parámetros de registro de la dirección: solo los que llegan como un texto (uno repetido no es ninguno). */
 function parametrosDe(sp: Record<string, string | string[] | undefined>): ParametrosDeRegistro {
   const p: ParametrosDeRegistro = {};
@@ -89,7 +96,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
   if (parametros.modo === "en-curso") {
     if (!carga) notFound();
     const sql = obtenerSql();
-    const [procesos, normas, documentos, usuarios, indicadores, enlaces, objetivos, prellenado, contexto] = await Promise.all([
+    const [procesos, queRigen, documentos, usuarios, indicadores, enlaces, objetivos, prellenado, contexto] = await Promise.all([
       procesosDelAlcance(sesion),
       normasQueRigen(),
       documentosVigentesVisibles(sesion),
@@ -100,6 +107,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
       prellenadoDeRegistro(sesion, deRegistro, { sql, ahora }),
       contextoDeMejora(sql, ahora),
     ]);
+    const normas = await conLaNorma(queRigen, normaFija(prellenado), { sql });
     return (
       <div className="flex min-w-0 flex-col gap-6">
         <EncabezadoPagina
@@ -127,7 +135,7 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
   const derivadoId = idDe(parametros.derivado);
   const reporteId = carga ? idDe(parametros.reporte) : null;
   const sql = obtenerSql();
-  const [procesos, normas, documentos, aQueSeRefiere, objetivos, prellenado, contexto, origen, leido] = await Promise.all([
+  const [procesos, queRigen, documentos, aQueSeRefiere, objetivos, prellenado, contexto, origen, leido] = await Promise.all([
     procesosDelAlcance(sesion),
     normasQueRigen(),
     documentosVigentesVisibles(sesion),
@@ -138,6 +146,8 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
     derivadoId === null ? Promise.resolve(null) : hallazgoDeOrigen(sesion, derivadoId),
     reporteId === null ? Promise.resolve(null) : leerReporte(sesion, reporteId),
   ]);
+  // La norma fija de un impacto (anexo 15B §8) suele no regir ya: el formulario la muestra por su nombre.
+  const normas = await conLaNorma(queRigen, normaFija(prellenado), { sql });
   const reporte = leido?.control?.estado === "recibido" ? { ...leido, reportadoPor: leido.control.reportadoPor } : null;
   const procesoInicial = reporte?.procesoId ?? origen?.procesoId ?? null;
   const valores: Record<string, string> = {
@@ -158,8 +168,9 @@ export default async function PaginaNuevoHallazgo({ searchParams }: { searchPara
         titulo="Registrar un hallazgo"
         descripcion="Una no conformidad, una observación o una oportunidad de mejora. Al registrarlo, el sistema avisa a quien tiene el turno."
       />
-      {/* La no conformidad de un hallazgo de verificación (anexo 15B §7.2) nace nueva: no se carga como un hallazgo en curso. */}
-      {carga && !origen && !reporte && !Object.hasOwn(prellenado.ocultos, "verificacionHallazgoId") ? (
+      {/* La no conformidad de un hallazgo de verificación (anexo 15B §7.2) y el hallazgo de un impacto de norma (§8) nacen nuevos: no se
+          cargan como un hallazgo en curso. */}
+      {carga && !origen && !reporte && !NACEN_NUEVOS.some((k) => Object.hasOwn(prellenado.ocultos, k)) ? (
         <ComoSeRegistra enCurso={false} parametros={deRegistro} />
       ) : null}
       <FormularioHallazgo

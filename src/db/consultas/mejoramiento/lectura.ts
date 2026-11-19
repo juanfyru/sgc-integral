@@ -68,6 +68,7 @@ import { tareasConSuHallazgo } from "./tareas";
 import { venceLaActividad } from "./vence-actividad";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 import { contextoDeMejora } from "./config";
+import { enlaceDelImpacto } from "./enganche-impacto";
 import { correccionEnlazada, type CorreccionEnlazada } from "./enganche-verificacion";
 import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
 import { evaluablesDesde, NADIE_PUEDE_VERIFICAR, type FilaDelIndicador } from "./verificacion";
@@ -765,16 +766,19 @@ export type FechasDeHallazgo = {
 export type EnlaceDelHallazgo =
   | {
       visible: true;
-      clase: "hallazgo" | "documento" | "norma" | "indicador" | "verificacion";
+      clase: "hallazgo" | "documento" | "norma" | "indicador" | "verificacion" | "impacto";
       rotulo: string;
       codigo: string | null;
       nombre: string;
       href: string;
     }
-  | { visible: false; clase: "indicador" | "documento" | "norma" | "verificacion"; rotulo: string };
+  | { visible: false; clase: "indicador" | "documento" | "norma" | "verificacion" | "impacto"; rotulo: string };
 
 /** El rótulo del enlace con el hallazgo de verificación de Distribución del que nació (Fase 15B, anexo §7.2). */
 export const ROTULO_DE_VERIFICACION = "Hallazgo de verificación";
+
+/** El rótulo del enlace con el impacto de norma del que nació (Fase 15B, anexo §8). */
+export const ROTULO_DE_IMPACTO = "Impacto de norma";
 
 export type DetalleDeHallazgo = {
   /** `completo`, o `actividad` si solo es responsable de una actividad: lo ve en texto, sin historial y sin archivos de otros. */
@@ -1528,6 +1532,16 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
             ? { visible: true, clase: "verificacion", rotulo: ROTULO_DE_VERIFICACION, codigo: null, nombre: enlazada.punto, href: enlazada.enlace }
             : { visible: false, clase: "verificacion", rotulo: ROTULO_DE_VERIFICACION },
         ];
+  // El impacto de norma del que nació (anexo §8), con la regla de la página adonde lleva: a quien no lo ve, solo que hay uno.
+  const impacto = await enlaceDelImpacto(sql, sesion, { impactoId: idONulo(f.impacto_id), impactoIndicadorId: idONulo(f.impacto_indicador_id) });
+  const deImpacto: EnlaceDelHallazgo[] =
+    impacto === null
+      ? []
+      : [
+          impacto.visible
+            ? { visible: true, clase: "impacto", rotulo: ROTULO_DE_IMPACTO, codigo: null, nombre: impacto.nombre, href: impacto.href }
+            : { visible: false, clase: "impacto", rotulo: ROTULO_DE_IMPACTO },
+        ];
   const enlaces = await enlacesDe(sql, sesion, {
     id: h.id,
     reincidente: reincidente && "id" in reincidente ? reincidente : null,
@@ -1632,7 +1646,7 @@ export async function leerHallazgo(sesion: SesionFlujo, id: number, opciones?: O
     rondas: rondasDeDetalle,
     rondasAnteriores: rondasDeDetalle.filter((r) => r.numero < h.ronda),
     fechas,
-    enlaces: [...deVerificacion, ...enlaces],
+    enlaces: [...deVerificacion, ...deImpacto, ...enlaces],
     ocurrencias: ocurrencias.map((o) => ({
       id: Number(o.id),
       fecha: o.fecha as string,

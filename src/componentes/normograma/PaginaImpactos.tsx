@@ -2,9 +2,11 @@ import Link from "next/link";
 import { resolverImpactoAccion } from "@/app/acciones-normograma";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { Campo, claseControl } from "@/componentes/ui/Campo";
+import { HallazgoDeImpacto } from "@/componentes/mejoramiento/enganches/HallazgoDeImpacto";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
 import { Insignia, type VarianteInsignia } from "@/componentes/ui/Insignia";
 import type { IndicadorDelCambio } from "@/db/consultas/indicadores/impactos";
+import type { EngancheDeImpacto } from "@/db/consultas/mejoramiento/enganche-impacto";
 import type { Impacto } from "@/db/consultas/normograma/impactos";
 import { rutaDeIndicador } from "@/lib/indicadores/rutas";
 import { cuenta } from "@/lib/plural";
@@ -216,9 +218,20 @@ function Indicadores({ indicadores }: { indicadores: IndicadorDelCambio[] }) {
  * versión vigente y, por cada pendiente, «Abrir solicitud de cambio» (o enlazar el trámite en curso), «Verificar el
  * externo» si es externo, o «No afecta…» con nota; el impacto de proceso admite «Abrir solicitud de creación». Quien
  * llama ya decidió que la persona ve el impacto: los documentos que no ve no llegan. Con `indicadores` (anexo 14B, §9), al
- * final la sección «Indicadores», en lectura, con los que la persona ve.
+ * final la sección «Indicadores», en lectura, con los que la persona ve. Con `enganches` (Fase 15B, anexo §8, de
+ * `engancheDeImpactos`), cada impacto, pendiente o resuelto, gana lo de mejoramiento: la sugerencia, «Abrir hallazgo» o su hallazgo.
  */
-export function PaginaImpactos({ impactos, indicadores = [], ahora = new Date() }: { impactos: Impacto[]; indicadores?: IndicadorDelCambio[]; ahora?: Date }) {
+export function PaginaImpactos({
+  impactos,
+  indicadores = [],
+  enganches,
+  ahora = new Date(),
+}: {
+  impactos: Impacto[];
+  indicadores?: IndicadorDelCambio[];
+  enganches?: ReadonlyMap<number, EngancheDeImpacto>;
+  ahora?: Date;
+}) {
   const zona = zonaHoraria();
   const { cambio, proceso } = impactos[0];
   const pendientes = impactos.filter((i) => i.estado === "pendiente").length;
@@ -247,6 +260,7 @@ export function PaginaImpactos({ impactos, indicadores = [], ahora = new Date() 
               <Estado impacto={i} ahora={ahora} zona={zona} />
             </div>
             {i.estado === "pendiente" ? <Acciones impacto={i} /> : <Resolucion impacto={i} zona={zona} />}
+            <HallazgoDeImpacto clase="documento" impactoId={i.id} enganche={enganches?.get(i.id)} />
           </li>
         ))}
       </ul>

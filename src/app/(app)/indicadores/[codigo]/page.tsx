@@ -21,6 +21,7 @@ import { proximaPorReportar } from "@/db/consultas/indicadores/lectura";
 import { metasDelAnio } from "@/db/consultas/indicadores/metas";
 import { resumenDeObservaciones } from "@/db/consultas/indicadores/observaciones";
 import { bajaDeIndicador, panelDeAdministracion } from "@/db/consultas/indicadores/operacion";
+import { engancheDeImpactos } from "@/db/consultas/mejoramiento/enganche-impacto";
 import { marcasDelIndicador, salidasVisibles } from "@/db/consultas/mejoramiento/marcas";
 import { puedeMedir } from "@/lib/alcance";
 import { periodicidadDe } from "@/lib/indicadores/periodos";
@@ -130,6 +131,8 @@ export default async function PaginaIndicador({ params, searchParams }: { params
   const codigo = indicador.codigo;
   // «Revisión por cambio normativo» (anexo 14B, §9), en todas las vistas, a quien ve el indicador.
   const impactos = ve ? await impactosPendientesDe(sesion, indicador.id) : [];
+  // El hallazgo de cada revisión pendiente (Fase 15B, anexo §8): lo decide Mejoramiento; sin revisiones, no consulta nada.
+  const enganches = await engancheDeImpactos(sesion, "indicador", impactos.map((i) => i.id), { ahora });
   // «Requiere acción de mejora» (Fase 15B, anexo §6.5): el panel, solo a quien puede dar alguna salida, y la salida de cada periodo ya
   // decidido, a quien ve el indicador. Mejoramiento las decide; las consultas de Indicadores no lo importan.
   const marcas = ve ? await marcasDelIndicador(sesion, indicador.id, { ahora }) : null;
@@ -225,7 +228,7 @@ export default async function PaginaIndicador({ params, searchParams }: { params
         observaciones={obs?.total ?? null}
         conReportes={conReportes}
       />
-      <AvisoDeImpacto impactos={impactos} administra={administra} activo={indicador.estado === "activo"} />
+      <AvisoDeImpacto impactos={impactos} administra={administra} activo={indicador.estado === "activo"} enganches={enganches} />
       {marcas ? <PanelDeMarcas marcas={marcas.marcas} candidatos={marcas.candidatos} puede={marcas.puede} /> : null}
       {baja ? (
         <Recuadro>

@@ -225,6 +225,14 @@ export const EsquemaHallazgo = z
     verificacionHallazgoId: idOpcional("El hallazgo de verificación no es válido"),
     /** Por qué esa falla necesita acción correctiva (anexo §7.2): la exige el registro cuando llega el hallazgo de verificación. */
     accionJustificacion: textoOpcional("La justificación de la acción correctiva", 1000),
+    /**
+     * El impacto de norma del que nace el hallazgo (anexo §8): el de un documento o un proceso (`impactoId`, desde `?impacto=`) o la
+     * revisión de un indicador (`impactoIndicadorId`, desde `?impactoIndicador=`). Llega oculto y lo vuelve a validar el registro dentro
+     * de su transacción, que pone el origen, la norma y el proceso del impacto. Solo al registrar: la carga, editar y reclasificar lo
+     * ignoran.
+     */
+    impactoId: idOpcional("El impacto no es válido"),
+    impactoIndicadorId: idOpcional("El impacto no es válido"),
   })
   .strict()
   .superRefine((d, ctx) => {

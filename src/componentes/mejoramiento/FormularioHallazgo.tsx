@@ -93,6 +93,9 @@ export function FormularioHallazgo({
   const permitidos = prellenado?.procesos;
   const procesos = permitidos ? delAlcance.filter((p) => permitidos.includes(p.id)) : delAlcance;
   const deVerificacion = conPrellenado !== undefined && Object.hasOwn(conPrellenado.ocultos, "verificacionHallazgoId");
+  // Desde un impacto de norma (anexo §8): el origen, la norma y el proceso llegan fijos y no se ofrece la ocurrencia de un parecido.
+  const deImpacto =
+    conPrellenado !== undefined && (Object.hasOwn(conPrellenado.ocultos, "impactoId") || Object.hasOwn(conPrellenado.ocultos, "impactoIndicadorId"));
   // Lo fijo manda también sobre lo que volvió de un rechazo y sobre lo guardado: se muestra y viaja con el valor del prellenado.
   const fijos = fijosEnTexto(prellenado);
   const fijo = (k: string) => Object.hasOwn(fijos, k);
@@ -360,6 +363,7 @@ export function FormularioHallazgo({
               alCambiar={setRelacion}
               desdeElPanel={desdeElPanel}
               desdeUnaVerificacion={deVerificacion}
+              desdeUnImpacto={deImpacto}
             />
           )}
           {lateral}

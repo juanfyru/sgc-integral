@@ -9,11 +9,12 @@ const OCULTO = {
   documento: "un documento restringido",
   norma: "una norma",
   verificacion: "uno de Distribución",
+  impacto: "un impacto de norma",
 } as const;
 
 /**
  * «Enlaces» de la columna derecha (spec 15 §16.2, maqueta 2): el hallazgo de verificación del que nació (Fase 15B, por el nombre de
- * su punto), el hallazgo del que reincide, el de origen y los derivados, los
+ * su punto), el impacto de norma del que nació (por su norma), el hallazgo del que reincide, el de origen y los derivados, los
  * documentos, la norma y los indicadores. Cada uno llega ya decidido por la lectura: con su código, su nombre y su enlace solo a
  * quien puede verlo; a los demás, «un indicador» o «un documento restringido», sin enlace. Sin enlaces, no aparece.
  */

@@ -32,6 +32,7 @@ import {
   cambiarProceso,
   editarHallazgo,
   enlacesDelHallazgo,
+  fijosDelEnvio,
   procesoDelHallazgo,
   reclasificarHallazgo,
   registrarHallazgo,
@@ -97,7 +98,7 @@ import {
   idsDeLaVerificacion,
 } from "@/lib/esquemas/mejoramiento";
 import { RUTA_REPORTES_RECIBIDOS, rutaDeReportar } from "@/lib/mejoramiento/reportes";
-import { FIJOS_DE_VERIFICACION, OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
+import { FIJOS_DE_VERIFICACION, OCURRENCIA_DESDE_UN_IMPACTO, OCURRENCIA_DESDE_UNA_VERIFICACION } from "@/lib/mejoramiento/enganches";
 import { OCURRENCIA_DESDE_EL_PANEL } from "@/lib/mejoramiento/marcas";
 import { LISTOS_CAMBIARON } from "@/lib/mejoramiento/planes";
 import { ANCLA_RESPUESTA_AL_ENTE, rutaDeHallazgo, rutaDePlan } from "@/lib/mejoramiento/rutas";
@@ -113,13 +114,23 @@ import { parsearFormulario } from "@/lib/validacion";
  * panel de la marca de un indicador (`marcaMedicionId`, anexo 15B §6.2) no se añade una ocurrencia a un parecido: se rechaza con
  * `OCURRENCIA_DESDE_EL_PANEL` (el formulario ya no la ofrece), porque así no quedaría la salida de la marca. Desde un hallazgo de
  * verificación (`verificacionHallazgoId`, anexo 15B §7.2) la clase y el origen son fijos: lo que traiga el envío no cuenta; y la
- * ocurrencia de un parecido se rechaza igual (`OCURRENCIA_DESDE_UNA_VERIFICACION`): perdería el enlace y la justificación.
+ * ocurrencia de un parecido se rechaza igual (`OCURRENCIA_DESDE_UNA_VERIFICACION`): perdería el enlace y la justificación. Desde un
+ * impacto de norma (`impactoId` o `impactoIndicadorId`, anexo 15B §8) el origen, la norma y el proceso son los del impacto
+ * (`fijosDelEnvio`), y la ocurrencia se rechaza igual (`OCURRENCIA_DESDE_UN_IMPACTO`): el impacto se quedaría sin su hallazgo.
  */
 export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
-    if (String(datos.get("verificacionHallazgoId") ?? "") !== "") {
+    const texto = (campo: string) => String(datos.get(campo) ?? "");
+    if (texto("verificacionHallazgoId") !== "") {
       for (const [campo, valor] of Object.entries(FIJOS_DE_VERIFICACION)) datos.set(campo, valor);
     }
+    const delImpacto = await fijosDelEnvio(sesion, {
+      impactoId: texto("impactoId"),
+      impactoIndicadorId: texto("impactoIndicadorId"),
+      verificacionHallazgoId: texto("verificacionHallazgoId"),
+      marcaMedicionId: texto("marcaMedicionId"),
+    });
+    for (const [campo, valor] of Object.entries(delImpacto ?? {})) datos.set(campo, valor);
     const d = parsearFormulario(datos, EsquemaHallazgo, { omitir: ["relacion"] });
     const relacion = RELACION_DE_REGISTRO.exec(String(datos.get("relacion") ?? "distinto"));
     if (!relacion) throw new Error("La salida elegida ante los parecidos no es válida");
@@ -128,6 +139,8 @@ export async function registrarHallazgoAccion(_previo: EstadoAccion, formData: F
       if (d.marcaMedicionId !== null) throw new ErrorMejora(OCURRENCIA_DESDE_EL_PANEL);
       // Desde un hallazgo de verificación, la ocurrencia perdería el enlace y la justificación de la acción (anexo 15B §7.2).
       if (d.verificacionHallazgoId !== null) throw new ErrorMejora(OCURRENCIA_DESDE_UNA_VERIFICACION);
+      // Desde un impacto de norma, la ocurrencia no lleva el enlace: el impacto se quedaría sin su hallazgo (anexo 15B §8).
+      if (d.impactoId !== null || d.impactoIndicadorId !== null) throw new ErrorMejora(OCURRENCIA_DESDE_UN_IMPACTO);
       const hallazgoId = Number(relacion[2]);
       if (d.reporteId !== null) {
         await sumarReporte(sesion, { reporteId: d.reporteId, hallazgoId });
@@ -225,13 +238,19 @@ export async function anularHallazgoAccion(_previo: EstadoAccion, formData: Form
  * Edita la identificación de un hallazgo «Por aceptar» (spec §7.6): solo quien lo registró. El formulario no pinta el
  * subproceso, el documento, el indicador, la medición ni la reincidencia: se conservan (salvo el subproceso y la
  * reincidencia si cambia el proceso, que ya no valen). La no conformidad de un hallazgo de verificación (anexo 15B §7.2) tiene la
- * clase y el origen fijos: se ponen en el envío antes de leerlo, así lo que traiga no cuenta ni en la validación.
+ * clase y el origen fijos: se ponen en el envío antes de leerlo, así lo que traiga no cuenta ni en la validación. El hallazgo de un
+ * impacto de norma (anexo 15B §8), igual con el origen, la norma y el proceso de su fila.
  */
 export async function editarHallazgoAccion(_previo: EstadoAccion, formData: FormData): Promise<EstadoAccion> {
   return mutacion(formData, "mejora.registrar", async (_usuarioId, datos, sesion) => {
     const id = idNumerico(datos, "hallazgoId");
-    const { verificacionHallazgoId, ...enlaces } = await enlacesDelHallazgo(id);
+    const { verificacionHallazgoId, fijosDelImpacto, ...enlaces } = await enlacesDelHallazgo(id);
     if (verificacionHallazgoId !== null) for (const [campo, valor] of Object.entries(FIJOS_DE_VERIFICACION)) datos.set(campo, valor);
+    if (fijosDelImpacto) {
+      datos.set("origen", fijosDelImpacto.origen);
+      datos.set("requisitoNormaId", fijosDelImpacto.requisitoNormaId === null ? "" : String(fijosDelImpacto.requisitoNormaId));
+      datos.set("procesoId", String(fijosDelImpacto.procesoId));
+    }
     const d = parsearFormulario(datos, EsquemaHallazgo, { omitir: ["hallazgoId"] });
     const mismoProceso = d.procesoId === (await procesoDelHallazgo(id));
     await editarHallazgo(sesion, id, {

@@ -75,6 +75,12 @@ export type PlanFirmado = {
      * hallazgo la tiene**: sin ella, la identificación firma exactamente lo de antes y ninguna huella ya guardada cambia.
      */
     verificacionHallazgoId?: number;
+    /**
+     * El impacto de norma del que nació (anexo §8): el de un documento o un proceso (`impactoId`) o la revisión de un indicador
+     * (`impactoIndicadorId`), por su identificador. Como el anterior, cada clave va solo cuando el hallazgo la tiene.
+     */
+    impactoId?: number;
+    impactoIndicadorId?: number;
   };
   correccion: { requerida: boolean | null; descripcion: string | null; responsable: string | null; implementadaEn: string | null };
   analisis: Array<{ orden: number; metodo: string; equipo: string | null; observaciones: string | null; contenido: unknown }>;

@@ -1,6 +1,7 @@
 /**
  * Los textos de los enganches de otros módulos con mejoramiento (Fase 15B, anexo §7 y §8): los mensajes del dominio y las
- * frases que pintan las pantallas. Sin importaciones: lo usan el dominio, las pantallas de Distribución y las pruebas.
+ * frases que pintan las pantallas. Sin importaciones: lo usan el dominio, las pantallas de Distribución, del normograma y de los
+ * indicadores, y las pruebas.
  */
 
 /** Un hallazgo de verificación tiene a lo sumo una no conformidad que cuente (anexo §7.1). */
@@ -46,6 +47,40 @@ export function textoDeSugerencia(s: SugerenciaDeVerificacion): string {
   if (s.por === "reabierto") return `Este hallazgo se reabrió ${s.veces === 1 ? "una vez" : `${s.veces} veces`}. ${cola}`;
   return `Este punto acumula ${s.hallazgos} hallazgos en ${s.meses} meses. ${cola}`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// El impacto de norma (anexo §8): el de un documento o un proceso (`impactos_normativos`) y la revisión de un indicador
+// (`impactos_indicadores`).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un impacto tiene a lo sumo un hallazgo que cuente (anexo §8). */
+export const IMPACTO_YA_TIENE_HALLAZGO = "Este impacto ya tiene un hallazgo";
+
+/**
+ * Para quien no puede abrir un hallazgo desde el impacto (no lo ve, no lidera su proceso, la revisión del indicador ya se resolvió, o
+ * su hallazgo es uno que no ve), uno que no existe y uno que no puede abrir se dicen igual: la frase del normograma.
+ */
+export const IMPACTO_NO_EXISTE = "El impacto no existe";
+
+/** Los índices que garantizan un solo hallazgo que cuente por impacto (migración 0019). */
+export const INDICE_HALLAZGO_DE_IMPACTO = "mejora_hallazgos_impacto_unico";
+export const INDICE_HALLAZGO_DE_REVISION = "mejora_hallazgos_impacto_indicador_unico";
+
+/** El origen del hallazgo de un impacto, fijo (anexo §8); la norma y el proceso salen del impacto. */
+export const ORIGEN_DE_IMPACTO = "control_documental" as const;
+
+/** La fuente que se propone al hallazgo de un impacto (anexo §8), editable. */
+export const fuenteDeImpacto = (norma: string) => `Cambio de ${norma}`;
+
+/** La sugerencia de abrir el hallazgo de un impacto vencido y ya escalado (anexo §8). */
+export const SUGERENCIA_DE_IMPACTO = "Este impacto está vencido y ya se escaló. Puede abrir un hallazgo.";
+
+/**
+ * Desde un impacto no se añade una ocurrencia a un parecido abierto (como desde un hallazgo de verificación): la ocurrencia no lleva el
+ * enlace y el impacto se quedaría sin su hallazgo. La nota de los parecidos y el rechazo de la acción.
+ */
+export const OCURRENCIA_DESDE_UN_IMPACTO =
+  "Desde un impacto de norma se registra un hallazgo nuevo, enlazado a él: no se añade como ocurrencia";
 
 /** El estado de un hallazgo de verificación en palabras, como lo dice Distribución (`InsigniaHallazgo`). */
 export const ETIQUETA_ESTADO_DE_VERIFICACION: Record<string, string> = {
