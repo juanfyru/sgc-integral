@@ -689,6 +689,28 @@ describe("los desenlaces avisan a quien tomó parte (revisión final, I3)", () =
       await soloA(tx, h.id, "mejora.retirado", `Se retiró ${h.codigo}`, [b.lider.usuarioId]);
     }));
 
+  it("si el Admin SGC lo retira en lugar de quien lo registró, también le avisa a quien lo registró (Fase 15B, anexo §11.3)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "rechazo");
+      await retirarHallazgo(b.admin, { hallazgoId: h.id }, c(LUEGO, tx));
+      await soloA(tx, h.id, "mejora.retirado", `Se retiró ${h.codigo}`, [b.lider.usuarioId, b.control.usuarioId]);
+    }));
+
+  it("si el Admin SGC lo sostiene en lugar de quien lo registró, le avisa a quien lo registró, sin la réplica; si lo sostiene quien lo registró, nadie recibe ese aviso (Fase 15B, anexo §11.3)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const REPLICA = "La evidencia del turno de noche muestra que sí corresponde";
+      const h = await hallazgoEn(tx, b, "rechazo");
+      await sostenerHallazgo(b.admin, { hallazgoId: h.id, replica: REPLICA }, c(LUEGO, tx));
+      await soloA(tx, h.id, "mejora.sostenido", `Se sostuvo ${h.codigo}: pasa a arbitraje`, [b.control.usuarioId]);
+      expect(JSON.stringify(await avisos(tx, h.id, "mejora.sostenido"))).not.toContain(REPLICA);
+      // Lo sostiene quien lo registró: es su acto, sin aviso a sí mismo ni a nadie más.
+      const propio = await hallazgoEn(tx, b, "rechazo");
+      await sostenerHallazgo(b.control, { hallazgoId: propio.id, replica: REPLICA }, c(LUEGO, tx));
+      expect(await avisos(tx, propio.id, "mejora.sostenido")).toEqual([]);
+    }));
+
   it("quien reportó lo que se convirtió en el hallazgo y lidera el proceso recibe el aviso del cierre y además el neutro", () =>
     revertida(sql, async (tx) => {
       const b = await baseDeMejora(tx);

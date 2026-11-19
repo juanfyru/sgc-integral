@@ -56,7 +56,7 @@ import type { Rol } from "@/lib/roles";
 import { fechaEnZona } from "@/lib/tramites/plazos";
 import { ACTIVIDAD_CERRADA, ACTIVIDAD_NO_EXISTE, pideAjustesDelPlan } from "./actividades";
 import { leer } from "./analisis";
-import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO } from "./avisos";
+import { activosDeRol, avisarDeMejora, ENTIDAD_ACTIVIDAD, ENTIDAD_HALLAZGO, type ActivosDeUnaVez } from "./avisos";
 import { exigirCargaConfirmada } from "./carga-confirmada";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, dejarEvento, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
@@ -259,8 +259,20 @@ export async function quienDecideAjustes(
   const [r] = await tx`SELECT r.aprobado_rol FROM mejora_rondas r
     JOIN mejora_hallazgos h ON h.id = r.hallazgo_id AND h.ronda = r.numero
     WHERE r.hallazgo_id = ${hallazgoId}`;
-  const aprobo: "admin_sgc" | "gerencia" = r?.aprobado_rol === "gerencia" ? "gerencia" : "admin_sgc";
-  const sinQuienPidio = async (rol: "admin_sgc" | "gerencia") => (await activosDeRol(tx, [rol])).filter((u) => u !== pedidoPor);
+  return quienDecideCon(r?.aprobado_rol, pedidoPor, (rol) => activosDeRol(tx, [rol]));
+}
+
+/**
+ * `quienDecideAjustes` con el rol que aprobó el plan de la ronda en curso ya leído (`mejora_rondas.aprobado_rol`) y los activos de
+ * cada rol: las tareas de una página entera los leen con sus ajustes y una vez por rol (Fase 15B, anexo §11.3). La misma regla.
+ */
+export async function quienDecideCon(
+  aprobadoRol: unknown,
+  pedidoPor: number,
+  activos: ActivosDeUnaVez,
+): Promise<{ rol: "admin_sgc" | "gerencia"; usuarios: number[] }> {
+  const aprobo: "admin_sgc" | "gerencia" = aprobadoRol === "gerencia" ? "gerencia" : "admin_sgc";
+  const sinQuienPidio = async (rol: "admin_sgc" | "gerencia") => (await activos(rol)).filter((u) => u !== pedidoPor);
   const primero = await sinQuienPidio(aprobo);
   if (primero.length > 0) return { rol: aprobo, usuarios: primero };
   const otro = aprobo === "admin_sgc" ? "gerencia" : "admin_sgc";

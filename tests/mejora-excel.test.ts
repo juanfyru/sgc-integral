@@ -437,6 +437,31 @@ describe("GET /mejoramiento/excel", () => {
       expect(delControl.todo).toContain(`Documento: ${restringido.codigo} Protocolo reservado de prueba`);
       expect(delControl.filas).toHaveLength(1);
       const [rastro] = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${b.control.usuarioId} AND accion = 'mejora_exporto_hallazgos'`;
-      expect(rastro.detalle).toEqual({ filtros: { documento: restringido.id } });
+      // Sin estado en la dirección rigió el de por omisión, y la bitácora lo dice (anexo §11.1).
+      expect(rastro.detalle).toEqual({ filtros: { documento: restringido.id, estado: "abiertos" } });
+    }));
+
+  it("sin estado en la dirección exporta los abiertos, y lo dicen la línea de filtros y la bitácora; con «todos», también los terminados (anexo §11.1)", () =>
+    enTransaccion(async (tx) => {
+      const b = await baseDeMejora(tx);
+      const abierto = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { titulo: "Neveras sin registro" }), c(HORA_DE_ESCENA, tx));
+      const anulado = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { titulo: "Registrado por error" }), c(HORA_DE_ESCENA, tx));
+      await tx`UPDATE mejora_hallazgos SET estado = 'anulado', vence_en = NULL WHERE id = ${anulado.id}`;
+      const token = await conToken(tx, b.admin.usuarioId);
+      const codigos = (hoja: Awaited<ReturnType<typeof leerHoja>>) => hoja.filas.map((f) => f[COLUMNAS.indexOf("Código del hallazgo")]);
+
+      // Con la página puesta (la de la lista), igual todo: el Excel no pagina.
+      const porOmision = await leerHoja(await (await pedir(token, `?proceso=${b.procesoId}&pagina=2`)).arrayBuffer());
+      expect(codigos(porOmision)).toEqual([abierto.codigo]);
+      expect(porOmision.todo).toContain("Estado: Abiertos");
+      const todos = await leerHoja(await (await pedir(token, `?proceso=${b.procesoId}&estado=todos`)).arrayBuffer());
+      expect(codigos(todos).sort()).toEqual([abierto.codigo, anulado.codigo].sort());
+      expect(todos.todo).toContain("Estado: Todos");
+
+      const rastros = await tx`SELECT detalle FROM auditoria WHERE usuario_id = ${b.admin.usuarioId} AND accion = 'mejora_exporto_hallazgos' ORDER BY id`;
+      expect(rastros.map((r) => r.detalle)).toEqual([
+        { filtros: { procesoId: b.procesoId, estado: "abiertos", pagina: 2 } },
+        { filtros: { procesoId: b.procesoId, estado: "todos" } },
+      ]);
     }));
 });

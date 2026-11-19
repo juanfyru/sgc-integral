@@ -37,15 +37,57 @@ export { actuaPorElProceso, lideresOAdmins } from "./proceso";
  * `sostener` (su `usuario_id`). Una sola regla: la usan el turno y el arbitraje dentro de su transacción.
  */
 export async function arbitrosDe(tx: Cliente, h: Pick<HallazgoBase, "id" | "registradoPor">): Promise<number[]> {
-  const [registro] = await tx`SELECT rol FROM usuarios WHERE id = ${h.registradoPor}`;
-  const [sostuvo] = await tx`SELECT e.usuario_id, u.rol FROM mejora_eventos e LEFT JOIN usuarios u ON u.id = e.usuario_id
-    WHERE e.hallazgo_id = ${h.id} AND e.tipo = 'sostener' ORDER BY e.id DESC LIMIT 1`;
-  const admins = await adminsActivos({ sql: tx });
-  if (registro?.rol !== "admin_sgc" && sostuvo?.rol !== "admin_sgc") return admins;
-  const gerencia = await activosDeRol(tx, ["gerencia"]);
-  if (gerencia.length > 0) return gerencia;
-  const tomaronParte = [h.registradoPor, sostuvo ? Number(sostuvo.usuario_id) : null];
-  return admins.filter((u) => !tomaronParte.includes(u));
+  return (await arbitrosDeVarios(tx, [h])).get(h.id) ?? [];
+}
+
+/**
+ * Los Admin SGC y los de Gerencia activos, cada rol leído una sola vez por llamada (el turno y las tareas de una página entera los
+ * piden para muchos hallazgos: anexo 15B §11.1). Una consulta por rol, la primera vez que se pide.
+ */
+export type ActivosDeUnaVez = (rol: "admin_sgc" | "gerencia") => Promise<number[]>;
+
+export function activosDeUnaVez(tx: Cliente): ActivosDeUnaVez {
+  const leidos = new Map<string, Promise<number[]>>();
+  return (rol) => {
+    if (!leidos.has(rol)) leidos.set(rol, rol === "admin_sgc" ? adminsActivos({ sql: tx }) : activosDeRol(tx, ["gerencia"]));
+    return leidos.get(rol)!;
+  };
+}
+
+/**
+ * `arbitrosDe` de varios hallazgos: quién lo registró y quién lo sostuvo, de todos en una consulta, y la misma regla hallazgo por
+ * hallazgo. Una sola regla para uno solo (el arbitraje, el aviso) y para una página (la lista y las tareas).
+ */
+export async function arbitrosDeVarios(
+  tx: Cliente,
+  hs: ReadonlyArray<Pick<HallazgoBase, "id" | "registradoPor">>,
+  activos: ActivosDeUnaVez = activosDeUnaVez(tx),
+): Promise<Map<number, number[]>> {
+  const arbitros = new Map<number, number[]>();
+  if (hs.length === 0) return arbitros;
+  const hechos = await tx`SELECT x.id, ur.rol AS rol_registro, s.hay, s.usuario_id AS sostuvo_id, us.rol AS rol_sostuvo
+    FROM unnest(${tx.array(hs.map((h) => h.id))}::bigint[], ${tx.array(hs.map((h) => h.registradoPor))}::bigint[]) AS x(id, registrado_por)
+    LEFT JOIN usuarios ur ON ur.id = x.registrado_por
+    LEFT JOIN LATERAL (SELECT e.usuario_id, true AS hay FROM mejora_eventos e
+      WHERE e.hallazgo_id = x.id AND e.tipo = 'sostener' ORDER BY e.id DESC LIMIT 1) s ON true
+    LEFT JOIN usuarios us ON us.id = s.usuario_id`;
+  const deCada = new Map(hechos.map((f) => [Number(f.id), f]));
+  for (const h of hs) {
+    const f = deCada.get(h.id);
+    const admins = await activos("admin_sgc");
+    if (f?.rol_registro !== "admin_sgc" && f?.rol_sostuvo !== "admin_sgc") {
+      arbitros.set(h.id, [...admins]);
+      continue;
+    }
+    const gerencia = await activos("gerencia");
+    if (gerencia.length > 0) {
+      arbitros.set(h.id, [...gerencia]);
+      continue;
+    }
+    const tomaronParte = [h.registradoPor, f?.hay === true ? Number(f.sostuvo_id) : null];
+    arbitros.set(h.id, admins.filter((u) => !tomaronParte.includes(u)));
+  }
+  return arbitros;
 }
 
 /** Quien elaboró el plan enviado de la ronda en curso (`mejora_rondas.elaborado_por`), o `null`. */
@@ -59,8 +101,24 @@ export async function elaboradorDelPlan(tx: Cliente, h: Pick<HallazgoBase, "id" 
  * nadie firma «Revisó» sobre lo que elaboró. Una sola regla: la usan el turno y la revisión.
  */
 export async function revisoresDe(tx: Cliente, h: Pick<HallazgoBase, "id" | "ronda">): Promise<number[]> {
-  const elaboro = await elaboradorDelPlan(tx, h);
-  return (await adminsActivos({ sql: tx })).filter((u) => u !== elaboro);
+  return (await revisoresDeVarios(tx, [h])).get(h.id) ?? [];
+}
+
+/** `revisoresDe` de varios hallazgos: quién elaboró cada plan, de todos en una consulta, y la misma regla. */
+export async function revisoresDeVarios(
+  tx: Cliente,
+  hs: ReadonlyArray<Pick<HallazgoBase, "id" | "ronda">>,
+  activos: ActivosDeUnaVez = activosDeUnaVez(tx),
+): Promise<Map<number, number[]>> {
+  const revisores = new Map<number, number[]>();
+  if (hs.length === 0) return revisores;
+  const filas = await tx`SELECT x.id, r.elaborado_por
+    FROM unnest(${tx.array(hs.map((h) => h.id))}::bigint[], ${tx.array(hs.map((h) => h.ronda))}::int[]) AS x(id, ronda)
+    LEFT JOIN mejora_rondas r ON r.hallazgo_id = x.id AND r.numero = x.ronda`;
+  const elaboro = new Map(filas.map((f) => [Number(f.id), f.elaborado_por === null ? null : Number(f.elaborado_por)]));
+  const admins = await activos("admin_sgc");
+  for (const h of hs) revisores.set(h.id, admins.filter((u) => u !== (elaboro.get(h.id) ?? null)));
+  return revisores;
 }
 
 /**
@@ -142,10 +200,20 @@ const LO_QUE_SIGUE: Partial<Record<EstadoHallazgo, (codigo: string, h: HallazgoB
  * rechaza, se responde (spec §7.4): «Aceptar». Una sola frase para el aviso del turno, la tarea y el aviso de vencido.
  */
 export async function queLeToca(tx: Cliente, h: HallazgoBase): Promise<string | null> {
+  const hayLideres = queLeTocaPideLideres(h) ? (await lideresDeProceso(h.procesoId, { sql: tx })).length > 0 : true;
+  return queLeTocaCon(h, hayLideres);
+}
+
+/** Si `queLeToca` necesita saber si el proceso del hallazgo tiene líderes (solo en «Por aceptar» de un origen interno). */
+export function queLeTocaPideLideres(h: Pick<HallazgoBase, "estado" | "origen">): boolean {
+  return h.estado === "por_aceptar" && !esExterno(h.origen);
+}
+
+/** `queLeToca` con lo que sabe quien llama de los líderes del proceso: las tareas de una página entera lo leen de una vez. */
+export function queLeTocaCon(h: HallazgoBase, hayLideres: boolean): string | null {
   const texto = LO_QUE_SIGUE[h.estado];
   if (!texto) return null;
-  const sinRechazo =
-    h.estado === "por_aceptar" && (esExterno(h.origen) || (await lideresDeProceso(h.procesoId, { sql: tx })).length === 0);
+  const sinRechazo = h.estado === "por_aceptar" && (esExterno(h.origen) || !hayLideres);
   return sinRechazo ? `Aceptar ${h.codigo}` : texto(h.codigo, h);
 }
 
@@ -257,8 +325,22 @@ export async function avisarDelArbitraje(
   await avisarDelDesenlace(tx, h, { tipo: "mejora.arbitrado", titulo: `Se arbitró ${h.codigo}: el hallazgo sigue` }, destinos, actorId);
 }
 
-/** El retiro tras el rechazo (`mejora.retirado`, spec §8.3): a los líderes activos del proceso, sin quien lo retira. */
+/**
+ * El retiro tras el rechazo (`mejora.retirado`, spec §8.3): a los líderes activos del proceso y, si lo retiró el Admin SGC en su
+ * lugar, a quien lo registró (Fase 15B, anexo §11.3); nunca a quien lo retira.
+ */
 export async function avisarDelRetiro(tx: TransactionSql, h: HallazgoBase, actorId: number): Promise<void> {
-  const destinos = await lideresDeProceso(h.procesoId, { sql: tx });
+  const destinos = [...(await lideresDeProceso(h.procesoId, { sql: tx })), ...(await registradorActivo(tx, h))];
   await avisarDelDesenlace(tx, h, { tipo: "mejora.retirado", titulo: `Se retiró ${h.codigo}` }, destinos, actorId);
+}
+
+/**
+ * Cuando el Admin SGC sostiene el hallazgo en lugar de quien lo registró (Fase 15B, anexo §11.3), a quien lo registró
+ * (`mejora.sostenido`), con el título del hallazgo y nunca la réplica. Si lo sostuvo quien lo registró, a nadie: es su acto.
+ * Quienes arbitran reciben su turno (`avisarDelTurno`).
+ */
+export async function avisarDelSostenido(tx: TransactionSql, h: HallazgoBase, actorId: number): Promise<void> {
+  if (h.registradoPor === actorId) return;
+  const destinos = await registradorActivo(tx, h);
+  await avisarDelDesenlace(tx, h, { tipo: "mejora.sostenido", titulo: `Se sostuvo ${h.codigo}: pasa a arbitraje` }, destinos, actorId);
 }

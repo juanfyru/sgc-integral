@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ClipboardCheck, FileSpreadsheet, Plus, Printer } from "lucide-react";
 import { FiltrosDeHallazgos } from "@/componentes/mejoramiento/FiltrosDeHallazgos";
-import { ListaDeHallazgos } from "@/componentes/mejoramiento/ListaDeHallazgos";
+import { ListaDeHallazgos, PaginasDeLaLista } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
 import { claseBoton } from "@/componentes/ui/Boton";
 import { EncabezadoPagina } from "@/componentes/ui/EncabezadoPagina";
@@ -23,7 +23,7 @@ import { fechaEnZona } from "@/lib/tramites/plazos";
 import { exigirSesion } from "@/lib/paginas";
 import { puede } from "@/lib/permisos";
 import { cuenta } from "@/lib/plural";
-import { consultaDeFiltro, filtroDeConsulta } from "@/lib/mejoramiento/filtro";
+import { consultaDeFiltro, filtroDeConsulta, rutaDePagina } from "@/lib/mejoramiento/filtro";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Mejoramiento" };
@@ -40,7 +40,8 @@ function CifraEnlazada({ href, ...cifra }: { href: string; etiqueta: string; val
 
 /**
  * «Mejoramiento» (spec 15 §16.1, maqueta 1): las cifras de lo que ve la persona (cada una lleva a su filtro), los filtros (un
- * formulario `GET`; un valor que no se entiende se ignora) y la lista. Qué hallazgos ve cada persona lo decide
+ * formulario `GET`; un valor que no se entiende se ignora) y la lista, por omisión los abiertos y de a `TAMANO_DE_PAGINA`, con su
+ * paginación al pie (Fase 15B, anexo §11.1). El Excel lleva el filtro sin la página: exporta todo. Qué hallazgos ve cada persona lo decide
  * `filtroHallazgos`. Se quedan quien ve alguno y, aunque no vea ninguno, quien registra o ve todos (un estado vacío); los demás
  * van, sin saber si existen otros, a «Mis actividades» si tienen alguna y si no a «Mis reportes» (`adondeVaSinLista`, la misma
  * regla de la pestaña «Hallazgos»).
@@ -54,7 +55,7 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
   }
   const filtro = filtroDeConsulta(await searchParams);
   const ahora = new Date();
-  const [{ filas, cifras }, procesos, contexto, porClasificar, vePlanes, imprime, deLaClasificacion, nombres] = await Promise.all([
+  const [{ filas, cifras, total, pagina, paginas }, procesos, contexto, porClasificar, vePlanes, imprime, deLaClasificacion, nombres] = await Promise.all([
     listarHallazgos(sesion, filtro, { ahora }),
     procesosDelAlcance(sesion),
     contextoDeMejora(obtenerSql(), ahora),
@@ -80,7 +81,7 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
         titulo="Mejoramiento"
         descripcion={
           veAlgo
-            ? `${cuenta(filas.length, "hallazgo", "hallazgos")} · cada uno dice en qué va y quién tiene el turno.`
+            ? `${cuenta(total, "hallazgo", "hallazgos")} · cada uno dice en qué va y quién tiene el turno.`
             : "Hallazgos, planes de acción y su seguimiento."
         }
         acciones={
@@ -142,6 +143,12 @@ export default async function PaginaMejoramiento({ searchParams }: { searchParam
             nombres={nombres}
           />
           <ListaDeHallazgos filas={filas} contexto={contexto} />
+          <PaginasDeLaLista
+            pagina={pagina}
+            paginas={paginas}
+            anterior={pagina > 1 ? rutaDePagina(filtro, pagina - 1) : null}
+            siguiente={pagina < paginas ? rutaDePagina(filtro, pagina + 1) : null}
+          />
         </>
       ) : (
         <EstadoVacio

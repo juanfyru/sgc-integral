@@ -945,7 +945,8 @@ const CONTEXTOS_DE_MEJORA = ["mejora_hallazgo", "mejora_ronda", "mejora_activida
 
 /**
  * Quién abre un archivo de mejoramiento (spec 15 §6.3 y §12.2): los de un hallazgo y de una ronda, quien lo ve completo;
- * los de una actividad, esos y su responsable o quien registró un seguimiento en esa actividad; los de un reporte, quien
+ * los de una actividad, esos y, si es de un plan aprobado alguna vez (`fin_original`), su responsable o quien registró un
+ * seguimiento en ella (Fase 15B, anexo §11.3); los de un reporte, quien
  * reportó, quien tiene `mejora.ver_todo` y, convertido en un hallazgo o sumado a uno como ocurrencia (§7.5: la ocurrencia lleva
  * su evidencia), quien ve completo ese hallazgo; los de un plan de mejoramiento (anexo 15B §3.7: el informe del ente nombra
  * hallazgos de varios procesos), solo quien tiene `mejora.ver_todo`, tampoco el líder de uno de sus hallazgos. Los demás, y un
@@ -975,15 +976,16 @@ export async function puedeAbrirArchivoDeMejora(
   }
   const consulta =
     archivo.contexto === "mejora_hallazgo"
-      ? sql`SELECT id AS hallazgo_id, NULL::bigint AS responsable_id FROM mejora_hallazgos WHERE id = ${archivo.contextoId}`
+      ? sql`SELECT id AS hallazgo_id, NULL::bigint AS responsable_id, false AS aprobada FROM mejora_hallazgos WHERE id = ${archivo.contextoId}`
       : archivo.contexto === "mejora_ronda"
-        ? sql`SELECT hallazgo_id, NULL::bigint AS responsable_id FROM mejora_rondas WHERE id = ${archivo.contextoId}`
-        : sql`SELECT hallazgo_id, responsable_id FROM mejora_actividades WHERE id = ${archivo.contextoId}`;
+        ? sql`SELECT hallazgo_id, NULL::bigint AS responsable_id, false AS aprobada FROM mejora_rondas WHERE id = ${archivo.contextoId}`
+        : sql`SELECT hallazgo_id, responsable_id, fin_original IS NOT NULL AS aprobada FROM mejora_actividades WHERE id = ${archivo.contextoId}`;
   const [d] = await consulta;
   if (!d) return false;
   const participacion = await participacionEnHallazgo(Number(d.hallazgo_id), sujeto, { sql });
   if (participacion === "completo") return true;
-  if (archivo.contexto !== "mejora_actividad" || participacion === null) return false;
+  // La de un borrador (sin `fin_original`) todavía no es una actividad (`participacionEnActividad`): su responsable no la abre.
+  if (archivo.contexto !== "mejora_actividad" || participacion === null || d.aprobada !== true) return false;
   if (Number(d.responsable_id) === sujeto.usuarioId) return true;
   const [s] = await sql`SELECT 1 FROM mejora_seguimientos
     WHERE actividad_id = ${archivo.contextoId} AND registrado_por = ${sujeto.usuarioId} LIMIT 1`;
@@ -998,22 +1000,46 @@ export async function puedeAbrirArchivoDeMejora(
  * Una sola regla: la usan el turno (`quienTieneElTurno`), la página y la validación dentro de su transacción.
  */
 export async function validadoresDeCorreccion(hallazgoId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
-  if (!Number.isSafeInteger(hallazgoId) || hallazgoId <= 0) return [];
-  const sql = opciones?.sql ?? obtenerSql();
+  return (await validadoresDeCorreccionDe(opciones?.sql ?? obtenerSql(), [hallazgoId])).get(hallazgoId) ?? [];
+}
+
+/** Los identificadores de hallazgo que valen para una consulta: enteros positivos, sin repetir. */
+const idsDeHallazgo = (ids: readonly number[]) => [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))];
+
+/**
+ * `validadoresDeCorreccion` de varios hallazgos en una sola consulta (la lista y las tareas resuelven así una página entera, anexo
+ * 15B §11.1): la misma regla, por hallazgo. Un hallazgo que no existe no está en el mapa.
+ */
+export async function validadoresDeCorreccionDe(sql: Cliente, hallazgoIds: readonly number[]): Promise<Map<number, number[]>> {
+  const ids = idsDeHallazgo(hallazgoIds);
+  if (ids.length === 0) return new Map();
   const filas = await sql`
     WITH h AS (
-      SELECT correccion_registrada_por, correccion_responsable_id, correccion_requerida, accion_decidida_por
-      FROM mejora_hallazgos WHERE id = ${hallazgoId}),
+      SELECT id, correccion_registrada_por, correccion_responsable_id, correccion_requerida, accion_decidida_por
+      FROM mejora_hallazgos WHERE id = ANY(${sql.array(ids)}::bigint[])),
     cumplen AS (
-      SELECT u.id, u.rol FROM usuarios u CROSS JOIN h
+      SELECT h.id AS hallazgo_id, u.id, u.rol FROM usuarios u CROSS JOIN h
       WHERE u.activo AND u.rol IN ('admin_sgc', 'control_interno', 'gerencia')
         AND u.id IS DISTINCT FROM h.correccion_registrada_por
         AND u.id IS DISTINCT FROM h.correccion_responsable_id
         AND (h.correccion_requerida IS DISTINCT FROM false OR u.id IS DISTINCT FROM h.accion_decidida_por))
-    SELECT id FROM cumplen
-    WHERE rol <> 'gerencia' OR NOT EXISTS (SELECT 1 FROM cumplen WHERE rol <> 'gerencia')
-    ORDER BY id`;
-  return filas.map((f) => Number(f.id));
+    SELECT h.id AS hallazgo_id, c.id FROM h
+    LEFT JOIN cumplen c ON c.hallazgo_id = h.id
+      AND (c.rol <> 'gerencia' OR NOT EXISTS (SELECT 1 FROM cumplen o WHERE o.hallazgo_id = h.id AND o.rol <> 'gerencia'))
+    ORDER BY h.id, c.id`;
+  return porHallazgo(filas);
+}
+
+/** Las filas `(hallazgo_id, id)` de una consulta por lote, como un mapa de cada hallazgo a sus usuarios (un `id` nulo, ninguno). */
+function porHallazgo(filas: readonly Record<string, unknown>[]): Map<number, number[]> {
+  const m = new Map<number, number[]>();
+  for (const f of filas) {
+    const h = Number(f.hallazgo_id);
+    const lista = m.get(h) ?? [];
+    if (f.id !== null && f.id !== undefined) lista.push(Number(f.id));
+    m.set(h, lista);
+  }
+  return m;
 }
 
 /** Si la persona puede validar la corrección (o el cierre sin acción) de ese hallazgo: `validadoresDeCorreccion`. */
@@ -1035,26 +1061,27 @@ export async function puedeValidarCorreccion(
  * responsable de hoy del punto, si cambió y no ha hecho nada) y quien lo corrigió antes de una reapertura, que la borra de la fila: la
  * bitácora de Distribución (`hallazgo_corregido`).
  */
-function ejecutaronEn(sql: Cliente, hallazgoId: number) {
+function ejecutaronEn(sql: Cliente, hallazgoIds: readonly number[]) {
+  // Por hallazgo (`hallazgo_id`): la misma lista para uno solo y para una página entera (`quienesVerificanDe`).
   return sql`h AS (SELECT id, correccion_registrada_por, correccion_responsable_id, verificacion_hallazgo_id FROM mejora_hallazgos
-      WHERE id = ${hallazgoId}),
+      WHERE id = ANY(${sql.array([...hallazgoIds])}::bigint[])),
     ejecutaron AS (
-      SELECT vh.corregido_por AS id FROM hallazgos vh JOIN h ON vh.id = h.verificacion_hallazgo_id
-      UNION SELECT vh.responsable_id FROM hallazgos vh JOIN h ON vh.id = h.verificacion_hallazgo_id
-      UNION SELECT au.usuario_id FROM auditoria au JOIN h ON au.entidad = 'hallazgo' AND au.entidad_id = h.verificacion_hallazgo_id
+      SELECT h.id AS hallazgo_id, vh.corregido_por AS id FROM hallazgos vh JOIN h ON vh.id = h.verificacion_hallazgo_id
+      UNION SELECT h.id, vh.responsable_id FROM hallazgos vh JOIN h ON vh.id = h.verificacion_hallazgo_id
+      UNION SELECT h.id, au.usuario_id FROM auditoria au JOIN h ON au.entidad = 'hallazgo' AND au.entidad_id = h.verificacion_hallazgo_id
         WHERE au.accion = 'hallazgo_corregido'
       UNION
-      SELECT a.responsable_id AS id FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id WHERE a.fin_original IS NOT NULL
-      UNION SELECT a.terminada_por FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id
-      UNION SELECT s.registrado_por FROM mejora_seguimientos s JOIN h ON h.id = s.hallazgo_id
-      UNION SELECT (e.detalle->>'antes')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
+      SELECT a.hallazgo_id, a.responsable_id FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id WHERE a.fin_original IS NOT NULL
+      UNION SELECT a.hallazgo_id, a.terminada_por FROM mejora_actividades a JOIN h ON h.id = a.hallazgo_id
+      UNION SELECT s.hallazgo_id, s.registrado_por FROM mejora_seguimientos s JOIN h ON h.id = s.hallazgo_id
+      UNION SELECT e.hallazgo_id, (e.detalle->>'antes')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
         WHERE e.tipo = 'reasignada' AND jsonb_typeof(e.detalle->'antes') = 'number'
-      UNION SELECT e.usuario_id FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
+      UNION SELECT e.hallazgo_id, e.usuario_id FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
         WHERE e.tipo IN ('actividad_terminada', 'corregir') AND NOT e.fuera
-      UNION SELECT (e.detalle->>'responsableId')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
+      UNION SELECT e.hallazgo_id, (e.detalle->>'responsableId')::bigint FROM mejora_eventos e JOIN h ON h.id = e.hallazgo_id
         WHERE e.tipo = 'corregir' AND jsonb_typeof(e.detalle->'responsableId') = 'number'
-      UNION SELECT correccion_registrada_por FROM h
-      UNION SELECT correccion_responsable_id FROM h)`;
+      UNION SELECT id, correccion_registrada_por FROM h
+      UNION SELECT id, correccion_responsable_id FROM h)`;
 }
 
 /**
@@ -1071,17 +1098,27 @@ function ejecutaronEn(sql: Cliente, hallazgoId: number) {
  * transacción.
  */
 export async function quienesVerifican(sql: Cliente, hallazgoId: number): Promise<number[]> {
-  if (!Number.isSafeInteger(hallazgoId) || hallazgoId <= 0) return [];
+  return (await quienesVerificanDe(sql, [hallazgoId])).get(hallazgoId) ?? [];
+}
+
+/**
+ * `quienesVerifican` de varios hallazgos en una sola consulta (la lista y las tareas resuelven así una página entera, anexo 15B
+ * §11.1): la misma regla, con el respaldo de Gerencia decidido hallazgo por hallazgo. Un hallazgo que no existe no está en el mapa.
+ */
+export async function quienesVerificanDe(sql: Cliente, hallazgoIds: readonly number[]): Promise<Map<number, number[]>> {
+  const ids = idsDeHallazgo(hallazgoIds);
+  if (ids.length === 0) return new Map();
   const filas = await sql`
-    WITH ${ejecutaronEn(sql, hallazgoId)},
+    WITH ${ejecutaronEn(sql, ids)},
     cumplen AS (
-      SELECT u.id, u.rol FROM usuarios u CROSS JOIN h
+      SELECT h.id AS hallazgo_id, u.id, u.rol FROM usuarios u CROSS JOIN h
       WHERE u.activo AND u.rol IN ('admin_sgc', 'control_interno', 'gerencia')
-        AND NOT EXISTS (SELECT 1 FROM ejecutaron x WHERE x.id = u.id))
-    SELECT id FROM cumplen
-    WHERE rol <> 'gerencia' OR NOT EXISTS (SELECT 1 FROM cumplen WHERE rol <> 'gerencia')
-    ORDER BY id`;
-  return filas.map((f) => Number(f.id));
+        AND NOT EXISTS (SELECT 1 FROM ejecutaron x WHERE x.hallazgo_id = h.id AND x.id = u.id))
+    SELECT h.id AS hallazgo_id, c.id FROM h
+    LEFT JOIN cumplen c ON c.hallazgo_id = h.id
+      AND (c.rol <> 'gerencia' OR NOT EXISTS (SELECT 1 FROM cumplen o WHERE o.hallazgo_id = h.id AND o.rol <> 'gerencia'))
+    ORDER BY h.id, c.id`;
+  return porHallazgo(filas);
 }
 
 /**
@@ -1090,7 +1127,7 @@ export async function quienesVerifican(sql: Cliente, hallazgoId: number): Promis
  */
 export async function ejecutoEnElHallazgo(sql: Cliente, hallazgoId: number, usuarioId: number): Promise<boolean> {
   if (!Number.isSafeInteger(hallazgoId) || hallazgoId <= 0) return false;
-  const [f] = await sql`WITH ${ejecutaronEn(sql, hallazgoId)} SELECT EXISTS (SELECT 1 FROM ejecutaron WHERE id = ${usuarioId}) AS ejecuto`;
+  const [f] = await sql`WITH ${ejecutaronEn(sql, [hallazgoId])} SELECT EXISTS (SELECT 1 FROM ejecutaron WHERE id = ${usuarioId}) AS ejecuto`;
   return f?.ejecuto === true;
 }
 

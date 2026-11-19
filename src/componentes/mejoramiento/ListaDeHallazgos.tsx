@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ClipboardCheck } from "lucide-react";
+import { claseBoton } from "@/componentes/ui/Boton";
 import { EstadoVacio } from "@/componentes/ui/EstadoVacio";
 import { celda, TablaDatos, type ColumnaTabla } from "@/componentes/ui/TablaDatos";
 import type { ContextoMejora } from "@/db/consultas/mejoramiento/config";
@@ -134,5 +135,39 @@ export function ListaDeHallazgos({ filas, contexto }: { filas: readonly FilaDeHa
         ))}
       </ul>
     </>
+  );
+}
+
+/** La paginación al pie de la lista (Fase 15B, anexo §11.1): «Página 1 de 2», con «Anterior» y «Siguiente» donde los hay. */
+export function PaginasDeLaLista({
+  pagina,
+  paginas,
+  anterior,
+  siguiente,
+}: {
+  pagina: number;
+  paginas: number;
+  anterior: string | null;
+  siguiente: string | null;
+}) {
+  if (paginas <= 1) return null;
+  return (
+    <nav aria-label="Páginas de la lista de hallazgos" className="flex flex-wrap items-center justify-between gap-3 text-sm">
+      <span className="tabular-nums text-muted-foreground">
+        Página {pagina} de {paginas}
+      </span>
+      <span className="flex gap-2">
+        {anterior ? (
+          <Link href={anterior} className={`${claseBoton("secundario")} ${FOCO}`}>
+            Anterior
+          </Link>
+        ) : null}
+        {siguiente ? (
+          <Link href={siguiente} className={`${claseBoton("secundario")} ${FOCO}`}>
+            Siguiente
+          </Link>
+        ) : null}
+      </span>
+    </nav>
   );
 }

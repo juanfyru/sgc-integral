@@ -3,9 +3,9 @@
  * consulta, cada una con la condición de persona en SQL: la de los pasos del líder (`actuaPorElProceso`: un líder activo del
  * proceso o, si no tiene ninguno, el Admin SGC), la de quien registró, la del rol y la de la revisión (`revisoresDe`). Las
  * reglas que no caben en una condición (quién arbitra, quién valida la corrección, quién verifica y evalúa, quién decide un
- * ajuste) las decide, en la fila que el SQL ya acotó por rol, la misma función que decide el turno y el acto (`arbitrosDe`,
- * `validadoresDeCorreccion`, `quienesVerifican`, `quienDecideAjustes`): una sola regla para el aviso, la tarea y el acto. A
- * quien solo consulta le cuesta una consulta, la de sus actividades.
+ * ajuste) las decide, en la fila que el SQL ya acotó por rol, la misma regla que decide el turno y el acto (`arbitrosDe`,
+ * `validadoresDeCorreccion`, `quienesVerifican`, en su forma por lote, y `quienDecideAjustes`): una sola regla para el aviso, la
+ * tarea y el acto. A quien solo consulta le cuesta una consulta, la de sus actividades.
  *
  * El título de una tarea lleva el código del hallazgo, nunca su contenido; el detalle, su título (quien tiene la tarea lo ve),
  * salvo en la de una actividad, que lleva la descripción como título y el código como detalle. La actividad de un responsable
@@ -13,7 +13,8 @@
  */
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
-import { filtroIndicadores, quienesVerifican, validadoresDeCorreccion } from "@/lib/alcance";
+import { lideresDeProcesos } from "@/db/consultas/tramites";
+import { filtroIndicadores, quienesVerificanDe, validadoresDeCorreccionDe } from "@/lib/alcance";
 import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { estadoDeLaMarca, tituloDeLaTarea } from "@/lib/mejoramiento/marcas";
 import { RUTA_REPORTES_RECIBIDOS } from "@/lib/mejoramiento/reportes";
@@ -24,17 +25,23 @@ import { puede } from "@/lib/permisos";
 import type { Tarea } from "@/lib/tareas";
 import { finDeFecha } from "@/lib/tramites/plazos";
 import { zonaHoraria } from "@/lib/zona-horaria";
-import { quienDecideAjustes } from "./ajustes";
-import { arbitrosDe, queLeToca } from "./avisos";
+import { quienDecideCon } from "./ajustes";
+import { activosDeUnaVez, arbitrosDeVarios, queLeTocaCon, queLeTocaPideLideres, type ActivosDeUnaVez } from "./avisos";
 import { cargaResuelta } from "./carga-confirmada";
 import { contextoDeMejora } from "./config";
-import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
+import { fechasMinimasDe, venceLaEvaluacionDe, type EsperaLeida } from "./espera";
 import { aBase } from "./flujo";
 import { aMarcaLeida, columnasDeMarca, desdeLaMedicion, etiquetaDelPeriodo, marcaSinSalida } from "./marcas-base";
 import { esperaRespuesta } from "./respuesta-plan";
 import { venceLaActividad } from "./vence-actividad";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
+
+/**
+ * Lo que la lectura que pide las tareas ya leyó a la misma hora (la lista de hallazgos, Fase 15B, anexo §11.1): la espera de eficacia
+ * de lo que la persona ve y los Admin SGC y los de Gerencia activos. Las tareas lo usan en lugar de leerlo otra vez; sin esto, lo leen.
+ */
+export type LoYaLeido = { espera?: EsperaLeida; activos?: ActivosDeUnaVez };
 
 /** Una tarea con el hallazgo del que es (nulo en la de un reporte): «Esperan su decisión» los cuenta (R2). */
 export type TareaDeMejora = { tarea: Tarea; hallazgoId: number | null };
@@ -79,10 +86,11 @@ const deHallazgo = (h: HallazgoBase, titulo: string, detalle: string, vence: Dat
 
 /**
  * Los pasos de los hallazgos abiertos que le tocan a la persona. El `WHERE` es la condición de cada estado; en el arbitraje, la
- * validación, la verificación y la espera solo acota por rol, y la fila la decide la función de su turno. Un hallazgo cargado sin
- * su formato firmado no da pasos: no se verifica hasta que llega (`cargaResuelta`, spec §15).
+ * validación, la verificación y la espera solo acota por rol, y la fila la decide la función de su turno, para todas las filas de
+ * una vez (`arbitrosDeVarios`, `validadoresDeCorreccionDe`, `quienesVerificanDe`; Fase 15B, anexo §11.3: lo que cuestan no crece con
+ * los hallazgos). Un hallazgo cargado sin su formato firmado no da pasos: no se verifica hasta que llega (`cargaResuelta`, spec §15).
  */
-async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<TareaDeMejora[]> {
+async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date, yaLeido: LoYaLeido): Promise<TareaDeMejora[]> {
   const formula = puede(s, "mejora.formular");
   const registra = puede(s, "mejora.registrar");
   const gestiona = puede(s, "mejora.gestionar");
@@ -118,28 +126,47 @@ async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<Ta
   // La espera: desde la fecha mínima (R4), en una pasada para todos; vence con el plazo de evaluar (spec §13.3).
   const enEspera = filas.filter((f) => f.estado === "en_espera").map((f) => Number(f.id));
   const zona = zonaHoraria();
-  const fechas = await fechasMinimasDe(sql, enEspera, zona);
-  const contexto = enEspera.length > 0 ? await contextoDeMejora(sql, ahora) : null;
+  const leida = yaLeido.espera && enEspera.every((id) => yaLeido.espera!.ids.has(id)) ? yaLeido.espera : null;
+  const fechas = leida ? leida.fechas : await fechasMinimasDe(sql, enEspera, zona);
+  const contexto = enEspera.length > 0 ? (leida?.contexto ?? (await contextoDeMejora(sql, ahora))) : null;
+  const evaluables = new Set(
+    enEspera.filter((id) => {
+      const fm = fechas.get(id);
+      return fm !== undefined && contexto !== null && yaSePuedeEvaluar(fm.minima, ahora, zona);
+    }),
+  );
+
+  // Las reglas que deciden la fila, de todos los hallazgos de una vez (anexo 15B §11.1): una consulta por regla, sean cuantos sean.
+  const hs = filas.map((f) => aBase(f));
+  const en = (...estados: EstadoHallazgo[]) => hs.filter((h) => estados.includes(h.estado));
+  const activos = yaLeido.activos ?? activosDeUnaVez(sql);
+  const [arbitros, validadores, verificadores, lideres] = await Promise.all([
+    arbitrosDeVarios(sql, en("arbitraje"), activos),
+    validadoresDeCorreccionDe(sql, en("por_validar").map((h) => h.id)),
+    quienesVerificanDe(sql, [...en("por_verificar").map((h) => h.id), ...evaluables]),
+    lideresDeProcesos(hs.filter(queLeTocaPideLideres).map((h) => h.procesoId), { sql }),
+  ]);
+  const leToca = (porRegla: Map<number, number[]>, h: HallazgoBase) => (porRegla.get(h.id) ?? []).includes(yo);
 
   const tareas: TareaDeMejora[] = [];
-  for (const f of filas) {
-    const h = aBase(f);
+  for (const [i, f] of filas.entries()) {
+    const h = hs[i];
     const titulo = f.titulo as string;
     const vence = (f.vence_en as Date | null) ?? null;
     switch (h.estado) {
       case "arbitraje":
-        if (!(await arbitrosDe(sql, h)).includes(yo)) continue;
+        if (!leToca(arbitros, h)) continue;
         break;
       case "por_validar":
-        if (!(await validadoresDeCorreccion(h.id, { sql })).includes(yo)) continue;
+        if (!leToca(validadores, h)) continue;
         break;
       case "por_verificar":
-        if (!(await quienesVerifican(sql, h.id)).includes(yo)) continue;
+        if (!leToca(verificadores, h)) continue;
         break;
       case "en_espera": {
         const fm = fechas.get(h.id);
-        if (!fm || !contexto || !yaSePuedeEvaluar(fm.minima, ahora, zona)) continue;
-        if (!(await quienesVerifican(sql, h.id)).includes(yo)) continue;
+        if (!fm || !contexto || !evaluables.has(h.id)) continue;
+        if (!leToca(verificadores, h)) continue;
         tareas.push(deHallazgo(h, `Evaluar la eficacia de ${h.codigo}`, titulo, venceLaEvaluacionDe(fm, contexto)));
         continue;
       }
@@ -150,7 +177,7 @@ async function deLosPasos(sql: Cliente, s: SesionFlujo, ahora: Date): Promise<Ta
         }
         break;
     }
-    const texto = await queLeToca(sql, h);
+    const texto = queLeTocaCon(h, (lideres.get(h.procesoId) ?? []).length > 0);
     if (!texto) continue;
     tareas.push(deHallazgo(h, texto, titulo, vence, h.estado === "por_formular" ? rutaDeFormular(h.id) : rutaDeHallazgo(h.id)));
   }
@@ -194,23 +221,24 @@ async function deLasActividades(sql: Cliente, s: SesionFlujo): Promise<TareaDeMe
   });
 }
 
-/** Los ajustes por decidir de la ronda en curso de un hallazgo abierto que decide la persona (`quienDecideAjustes`). */
-async function deLosAjustes(sql: Cliente, s: SesionFlujo): Promise<TareaDeMejora[]> {
+/**
+ * Los ajustes por decidir de la ronda en curso de un hallazgo abierto que decide la persona (`quienDecideAjustes`, con el rol que
+ * aprobó leído con los ajustes y los activos de cada rol una vez: lo que cuestan no crece con los ajustes).
+ */
+async function deLosAjustes(sql: Cliente, s: SesionFlujo, yaLeido: LoYaLeido): Promise<TareaDeMejora[]> {
   if (!puede(s, "mejora.gestionar") && !puede(s, "mejora.aprobar")) return [];
   const filas = await sql`
-    SELECT aj.id, aj.hallazgo_id, aj.pedido_por, aj.vence_en, h.codigo, h.titulo
+    SELECT aj.id, aj.hallazgo_id, aj.pedido_por, aj.vence_en, h.codigo, h.titulo, r.aprobado_rol
     FROM mejora_ajustes aj
     JOIN mejora_hallazgos h ON h.id = aj.hallazgo_id
     JOIN mejora_rondas r ON r.id = aj.ronda_id AND r.numero = h.ronda
     WHERE aj.estado = 'pendiente' AND h.estado NOT IN ${sql([...TERMINALES])}
     ORDER BY aj.id`;
-  const deciden = new Map<string, Promise<number[]>>();
+  const activos = yaLeido.activos ?? activosDeUnaVez(sql);
   const tareas: TareaDeMejora[] = [];
   for (const f of filas) {
     const hallazgoId = Number(f.hallazgo_id);
-    const clave = `${hallazgoId}:${f.pedido_por}`;
-    if (!deciden.has(clave)) deciden.set(clave, quienDecideAjustes(sql, hallazgoId, Number(f.pedido_por)).then((r) => r.usuarios));
-    if (!(await deciden.get(clave))!.includes(s.usuarioId)) continue;
+    if (!(await quienDecideCon(f.aprobado_rol, Number(f.pedido_por), activos)).usuarios.includes(s.usuarioId)) continue;
     tareas.push({
       tarea: {
         id: `mej-ajuste:${f.id}`,
@@ -343,13 +371,15 @@ function enOrden(a: TareaDeMejora, b: TareaDeMejora): number {
 }
 
 /** Cada tarea de mejoramiento de la persona con su hallazgo: lo que «Mis tareas» muestra y «Esperan su decisión» cuenta (R2). */
-export async function tareasConSuHallazgo(sesion: SesionFlujo, opciones?: Opciones): Promise<TareaDeMejora[]> {
+export async function tareasConSuHallazgo(sesion: SesionFlujo, opciones?: Opciones & LoYaLeido): Promise<TareaDeMejora[]> {
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
+  // Los activos de cada rol, una vez para los pasos y los ajustes.
+  const activos = opciones?.activos ?? activosDeUnaVez(sql);
   const grupos = await Promise.all([
-    deLosPasos(sql, sesion, ahora),
+    deLosPasos(sql, sesion, ahora, { espera: opciones?.espera, activos }),
     deLasActividades(sql, sesion),
-    deLosAjustes(sql, sesion),
+    deLosAjustes(sql, sesion, { activos }),
     delAdmin(sql, sesion),
     tareasDeMarcas(sql, sesion, ahora),
   ]);

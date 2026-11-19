@@ -5,7 +5,7 @@ import { obtenerMarcaSegura } from "@/db/consultas/entidad";
 import { filasParaExcel } from "@/db/consultas/mejoramiento/lectura";
 import { nombresDelFiltro, procesosDelAlcance } from "@/db/consultas/mejoramiento/opciones";
 import { construirExcelDeHallazgos } from "@/lib/mejoramiento/excel";
-import { filtroDeConsulta, filtrosEnPalabras } from "@/lib/mejoramiento/filtro";
+import { ESTADO_POR_OMISION, filtroDeConsulta, filtrosEnPalabras } from "@/lib/mejoramiento/filtro";
 import { crearLimitador } from "@/lib/limite";
 import { cuenta } from "@/lib/plural";
 import { sesionDePeticion } from "@/lib/sesion-actual";
@@ -16,9 +16,11 @@ export const dynamic = "force-dynamic";
 const permitirExcel = crearLimitador({ limite: 10, ventanaMs: 60_000 });
 
 /**
- * El Excel de la lista de hallazgos (spec 15 §16.3): la matriz del SGC-FO-28 con lo que la lista muestra a la persona con los
- * filtros de la consulta (los nombres de `filtroDeConsulta`), una fila por actividad (`filasParaExcel`, con la regla de
- * `filtroHallazgos`). Quien no ve ningún hallazgo recibe el libro sin filas. Cada descarga queda en la bitácora con sus filtros.
+ * El Excel de la lista de hallazgos (spec 15 §16.3): la matriz del SGC-FO-28 con todo lo que la lista muestra a la persona con los
+ * filtros de la consulta (los nombres de `filtroDeConsulta`), sin página (Fase 15B, anexo §11.1), una fila por actividad
+ * (`filasParaExcel`, con la regla de `filtroHallazgos`). Quien no ve ningún hallazgo recibe el libro sin filas. Cada descarga queda
+ * en la bitácora con sus filtros y el estado que rigió: sin estado en la dirección, los abiertos (una fila sin estado, de antes de la
+ * 15B, era de todos).
  */
 export async function GET(peticion: NextRequest): Promise<Response> {
   const sesion = await sesionDePeticion(peticion);
@@ -51,7 +53,7 @@ export async function GET(peticion: NextRequest): Promise<Response> {
     accion: "mejora_exporto_hallazgos",
     entidad: "mejora_hallazgo",
     entidadId: null,
-    detalle: { filtros: filtro },
+    detalle: { filtros: { ...filtro, estado: filtro.estado ?? ESTADO_POR_OMISION } },
   });
 
   return new Response(new Uint8Array(buffer), {

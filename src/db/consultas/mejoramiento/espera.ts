@@ -18,6 +18,13 @@ export type IndicadorDeLaEspera = { id: number; codigo: string; nombre: string; 
 export type FechaMinima = { minima: string; r: string; indicador: IndicadorDeLaEspera | null; indicadorRetirado: boolean };
 
 /**
+ * Lo que una lectura ya sabe de la espera de eficacia de un conjunto de hallazgos (la lista, Fase 15B, anexo §11.1): cuáles están en
+ * espera (`ids`), sus fechas mínimas (`fechasMinimasDe`) y el contexto de los plazos, a la misma hora (nulo si no lo necesitó). Quien
+ * la recibe en la misma lectura (las tareas de quien mira) la usa solo si cubre todos sus hallazgos en espera; si no, los lee.
+ */
+export type EsperaLeida = { ids: ReadonlySet<number>; fechas: ReadonlyMap<number, FechaMinima>; contexto: ContextoMejora | null };
+
+/**
  * La fecha mínima de eficacia de cada hallazgo de `hallazgoIds` que está «En espera de eficacia» (spec §11.3), calculada al leer,
  * en dos consultas para todos (la lista y las cifras, R4): R es el día, en la zona, en que terminó la última actividad no
  * cancelada de la ronda en curso (sin R si no tiene ninguna o alguna sigue sin terminar); con el indicador enlazado si sigue

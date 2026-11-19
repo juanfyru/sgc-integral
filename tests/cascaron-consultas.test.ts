@@ -6,7 +6,8 @@
  * la corrección de un hallazgo (Tarea 13), una sola consulta y solo para quien realiza verificaciones. Las de los
  * indicadores (Fase 14A, Tarea 13), una para las mediciones, otra para las constancias de envío al ente (14B, Tarea 10) y
  * otra para las observaciones de toda persona, más una para quien aprueba fichas y dos para quien administra (las fichas
- * devueltas y las revisiones por cambio de norma, 14B, Tarea 12), sin importar cuántas haya. Se cuentan
+ * devueltas y las revisiones por cambio de norma, 14B, Tarea 12), sin importar cuántas haya. Las de mejoramiento (Fase 15B,
+ * anexo §11.3), un número fijo por persona, contadas aparte. Se cuentan
  * las sentencias que se ejecutan (no los fragmentos),
  * con el cascarón real contra la BD de desarrollo, dentro de una transacción que se revierte.
  */
@@ -30,21 +31,29 @@ vi.mock("next/server", async (original) => ({ ...(await original<typeof import("
 vi.mock("@/lib/vencimientos-disparo", () => ({ dispararRevisionDeVencimientos: vi.fn() }));
 // La marca va en caché por petición: no es del cascarón de esta tarea.
 vi.mock("@/db/consultas/entidad", () => ({ obtenerMarcaSegura: async () => ({ nombre: "Entidad", sigla: "E", logo: null }) }));
-// Las tareas de mejoramiento (Fase 15A) resuelven el turno hallazgo por hallazgo (Tarea 19: aceptado, para la revisión final),
-// así que lo que cuestan depende de cuántos hallazgos abiertos hay en la base, y la demo trae catorce: aquí solo se cuenta que el
-// cascarón las pide una vez por render. Sus tareas las prueba `tests/mejora-tareas.test.ts`.
-const mejoramiento = vi.hoisted(() => ({ tareasDeMejoramiento: vi.fn(async () => ({ tareas: [] })) }));
-vi.mock("@/db/consultas/mejoramiento/tareas", async (original) => ({
-  ...(await original<typeof import("@/db/consultas/mejoramiento/tareas")>()),
-  tareasDeMejoramiento: mejoramiento.tareasDeMejoramiento,
-}));
+// Las tareas de mejoramiento corren de verdad (Fase 15B, anexo §11.3; hasta la 15B se simulaban, porque resolvían el turno hallazgo
+// por hallazgo): el espía llama a las reales con su propio contador sobre la misma transacción (`mejoramiento.sql`), así sus
+// sentencias se cuentan aparte, con su tope, y las de los demás módulos siguen exactas. Lo que devuelven lo prueba
+// `tests/mejora-tareas.test.ts`.
+const mejoramiento = vi.hoisted(() => ({ sql: null as unknown, llamadas: 0 }));
+vi.mock("@/db/consultas/mejoramiento/tareas", async (original) => {
+  const real = await original<typeof import("@/db/consultas/mejoramiento/tareas")>();
+  return {
+    ...real,
+    tareasDeMejoramiento: (...[sesion, opciones]: Parameters<typeof real.tareasDeMejoramiento>) => {
+      mejoramiento.llamadas += 1;
+      return real.tareasDeMejoramiento(sesion, { ...opciones, sql: (mejoramiento.sql as Cliente | null) ?? opciones?.sql });
+    },
+  };
+});
 
 import { Cascaron } from "@/componentes/cascaron/Cascaron";
-import { obtenerSql } from "@/db/cliente";
+import { obtenerSql, type Cliente } from "@/db/cliente";
+import { registrarHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { tareasDeMarcas } from "@/db/consultas/mejoramiento/tareas";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { SesionValida } from "@/lib/sesion";
-import { baseDeMejora, medicionMarcada, type MedicionMarcada } from "./utiles/mejoramiento";
+import { baseDeMejora, c, datosDeHallazgo, medicionMarcada, type MedicionMarcada } from "./utiles/mejoramiento";
 import { sesionAdmin, sesionDe, usuarioDePrueba } from "./utiles/tramites";
 import { contada } from "./utiles/sentencias";
 import { revertida } from "./utiles/transaccion";
@@ -77,16 +86,22 @@ const valida = (s: SesionFlujo): SesionValida => ({
   tema: "sistema",
 });
 
-/** Las sentencias de un render del cascarón como `sesion`. */
-async function sentenciasDelCascaron(tx: TransactionSql, sesion: SesionFlujo): Promise<string[]> {
+/**
+ * Las sentencias de un render del cascarón como `sesion`: las de los demás módulos y, aparte (`mejora`), las de las tareas de
+ * mejoramiento, que corren con su propio contador.
+ */
+async function sentenciasDelCascaron(tx: TransactionSql, sesion: SesionFlujo): Promise<string[] & { mejora: string[] }> {
   const { sql: contador, sentencias } = contada(tx);
+  const deMejora = contada(tx);
   contexto.sql = contador;
+  mejoramiento.sql = deMejora.sql;
   try {
     await Cascaron({ sesion: valida(sesion), children: null });
   } finally {
     contexto.sql = null;
+    mejoramiento.sql = null;
   }
-  return sentencias;
+  return Object.assign(sentencias, { mejora: deMejora.sentencias });
 }
 
 /** La consulta de vigencia (las filas de `lecturaDeVigencia`), su conteo (`contarVencidas`) y la configuración documental. */
@@ -151,10 +166,12 @@ describe("el costo del cascarón por render", () => {
             indicadores: number;
           }
         > = {};
+        const deMejora: Record<string, number> = {};
         for (const [nombre, sesion] of casos) {
-          mejoramiento.tareasDeMejoramiento.mockClear();
+          mejoramiento.llamadas = 0;
           const s = await sentenciasDelCascaron(tx, sesion);
-          expect(mejoramiento.tareasDeMejoramiento, nombre).toHaveBeenCalledTimes(1);
+          expect(mejoramiento.llamadas, nombre).toBe(1);
+          deMejora[nombre] = s.mejora.length;
           cuentas[nombre] = {
             total: s.length,
             vigencia: deVigencia(s),
@@ -168,7 +185,18 @@ describe("el costo del cascarón por render", () => {
           };
         }
         // Para el informe: CONTAR_CASCARON=<archivo> deja las cuentas en ese archivo.
-        if (process.env.CONTAR_CASCARON) writeFileSync(process.env.CONTAR_CASCARON, JSON.stringify(cuentas));
+        if (process.env.CONTAR_CASCARON) writeFileSync(process.env.CONTAR_CASCARON, JSON.stringify({ cuentas, deMejora }));
+        // Las tareas de mejoramiento (Fase 15B, anexo §11.3), con las dos nuevas (la respuesta al ente de un plan, §3.8, y las marcas
+        // de los indicadores, §6.5): un número fijo de sentencias por persona, sean cuantos sean los hallazgos (lo prueba el caso
+        // siguiente). Para el Admin SGC, a lo sumo 19, las de todas sus reglas a la vez: los pasos, la espera (sus fechas mínimas, el
+        // indicador enlazado, la configuración y el calendario), quién arbitra, valida y verifica, los líderes, los Admin SGC y los de
+        // Gerencia activos, las actividades, los ajustes, sus cuatro tareas (reportes, ente, planes y formatos firmados) y las marcas. A
+        // quien solo consulta, una (sus actividades).
+        expect(deMejora["Admin SGC"]).toBeLessThanOrEqual(19);
+        for (const nombre of ["líder", "Gerencia", "Control Interno"]) expect(deMejora[nombre], nombre).toBeLessThanOrEqual(15);
+        for (const nombre of ["Consulta sin externos", "Consulta responsable técnico", "Consulta con hallazgo abierto"]) {
+          expect(deMejora[nombre], nombre).toBe(1);
+        }
 
         for (const nombre of ["Admin SGC", "líder", "Consulta responsable técnico"]) {
           expect(cuentas[nombre].vigencia, nombre).toBe(1);
@@ -223,6 +251,30 @@ describe("el costo del cascarón por render", () => {
       } finally {
         await e.limpiar();
       }
+    }));
+});
+
+describe("lo que cuestan las tareas de mejoramiento en el cascarón no crece con los hallazgos (Fase 15B, anexo §11.3)", () => {
+  it("el Admin SGC, con uno y con diez hallazgos en cada paso que le toca, paga las mismas sentencias; las de los planes y las marcas van entre ellas", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const enCadaPaso = async (n: number) => {
+        for (const estado of ["arbitraje", "por_decidir", "por_validar", "en_revision", "por_verificar", "por_cerrar"]) {
+          for (let i = 0; i < n; i++) {
+            const { id } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId), c("2026-11-17T15:00:00Z", tx));
+            await tx`UPDATE mejora_hallazgos SET estado = ${estado} WHERE id = ${id}`;
+          }
+        }
+      };
+      // Con uno en cada paso, cada regla ya tiene su consulta; nueve más en cada uno no añaden ninguna.
+      await enCadaPaso(1);
+      const antes = (await sentenciasDelCascaron(tx, b.admin)).mejora;
+      await enCadaPaso(9);
+      const despues = (await sentenciasDelCascaron(tx, b.admin)).mejora;
+      expect(despues.length).toBe(antes.length);
+      // La tarea de la respuesta al ente de un plan (§3.8) y las de las marcas (§6.5), una sentencia cada una.
+      expect(despues.filter((t) => t.includes("FROM mejora_planes p"))).toHaveLength(1);
+      expect(despues.filter((t) => t.includes("ORDER BY m.desde, m.id"))).toHaveLength(1);
     }));
 });
 

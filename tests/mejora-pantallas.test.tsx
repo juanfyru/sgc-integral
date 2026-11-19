@@ -39,7 +39,8 @@ import { PestanasDeMetodo } from "@/componentes/mejoramiento/analisis/PestanasDe
 import { PreguntasDeCierre } from "@/componentes/mejoramiento/analisis/PreguntasDeCierre";
 import { FormularioCarga } from "@/componentes/mejoramiento/FormularioCarga";
 import { FormularioHallazgo } from "@/componentes/mejoramiento/FormularioHallazgo";
-import { ListaDeHallazgos, textoDeVence } from "@/componentes/mejoramiento/ListaDeHallazgos";
+import { FiltrosDeHallazgos } from "@/componentes/mejoramiento/FiltrosDeHallazgos";
+import { ListaDeHallazgos, PaginasDeLaLista, textoDeVence } from "@/componentes/mejoramiento/ListaDeHallazgos";
 import { LoQueSigue } from "@/componentes/mejoramiento/LoQueSigue";
 import { PestanasMejoramiento, pestanasVisibles } from "@/componentes/mejoramiento/PestanasMejoramiento";
 import { PasoAceptar } from "@/componentes/mejoramiento/pasos/PasoAceptar";
@@ -61,7 +62,7 @@ import type { FilaDeHallazgo } from "@/db/consultas/mejoramiento/lectura";
 import { SIN_AJUSTES } from "@/lib/dias-habiles";
 import { fraseDeLoQueSigue } from "@/db/consultas/mejoramiento/lectura";
 import { pasosDelRecorrido } from "@/lib/mejoramiento/estados";
-import { filtroDeConsulta } from "@/lib/mejoramiento/filtro";
+import { consultaDeFiltro, filtroDeConsulta, filtrosEnPalabras, rutaDePagina } from "@/lib/mejoramiento/filtro";
 import { seccionesDeLaRonda } from "@/lib/mejoramiento/secciones";
 import { AVISO_SIN_PACIENTES, esReprogramada, estadoDeActividadEnTexto, REPROGRAMADA } from "@/lib/mejoramiento/textos";
 import type { HallazgoBase } from "@/lib/mejoramiento/tipos";
@@ -374,6 +375,65 @@ describe("filtroDeConsulta", () => {
       soloVencidos: true,
       estado: "abiertos",
     });
+  });
+
+  it("sin estado no inventa uno (vale «Abiertos»); lee «todos» y la página, desde la 2 (anexo §11.1)", () => {
+    expect(filtroDeConsulta({})).toEqual({});
+    expect(filtroDeConsulta({ estado: "todos", pagina: "3" })).toEqual({ estado: "todos", pagina: 3 });
+    for (const pagina of ["1", "0", "-2", "abc", "1234567"]) expect(filtroDeConsulta({ pagina }), pagina).toEqual({});
+    expect(filtroDeConsulta({ estado: "inventado" })).toEqual({});
+  });
+
+  it("la dirección no lleva la página (el Excel no pagina); la de «Anterior» y «Siguiente», sí, salvo la primera", () => {
+    const f = { procesoId: 3, estado: "todos" as const, pagina: 2 };
+    expect(consultaDeFiltro(f)).toBe("proceso=3&estado=todos");
+    expect(rutaDePagina(f, 3)).toBe("/mejoramiento?proceso=3&estado=todos&pagina=3");
+    expect(rutaDePagina(f, 1)).toBe("/mejoramiento?proceso=3&estado=todos");
+    expect(rutaDePagina({}, 2)).toBe("/mejoramiento?pagina=2");
+    expect(rutaDePagina({}, 1)).toBe("/mejoramiento");
+  });
+
+  it("la línea de filtros del Excel dice siempre el estado: sin él, «Abiertos»", () => {
+    expect(filtrosEnPalabras({}, [])).toEqual(["Estado: Abiertos"]);
+    expect(filtrosEnPalabras({ estado: "todos" }, [])).toEqual(["Estado: Todos"]);
+    expect(filtrosEnPalabras({ estado: "cerrado", soloVencidos: true }, [])).toEqual(["Estado: Cerrado · eficaz", "Solo vencidos"]);
+  });
+});
+
+describe("la lista por omisión y sus páginas (anexo §11.1)", () => {
+  it("sin estado, la insignia «Solo abiertos» lleva al mismo filtro con «Todos»; el selector dice «Abiertos» y ofrece «Todos»", () => {
+    const html = renderToStaticMarkup(<FiltrosDeHallazgos filtro={{ procesoId: 3, q: "nevera" }} procesos={[{ id: 3, nombre: "Farmacia" }]} />);
+    expect(html).toContain("Solo abiertos");
+    expect(html).toContain('href="/mejoramiento?q=nevera&amp;proceso=3&amp;estado=todos"');
+    expect(html).toContain('aria-label="Solo abiertos: quitar este filtro y ver también los terminados"');
+    expect(html).toMatch(/<select id="filtro-estado" name="estado"[^>]*><option value="" selected="">Abiertos<\/option><option value="todos">Todos<\/option>/);
+    // «Abiertos» elegido a mano (la cifra «Abiertos») es lo mismo: la insignia, y el selector en la primera opción.
+    const elegido = renderToStaticMarkup(<FiltrosDeHallazgos filtro={{ estado: "abiertos" }} procesos={[]} />);
+    expect(elegido).toContain("Solo abiertos");
+    expect(elegido).toContain('<option value="" selected="">Abiertos</option>');
+    expect(elegido).not.toContain('<option value="abiertos"');
+  });
+
+  it("con «Todos» o con otro estado, sin insignia; el formulario no lleva la página (filtrar vuelve a la primera)", () => {
+    const todos = renderToStaticMarkup(<FiltrosDeHallazgos filtro={{ estado: "todos", pagina: 2 }} procesos={[]} />);
+    expect(todos).not.toContain("Solo abiertos");
+    expect(todos).toContain('<option value="todos" selected="">Todos</option>');
+    expect(todos).not.toContain('name="pagina"');
+    expect(renderToStaticMarkup(<FiltrosDeHallazgos filtro={{ estado: "cerrado" }} procesos={[]} />)).not.toContain("Solo abiertos");
+  });
+
+  it("al pie, «Página 1 de 2» con «Siguiente»; en la última, «Anterior»; con una sola página, nada", () => {
+    const primera = renderToStaticMarkup(<PaginasDeLaLista pagina={1} paginas={2} anterior={null} siguiente="/mejoramiento?pagina=2" />);
+    expect(sinEtiquetas(primera)).toContain("Página 1 de 2");
+    expect(primera).toContain('href="/mejoramiento?pagina=2"');
+    expect(sinEtiquetas(primera)).toContain("Siguiente");
+    expect(sinEtiquetas(primera)).not.toContain("Anterior");
+    expect(primera).toContain('aria-label="Páginas de la lista de hallazgos"');
+    const ultima = renderToStaticMarkup(<PaginasDeLaLista pagina={2} paginas={2} anterior="/mejoramiento" siguiente={null} />);
+    expect(sinEtiquetas(ultima)).toContain("Página 2 de 2");
+    expect(sinEtiquetas(ultima)).toContain("Anterior");
+    expect(sinEtiquetas(ultima)).not.toContain("Siguiente");
+    expect(renderToStaticMarkup(<PaginasDeLaLista pagina={1} paginas={1} anterior={null} siguiente={null} />)).toBe("");
   });
 });
 

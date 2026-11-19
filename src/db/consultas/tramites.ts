@@ -316,14 +316,26 @@ export async function participaEnTramites(usuarioId: number, opciones?: { sql?: 
 
 /** Usuarios activos con rol `lider_proceso` asignados a ese proceso; uno inactivo no tiene líderes. */
 export async function lideresDeProceso(procesoId: number, opciones?: { sql?: Cliente }): Promise<number[]> {
+  return (await lideresDeProcesos([procesoId], opciones)).get(procesoId) ?? [];
+}
+
+/**
+ * `lideresDeProceso` de varios procesos en una sola consulta (la lista de hallazgos resuelve así el turno de una página entera):
+ * cada proceso pedido está en el mapa, con sus líderes por id (vacío si no tiene).
+ */
+export async function lideresDeProcesos(procesoIds: readonly number[], opciones?: { sql?: Cliente }): Promise<Map<number, number[]>> {
+  const ids = [...new Set(procesoIds)];
+  const lideres = new Map<number, number[]>(ids.map((id) => [id, []]));
+  if (ids.length === 0) return lideres;
   const sql = opciones?.sql ?? obtenerSql();
-  const filas = await sql`SELECT u.id
+  const filas = await sql`SELECT up.proceso_id, u.id
     FROM usuario_procesos up
     JOIN usuarios u ON u.id = up.usuario_id AND u.activo AND u.rol = 'lider_proceso'
     JOIN procesos p ON p.id = up.proceso_id AND p.activo
-    WHERE up.proceso_id = ${procesoId}
-    ORDER BY u.id`;
-  return filas.map((f) => Number(f.id));
+    WHERE up.proceso_id = ANY(${sql.array(ids)}::bigint[])
+    ORDER BY up.proceso_id, u.id`;
+  for (const f of filas) lideres.get(Number(f.proceso_id))?.push(Number(f.id));
+  return lideres;
 }
 
 /** Los líderes de todos los procesos del documento; una asociación a un subproceso cuenta por su proceso. */

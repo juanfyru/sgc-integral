@@ -1,7 +1,7 @@
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
 import { periodosDeDatos } from "@/lib/indicadores/cierre";
 import { ETIQUETA_REPORTE_DE_LISTA, ETIQUETA_SEMAFORO_DE_LISTA } from "@/lib/indicadores/filtros";
-import { ESTADOS_ESPECIALES, etiquetaDelFiltroDeEstado } from "@/lib/mejoramiento/filtro";
+import { ESTADOS_ESPECIALES, etiquetaDelFiltroDeEstado, TODOS_LOS_ESTADOS } from "@/lib/mejoramiento/filtro";
 import { ETIQUETA_ORIGEN } from "@/lib/mejoramiento/origenes";
 import { ETIQUETA_CLASE, ETIQUETA_CRITICIDAD } from "@/lib/mejoramiento/textos";
 import { ESTADOS_HALLAZGO, type AccionHallazgo } from "@/lib/mejoramiento/tipos";
@@ -273,9 +273,12 @@ function filtrosDeMejora(v: unknown): (string | null)[] {
     origen ? `de origen «${origen}»` : null,
     clase ? `de clase «${clase}»` : null,
     criticidad ? `de criticidad «${criticidad}»` : null,
-    estado && ESTADOS_DEL_FILTRO.includes(estado)
-      ? `en estado «${minuscula(etiquetaDelFiltroDeEstado(estado as (typeof ESTADOS_HALLAZGO)[number]))}»`
-      : null,
+    // Fase 15B (anexo §11.1): «todos» lo dice; una fila sin estado (de la 15A) también era de todos, y no dice nada.
+    estado === TODOS_LOS_ESTADOS
+      ? "en cualquier estado"
+      : estado && ESTADOS_DEL_FILTRO.includes(estado)
+        ? `en estado «${minuscula(etiquetaDelFiltroDeEstado(estado as (typeof ESTADOS_HALLAZGO)[number]))}»`
+        : null,
     f.soloVencidos === true ? "solo los vencidos" : null,
     f.esperanSuDecision === true ? "los que esperan su decisión" : null,
     texto(f.q) ? `con el texto «${texto(f.q)}»` : null,

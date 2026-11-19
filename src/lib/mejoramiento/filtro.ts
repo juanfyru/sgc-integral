@@ -13,6 +13,15 @@ const dentro = <T extends string>(lista: readonly T[], v: string | undefined): T
 
 export const ESTADOS_ESPECIALES = ["abiertos", "reabiertos", "sin_accion", "por_evaluar"] as const;
 
+/** Cuántos hallazgos trae cada página de la lista (Fase 15B, anexo §11.1). El Excel no pagina. */
+export const TAMANO_DE_PAGINA = 50;
+
+/** El filtro de estado que quita todos los demás: los terminados también (anexo §11.1: sin estado, la lista muestra los abiertos). */
+export const TODOS_LOS_ESTADOS = "todos";
+
+/** El estado que vale cuando la dirección no trae ninguno (anexo §11.1). */
+export const ESTADO_POR_OMISION = "abiertos";
+
 /** Los estados del filtro que no son un estado guardado, con su nombre en el selector (y en el Excel y la bitácora). */
 export const ETIQUETA_ESTADO_ESPECIAL: Record<(typeof ESTADOS_ESPECIALES)[number], string> = {
   abiertos: "Abiertos",
@@ -23,6 +32,7 @@ export const ETIQUETA_ESTADO_ESPECIAL: Record<(typeof ESTADOS_ESPECIALES)[number
 
 /** El nombre del filtro de estado, como lo dice el selector de la lista. */
 export function etiquetaDelFiltroDeEstado(estado: NonNullable<FiltroDeLista["estado"]>): string {
+  if (estado === TODOS_LOS_ESTADOS) return "Todos";
   return Object.hasOwn(ETIQUETA_ESTADO_ESPECIAL, estado)
     ? ETIQUETA_ESTADO_ESPECIAL[estado as keyof typeof ETIQUETA_ESTADO_ESPECIAL]
     : etiquetaDeEstado({ estado: estado as EstadoHallazgo, resultadoCierre: null, correccionRequerida: null });
@@ -61,7 +71,7 @@ export function filtrosConNombreEnPalabras(
 
 /**
  * Los filtros de la lista en palabras, uno por parte («Proceso: Urgencias», «Estado: Por aceptar», «Solo vencidos»), en el orden
- * del formulario: la línea de filtros del Excel. El proceso por su nombre en `procesos` (los del alcance de quien exporta); uno que
+ * del formulario: la línea de filtros del Excel. El estado va siempre: sin él, «Abiertos» (anexo §11.1). El proceso por su nombre en `procesos` (los del alcance de quien exporta); uno que
  * ya no está, «no disponible». El plan, el objetivo y lo que llega por «Ver todos», por su nombre en `nombres`.
  */
 export function filtrosEnPalabras(
@@ -75,7 +85,8 @@ export function filtrosEnPalabras(
     f.origen ? `Origen: ${ETIQUETA_ORIGEN[f.origen] ?? f.origen}` : null,
     f.clase ? `Clase: ${ETIQUETA_CLASE[f.clase]}` : null,
     f.criticidad ? `Criticidad: ${ETIQUETA_CRITICIDAD[f.criticidad]}` : null,
-    f.estado ? `Estado: ${etiquetaDelFiltroDeEstado(f.estado)}` : null,
+    // Sin estado, los abiertos (anexo §11.1): la línea lo dice, para que el libro no parezca traerlo todo.
+    `Estado: ${etiquetaDelFiltroDeEstado(f.estado ?? ESTADO_POR_OMISION)}`,
     f.soloVencidos ? "Solo vencidos" : null,
     f.esperanSuDecision ? "Esperan su decisión" : null,
     ...filtrosConNombreEnPalabras(f, nombres),
@@ -96,7 +107,7 @@ export function filtroDeConsulta(p: Parametros): FiltroDeLista {
   if (clase) filtro.clase = clase;
   const criticidad = dentro(CRITICIDADES, primero(p.criticidad));
   if (criticidad) filtro.criticidad = criticidad;
-  const estado = dentro([...ESTADOS_HALLAZGO, ...ESTADOS_ESPECIALES], primero(p.estado));
+  const estado = dentro([...ESTADOS_HALLAZGO, ...ESTADOS_ESPECIALES, TODOS_LOS_ESTADOS], primero(p.estado));
   if (estado) filtro.estado = estado;
   if (primero(p.vencidos) === "1") filtro.soloVencidos = true;
   if (primero(p.decision) === "1") filtro.esperanSuDecision = true;
@@ -104,10 +115,15 @@ export function filtroDeConsulta(p: Parametros): FiltroDeLista {
     const v = primero(p[k]);
     if (v !== undefined && ID_DE_LA_URL.test(v)) filtro[k] = Number(v);
   }
+  const pagina = primero(p.pagina);
+  if (pagina !== undefined && /^\d{1,6}$/.test(pagina) && Number(pagina) > 1) filtro.pagina = Number(pagina);
   return filtro;
 }
 
-/** Los nombres de la URL de cada filtro: para armar los enlaces de las cifras. */
+/**
+ * Los nombres de la URL de cada filtro: para armar los enlaces de las cifras, el del Excel y el de otra página. Sin la página: el
+ * Excel no pagina, y un filtro nuevo empieza en la primera (`rutaDePagina`).
+ */
 export function consultaDeFiltro(f: FiltroDeLista): string {
   const u = new URLSearchParams();
   if (f.q) u.set("q", f.q);
@@ -126,4 +142,12 @@ export function consultaDeFiltro(f: FiltroDeLista): string {
 export function rutaDeListaFiltrada(f: FiltroDeLista): string {
   const q = consultaDeFiltro(f);
   return q ? `/mejoramiento?${q}` : "/mejoramiento";
+}
+
+/** La página `pagina` de la lista con el mismo filtro: los enlaces «Anterior» y «Siguiente» (la primera, sin `pagina`). */
+export function rutaDePagina(f: FiltroDeLista, pagina: number): string {
+  const q = consultaDeFiltro(f);
+  const p = pagina > 1 ? `pagina=${pagina}` : "";
+  const todo = [q, p].filter(Boolean).join("&");
+  return todo ? `/mejoramiento?${todo}` : "/mejoramiento";
 }

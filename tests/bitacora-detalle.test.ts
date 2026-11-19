@@ -1484,6 +1484,13 @@ describe("el Excel de los hallazgos de mejoramiento (15A, Tarea 21)", () => {
     );
     expect(nombreDeAccion("mejora_exporto_hallazgos")).toBe("Emitió la matriz de hallazgos de mejoramiento");
   });
+
+  it("desde la 15B guarda el estado que rigió: «abiertos» por omisión, o «todos» (anexo §11.1)", () => {
+    expect(frase({ filtros: { estado: "abiertos" } })).toBe("Emitió la matriz de hallazgos de mejoramiento (en estado «abiertos»)");
+    expect(frase({ filtros: { procesoId: 3, estado: "todos" } })).toBe(
+      "Emitió la matriz de hallazgos de mejoramiento (de un proceso, en cualquier estado)",
+    );
+  });
 });
 
 describe("el Excel para el ente de un plan de mejoramiento (15B, Tarea 6)", () => {

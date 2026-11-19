@@ -34,7 +34,7 @@ import { ErrorMejora, type AccionHallazgo, type EstadoHallazgo, type HallazgoBas
 import { DESDE, YA_CAMBIO } from "@/lib/mejoramiento/transiciones";
 import { ErrorPermiso, puede, requerirPermiso } from "@/lib/permisos";
 import { fechaEnZona } from "@/lib/tramites/plazos";
-import { actuaPorElProceso, arbitrosDe, avisarDelArbitraje, avisarDelCierre, avisarDelRetiro } from "./avisos";
+import { actuaPorElProceso, arbitrosDe, avisarDelArbitraje, avisarDelCierre, avisarDelRetiro, avisarDelSostenido } from "./avisos";
 import { contextoDeMejora, type ContextoMejora } from "./config";
 import { bloquearHallazgo, legible, NO_EXISTE, transicionarHallazgo } from "./flujo";
 
@@ -256,7 +256,8 @@ export async function rechazarHallazgo(
 
 /**
  * Quien lo registró lo retira tras el rechazo: queda «Rechazado», con la justificación del rechazo a la vista en su historial
- * (retirar no pide una razón propia). Los líderes del proceso reciben el aviso del retiro.
+ * (retirar no pide una razón propia). Los líderes del proceso reciben el aviso del retiro y, si lo retiró el Admin SGC en su lugar,
+ * también quien lo registró (`avisarDelRetiro`).
  */
 export async function retirarHallazgo(sesion: SesionFlujo, d: { hallazgoId: number }, opciones?: OpcionesFlujo): Promise<void> {
   requerirPermiso(sesion, "mejora.registrar");
@@ -271,7 +272,8 @@ export async function retirarHallazgo(sesion: SesionFlujo, d: { hallazgoId: numb
 
 /**
  * Quien lo registró lo sostiene con su réplica y pasa a arbitraje. El evento guarda quién lo sostuvo (su `usuario_id`):
- * de eso depende quién arbitra (`arbitrosDe`).
+ * de eso depende quién arbitra (`arbitrosDe`). Si lo sostuvo el Admin SGC en su lugar, quien lo registró recibe el aviso
+ * (`avisarDelSostenido`).
  */
 export async function sostenerHallazgo(
   sesion: SesionFlujo,
@@ -284,6 +286,7 @@ export async function sostenerHallazgo(
     if (!puedeDecidirTrasElRechazo(sesion, h)) await negar(tx, sesion, h.id);
     exigirEstado(h, "sostener");
     await transicionarHallazgo(tx, sesion, h, "sostener", { detalle: enLugarDe(sesion, h), soloEnElEvento: { replica: v.replica } }, c);
+    await avisarDelSostenido(tx, h, sesion.usuarioId);
   });
 }
 

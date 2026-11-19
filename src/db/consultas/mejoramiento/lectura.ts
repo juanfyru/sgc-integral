@@ -8,7 +8,7 @@ import { z } from "zod";
 import { obtenerSql, type Cliente } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { nombreSql } from "@/db/consultas/normograma/busqueda";
-import { adminsActivos, lideresDeProceso } from "@/db/consultas/tramites";
+import { adminsActivos, lideresDeProceso, lideresDeProcesos } from "@/db/consultas/tramites";
 import {
   componentesVisibles,
   ejecutoEnElHallazgo,
@@ -20,6 +20,7 @@ import {
   puedeVerPlan,
   puedeVerificar,
   quienesVerifican,
+  quienesVerificanDe,
   vistaCompletaDeHallazgo,
 } from "@/lib/alcance";
 import { periodoDe } from "@/lib/indicadores-documentales/periodo";
@@ -29,7 +30,8 @@ import { leerCriterios, yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { etiquetaDeEstado, marcasDeHallazgo, turnoDe } from "@/lib/mejoramiento/estados";
 import { fechaLargaDeDia } from "@/lib/mejoramiento/formato";
 import type { ActividadDeExcel, FilaDeExcel } from "@/lib/mejoramiento/excel";
-import { esExterno } from "@/lib/mejoramiento/origenes";
+import { TAMANO_DE_PAGINA } from "@/lib/mejoramiento/filtro";
+import { esExterno, ORIGENES } from "@/lib/mejoramiento/origenes";
 import { rutaDeHallazgo } from "@/lib/mejoramiento/rutas";
 import { esReprogramada } from "@/lib/mejoramiento/textos";
 import {
@@ -62,17 +64,25 @@ import { clasificacionDe } from "./clasificacion";
 import { leerAjustes, sinLaFila, type AjusteDeDetalle } from "./ajustes-lectura";
 
 export type { AjusteDeDetalle } from "./ajustes-lectura";
-import { activosDeRol, quienTieneElTurno, revisoresDe } from "./avisos";
+import {
+  activosDeRol,
+  activosDeUnaVez,
+  arbitrosDeVarios,
+  quienTieneElTurno,
+  revisoresDe,
+  revisoresDeVarios,
+  type ActivosDeUnaVez,
+} from "./avisos";
 import { cargaConfirmada, cargaResuelta } from "./carga-confirmada";
 import { indicadoresDeEficacia } from "./indicador-de-eficacia";
 import { respuestaDesdeUnPlan, type OficioDelPlan } from "./respuesta-plan";
-import { tareasConSuHallazgo } from "./tareas";
+import { tareasConSuHallazgo, type LoYaLeido } from "./tareas";
 import { venceLaActividad } from "./vence-actividad";
 import { ofreceRechazo, pasoDelEstado, puedeDarElPaso, type PasoDelRecorrido } from "./recorrido";
 import { contextoDeMejora } from "./config";
 import { enlaceDelImpacto } from "./enganche-impacto";
 import { correccionEnlazada, type CorreccionEnlazada } from "./enganche-verificacion";
-import { fechasMinimasDe, venceLaEvaluacionDe } from "./espera";
+import { fechasMinimasDe, venceLaEvaluacionDe, type EsperaLeida } from "./espera";
 import { evaluablesDesde, NADIE_PUEDE_VERIFICAR, type FilaDelIndicador } from "./verificacion";
 
 type Opciones = { sql?: Cliente; ahora?: Date };
@@ -83,8 +93,12 @@ export type FiltroDeLista = {
   origen?: Origen;
   clase?: Clase;
   criticidad?: Criticidad;
-  /** Además de los estados guardados: `por_evaluar`, los «En espera de eficacia» que ya llegaron a su fecha mínima (R4). */
-  estado?: EstadoHallazgo | "abiertos" | "reabiertos" | "sin_accion" | "por_evaluar";
+  /**
+   * Además de los estados guardados: `por_evaluar`, los «En espera de eficacia» que ya llegaron a su fecha mínima (R4), y `todos`.
+   * Sin estado, los abiertos (Fase 15B, anexo §11.1): la lista los muestra por omisión, y un código exacto encuentra también un
+   * terminado.
+   */
+  estado?: EstadoHallazgo | "abiertos" | "reabiertos" | "sin_accion" | "por_evaluar" | "todos";
   soloVencidos?: boolean;
   /** Los que esperan la decisión de quien mira (R2): los hallazgos de sus tareas de mejoramiento (`tareasConSuHallazgo`). */
   esperanSuDecision?: boolean;
@@ -99,6 +113,8 @@ export type FiltroDeLista = {
   indicador?: number;
   norma?: number;
   subproceso?: number;
+  /** La página, desde 1 (`TAMANO_DE_PAGINA` por página); una que se pasa del final es la última. El Excel no pagina. */
+  pagina?: number;
 };
 
 export type FilaDeHallazgo = {
@@ -171,9 +187,11 @@ const recordar = <T>(m: Memoria, clave: string, f: () => Promise<T>): Promise<T>
 };
 
 /**
- * Quién tiene el turno y cómo se dice. En la espera de eficacia nadie lo tiene hasta la fecha mínima; desde ella, quien puede
- * verificar (spec §8.1; `yaSePuedeEvaluar`, R4). Un hallazgo cargado sin su formato firmado (`faltaElFormato`) no avanza hasta
- * que el Admin SGC lo adjunta: el turno es suyo, sea cual sea el paso (spec §15).
+ * Quién tiene el turno de un hallazgo y cómo se dice (la página del hallazgo, `turnoEnTexto`). En la espera de eficacia nadie lo
+ * tiene hasta la fecha mínima; desde ella, quien puede verificar (spec §8.1; `yaSePuedeEvaluar`, R4). Un hallazgo cargado sin su
+ * formato firmado (`faltaElFormato`) no avanza hasta que el Admin SGC lo adjunta: el turno es suyo, sea cual sea el paso (spec §15).
+ * Las listas resuelven el texto de una página entera de una vez (`turnosEnTexto`); `tests/mejora-lista.test.ts` exige que digan lo
+ * mismo que esta, fila por fila.
  */
 async function resolverTurno(
   tx: Cliente,
@@ -236,7 +254,11 @@ async function resolverTurno(
  * Con quién está el hallazgo, en palabras, según los usuarios activos de hoy (nunca se guarda): si el turno es del líder y
  * el proceso ya no tiene ninguno activo, es del Administrador del SGC.
  */
-export async function turnoEnTexto(tx: Cliente, h: HallazgoBase, x?: { yaSePuedeEvaluar?: boolean }): Promise<string> {
+export async function turnoEnTexto(
+  tx: Cliente,
+  h: HallazgoBase,
+  x?: { yaSePuedeEvaluar?: boolean; faltaElFormato?: boolean },
+): Promise<string> {
   return (await resolverTurno(tx, h, new Map(), x)).texto;
 }
 
@@ -281,15 +303,17 @@ const COLUMNAS_BASE = (sql: Cliente) => sql`h.id, h.codigo, h.clase, h.criticida
 async function reglasDeLaLista(sql: Cliente, donde: PendingQuery<Row[]>, ahora: Date) {
   const zona = zonaHoraria();
   const hoy = fechaEnZona(ahora, zona);
-  const enEspera = await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${donde} AND h.estado = 'en_espera'`;
-  const minimas = await fechasMinimasDe(sql, enEspera.map((f) => Number(f.id)), zona);
+  const enEspera = (await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${donde} AND h.estado = 'en_espera'`).map((f) => Number(f.id));
+  const minimas = await fechasMinimasDe(sql, enEspera, zona);
   const porEvaluar = [...minimas].flatMap(([id, fm]) => (yaSePuedeEvaluar(fm.minima, ahora, zona) ? [id] : []));
   const contexto = minimas.size > 0 ? await contextoDeMejora(sql, ahora) : null;
   const evaluacionVencida = contexto
     ? [...minimas].flatMap(([id, fm]) => (venceLaEvaluacionDe(fm, contexto).getTime() < ahora.getTime() ? [id] : []))
     : [];
   const algoVencido = sql`(${ACTIVIDAD_VENCIDA(sql, hoy)} OR h.vence_en < ${ahora} OR h.id = ANY(${sql.array(evaluacionVencida)}::bigint[]))`;
-  return { hoy, porEvaluar, algoVencido };
+  // Lo leído de la espera, para las tareas de quien mira en la misma lectura (`LoYaLeido`): no lo leen otra vez.
+  const espera: EsperaLeida = { ids: new Set(enEspera), fechas: minimas, contexto };
+  return { hoy, porEvaluar, algoVencido, espera };
 }
 
 /** Las columnas de una fila de la lista, sobre `h` y su proceso `p`. */
@@ -297,13 +321,27 @@ const COLUMNAS_DE_LA_LISTA = (sql: Cliente, hoy: string, algoVencido: PendingQue
   h.vence_en, h.cargado, p.nombre AS proceso, ${ACTIVIDAD_VENCIDA(sql, hoy)} AS actividad_vencida, ${algoVencido} AS algo_vencido,
   ${AVANCE(sql)} AS avance, ${cargaResuelta(sql)} AS carga_resuelta`;
 
-/** Una fila de la lista con si tiene algo vencido (solo abierta), para ordenarla y contarla. */
+/** Los orígenes externos (`esExterno`): la prioridad alta de un hallazgo abierto. */
+const EXTERNOS = ORIGENES.flatMap((o) => (esExterno(o.clave) ? [o.clave] : []));
+
+/**
+ * El orden de la lista, en la consulta (Fase 15B, anexo §11.1; hasta la 15A se ordenaba en memoria con la misma regla, y
+ * `tests/mejora-lista.test.ts` lo fijó antes del cambio): los abiertos de prioridad alta (externos) primero, luego los abiertos con
+ * algo vencido, luego por vencimiento ascendente con los nulos al final (un terminado no vence, aunque su fila conserve una fecha) y,
+ * a igual fecha, por id. Una sola regla para la lista, su Excel y los hallazgos de un plan.
+ */
+const ORDEN_DE_LA_LISTA = (sql: Cliente, algoVencido: PendingQuery<Row[]>) => {
+  const abierto = sql`h.estado NOT IN ${sql([...TERMINALES])}`;
+  return sql`(${abierto} AND h.origen IN ${sql(EXTERNOS)}) DESC, (${abierto} AND (${algoVencido}) IS TRUE) DESC,
+    (CASE WHEN ${abierto} THEN h.vence_en END) ASC NULLS LAST, h.id ASC`;
+};
+
+/** Una fila de la lista con si tiene algo vencido (solo abierta), para contarla. */
 type FilaConVencido = FilaDeHallazgo & { vencido: boolean };
 
-/** Una fila leída con `COLUMNAS_DE_LA_LISTA`, como la pinta la lista. El turno, con la memoria de la llamada. */
-async function aFilaDeLista(sql: Cliente, f: Row, memoria: Memoria, porEvaluar: readonly number[]): Promise<FilaConVencido> {
+/** Una fila leída con `COLUMNAS_DE_LA_LISTA`, como la pinta la lista, con su turno ya resuelto (`turnosEnTexto`). */
+function aFilaDeLista(f: Row, turno: string, porEvaluar: ReadonlySet<number>): FilaConVencido {
   const h = aBase(f);
-  const yaSePuede = { yaSePuedeEvaluar: porEvaluar.includes(h.id) };
   const abierta = !esTerminal(h.estado);
   return {
     id: h.id,
@@ -314,9 +352,9 @@ async function aFilaDeLista(sql: Cliente, f: Row, memoria: Memoria, porEvaluar: 
     origen: h.origen,
     proceso: f.proceso as string,
     estado: h.estado,
-    etiqueta: etiquetaDeEstado(h, yaSePuede),
+    etiqueta: etiquetaDeEstado(h, { yaSePuedeEvaluar: porEvaluar.has(h.id) }),
     marcas: marcasDeHallazgo(h, { cargado: f.cargado === true, algunaActividadVencida: f.actividad_vencida === true }),
-    turno: (await resolverTurno(sql, h, memoria, { ...yaSePuede, faltaElFormato: f.carga_resuelta === false })).texto,
+    turno,
     avance: idONulo(f.avance),
     vence: abierta ? ((f.vence_en as Date | null) ?? null) : null,
     prioridadAlta: abierta && esExterno(h.origen),
@@ -324,63 +362,128 @@ async function aFilaDeLista(sql: Cliente, f: Row, memoria: Memoria, porEvaluar: 
   };
 }
 
-/**
- * El orden de la lista: los de prioridad alta (externos) primero, luego los que tienen algo vencido, luego por vencimiento
- * ascendente con los nulos al final.
- */
-function ordenDeLaLista(a: FilaConVencido, b: FilaConVencido): number {
-  if (a.prioridadAlta !== b.prioridadAlta) return a.prioridadAlta ? -1 : 1;
-  if (a.vencido !== b.vencido) return a.vencido ? -1 : 1;
-  if (a.vence && b.vence) return a.vence.getTime() - b.vence.getTime() || a.id - b.id;
-  if (a.vence || b.vence) return a.vence ? -1 : 1;
-  return a.id - b.id;
+/** Lo que el turno de una fila necesita saber además del hallazgo (lo mismo que recibe `resolverTurno`). */
+type ParaElTurno = { h: HallazgoBase; yaSePuedeEvaluar: boolean; faltaElFormato: boolean };
+
+/** La clase de turno de una fila, como la decide `resolverTurno`: el formato firmado que falta y la espera ya evaluable van antes. */
+function claseDeTurno(x: ParaElTurno): ReturnType<typeof turnoDe> | "formato" {
+  if (x.faltaElFormato && !esTerminal(x.h.estado)) return "formato";
+  if (x.h.estado === "en_espera" && x.yaSePuedeEvaluar) return "verificadores";
+  return turnoDe(x.h.estado);
+}
+
+/** Quienes de `ids` siguen activos (el turno de «Rechazado · por decidir», `QUIENES.registrador`). */
+async function activosEntre(sql: Cliente, ids: readonly number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const filas = await sql`SELECT id FROM usuarios WHERE id = ANY(${sql.array([...new Set(ids)])}::bigint[]) AND activo`;
+  return new Set(filas.map((f) => Number(f.id)));
 }
 
 /**
- * La lista de hallazgos que la persona ve, con las cifras de lo que ve (no de lo filtrado). Orden por omisión: los
- * de prioridad alta (externos) primero, luego los que tienen algo vencido, luego por vencimiento ascendente con los nulos
- * al final. Los filtros van al `WHERE`; `esperanSuDecision` sale de las tareas de mejoramiento de quien mira, en una sola
- * llamada para toda la lista.
+ * El turno en palabras de varios hallazgos a la vez (Fase 15B, anexo §11.1): el mismo texto que `resolverTurno` da hallazgo por
+ * hallazgo, con una consulta por clase de turno para todos (los líderes de sus procesos, quienes lo registraron, quienes arbitran,
+ * quienes revisan y quienes verifican, con las mismas reglas por lote: `lideresDeProcesos`, `arbitrosDeVarios`, `revisoresDeVarios`,
+ * `quienesVerificanDe`) y los Admin SGC y los de Gerencia una sola vez: lo que cuesta una página no crece con sus filas. Los turnos
+ * cuyo texto no depende de quién lo tiene (los responsables, quien valida, Gerencia, el Admin SGC fuera de la revisión, el formato
+ * firmado que falta) no consultan nada. `tests/mejora-lista.test.ts` lo compara, fila por fila, con `turnoEnTexto`.
  */
-export async function listarHallazgos(
+async function turnosEnTexto(
+  sql: Cliente,
+  lista: readonly ParaElTurno[],
+  activos: ActivosDeUnaVez = activosDeUnaVez(sql),
+): Promise<Map<number, string>> {
+  const de = (clase: ReturnType<typeof claseDeTurno>) => lista.filter((x) => claseDeTurno(x) === clase).map((x) => x.h);
+  const [lideres, registradores, arbitros, revisores, verificadores] = await Promise.all([
+    lideresDeProcesos(de("lideres").map((h) => h.procesoId), { sql }),
+    activosEntre(sql, de("registrador").map((h) => h.registradoPor)),
+    arbitrosDeVarios(sql, de("arbitro"), activos),
+    revisoresDeVarios(sql, de("admin").filter((h) => h.estado === "en_revision"), activos),
+    quienesVerificanDe(sql, de("verificadores").map((h) => h.id)),
+  ]);
+  const ninguno: number[] = [];
+  const texto = async (x: ParaElTurno): Promise<string> => {
+    const h = x.h;
+    const clase = claseDeTurno(x);
+    switch (clase) {
+      case "formato":
+        return TURNO_SIN_EL_FORMATO;
+      case null:
+        return esTerminal(h.estado) ? "Sin pendientes" : "Nadie por ahora";
+      case "lideres": {
+        const suyos = lideres.get(h.procesoId) ?? ninguno;
+        // Quien lo registró no lo acepta (`QUIENES.lideres`): sin nadie más, nadie puede aceptarlo.
+        if (h.estado === "por_aceptar") {
+          const aceptan = (suyos.length > 0 ? suyos : await activos("admin_sgc")).filter((u) => u !== h.registradoPor);
+          if (aceptan.length === 0) return NADIE_ACEPTA_TURNO;
+        }
+        return suyos.length > 0 ? "La líder del proceso" : ADMIN;
+      }
+      case "registrador":
+        return registradores.has(h.registradoPor) ? "Quien lo registró" : ADMIN;
+      case "arbitro": {
+        const ids = arbitros.get(h.id) ?? ninguno;
+        if (ids.length === 0) return NADIE_ARBITRA_TURNO;
+        const gerencia = await activos("gerencia");
+        return ids.every((id) => gerencia.includes(id)) ? "Gerencia" : ADMIN;
+      }
+      case "admin":
+        // Sin nadie que revise lo enviado, el turno es de quien lo elaboró, para devolverlo y reenviarlo (`QUIENES.admin`).
+        return h.estado === "en_revision" && (revisores.get(h.id) ?? ninguno).length === 0 ? QUIEN_LO_ELABORO : ADMIN;
+      case "gerencia":
+        return "Gerencia";
+      case "responsables":
+        return "Los responsables de las actividades";
+      case "verificadores":
+        return (verificadores.get(h.id) ?? ninguno).length > 0 ? QUIEN_VERIFICA : NADIE_VERIFICA_TURNO;
+      case "validadores":
+        return "Quien puede validar";
+    }
+  };
+  const turnos = new Map<number, string>();
+  for (const x of lista) turnos.set(x.h.id, await texto(x));
+  return turnos;
+}
+
+/** Las filas leídas con `COLUMNAS_DE_LA_LISTA`, en su orden, con el turno de todas resuelto de una vez (`turnosEnTexto`). */
+async function filasConSuTurno(
+  sql: Cliente,
+  filas: readonly Row[],
+  porEvaluar: readonly number[],
+  activos?: ActivosDeUnaVez,
+): Promise<FilaConVencido[]> {
+  const evaluables = new Set(porEvaluar);
+  const turnos = await turnosEnTexto(
+    sql,
+    filas.map((f) => ({ h: aBase(f), yaSePuedeEvaluar: evaluables.has(Number(f.id)), faltaElFormato: f.carga_resuelta === false })),
+    activos,
+  );
+  return filas.map((f) => aFilaDeLista(f, turnos.get(Number(f.id)) ?? "", evaluables));
+}
+
+/**
+ * Los hallazgos distintos entre las tareas de mejoramiento de quien mira, las mismas de «Mis tareas»: los que esperan su decisión
+ * (R2), en una sola llamada para toda la lista (nunca una por fila). Con lo que la lista ya leyó a la misma hora (`yaLeido`), las
+ * tareas no lo leen otra vez.
+ */
+async function hallazgosDeSusTareas(sesion: SesionFlujo, sql: Cliente, ahora: Date, yaLeido?: LoYaLeido): Promise<number[]> {
+  const tareas = await tareasConSuHallazgo(sesion, { sql, ahora, ...yaLeido });
+  return [...new Set(tareas.flatMap((t) => (t.hallazgoId === null ? [] : [t.hallazgoId])))];
+}
+
+/**
+ * Las condiciones del filtro sobre `h`, sin la visibilidad (la pone quien llama). Sin estado, los abiertos y, si lo buscado es el
+ * código exacto de un hallazgo terminado, también ese (anexo §11.1: se encuentra sin cambiar el estado; quien no lo ve no lo
+ * encuentra, porque la visibilidad va en el mismo `WHERE`). `todos`, sin condición de estado.
+ */
+function condicionesDeLaLista(
+  sql: Cliente,
   sesion: SesionFlujo,
   filtro: FiltroDeLista,
-  opciones?: Opciones,
-): Promise<{ filas: FilaDeHallazgo[]; cifras: CifrasDeLista }> {
-  const sql = opciones?.sql ?? obtenerSql();
-  const ahora = opciones?.ahora ?? new Date();
-  const memoria: Memoria = new Map();
-  const visible = filtroHallazgos(sql, sesion);
+  reglas: { porEvaluar: readonly number[]; algoVencido: PendingQuery<Row[]> },
+  deSusTareas: readonly number[],
+): PendingQuery<Row[]> {
   const abierto = sql`h.estado NOT IN ${sql([...TERMINALES])}`;
-  const { hoy, porEvaluar, algoVencido } = await reglasDeLaLista(sql, visible, ahora);
-
-  // Los que esperan la decisión de quien mira (R2): los hallazgos distintos entre sus tareas de mejoramiento, las mismas de
-  // «Mis tareas», en una sola llamada para toda la lista (nunca una por fila); de esos, solo los que ve.
-  const deSusTareas = [
-    ...new Set((await tareasConSuHallazgo(sesion, { sql, ahora })).flatMap((t) => (t.hallazgoId === null ? [] : [t.hallazgoId]))),
-  ];
-  const suyos =
-    deSusTareas.length === 0
-      ? []
-      : (await sql`SELECT h.id FROM mejora_hallazgos h WHERE ${visible} AND h.id = ANY(${sql.array(deSusTareas)}::bigint[])`).map((f) =>
-          Number(f.id),
-        );
-
-  const [c] = await sql`SELECT
-      count(*) FILTER (WHERE ${abierto}) AS abiertos,
-      count(*) FILTER (WHERE ${abierto} AND ${algoVencido}) AS con_algo_vencido,
-      count(*) FILTER (WHERE h.estado = 'en_espera') AS en_espera,
-      count(*) FILTER (WHERE ${abierto} AND h.ronda > 1) AS reabiertos
-    FROM mejora_hallazgos h WHERE ${visible}`;
-  const cifras: CifrasDeLista = {
-    abiertos: Number(c.abiertos),
-    conAlgoVencido: Number(c.con_algo_vencido),
-    esperanSuDecision: suyos.length,
-    enEspera: Number(c.en_espera),
-    porEvaluar: porEvaluar.length,
-    reabiertos: Number(c.reabiertos),
-  };
-
+  const { porEvaluar, algoVencido } = reglas;
   const e = filtro.estado;
   const q = filtro.q?.trim();
   const condiciones = [
@@ -391,14 +494,15 @@ export async function listarHallazgos(
     filtro.origen ? sql`h.origen = ${filtro.origen}` : sql`true`,
     filtro.clase ? sql`h.clase = ${filtro.clase}` : sql`true`,
     filtro.criticidad ? sql`h.criticidad = ${filtro.criticidad}` : sql`true`,
-    e === "abiertos" ? abierto
+    e === undefined ? (q ? sql`(${abierto} OR lower(h.codigo) = lower(${q}))` : abierto)
+    : e === "todos" ? sql`true`
+    : e === "abiertos" ? abierto
     : e === "reabiertos" ? sql`(${abierto} AND h.ronda > 1)`
     : e === "sin_accion" ? sql`(h.estado = 'cerrado' AND h.resultado_cierre = 'sin_accion')`
-    : e === "por_evaluar" ? sql`h.id = ANY(${sql.array(porEvaluar)}::bigint[])`
-    : e ? sql`h.estado = ${e}`
-    : sql`true`,
+    : e === "por_evaluar" ? sql`h.id = ANY(${sql.array([...porEvaluar])}::bigint[])`
+    : sql`h.estado = ${e}`,
     filtro.soloVencidos ? sql`(${abierto} AND ${algoVencido})` : sql`true`,
-    filtro.esperanSuDecision ? sql`h.id = ANY(${sql.array(suyos)}::bigint[])` : sql`true`,
+    filtro.esperanSuDecision ? sql`h.id = ANY(${sql.array([...deSusTareas])}::bigint[])` : sql`true`,
     // La clasificación (Fase 15B, anexo §10.6) y lo que cita (anexo §10.1, la condición de la sección de esas páginas).
     filtro.plan !== undefined
       ? sql`EXISTS (SELECT 1 FROM mejora_clasificacion fc WHERE fc.hallazgo_id = h.id AND fc.plan_id = ${filtro.plan})`
@@ -419,16 +523,89 @@ export async function listarHallazgos(
     filtro.norma !== undefined ? citaDe(sql, { normaId: filtro.norma }) : sql`true`,
     filtro.subproceso !== undefined ? citaDe(sql, { subprocesoId: filtro.subproceso }) : sql`true`,
   ];
-  const filas = await sql`
-    SELECT ${COLUMNAS_DE_LA_LISTA(sql, hoy, algoVencido)}
+  return condiciones.reduce((a, b) => sql`${a} AND ${b}`);
+}
+
+/** Una página de la lista: sus filas, las cifras de todo lo que la persona ve, cuántos trae el filtro y en qué página se está. */
+export type PaginaDeHallazgos = { filas: FilaDeHallazgo[]; cifras: CifrasDeLista; total: number; pagina: number; paginas: number };
+
+/**
+ * La lista de hallazgos que la persona ve, una página a la vez (Fase 15B, anexo §11.1): por omisión los abiertos, `TAMANO_DE_PAGINA`
+ * por página, con el orden (`ORDEN_DE_LA_LISTA`) y el corte en la consulta, y el turno de la página resuelto de una vez
+ * (`turnosEnTexto`). Una página que se pasa del final es la última. Las cifras cuentan todo lo que la persona ve, no lo filtrado ni la
+ * página; `total` y `paginas`, lo que trae el filtro. Los filtros van al `WHERE`, con la visibilidad (`filtroHallazgos`) en el mismo:
+ * lo que no se ve no cuenta en nada. `esperanSuDecision` sale de las tareas de mejoramiento de quien mira, en una sola llamada. Un
+ * número fijo de consultas, sean cuantas sean las filas (`tests/mejora-lista.test.ts`).
+ */
+export async function listarHallazgos(sesion: SesionFlujo, filtro: FiltroDeLista, opciones?: Opciones): Promise<PaginaDeHallazgos> {
+  const sql = opciones?.sql ?? obtenerSql();
+  const ahora = opciones?.ahora ?? new Date();
+  const visible = filtroHallazgos(sql, sesion);
+  const abierto = sql`h.estado NOT IN ${sql([...TERMINALES])}`;
+  const reglas = await reglasDeLaLista(sql, visible, ahora);
+  // Los Admin SGC y los de Gerencia activos, una vez para las tareas y el turno de la página.
+  const activos = activosDeUnaVez(sql);
+  const deSusTareas = await hallazgosDeSusTareas(sesion, sql, ahora, { espera: reglas.espera, activos });
+
+  // De los que esperan su decisión, solo los que ve: la cifra va en el mismo recorrido de lo visible.
+  const [c] = await sql`SELECT
+      count(*) FILTER (WHERE ${abierto}) AS abiertos,
+      count(*) FILTER (WHERE ${abierto} AND ${reglas.algoVencido}) AS con_algo_vencido,
+      count(*) FILTER (WHERE h.id = ANY(${sql.array(deSusTareas)}::bigint[])) AS esperan_su_decision,
+      count(*) FILTER (WHERE h.estado = 'en_espera') AS en_espera,
+      count(*) FILTER (WHERE ${abierto} AND h.ronda > 1) AS reabiertos
+    FROM mejora_hallazgos h WHERE ${visible}`;
+  const cifras: CifrasDeLista = {
+    abiertos: Number(c.abiertos),
+    conAlgoVencido: Number(c.con_algo_vencido),
+    esperanSuDecision: Number(c.esperan_su_decision),
+    enEspera: Number(c.en_espera),
+    porEvaluar: reglas.porEvaluar.length,
+    reabiertos: Number(c.reabiertos),
+  };
+
+  const donde = sql`${visible} AND ${condicionesDeLaLista(sql, sesion, filtro, reglas, deSusTareas)}`;
+  const deLaPagina = (n: number) => sql`
+    SELECT ${COLUMNAS_DE_LA_LISTA(sql, reglas.hoy, reglas.algoVencido)}, count(*) OVER () AS total
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
-    WHERE ${visible} AND ${condiciones.reduce((a, b) => sql`${a} AND ${b}`)}`;
+    WHERE ${donde}
+    ORDER BY ${ORDEN_DE_LA_LISTA(sql, reglas.algoVencido)}
+    LIMIT ${TAMANO_DE_PAGINA} OFFSET ${(n - 1) * TAMANO_DE_PAGINA}`;
+  const pedida = Number.isSafeInteger(filtro.pagina) && (filtro.pagina ?? 0) > 1 ? (filtro.pagina as number) : 1;
+  let pagina = pedida;
+  let filas = await deLaPagina(pagina);
+  let total = filas.length > 0 ? Number(filas[0].total) : 0;
+  // Más allá del final, la última página: hace falta saber cuántos hay, y la consulta de una página vacía no lo dice.
+  if (filas.length === 0 && pedida > 1) {
+    const [n] = await sql`SELECT count(*)::int AS n FROM mejora_hallazgos h WHERE ${donde}`;
+    total = Number(n.n);
+    pagina = Math.max(1, Math.ceil(total / TAMANO_DE_PAGINA));
+    if (total > 0) filas = await deLaPagina(pagina);
+  }
+  const conTurno = await filasConSuTurno(sql, filas, reglas.porEvaluar, activos);
+  return {
+    filas: conTurno.map((fila) => ({ ...fila, vencido: undefined }) as FilaDeHallazgo),
+    cifras,
+    total,
+    pagina,
+    paginas: Math.max(1, Math.ceil(total / TAMANO_DE_PAGINA)),
+  };
+}
 
-  const resultado: FilaConVencido[] = [];
-  for (const f of filas) resultado.push(await aFilaDeLista(sql, f, memoria, porEvaluar));
-  resultado.sort(ordenDeLaLista);
-  return { filas: resultado.map((fila) => ({ ...fila, vencido: undefined }) as FilaDeHallazgo), cifras };
+/**
+ * Los identificadores de todos los hallazgos que la lista muestra con `filtro`, en su orden y sin página: lo que exporta el Excel
+ * (anexo §11.1). La misma visibilidad, las mismas condiciones y el mismo orden de `listarHallazgos`, sin cifras ni turno; las tareas
+ * de quien mira, solo si el filtro las pide.
+ */
+async function idsDeLaLista(sesion: SesionFlujo, filtro: FiltroDeLista, sql: Cliente, ahora: Date): Promise<number[]> {
+  const visible = filtroHallazgos(sql, sesion);
+  const reglas = await reglasDeLaLista(sql, visible, ahora);
+  const deSusTareas = filtro.esperanSuDecision ? await hallazgosDeSusTareas(sesion, sql, ahora, { espera: reglas.espera }) : [];
+  const filas = await sql`SELECT h.id FROM mejora_hallazgos h
+    WHERE ${visible} AND ${condicionesDeLaLista(sql, sesion, filtro, reglas, deSusTareas)}
+    ORDER BY ${ORDEN_DE_LA_LISTA(sql, reglas.algoVencido)}`;
+  return filas.map((f) => Number(f.id));
 }
 
 /** Una fila de la lista de un subconjunto de hallazgos (los de un plan): la de `listarHallazgos`, con su proceso y si tiene algo vencido. */
@@ -437,8 +614,8 @@ export type FilaDeLaLista = FilaDeHallazgo & { procesoId: number; vencido: boole
 /**
  * Las filas de la lista de los hallazgos de `donde`, un fragmento sobre `h` que ya lleva la visibilidad de quien mira (Fase 15B:
  * los hallazgos de un plan que la persona ve completos), con lo vencido, el avance, la etiqueta, las marcas y el turno de
- * `listarHallazgos` y en su orden. Sin cifras ni filtros: los pone quien llama. Las consultas no crecen con las filas, salvo el
- * turno de los pasos que dependen de cada hallazgo (`resolverTurno`).
+ * `listarHallazgos` y en su orden. Sin cifras, filtros ni páginas: los pone quien llama. Un número fijo de consultas, sean cuantas
+ * sean las filas (el turno, `turnosEnTexto`).
  */
 export async function filasDeLaLista(sql: Cliente, donde: PendingQuery<Row[]>, opciones: { ahora: Date }): Promise<FilaDeLaLista[]> {
   const { hoy, porEvaluar, algoVencido } = await reglasDeLaLista(sql, donde, opciones.ahora);
@@ -446,11 +623,10 @@ export async function filasDeLaLista(sql: Cliente, donde: PendingQuery<Row[]>, o
     SELECT ${COLUMNAS_DE_LA_LISTA(sql, hoy, algoVencido)}
     FROM mejora_hallazgos h
     JOIN procesos p ON p.id = h.proceso_id
-    WHERE ${donde}`;
-  const memoria: Memoria = new Map();
-  const resultado: Array<FilaConVencido & { procesoId: number }> = [];
-  for (const f of filas) resultado.push({ ...(await aFilaDeLista(sql, f, memoria, porEvaluar)), procesoId: Number(f.proceso_id) });
-  return resultado.sort(ordenDeLaLista);
+    WHERE ${donde}
+    ORDER BY ${ORDEN_DE_LA_LISTA(sql, algoVencido)}`;
+  const conTurno = await filasConSuTurno(sql, filas, porEvaluar);
+  return conTurno.map((fila, i) => ({ ...fila, procesoId: Number(filas[i].proceso_id) }));
 }
 
 /**
@@ -522,8 +698,8 @@ function agrupar<T>(filas: readonly T[], clave: (f: T) => string): Map<string, T
 }
 
 /**
- * Las filas del Excel de la lista (spec §16.3 y Apéndice A.6): los hallazgos que `listarHallazgos` muestra con `filtro`, en su
- * orden, con una fila por actividad de un plan aprobado (`fin_original`) de cualquier ronda y una por hallazgo sin ninguna. Toda
+ * Las filas del Excel de la lista (spec §16.3 y Apéndice A.6): todos los hallazgos que la lista muestra con `filtro`, en su orden y
+ * sin página (Fase 15B, anexo §11.1: `idsDeLaLista`), con una fila por actividad de un plan aprobado (`fin_original`) de cualquier ronda y una por hallazgo sin ninguna. Toda
  * fila pasa otra vez por `filtroHallazgos`. Quien ve el hallazgo solo por una actividad (§6.3) recibe de las que no abre
  * (`puedeVerActividad`: la suya o una en que registró un seguimiento) lo que la página le muestra en texto: sin sus archivos, sus
  * seguimientos ni sus ajustes; la respuesta de Gerencia a una escalada, solo quien lo ve completo. El indicador del criterio no se
@@ -533,9 +709,9 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
   const sql = opciones?.sql ?? obtenerSql();
   const ahora = opciones?.ahora ?? new Date();
   const hoy = fechaEnZona(ahora, zonaHoraria());
-  const { filas: lista } = await listarHallazgos(sesion, filtro, { sql, ahora });
+  const lista = await idsDeLaLista(sesion, filtro, sql, ahora);
   if (lista.length === 0) return [];
-  const ids = sql.array(lista.map((f) => f.id));
+  const ids = sql.array(lista);
   const [hallazgos, rondas, actividades, causas, analisis, clasificacion] = await Promise.all([
     sql`SELECT h.id, h.codigo, h.titulo, h.descripcion, h.origen, h.fuente, h.ronda, h.estado, h.resultado_cierre,
         h.correccion_requerida, to_char(h.cerrado_en, 'YYYY-MM-DD') AS cerrado, p.nombre AS proceso,
@@ -573,7 +749,7 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
     sql`SELECT x.hallazgo_id, r.numero AS ronda, x.metodo FROM mejora_analisis x JOIN mejora_rondas r ON r.id = x.ronda_id
       WHERE x.hallazgo_id = ANY(${ids}::bigint[]) ORDER BY x.orden, x.id`,
     // El plan y el objetivo (Fase 15B, anexo §10.6): el código y el nombre del plan los lee todo el que ve el hallazgo (F15B-DC9).
-    clasificacionDe(sql, lista.map((f) => f.id)),
+    clasificacionDe(sql, lista),
   ]);
 
   const visibles = new Map(hallazgos.map((f) => [Number(f.id), f]));
@@ -583,7 +759,7 @@ export async function filasParaExcel(sesion: SesionFlujo, filtro: FiltroDeLista,
   const actividadesDe = agrupar(actividades, (x) => String(x.hallazgo_id));
 
   const filas: FilaDeExcel[] = [];
-  for (const { id } of lista) {
+  for (const id of lista) {
     const h = visibles.get(id);
     if (!h) continue;
     const completo = h.completo === true;

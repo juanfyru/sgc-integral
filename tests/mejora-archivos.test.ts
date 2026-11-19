@@ -267,6 +267,26 @@ describe("quién abre qué", () => {
       expect(await archivoServible(seguidor, deA1, subida(tx))).toBeNull();
     }));
 
+  it("una actividad de un borrador (sin fin_original) todavía no es una actividad: ni su responsable ni quien siguió en ella abren sus archivos (Fase 15B, anexo §11.3)", () =>
+    revertida(sql, async (tx) => {
+      const { b, h, responsable } = await escena(tx);
+      // Ve el hallazgo por una actividad suya de un plan aprobado; la otra es de un borrador.
+      await actividadPorSql(tx, h.id, responsable.usuarioId, { aprobada: true });
+      const borrador = await actividadPorSql(tx, h.id, responsable.usuarioId, { aprobada: false });
+      const delBorrador = await archivoPorSql(tx, "mejora_actividad", borrador);
+      expect(await puedeAbrirArchivoDeMejora({ contexto: "mejora_actividad", contextoId: borrador }, responsable, subida(tx))).toBe(false);
+      expect(await archivoServible(responsable, delBorrador, subida(tx))).toBeNull();
+      expect(await archivosDe(tx, responsable, { contexto: "mejora_actividad", contextoId: borrador })).toEqual([]);
+      // Lo mismo quien registró un seguimiento en ella (por eso ve el hallazgo).
+      const seguidor = await usuarioDePrueba(tx, { rol: "consulta" });
+      await tx`INSERT INTO mejora_seguimientos (hallazgo_id, actividad_id, fecha, realizado, avance, registrado_por)
+        VALUES (${h.id}, ${borrador}, '2026-11-16', 'Algo', 10, ${seguidor.usuarioId})`;
+      expect(await archivoServible(seguidor, delBorrador, subida(tx))).toBeNull();
+      // Quien ve el hallazgo completo los abre, como hasta ahora.
+      expect(await archivoServible(b.control, delBorrador, subida(tx))).not.toBeNull();
+      expect(await archivoServible(b.lider, delBorrador, subida(tx))).not.toBeNull();
+    }));
+
   it("el rol Consulta sin participación no abre nada, igual que ante un identificador que no existe", () =>
     revertida(sql, async (tx) => {
       const { b, otro, h } = await escena(tx);

@@ -49,6 +49,8 @@ import {
   registrarOcurrencia,
   type DatosDeHallazgo,
 } from "@/db/consultas/mejoramiento/registro";
+import { listarHallazgos } from "@/db/consultas/mejoramiento/lectura";
+import { filtroDeConsulta, rutaDeListaFiltrada } from "@/lib/mejoramiento/filtro";
 import { ErrorMejora } from "@/lib/mejoramiento/tipos";
 import { ErrorPermiso } from "@/lib/permisos";
 import { rutaDeRegistro } from "@/lib/mejoramiento/rutas";
@@ -316,12 +318,13 @@ describe("la sección en pantalla (Review Focus 6)", () => {
 
       const delControl = await seccionDeMejoramiento(b.control, { normaId: n.id }, null, { sql: tx, ahora });
       expect(delControl.boton).toBeNull();
-      expect(delControl.verTodos).toBe(`/mejoramiento?norma=${n.id}`);
+      // En cualquier estado: la sección lista también los terminados (anexo §11.1; la lista por omisión muestra solo los abiertos).
+      expect(delControl.verTodos).toBe(`/mejoramiento?estado=todos&norma=${n.id}`);
       const html = pintada(delControl);
       expect(html).toContain("Mejoramiento");
       expect(html).toContain(`href="/mejoramiento/${id}"`);
       expect(html).toContain(COMO_REQUISITO);
-      expect(html).toContain(`href="/mejoramiento?norma=${n.id}"`);
+      expect(html).toContain(`href="/mejoramiento?estado=todos&amp;norma=${n.id}"`);
       expect(html).not.toContain("Abrir hallazgo");
       expect(html).not.toContain("Reportar");
     });
@@ -369,6 +372,33 @@ describe("la sección en pantalla (Review Focus 6)", () => {
     const sin = renderToStaticMarkup(createElement(Objetivos, { objetivos, hallazgos: {} }));
     expect(sin).not.toContain("hallazgo");
     expect(sin).not.toContain("/mejoramiento");
+  });
+
+  it("«Ver todos» lleva a la lista en cualquier estado: los mismos hallazgos que la sección, también el terminado (Tarea 14)", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const d = await documentoDe(tx, b.procesoId);
+      const ind = await indicadorDePrueba(tx, { procesoId: b.procesoId });
+      const n = await normaDePrueba(tx, b.admin);
+      const [s] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden)
+        VALUES (${b.procesoId}, 'Subproceso de «Ver todos»', ${`zz-sub-ver-${Date.now()}`}, 99) RETURNING id`;
+      const cita = { documentoId: d.id, indicadorId: ind.id, requisitoNormaId: n.id, subprocesoId: Number(s.id) };
+      const abierto = await registrado(tx, b, cita);
+      const anulado = await registrado(tx, b, cita);
+      await anular(tx, b, anulado);
+      const casos: Cita[] = [{ documentoId: d.id }, { procesoId: b.procesoId }, { subprocesoId: Number(s.id) }, { indicadorId: ind.id }, { normaId: n.id }];
+      for (const que of casos) {
+        const caso = JSON.stringify(que);
+        const seccion = await seccionDeMejoramiento(b.control, que, null, { sql: tx, ahora });
+        expect(seccion.filas.map((f) => f.id), caso).toEqual([abierto, anulado]);
+        const consulta = new URL(seccion.verTodos, "http://local").searchParams;
+        expect(consulta.get("estado"), caso).toBe("todos");
+        const lista = await listarHallazgos(b.control, filtroDeConsulta(Object.fromEntries(consulta)), { sql: tx, ahora });
+        expect(lista.filas.map((f) => f.id).sort((x, y) => x - y), caso).toEqual([abierto, anulado].sort((x, y) => x - y));
+      }
+      // «Objetivos» cuenta los abiertos: su enlace conserva el valor por omisión.
+      expect(rutaDeListaFiltrada({ objetivo: 4 })).toBe("/mejoramiento?objetivo=4");
+    });
   });
 });
 

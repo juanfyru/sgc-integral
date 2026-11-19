@@ -14,7 +14,7 @@ import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import { alcanceProcesos, filtroHallazgos, procesosQueImprime } from "@/lib/alcance";
 import { yaSePuedeEvaluar } from "@/lib/mejoramiento/eficacia";
 import { etiquetaDeEstado } from "@/lib/mejoramiento/estados";
-import { rutaDeListaFiltrada } from "@/lib/mejoramiento/filtro";
+import { rutaDeListaFiltrada, TODOS_LOS_ESTADOS } from "@/lib/mejoramiento/filtro";
 import { rutaDeReportarSobre } from "@/lib/mejoramiento/reportes";
 import { rutaDelConsolidado, rutaDeRegistro } from "@/lib/mejoramiento/rutas";
 import { TERMINALES, type EstadoHallazgo, type ResultadoCierre } from "@/lib/mejoramiento/tipos";
@@ -206,13 +206,17 @@ export type BotonDeLaSeccion = { texto: "Abrir hallazgo" | "Reportar"; href: str
 /** Lo que pinta `SeccionMejoramiento`. */
 export type SeccionDeCitas = { filas: HallazgoQueCita[]; hayMas: boolean; verTodos: string; boton: BotonDeLaSeccion | null };
 
-/** «Ver todos»: la lista de Mejoramiento filtrada con la misma condición de la sección (`citaDe`). */
+/**
+ * «Ver todos»: la lista de Mejoramiento filtrada con la misma condición de la sección (`citaDe`) y en cualquier estado: la sección
+ * lista también los terminados, después de los abiertos, y la lista por omisión solo muestra los abiertos (anexo §11.1).
+ */
 function verTodosDe(que: Cita): string {
-  if ("documentoId" in que) return rutaDeListaFiltrada({ documento: que.documentoId });
-  if ("procesoId" in que) return rutaDeListaFiltrada({ procesoId: que.procesoId });
-  if ("subprocesoId" in que) return rutaDeListaFiltrada({ subproceso: que.subprocesoId });
-  if ("indicadorId" in que) return rutaDeListaFiltrada({ indicador: que.indicadorId });
-  return rutaDeListaFiltrada({ norma: que.normaId });
+  const todos = { estado: TODOS_LOS_ESTADOS } as const;
+  if ("documentoId" in que) return rutaDeListaFiltrada({ documento: que.documentoId, ...todos });
+  if ("procesoId" in que) return rutaDeListaFiltrada({ procesoId: que.procesoId, ...todos });
+  if ("subprocesoId" in que) return rutaDeListaFiltrada({ subproceso: que.subprocesoId, ...todos });
+  if ("indicadorId" in que) return rutaDeListaFiltrada({ indicador: que.indicadorId, ...todos });
+  return rutaDeListaFiltrada({ norma: que.normaId, ...todos });
 }
 
 /**
