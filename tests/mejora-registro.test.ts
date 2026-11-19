@@ -956,4 +956,28 @@ describe("los filtros de la lista que llegan de otras páginas y de la clasifica
       expect((await listarHallazgos(ajeno, { documento: d.id }, { sql: tx, ahora })).filas).toEqual([]);
     });
   });
+
+  it("por un documento o un indicador que quien mira no ve: sin filas, como un id que no existe, aunque vea el hallazgo", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await procesoNuevo(tx);
+      const d = await documentoDe(tx, otro, "restringido");
+      const ind = await indicadorDePrueba(tx, { procesoId: otro, nivelAcceso: "restringido" });
+      const medicionId = await medicionConResultado(tx, ind);
+      const { id: porDocumento } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { documentoId: d.id }), c(AHORA, tx));
+      const { id: porMedicion } = await registrarHallazgo(b.control, datosDeHallazgo(b.procesoId, { medicionId }), c(AHORA, tx));
+      const o = { sql: tx, ahora };
+      const ids = async (quien: typeof b.lider, filtro: Parameters<typeof listarHallazgos>[1]) =>
+        (await listarHallazgos(quien, filtro, o)).filas.map((f) => f.id);
+      // El líder ve los dos hallazgos (son de su proceso)…
+      expect((await ids(b.lider, { procesoId: b.procesoId })).sort()).toEqual([porDocumento, porMedicion].sort());
+      // …pero por el documento o el indicador restringidos de otro proceso, nada: lo mismo que por un id que no existe.
+      expect(await ids(b.lider, { documento: d.id })).toEqual([]);
+      expect(await ids(b.lider, { indicador: ind.id })).toEqual([]);
+      expect(await ids(b.lider, { documento: 0x7fffffff })).toEqual([]);
+      // Control Interno ve los restringidos: la lista se los trae.
+      expect(await ids(b.control, { documento: d.id })).toEqual([porDocumento]);
+      expect(await ids(b.control, { indicador: ind.id })).toEqual([porMedicion]);
+    });
+  });
 });

@@ -17,6 +17,7 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 import type { TransactionSql } from "postgres";
 import { Objetivos } from "@/componentes/indicadores/Objetivos";
 import { SeccionMejoramiento } from "@/componentes/mejoramiento/enganches/SeccionMejoramiento";
+import { FiltrosDeHallazgos } from "@/componentes/mejoramiento/FiltrosDeHallazgos";
 import { obtenerSql } from "@/db/cliente";
 import type { SesionFlujo } from "@/db/consultas/flujo/contrato";
 import type { ObjetivoLeido } from "@/db/consultas/indicadores/objetivos";
@@ -34,10 +35,20 @@ import {
   seccionDeMejoramiento,
   type Cita,
 } from "@/db/consultas/mejoramiento/citas";
+import { nombresDelFiltro, opcionesDelFiltro } from "@/db/consultas/mejoramiento/opciones";
+import { anularPlan } from "@/db/consultas/mejoramiento/planes";
 import { anularHallazgo, registrarHallazgo, type DatosDeHallazgo } from "@/db/consultas/mejoramiento/registro";
 import { rutaDeRegistro } from "@/lib/mejoramiento/rutas";
 import { indicadorDePrueba, type IndicadorDePrueba } from "./utiles/indicadores";
-import { baseDeMejora, c, datosDeHallazgo, objetivoDePrueba, otroProcesoConLider, type BaseDeMejora } from "./utiles/mejoramiento";
+import {
+  baseDeMejora,
+  c,
+  datosDeHallazgo,
+  objetivoDePrueba,
+  otroProcesoConLider,
+  planDeMejoraDePrueba,
+  type BaseDeMejora,
+} from "./utiles/mejoramiento";
 import { procesoNuevo } from "./utiles/mixto";
 import { normaDePrueba } from "./utiles/normograma";
 import { documentoLibre, tipoLibre, TIPO_LIBRE } from "./utiles/tramites";
@@ -344,5 +355,90 @@ describe("la sección en pantalla (Review Focus 6)", () => {
     const sin = renderToStaticMarkup(createElement(Objetivos, { objetivos, hallazgos: {} }));
     expect(sin).not.toContain("hallazgo");
     expect(sin).not.toContain("/mejoramiento");
+  });
+});
+
+describe("los filtros de la lista: sus opciones, sus nombres y el formulario (anexo §10.6)", () => {
+  it("opcionesDelFiltro: los planes no anulados que la persona ve; los objetivos activos y, si se eligió, uno inactivo", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const plan = await planDeMejoraDePrueba(tx, b.control);
+      const anulado = await planDeMejoraDePrueba(tx, b.control, { nombre: "Plan que se anula" });
+      await anularPlan(b.control, { planId: anulado.id, motivo: "Se creó por error, no corresponde a ninguna visita" }, c(AHORA, tx));
+      await registrado(tx, b, { planId: plan.id });
+      const activo = await objetivoDePrueba(tx);
+      const inactivo = await objetivoDePrueba(tx, false);
+      const o = { sql: tx };
+
+      const delControl = await opcionesDelFiltro(b.control, {}, o);
+      expect(delControl.planes).toContainEqual({ id: plan.id, etiqueta: `${plan.codigo} Auditoría interna de calidad de noviembre` });
+      expect(delControl.planes.map((p) => p.id)).not.toContain(anulado.id);
+      expect(delControl.objetivos).toContainEqual({ id: activo.id, etiqueta: `Calidad · ${activo.enunciado}` });
+      expect(delControl.objetivos.map((x) => x.id)).not.toContain(inactivo.id);
+      // El líder del proceso ve el plan por su hallazgo; el de otro proceso, ningún plan.
+      expect((await opcionesDelFiltro(b.lider, {}, o)).planes.map((p) => p.id)).toEqual([plan.id]);
+      const delOtro = await opcionesDelFiltro(otro.lider, { objetivo: inactivo.id }, o);
+      expect(delOtro.planes).toEqual([]);
+      expect(delOtro.objetivos.map((x) => x.id)).toContain(inactivo.id);
+    });
+  });
+
+  it("nombresDelFiltro: cada filtro por su nombre, con la regla de su módulo; lo que la persona no ve no llega", async () => {
+    await revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const otro = await otroProcesoConLider(tx);
+      const plan = await planDeMejoraDePrueba(tx, b.control);
+      await registrado(tx, b, { planId: plan.id });
+      const objetivo = await objetivoDePrueba(tx);
+      const d = await documentoDe(tx, otro.procesoId, "restringido");
+      const ind = await indicadorDePrueba(tx, { procesoId: otro.procesoId, nivelAcceso: "restringido" });
+      const [{ nombre: indicador }] = await tx`SELECT nombre FROM indicador_versiones WHERE id = ${ind.versionId}`;
+      const n = await normaDePrueba(tx, b.admin);
+      const [s] = await tx`INSERT INTO subprocesos (proceso_id, nombre, slug, orden)
+        VALUES (${b.procesoId}, 'Subproceso de los nombres', ${`zz-sub-${Date.now()}`}, 99) RETURNING id`;
+      const filtro = { plan: plan.id, objetivo: objetivo.id, documento: d.id, indicador: ind.id, norma: n.id, subproceso: Number(s.id) };
+      const o = { sql: tx };
+
+      expect(await nombresDelFiltro(b.control, filtro, o)).toEqual({
+        plan: `${plan.codigo} Auditoría interna de calidad de noviembre`,
+        objetivo: objetivo.enunciado,
+        documento: `${d.codigo} ${d.titulo}`,
+        indicador: `${ind.codigo} ${indicador as string}`,
+        norma: n.nombre,
+        subproceso: "Subproceso de los nombres",
+      });
+      // El líder del proceso: el plan sí (lo ve por su hallazgo); el documento y el indicador restringidos de otro proceso, no.
+      const delLider = await nombresDelFiltro(b.lider, filtro, o);
+      expect(Object.keys(delLider).sort()).toEqual(["norma", "objetivo", "plan", "subproceso"]);
+      expect(JSON.stringify(delLider)).not.toContain(d.titulo);
+      // El líder del otro proceso ve sus restringidos, pero no el plan (ningún hallazgo suyo está en él).
+      expect(Object.keys(await nombresDelFiltro(otro.lider, filtro, o)).sort()).toEqual(["documento", "indicador", "norma", "objetivo", "subproceso"]);
+      expect(await nombresDelFiltro(b.lider, {}, o)).toEqual({});
+    });
+  });
+
+  it("el formulario: plan y objetivo a la vista (el elegido aunque no esté entre las opciones); lo que llega por enlace, en una línea y oculto", () => {
+    const html = renderToStaticMarkup(
+      createElement(FiltrosDeHallazgos, {
+        filtro: { plan: 99, documento: 5, norma: 7 },
+        procesos: [],
+        planes: [],
+        objetivos: [{ id: 1, etiqueta: "Calidad · Mejorar la oportunidad de la atención" }],
+        nombres: { documento: "PR-GBS-03 Supervisión de contratos", norma: "Ley 1 de 2020" },
+      }),
+    );
+    expect(html).toContain("Desde otra página: </span>Documento: PR-GBS-03 Supervisión de contratos · Norma: Ley 1 de 2020");
+    expect(html).toMatch(/<select id="filtro-plan" name="plan"[^>]*>[\s\S]*<option value="99" selected="">No disponible<\/option>/);
+    expect(html).toContain('<select id="filtro-objetivo" name="objetivo"');
+    expect(html).toContain('<input type="hidden" name="documento" value="5"/>');
+    expect(html).toContain('<input type="hidden" name="norma" value="7"/>');
+    expect(html).not.toContain('name="indicador"');
+    expect(html).not.toContain('name="subproceso"');
+    // Sin filtros que lleguen por enlace ni planes que elegir: ni la línea ni el selector del plan.
+    const sin = renderToStaticMarkup(createElement(FiltrosDeHallazgos, { filtro: {}, procesos: [], planes: [], objetivos: [] }));
+    expect(sin).not.toContain("Desde otra página");
+    expect(sin).not.toContain('name="plan"');
+    expect(sin).not.toContain('name="objetivo"');
   });
 });

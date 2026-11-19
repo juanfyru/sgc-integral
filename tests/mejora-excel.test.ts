@@ -416,7 +416,7 @@ describe("GET /mejoramiento/excel", () => {
       ]);
     }));
 
-  it("la línea de filtros nombra el documento que la persona ve y no el que no ve, aunque el id llegue en la dirección (Fase 15B)", () =>
+  it("un documento que la persona no ve: ni su nombre en la línea de filtros ni filas, aunque el id llegue en la dirección (Fase 15B)", () =>
     enTransaccion(async (tx) => {
       const b = await baseDeMejora(tx);
       const otro = await procesoNuevo(tx);
@@ -430,6 +430,8 @@ describe("GET /mejoramiento/excel", () => {
       expect(delLider.todo).toContain("Documento: no disponible");
       expect(delLider.todo).not.toContain("Protocolo reservado de prueba");
       expect(delLider.todo).not.toContain(restringido.codigo);
+      // El líder ve el hallazgo, pero no el documento: la lista no le confirma que lo cita, como con un id que no existe.
+      expect(delLider.filas).toEqual([]);
       // Control Interno ve los restringidos: la línea lo nombra, y la fila sale.
       const delControl = await leerHoja(await (await pedir(await conToken(tx, b.control.usuarioId), `?documento=${restringido.id}`)).arrayBuffer());
       expect(delControl.todo).toContain(`Documento: ${restringido.codigo} Protocolo reservado de prueba`);

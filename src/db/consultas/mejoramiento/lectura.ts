@@ -14,6 +14,7 @@ import {
   ejecutoEnElHallazgo,
   filtroAcceso,
   filtroHallazgos,
+  filtroIndicadores,
   participacionEnHallazgo,
   puedeVerHallazgo,
   puedeVerPlan,
@@ -405,8 +406,16 @@ export async function listarHallazgos(
     filtro.objetivo !== undefined
       ? sql`EXISTS (SELECT 1 FROM mejora_clasificacion fc WHERE fc.hallazgo_id = h.id AND fc.objetivo_id = ${filtro.objetivo})`
       : sql`true`,
-    filtro.documento !== undefined ? citaDe(sql, { documentoId: filtro.documento }) : sql`true`,
-    filtro.indicador !== undefined ? citaDe(sql, { indicadorId: filtro.indicador }) : sql`true`,
+    // El documento y el indicador, solo si quien mira los ve (la regla de su módulo): la página del hallazgo no le nombra uno que no
+    // ve, y la lista no le confirma por su id que un hallazgo lo cita. Uno que no ve responde como uno que no existe: sin filas.
+    filtro.documento !== undefined
+      ? sql`(${citaDe(sql, { documentoId: filtro.documento })}
+          AND EXISTS (SELECT 1 FROM documentos d WHERE d.id = ${filtro.documento} AND ${filtroAcceso(sql, sesion)}))`
+      : sql`true`,
+    filtro.indicador !== undefined
+      ? sql`(${citaDe(sql, { indicadorId: filtro.indicador })}
+          AND EXISTS (SELECT 1 FROM indicadores i WHERE i.id = ${filtro.indicador} AND ${filtroIndicadores(sql, sesion)}))`
+      : sql`true`,
     filtro.norma !== undefined ? citaDe(sql, { normaId: filtro.norma }) : sql`true`,
     filtro.subproceso !== undefined ? citaDe(sql, { subprocesoId: filtro.subproceso }) : sql`true`,
   ];
