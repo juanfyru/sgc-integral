@@ -273,7 +273,8 @@ describe("vigencia sembrada", () => {
       ["CEX-GU-01", "CEX", "pendiente", null, null],
       [null, "SOG", "resuelto", "no_afecta", "coordinadora.sgc"],
     ]);
-    // El pendiente aún está en plazo: la demo no amanece con un impacto vencido.
+    // El pendiente de este cambio de la 13C aún está en plazo: este impacto no amanece vencido (los dos de la Ley 1438 de la 15B,
+    // sí: son de otro cambio).
     expect(impactos[0].vence_en.getTime()).toBeGreaterThan(sembrada.getTime());
     expect(impactos[1].nota.length).toBeGreaterThanOrEqual(5);
 

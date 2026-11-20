@@ -2,8 +2,9 @@
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-19**, al terminar de construir la **Fase 15B — Planes de
 > mejoramiento: planes y enganches** (las dieciséis tareas de su plan, en la rama `fase-15b-planes-enganches` del worktree
-> `F:\sgc-integral-f15b` y contra la base aparte `sgc_f15b`; **faltan su verificación de cierre y la revisión de toda la rama**;
-> ver su sección, arriba de la de la 15A). Antes, al cerrar la **Fase 15A — Planes de
+> `F:\sgc-integral-f15b` y contra la base aparte `sgc_f15b`; **su verificación de cierre y la revisión de toda la rama, con su
+> ola de corrección, están hechas; faltan el visto bueno del usuario y la fusión que él decida**; ver su sección, arriba de la de
+> la 15A). Antes, al cerrar la **Fase 15A — Planes de
 > mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree `F:\sgc-integral-f15a` y contra
 > la base aparte `sgc_f15a`; **fusionada en `main` el 2026-11-18 por decisión del usuario, por avance rápido, y `main`
 > publicado en `origin` ese mismo día** (`a218f4d`, CI en verde), con la `0018` aplicada a la base `sgc`; ver su sección,
@@ -41,12 +42,13 @@
    con sus funcionalidades, y construir aquí otra con **funcionalidades más completas**.
    La original vive en `F:\sgc` (repo `juanfyru/sgc-suaza`) y **no se toca desde este
    proyecto**.
-1. **Dónde quedamos:** la **Fase 15B está construida** (2026-11-19): las dieciséis tareas de su plan, las quince primeras cada una
-   con su revisión, en el worktree `F:\sgc-integral-f15b` (rama `fase-15b-planes-enganches`, sale de `main` en `a52d155`) y
-   contra la base aparte `sgc_f15b` (veinte migraciones; la demo de la 15B, sembrada). **Falta:** la verificación de cierre de
-   quien coordina (la suite completa con la demo recién sembrada, lint, build, la `0019` sobre una copia de `sgc` y el recorrido
-   de «Qué probar y cómo (Fase 15B)» en el navegador), la revisión de toda la rama con su ola de corrección, y después el visto
-   bueno del usuario a sus decisiones («Decisiones adicionales (Fase 15B)») y la fusión que él decida. Lo que sigue de este punto
+1. **Dónde quedamos:** la **Fase 15B está construida** (2026-11-19): las dieciséis tareas de su plan, cada una con su revisión,
+   en el worktree `F:\sgc-integral-f15b` (rama `fase-15b-planes-enganches`, sale de `main` en `a52d155`) y contra la base aparte
+   `sgc_f15b` (veinte migraciones; la demo de la 15B, sembrada). **Hechas:** la verificación de cierre de quien coordina (la suite
+   completa con la demo recién sembrada, lint, build, la `0019` sobre una copia de `sgc` y el recorrido de «Qué probar y cómo
+   (Fase 15B)» en el navegador) y la revisión de toda la rama con su ola de corrección («Verificación de cierre (Fase 15B)»).
+   **Falta:** el visto bueno del usuario a sus decisiones («Decisiones adicionales (Fase 15B)») y a lo que se le pregunta
+   («Avisos para el usuario (Fase 15B)»), y la fusión que él decida. Lo que sigue de este punto
    es la historia de cómo empezó (Paso 0: diecinueve migraciones y la demo recién sembrada). El registro de la ejecución, con la línea base, está en
    `.superpowers/sdd/2026-11-18-fase15b-planes-y-enganches/progress.md` de ese worktree (ignorado por git), con su guarda
    `con-f15b.sh`. Mientras se construye, `F:\sgc-integral` no se toca y la base `sgc` del usuario solo se lee.
@@ -55,11 +57,11 @@
    `docs/superpowers/specs/2026-11-18-fase15b-planes-y-enganches-design.md` (amplía §17 del spec 15 y manda sobre él; su §1
    dice en qué; decisiones del usuario B1 a B8 y C1 a C3, en su §2; 47 decisiones de Claude, en su §17). Plan:
    `docs/superpowers/plans/2026-11-18-fase15b-planes-y-enganches.md` (dieciséis tareas; una migración, la `0019`; sin
-   dependencias npm nuevas). **Para empezar:** la skill de ejecución con subagentes sobre ese plan, desde el Paso 0 de su
-   Tarea 1 (worktree `F:\sgc-integral-f15b`, rama `fase-15b-planes-enganches`, base aparte `sgc_f15b`, su guarda
-   `con-f15b.sh` y el puerto 3016 para los puntos de control; ya existen, ver arriba). Las maquetas
+   dependencias npm nuevas). **Cómo se empezó:** con la skill de ejecución con subagentes sobre ese plan, desde el Paso 0 de
+   su Tarea 1 (worktree `F:\sgc-integral-f15b`, rama `fase-15b-planes-enganches`, base aparte `sgc_f15b`, su guarda
+   `con-f15b.sh` y el puerto 3016 para los puntos de control). Las maquetas
    aprobadas («están ok»; no versionadas) están en `.superpowers/brainstorm/963-1795030914/content/pantallas-15b.html`: el
-   Paso 0 las copia al espacio de trabajo. **Lo que cambió respecto de lo que este archivo decía:** el formato del ente **ya
+   Paso 0 las copió al espacio de trabajo. **Lo que cambió respecto de lo que este archivo decía:** el formato del ente **ya
    no espera ninguna plantilla**: el usuario pidió diseñarlo (trece columnas, anexo §4), y «efecto», «unidad de medida» y
    «cantidad» no existen. **Siguen pendientes del usuario, sin bloquear:** el visto bueno a las 46 decisiones de la 15A y su
    recorrido; los tres hallazgos abiertos en papel, con sus formatos; y registrar los formatos como documentos (ahora
@@ -468,12 +470,38 @@ base aparte `sgc_f15b` (todo comando que la toca va por el guard `.superpowers/s
 (`drizzle/0000` a `drizzle/0019`). Solo añade (regla 11 de `AGENTS.md`). Mientras se construyó, `F:\sgc-integral`, su base
 `sgc` y su `next dev` del 3002 no se tocaron.
 
-**Estado (2026-11-19):** las dieciséis tareas están construidas, las quince primeras cada una con su revisión y sus rondas de
-corrección, y los puntos de control de las Tareas 4, 7, 9, 11, 12, 13, 14 y 15 se recorrieron en el navegador (el registro de
-la ejecución, `progress.md` del espacio de trabajo, ignorado por git). **Falta la verificación de cierre** (la suite completa con
-la demo recién sembrada, lint, build sin `DATABASE_URL`, la `0019` sobre una copia de la base `sgc` y el recorrido de abajo en el
-navegador) **y la revisión de toda la rama**, con su ola de corrección; las hace quien coordina la ejecución. Después, el visto
-bueno del usuario a las decisiones de abajo y su recorrido.
+**Estado (2026-11-19):** las dieciséis tareas están construidas, cada una con su revisión y sus rondas de corrección, y los puntos
+de control de las Tareas 4, 7, 9, 11, 12, 13, 14 y 15 se recorrieron en el navegador (el registro de la ejecución, `progress.md`
+del espacio de trabajo, ignorado por git). La verificación de cierre y la revisión de toda la rama, con su ola de corrección,
+están hechas (abajo). Falta el visto bueno del usuario a las decisiones de abajo, a lo que le pregunta «Avisos para el usuario
+(Fase 15B)» y a su recorrido, y la fusión que él decida.
+
+**Verificación de cierre (Fase 15B)** (2026-11-19; la hizo quien coordinó la ejecución). Las dieciséis tareas pasaron cada una
+su revisión, con sus rondas de corrección, y los puntos de control se recorrieron en el navegador durante la construcción.
+
+- **Pruebas:** `SEMILLA_RECIEN=1 npm test`, con la demo recién sembrada, sobre `cfbc0bd`: **339 archivos en verde, 8994 pruebas
+  en verde y 1 saltada**, de 8995, salida 0, en 994 s. Las 7 líneas de `stderr` son de pruebas anteriores a la 15B (el acta del
+  cierre, los permisos de los handlers, las copias, el ingreso y el cifrado), las mismas desde la Tarea 14.
+- **`npm run lint`**, salida 0. **`npm run build`** sin `DATABASE_URL` ni `DATABASE_URL_MIGRADOR`, salida 0, con el único aviso
+  de siempre (`src/lib/almacen.ts`) y ningún aviso de ciclo.
+- **La `0019` sobre una copia de la base `sgc`** (`pg_dump` en `sgc_f15b_copia0019`, migrada con `db:preparar` desde el
+  worktree): salida 0, de 19 a 20 migraciones. Las 99 tablas de antes conservan sus conteos y las huellas de sus columnas de
+  antes, salvo `configuracion`, que pasa de 59 a 62 filas: sus 59 filas, iguales, y las tres claves nuevas,
+  `mej_formato_plan_documento_id=""`, `mej_sugerir_hallazgos=3` y `mej_sugerir_meses=12`. Añade 8 tablas y 5 columnas.
+  PostgreSQL emite dos NOTICE que truncan a 63 caracteres dos nombres de llave foránea de `mejora_plan_respuesta_hallazgos` (ver
+  la deuda). La copia y su volcado se borraron; `sgc` sigue en 19 migraciones y solo se leyó.
+- **El recorrido en el navegador** de «Qué probar y cómo (Fase 15B)», sobre `f6ed04a` y con la demo recién sembrada: los pasos 1 a
+  16 a 1280 px en claro, más oscuro y 390 px en las pantallas nuevas, sin desborde horizontal ni problemas de contraste. No halló
+  ningún defecto de la fase, solo textos imprecisos del guion (los pasos 12 a 16 y las cifras después de los propios pasos),
+  corregidos en la ola. Lo que la demo deja a las pruebas: «quien corrigió no verifica» en «Por verificar» y la segunda página de
+  la lista (la añade `crear-lista-t14.ts` del espacio de trabajo).
+- **La revisión final de toda la rama** (`a52d155..cfbc0bd`, de solo lectura): «Con arreglos», sin ningún Crítico. Dos Importantes:
+  la fila de Distribución nombraba la no conformidad a quien no la ve (I1), y la página del hallazgo escondía los adjuntos del
+  análisis de una ronda sin análisis escrito, así que el Admin SGC no llegaba al retiro por datos personales (I2). Siete menores
+  (M1 a M7) y el triage de los menores aplazados de las tareas. La ola de corrección (`210d5ad`, el código, y la confirmación de
+  los documentos que le sigue) arregló I1, I2, M4 y las frases de `citadoEnMejoramiento` y `SIN_EVIDENCIA_PARA_TERMINAR`, más los
+  menores de documentos de la revisión de la Tarea 16 y el guion del recorrido. M1, M2, M3 y M6 quedan en «Deuda técnica (Fase
+  15B)»; M5 y M7, en «Avisos para el usuario (Fase 15B)». Decisiones 10 (reescrita), 31 y 32.
 
 ### Hecho (Fase 15B)
 
@@ -528,7 +556,8 @@ bueno del usuario a las decisiones de abajo y su recorrido.
 
 Para una persona del hospital, con la clave común de la demo (`Demo-SGC-2026-clave`). Los códigos `HZ-…` y `PM-…` dependen del
 día de la siembra (salen en el orden de sus fechas); aquí van los de una siembra del **19 de noviembre de 2026**, con su título.
-Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
+Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso. Las cifras son las de la demo recién sembrada; donde
+un paso anterior las cambia, el paso dice cuánto quedan.
 
 0. **La base.** En el worktree, `bash .superpowers/sdd/2026-11-18-fase15b-planes-y-enganches/con-f15b.sh npm run db:seed`,
    después `… npm run admin:asegurar` y el servidor en otro puerto (`… npx next dev -p 3016`; la 3002, la 3015 y la 3016 comparten
@@ -584,7 +613,8 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
    fila con «En aprobación» en **Observaciones**; el **Plazo** calculado («N meses» o «N días»).
 6. **El SGC-FO-14.** En PM-2026-02, **SGC-FO-14 de este proceso** del grupo de Consulta Externa. Después, el consolidado de Consulta
    Externa del año (la lista filtrada por ese proceso, o la sección **Mejoramiento** de su página): HZ-2026-004 con «PM-2026-02» en
-   la columna **Plan** y los demás con «Sin plan»; HZ-2026-010 con «Por formular: plan de acción en formulación»; HZ-2026-008,
+   la columna **Plan** y los demás con «Sin plan» (si en el paso 1 registró el hallazgo en Consulta Externa, sale también, con
+   «PM-2026-04»); HZ-2026-010 con «Por formular: plan de acción en formulación»; HZ-2026-008,
    cerrado con corrección; la columna **Estado**; donde iría el código, «Consolidado del proceso». Imprima apaisado.
 7. **Decidir una marca.** Como `coordinadora.sgc`, **Mis tareas** → «Decidir la acción de mejora de CEX-ID-004 …, septiembre de
    2026»: en el panel de la página del indicador, **Añadir como ocurrencia de HZ-2026-019** (**Sugerido**) y **Guardar la
@@ -596,9 +626,10 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
 9. **Quién ve el panel.** Como `lider.cex`, en `CEX-ID-004`: el panel con las dos primeras salidas, sin «No requiere». Como
    `consulta`: la marca «Requiere acción de mejora» y ninguna pista del hallazgo ni de la ocurrencia.
 10. **Desde un hallazgo de Distribución.** Como `coordinadora.sgc`, en los hallazgos de Distribución (o en la página de la copia de
-    `GTH-CA-01` del Archivo): la fila del de Urgencias dice «No conformidad HZ-2026-021 · Por formular»; la de la recogida del
-    Archivo, «Este hallazgo se reabrió una vez. Puede abrir una no conformidad para tratar la causa.» y **Abrir no conformidad**.
-    Ábrala con su justificación y el proceso **Gestión del Talento Humano** (el selector trae los del punto): nace «Por aceptar».
+    `GTH-CA-01` del Archivo): la fila del de Urgencias dice «No conformidad HZ-2026-021 · Por formular», con su enlace (como
+    `jefe.urgencias`, que responde por ese punto y no ve la no conformidad, la misma fila no dice nada de ella); la de la recogida
+    del Archivo, «Este hallazgo se reabrió una vez. Puede abrir una no conformidad para tratar la causa.» y **Abrir no
+    conformidad**. Ábrala con su justificación y el proceso **Gestión del Talento Humano** (el selector trae los del punto): nace «Por aceptar».
     Como `lider.gth`, **Aceptar el hallazgo**: va directo a **Por formular**, y su sección de corrección muestra la del hallazgo de la
     recogida, con su enlace. Quien la corrigió, `coordinadora.sgc`, no podrá verificarla: cuando la no conformidad llegue a **Por
     verificar**, su página se lo dice («No puede verificarlo: participó en la corrección…») y verifica Control Interno; llegar ahí
@@ -607,30 +638,44 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
 11. **Desde un impacto de norma.** En `/normograma/impactos/2?proceso=1` (Gestión Estratégica): «Este impacto está vencido y ya se
     escaló. Puede abrir un hallazgo.» → **Abrir hallazgo**: origen «Control documental», la Ley 100 como requisito incumplido y el
     proceso, fijos.
-12. **El cambio documental.** En HZ-2026-007, actividad A1.1: SOL-2026-001 «Vale como evidencia de esta actividad.» y SOL-2026-002
-    en revisión. Como `coordinadora.sgc`, **Pedir cambio documental** (la solicitud llega con la actividad y su advertencia) y
-    **Enlazar un trámite** (SOL-2026-004 o SOL-2026-005). Como `jefe.urgencias`, en A1.2: «Pídale al líder del proceso o al
-    Administrador del SGC que lo solicite desde aquí». Como `lider.gth`, registre en A1.1 un seguimiento al 100 % y **Terminar**
-    sin archivo: vale SOL-2026-001.
+12. **El cambio documental.** En HZ-2026-007, actividad A1.1, la sección **Cambio documental** nombra cada trámite por su tipo y su
+    documento: «Modificar GTH-CA-01 Caracterización Gestión del Talento Humano · Publicado el …» con «Vale como evidencia de esta
+    actividad.», y «Modificar GTH-PR-02 Procedimiento de Inducción y Reinducción · En revisión» (sus códigos, SOL-2026-001 y
+    SOL-2026-002, salen en la página de cada trámite). Como `coordinadora.sgc`, **Pedir cambio documental** (la solicitud llega
+    con la actividad y su advertencia) y **Enlazar un trámite que ya existe**: ese selector sí los nombra por su código (por
+    ejemplo SOL-2026-004 o SOL-2026-005). Como `jefe.urgencias`, en A1.2: «Pídale al líder del proceso o al Administrador del SGC
+    que lo solicite desde aquí». Como `lider.gth`, registre en A1.1 un seguimiento al 100 % y **Terminar** sin archivo: vale el
+    trámite publicado de `GTH-CA-01`.
 13. **El cierre con documentos.** Como `coordinadora.sgc`, en HZ-2026-002 (**Por cerrar**, sin trámite), el cierre pide **Cómo se
     atendieron los cambios** («Ningún trámite enlazado terminó bien: diga cómo se atendieron los cambios.»). En HZ-2026-018 (**Por
-    cerrar**, con SOL-2026-003 en publicación) lo pide también mientras el trámite no termina. Publique SOL-2026-003 (**Trámites** →
-    SOL-2026-003 → **Publicar**, con la clave) y vuelva al cierre de HZ-2026-018: ya no lo pide («Los trámites atienden los cambios
-    en documentos: no hace falta decir cómo se atendieron.») y lista el trámite; **Firmar «Cerró»**.
+    cerrar**, con el trámite de `GBS-PR-01` en publicación enlazado a su actividad) lo pide también mientras el trámite no termina.
+    Publique ese trámite (**Trámites** → SOL-2026-003, el de `GBS-PR-01` → **Publicar**, con la clave) y vuelva al cierre de
+    HZ-2026-018: ya no lo pide («Los trámites atienden los cambios en documentos: no hace falta decir cómo se atendieron.») y nombra
+    el trámite por su documento («1 trámite terminó bien», `GBS-PR-01`); **Firmar «Cerró»**.
 14. **Las otras páginas.** La sección **Mejoramiento** en la página del documento `AIN-FO-01` (HZ-2026-021, que lo cita), de
-    Consulta Externa, de `CEX-ID-004` (HZ-2026-019) y de la Resolución 3100 de 2019 (HZ-2026-006, que la cita como requisito), con
-    **Ver todos** y **Abrir hallazgo**; como `consulta`, en `AIN-FO-01`, solo **Reportar**, sin lista ni cifra. En **Objetivos**, cada objetivo con hallazgos dice cuántos abiertos apuntan a él (con la demo
-    recién sembrada, el primero de calidad, «3 hallazgos abiertos») y lleva a la lista filtrada.
-15. **La lista y los archivos.** **Hallazgos** muestra **Solo abiertos** (diecisiete); quite el filtro y busque HZ-2026-001 por su
-    código, también con el filtro puesto. La demo no tiene segunda página: para verla, `crear-lista-t14.ts` del espacio de trabajo
-    añade cincuenta. En HZ-2026-012 (En revisión): como `coordinadora.sgc`, **Devolver con observaciones**; como `lider.cex`, suba un
+    Consulta Externa y de `CEX-ID-004` (HZ-2026-019), con **Ver todos** y **Abrir hallazgo**; y en la de la Resolución 3100 de 2019
+    (HZ-2026-006, que la cita como requisito), con **Ver todos** y **ningún botón**: desde una norma no se abre ni se reporta un
+    hallazgo (anexo §10.1). Como `consulta`, en `AIN-FO-01`, solo **Reportar**, sin lista ni cifra. En **Objetivos**, cada objetivo
+    con hallazgos dice cuántos abiertos apuntan a él y lleva a la lista filtrada: con la demo recién sembrada, el primero de
+    calidad dice «3 hallazgos abiertos»; si en el paso 1 eligió ese objetivo para el plan nuevo, dice 5 (el hallazgo registrado en
+    el plan y HZ-2026-017, que al añadirse recibió el objetivo del plan: **Poner el objetivo del plan a los que no tienen** viene
+    marcada).
+15. **La lista y los archivos.** **Hallazgos** muestra **Solo abiertos**: diecisiete con la demo recién sembrada; después de los
+    pasos 1, 10 y 13, dieciocho (suman el hallazgo del paso 1 y la no conformidad del paso 10, y sale HZ-2026-018, que se cerró).
+    Quite el filtro y busque HZ-2026-001 por su código, también con el filtro puesto. La demo no tiene segunda página: para
+    verla, `crear-lista-t14.ts` del espacio de trabajo añade cincuenta. En HZ-2026-012 (En revisión): como `coordinadora.sgc`, **Devolver con observaciones**; como `lider.cex`, suba un
     archivo al análisis y reenvíe el plan: ese archivo ya no tiene **Quitar**. Como `coordinadora.sgc`, **Retirar por datos
     personales** y vea el rastro en el historial del hallazgo.
-16. **Lo que vuelve.** Anule HZ-2026-021: la tarea «Decidir la acción de mejora de SGC-ID-002 …» vuelve (y con ella la salida **No
-    requiere** del paso 7), y la fila del hallazgo de Urgencias vuelve a ofrecer **Abrir no conformidad**. Con la recogida del
-    Archivo, abra otra no conformidad en Talento Humano (o use la del paso 10 antes de aceptarla): como `lider.gth`, **Rechazar**
-    con su justificación; como `coordinadora.sgc`, que la registró, **Retirar**: queda «Rechazado» y la fila vuelve a ofrecer **Abrir
-    no conformidad**.
+16. **Lo que vuelve.** Como `coordinadora.sgc`, anule HZ-2026-021: la tarea «Decidir la acción de mejora de SGC-ID-002 …» vuelve (y
+    con ella la salida **No requiere** del paso 7), y la fila del hallazgo de Urgencias vuelve a ofrecer **Abrir no conformidad**.
+    Después, el rechazo con la recogida del Archivo. Un hallazgo de verificación tiene a lo sumo una no conformidad que cuente, y la
+    del paso 10 ya está aceptada: su fila la muestra y no ofrece abrir otra. En este orden:
+    1. Como `coordinadora.sgc`, anule la no conformidad del paso 10: la fila de la recogida vuelve a decir «Este hallazgo se reabrió
+       una vez…» y a ofrecer **Abrir no conformidad**.
+    2. Abra otra desde esa fila, con su justificación y el proceso **Gestión del Talento Humano**: nace «Por aceptar».
+    3. Como `lider.gth`, **Rechazarlo**, con su justificación: queda «Rechazado · por decidir».
+    4. Como `coordinadora.sgc`, que la registró, **Retirarlo**: queda «Rechazado» y la fila vuelve a ofrecer **Abrir no
+       conformidad**.
 
 **Los códigos del recorrido de la 15A cambiaron** con los siete hallazgos nuevos (salen en el orden de sus fechas). Con la siembra
 del 19 de noviembre de 2026, su 001 sigue siendo HZ-2026-001; su 002 es el 003; 003 → 004; 004 → 005; 005 (el de las maquetas) →
@@ -641,13 +686,28 @@ el plan); 012 → 016; 013 → 017; 014 → 020.
 
 - **Las decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (Fase 15B)», abajo). Las que más pesan: la
   tarea de la respuesta del plan saca sus hallazgos de «Esperan su decisión» (4), la carga resuelve la marca como el registro (7),
-  la fila de Distribución nombra la no conformidad a quien no la ve (10), el ancla de la congelación en un cargado (22) y el tope
-  de sentencias de la lista del Admin SGC (20).
-- **Una observación del anexo para usted** (Tarea 8, no es una decisión de la ejecución): si el Administrador del SGC resuelve la
-  marca de un indicador de un líder con un hallazgo o una ocurrencia de **otro** proceso, el líder deja de ver el pendiente y no
-  ve «Ya decidida» (no ve ese hallazgo): por eliminación sabe que existe algo que no ve. Es la letra de §6.5 y roza la regla de
-  §14 («para quien no lo ve, no existe»). Si quiere cerrarlo, la salida sería decirle al líder «Decidida por el Administrador del
-  SGC», sin el hallazgo.
+  la fila de Distribución calla la no conformidad a quien no la ve (10, que la revisión final invirtió), el ancla de la congelación
+  en un cargado (22) y el tope de sentencias de la lista del Admin SGC (20).
+- **Dos casos de la misma clase, para que usted decida** (no son decisiones de la ejecución; la revisión final los dejó a usted):
+  quien no ve un hallazgo no ve su código ni su título, pero por eliminación sabe que existe algo. Es la letra del anexo y roza la
+  regla de §14 («para quien no lo ve, no existe»).
+  - **La marca de un indicador** (§6.5, Tarea 8): si el Administrador del SGC la resuelve con un hallazgo o una ocurrencia de
+    **otro** proceso, el líder del indicador deja de ver el pendiente y no ve «Ya decidida» (no ve ese hallazgo).
+  - **El hallazgo de un impacto de norma** (revisión final, M7): si el arbitraje le cambia el proceso (no se bloquea: decisión
+    11), el líder del proceso del impacto deja de ver el hallazgo, y la página del impacto no le muestra ni el hallazgo ni
+    **Abrir hallazgo** (`engancheDeImpactos`, `src/db/consultas/mejoramiento/enganche-impacto.ts`).
+  - **Las salidas:** (1) aceptarlo como está (queda documentado; es un caso de borde); (2) decirle al líder que ya se decidió,
+    sin el hallazgo («Decidida por el Administrador del SGC»; en el impacto, «Este impacto ya tiene un hallazgo»), que sigue
+    diciendo que existe algo, pero sin pretender que no; o (3) limitar lo que se puede elegir: el proceso del hallazgo fijo en el
+    del indicador y, como ocurrencia, solo hallazgos que vean sus líderes; en el impacto, que el arbitraje no le cambie el
+    proceso. Cualquier cambio es una entrega aparte.
+- **El nombre de un archivo retirado por datos personales queda para siempre** (revisión final, M5; para que usted decida). El
+  anexo §11.2 pide que el historial guarde «su nombre», y la fila `subir_archivo` de la bitácora ya lo guardaba al subirlo: las dos
+  tablas no se modifican. Un nombre de archivo suele llevar el del paciente («HC 1234 Pedro Gómez.pdf»), y entonces el dato
+  personal que motivó el retiro queda en ellas. Dos salidas: (1) que el evento del retiro guarde solo la huella y el tamaño, sin el
+  nombre (el de la bitácora de la subida seguiría, porque no se modifica); o (2) prevenirlo: decir en el manual y junto a cada zona
+  de carga del módulo que el nombre de un archivo no debe llevar datos de pacientes, como ya dice el aviso de los campos de texto.
+  Las dos se pueden juntar; cualquiera es una entrega aparte.
 - **Registre el SGC-FO-14 como documento** y elíjalo en **Configuración de mejoramiento** (junto con los tres de la 15A): sin él, el
   impreso sale sin código ni versión. Los tres ajustes nuevos a los textos del hospital están en el capítulo 9 del manual,
   sección 13, puntos 14 a 16.
@@ -657,8 +717,9 @@ el plan); 012 → 016; 013 → 017; 014 → 020.
 ### Decisiones adicionales (Fase 15B)
 
 Las tomó quien coordinó la ejecución cuando el anexo o el plan callaban o un revisor halló un defecto; las 27 a 30, quien
-implementó la demo. El detalle está en el registro de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»; las
-que son de proceso, como dónde corre la suite o quién revisa, no se repiten aquí). Lo que ya dice el anexo no se repite.
+implementó la demo; la 10 la reescribió la revisión final de toda la rama, y la 32, su ola de corrección. El detalle está en el
+registro de la ejecución (`progress.md` del espacio de trabajo, líneas «Ruling»; las que son de proceso, como dónde corre la suite
+o quién revisa, no se repiten aquí). Lo que ya dice el anexo no se repite.
 
 1. **Deshacer la carga de un documento citado por un reporte funciona** y el reporte conserva su documento: la guarda que lo
    impedía se quitó, porque ningún camino borra documentos (el anexo §13 pide guardas solo donde un borrado topa con una llave
@@ -680,8 +741,13 @@ que son de proceso, como dónde corre la suite o quién revisa, no se repiten aq
 9. **Desde un enganche (el panel de la marca, un hallazgo de verificación, un impacto) los parecidos no ofrecen «Añadir como
    ocurrencia»** y la acción rechaza esa combinación: una ocurrencia no lleva el enlace, y el enganche quedaría sin su hallazgo y
    con la tarea o la sugerencia viva. Para la marca, la ocurrencia se elige en el panel. Práctica.
-10. **La fila de Distribución dice «No conformidad HZ-… · {estado}» también a quien no la ve,** sin enlace: es la letra de §7.1, y
-    esa fila solo la ven quienes tratan con el punto. Práctica.
+10. **La fila de Distribución dice «No conformidad HZ-… · {estado}», con su enlace, solo a quien ve esa no conformidad;** a los
+    demás no les dice nada de ella, ni el código. Así lo decidió la revisión final de toda la rama, que revocó lo de la Tarea 10 (la
+    línea, sin enlace, a toda persona que ve la fila, por la letra de §7.1): la restricción del plan («para quien no puede ver un
+    hallazgo, no existe: ni su código…») y el anexo §14 pesan más que una lectura de §7.1 que solo dice dónde va el enlace, y quien
+    ve la fila puede ser el responsable del punto, de cualquier rol, también Consulta. Lo que cuesta: ese responsable no sabe que su
+    hallazgo de verificación ya tiene una no conformidad; volver atrás es una línea. Regulación de la 15A («para quien no lo ve, no
+    existe»).
 11. **Cambiar el proceso (el arbitraje) no se limita a los procesos del punto, ni se bloquea, con la reclasificación, en un hallazgo
     de verificación o de impacto;** editar sí conserva fijos la clase, el origen, la norma y el proceso que el enganche fijó: el
     anexo los fija al nacer, y el arbitraje y la reclasificación son actos justificados del Admin SGC. Práctica.
@@ -733,37 +799,74 @@ que son de proceso, como dónde corre la suite o quién revisa, no se repiten aq
 30. **El impacto vencido y escalado de la demo** es la Ley 1438 de 2011, que modifica la Ley 100 de 1993 (una relación real), registrada
     hace cuarenta días; la pasada de impactos de la 13C corre sola a los veinte. Deja `GES-PL-01` en atención en el semáforo (todo impacto
     pendiente lo hace); el impacto de la 13C sigue en plazo. Práctica.
+31. **Lo que hizo la revisión final con lo que halló:** la ola de corrección arregló I1 (decisión 10), I2 (decisión 32), M4 (el
+    retiro cuya ruta no se resuelve queda en el registro de errores), las frases de `citadoEnMejoramiento` («está citado en
+    Mejoramiento», porque cuenta también marcas y reportes) y de `SIN_EVIDENCIA_PARA_TERMINAR` (nombra el trámite enlazado que
+    terminó bien) y los menores de documentos de la revisión de la Tarea 16; M1, M2, M3 y M6 quedan en «Deuda técnica (Fase 15B)»;
+    M5 y M7, con la nota de §6.5 de la Tarea 8, van a usted en «Avisos para el usuario (Fase 15B)». Si usted decide M5 o M7 de otra
+    forma, es una entrega aparte. Práctica.
+32. **Los adjuntos del análisis de una ronda sin análisis escrito se ven dentro de «3. Causa raíz»**, que entonces aparece con
+    «Sin análisis · sin causas raíz», a quien ve el hallazgo completo, en la ronda en curso y en las anteriores, con la línea de cada
+    retiro: una observación o una oportunidad se envían sin análisis, y sus adjuntos ya firmados solo se retiran por datos personales
+    desde esa lista (anexo §11.2). Así quien revisa y quien aprueba también los leen (`seccionesDeLaRonda`,
+    `src/lib/mejoramiento/secciones.ts`). Regulación (Ley 1581 de 2012).
 
 ### Deuda técnica (Fase 15B)
 
-Los menores que los revisores dejaron para después, del registro de la ejecución (provisional: la revisión final de toda la rama
-viene después y corregirá algunos; un archivo sin carpeta es de `src/db/consultas/mejoramiento/`):
+Los menores que los revisores dejaron para después y siguen siendo verdad, del registro de la ejecución y de la revisión final de
+toda la rama, después de su ola de corrección (un archivo sin carpeta es de `src/db/consultas/mejoramiento/`):
 
-- **Mensajes y comentarios:** `citadoEnMejoramiento` cuenta también reportes y marcas, pero los mensajes dicen «citado en un hallazgo
-  de mejoramiento» (`src/db/consultas/indicadores/operacion.ts:644`, `importacion.ts:688`) y los comentarios de `conDatos` y
-  `citadoEnMejoramiento` (`indicadores/mediciones.ts`) no lo dicen; `ACTIVIDAD_NO_ADMITE` habla de «la solicitud» también al enlazar
-  (`tramites-enlace.ts:230`); `SIN_EVIDENCIA_PARA_TERMINAR` y `EVIDENCIA_TRAS_LA_DEVOLUCION` hablan solo de archivos
-  (`actividades.ts:57`, `:60`); `ArchivosDelPlan.tsx:29` nombra los tres roles en el texto; un comentario viejo de `mej-ente` en
-  `aprobacion.ts:325`; el `INSERT` a mano del evento y la bitácora del enlace no remite a sus copias (`tramites-enlace.ts:142-160`).
+- **De la revisión final, con su arreglo recomendado:**
+  - **M1. «Cuenta» (ni rechazado ni anulado) está escrito a mano en cinco lugares:** `CUENTA` en `enganche-verificacion.ts` y en
+    `enganche-impacto.ts`, `salidaEnVigor` en `marcas-base.ts`, `salidasVisibles` en `marcas.ts` (que repite en línea la condición
+    de `salidaEnVigor`) y `NO_CUENTAN_PARA_PLAN` en `src/lib/mejoramiento/planes.ts`, además del predicado de los índices únicos
+    parciales de la `0019`. Si un estado nuevo deja de contar, alguno se quedará atrás. Conviene un solo fragmento SQL
+    (`cuentaSql(alias)`, armado desde `NO_CUENTAN_PARA_PLAN`) y que `salidasVisibles` use el de `salidaEnVigor`.
+  - **M2. `candidatoDeMarca` (`marcas.ts:82-93`) reescribe la regla de «cita el indicador»** en vez de usar `citaDe(sql, {
+    indicadorId })` (`citas.ts`), y también la del líder en sus procesos (la de `enElAlcanceDeRegistro`, `donde-registra.ts`). Si
+    `citaDe` cambia, los candidatos de la ocurrencia se apartan de la sección «Mejoramiento» del indicador.
+  - **M3. «Las firmas del envío vigente, desde la última Elaboró» está en tres copias:** `aprobacionesDe` (`fo14.ts`),
+    `src/componentes/mejoramiento/impresos/Partes.tsx` y `src/componentes/mejoramiento/plan/PanelDeFirmas.tsx`. Es una regla de
+    negocio: el día que diverja, el SGC-FO-14 nombrará a otro firmante que la página del hallazgo. Conviene una función pura en
+    `src/lib/mejoramiento/` que usen las tres.
+  - **M6. `tareasDeMarcas` (`tareas.ts:344`) recorre las mediciones marcadas en cada página del Admin SGC** (el cascarón), sin un
+    índice que la acote (`m.requiere_accion AND NOT m.historica`). Es una sentencia y hoy el volumen es chico; si crece, un índice
+    parcial `mediciones (indicador_id) WHERE requiere_accion`, en una migración futura.
+- **El orden de candados de `crearSolicitud`** (`src/db/consultas/tramites-flujo.ts`): toma el hallazgo de la actividad `FOR SHARE`
+  y, después, la revisión anual, el consecutivo de trámites y el impacto. **No forma ciclo** (lo comprobó la revisión final: `FOR
+  SHARE` choca solo con `FOR UPDATE`, y ningún camino toma un hallazgo `FOR UPDATE` y después esas tres cosas); lo único que cuesta es
+  que una transición del hallazgo espera lo que dura una solicitud. El orden y su porqué están escritos en el comentario de
+  `validarActividadParaTramite` (`tramites-enlace.ts`).
+- **De la base:** dos nombres de llave foránea de `mejora_plan_respuesta_hallazgos` pasan de 63 caracteres y PostgreSQL los trunca
+  (dos NOTICE al aplicar `drizzle/0019_fase15b-planes-enganches.sql`). Funciona; `drizzle-kit generate` compara contra el snapshot,
+  no contra la base, así que solo molestaría a una migración futura que borre esas llaves por su nombre largo.
+- **Mensajes y comentarios:** `ACTIVIDAD_NO_ADMITE` habla de «la solicitud» también al enlazar (`tramites-enlace.ts:236`; es un
+  texto fijo del plan); `EVIDENCIA_TRAS_LA_DEVOLUCION` habla solo de archivos, aunque un trámite que terminó bien después de la
+  devolución también vale (`actividades.ts:62`); `ArchivosDelPlan.tsx:29` nombra los tres roles en el texto; un comentario viejo de
+  `mej-ente` en `aprobacion.ts:325`; el `INSERT` a mano del evento y la bitácora del enlace no remite a sus copias
+  (`tramites-enlace.ts:148-166`); `tramites-enlace.ts:26` importa `./avisos` solo por `ENTIDAD_ACTIVIDAD`; `aMarcaLeida`
+  (`marcas-base.ts`) formatea textos que el cascarón no usa; `opciones.ahora` no se usa en `puntoDePartidaDeLaMedicion`
+  (`analisis.ts:268-271`).
 - **Lecturas y consultas:** N+1 en `tramitesDeActividades` y `candidatosParaEnlazar` carga toda la historia de trámites
-  (`tramites-enlace.ts:348`, `:447`); lecturas repetidas de la marca (`leerMarca`, `puedeResolverMarca`, `filtroIndicadores`) y
+  (`tramites-enlace.ts:354`, `:453`); lecturas repetidas de la marca (`leerMarca`, `puedeResolverMarca`, `filtroIndicadores`) y
   `MARCA_YA_DECIDIDA` detectado después de `nacerHallazgo` (correcto por el retroceso, tarde); `congeladoSql` en cada fila de todo
   `archivosDe` (también en contextos sin retiro), `porQueNoSeRetira` repetido por archivo y `archivosDe` dos veces para la ronda en
   curso (`archivos.ts`); lecturas en serie en las páginas de documentos e indicadores (Tarea 13); la lista del Admin SGC lleva unas
   4 a 13 sentencias de más por sus propias tareas (decisión 20; bajarlas pide tomar las tareas de la petición, `tareasDePeticion`).
 - **Reglas al borde:** la regla del servidor para `documentoId` no exige versión vigente (el formulario y el prellenado sí; heredado de
   la 15A, `registro.ts`); `requisitoDocumentoId` no pasa por la regla de alcance (un id inexistente y uno restringido responden
-  distinto); un documento no enlazable ofrece «Abrir hallazgo» a cualquiera con `mejora.registrar` (`citas.ts:226`);
+  distinto: conviene pasarlo por `filtroAcceso` con el mismo `DATO_YA_NO_EXISTE` la próxima vez que se toque
+  `revisarIdentificacion`); un documento no enlazable ofrece «Abrir hallazgo» a cualquiera con `mejora.registrar` (`citas.ts:226`);
   `/tramites/nueva?actividad=` descarta en silencio el documento citado que ya tiene un trámite abierto y cae en «crear»
-  (`app/(app)/tramites/nueva/page.tsx:44-45`); la edición mezcla lo fijo antes de comprobar quién registró
-  (`app/acciones-mejoramiento.ts:247`); un hallazgo de impacto invisible vuelve con id 0 y código vacío en vez de nulo; `?estado=abiertos`
-  escrito a mano no encuentra el código exacto de un terminado (sin el parámetro, sí) y, con esa excepción, la pantalla, el Excel y la
-  bitácora dicen «abiertos» trayendo un terminado (`lectura.ts:497`, `filtro.ts:89`, `FiltrosDeHallazgos.tsx:89`); el botón del Excel
-  del ente se oculta en un plan anulado pero la ruta lo sirve; `procesoAdmiteRegistro` perdió la guarda `esId`
-  (`donde-registra.ts:328`, inalcanzable hoy); una evidencia sin su fila `subir_archivo` nunca se congela (inalcanzable hoy); un
-  archivo que el almacén no resuelve se salta sin rastro al retirar (`archivos.ts:584`); el orden de candados de `crearSolicitud` con el
-  hallazgo `FOR SHARE` queda para la revisión final; el título de la marca usa el nombre firmado de la versión y se corta por unidades
-  UTF-16 (`tituloDeLaMarca`); «Sin resultado» para una medición «No aplica» en el panel (`columnasDeMarca` no lee `no_aplica`).
+  (`app/(app)/tramites/nueva/page.tsx:44-45`; un aviso como «ya tiene un trámite abierto: enlácelo» ayudaría); la edición mezcla lo
+  fijo antes de comprobar quién registró (`app/acciones-mejoramiento.ts:247`); un hallazgo de impacto invisible vuelve con id 0 y
+  código vacío en vez de nulo; `?estado=abiertos` escrito a mano no encuentra el código exacto de un terminado (sin el parámetro, sí)
+  y, con esa excepción, la pantalla, el Excel y la bitácora dicen «abiertos» trayendo un terminado (`lectura.ts:497`,
+  `filtro.ts:89`, `FiltrosDeHallazgos.tsx:89`); el botón del Excel del ente se oculta en un plan anulado pero la ruta lo sirve (sin
+  filas: inofensivo); `procesoAdmiteRegistro` perdió la guarda `esId` (`donde-registra.ts:328`, inalcanzable hoy); una evidencia sin
+  su fila `subir_archivo` nunca se congela (inalcanzable hoy); el título de la marca usa el nombre firmado de la versión y se corta
+  por unidades UTF-16 (`tituloDeLaMarca`); «Sin resultado» para una medición «No aplica» en el panel (`columnasDeMarca` no lee
+  `no_aplica`); el subproceso propuesto de una marca no tiene campo en el formulario (lo pone el servidor).
 - **Pantallas:** entre 1024 y 1535 px «Datos del plan» e «Historial» van debajo de la tabla del plan (la maqueta 2 los pone en una
   columna lateral; vuelve desde 1536 px); «(ya cerrado)» de la maqueta 2 no está en el historial del plan; tras subir o quitar un
   archivo del plan, la fila «… · Listo» queda en la zona de carga hasta recargar; letra de 10 px y algunas palabras partidas en pantalla
@@ -771,22 +874,27 @@ viene después y corregirá algunos; un archivo sin carpeta es de `src/db/consul
   pequeño a 390 px en los trámites de una actividad; la barra al 100 % de una actividad terminada tarde se ve naranja (15A); la
   justificación de la acción correctiva se lee dos veces en la vista completa (`AccionCorrectivaRequerida` y «2. Corrección»); el vacío
   de la lista ganó un botón «Ver también los terminados» que nadie pidió.
-- **Duplicaciones:** `auditarEntrada`/`auditarSalida` y `filaSinCandado`/`filaBloqueada` (`clasificacion.ts`); el mapeo
-  `evaluablesDesde` + `etiquetaDeEstado` copiado de `buscarHallazgos`; el esqueleto de diálogo, tres veces; la etiqueta del objetivo,
-  con y sin «Calidad ·», en tres sitios; «Cerrado con corrección» y «Cerrado sin acción» reescritos en vez de `etiquetaDeEstado`, y
-  `agrupar` y las consultas de causas y análisis copiadas de `lectura.ts` (`filas-de-plan.ts`); «desde la última Elaboró» en tres sitios
-  (`fo14.ts`, `Partes.tsx`, `PanelDeFirmas.tsx`); `responsablesDelProceso` repite `lideresDelProceso`; `ROL_EN_PAPEL` repite el ternario
-  de la página del hallazgo; `RespuestaAlEnte.tsx:122` arma a mano la dirección del archivo; `marcas.ts:89-91` repite «cita el
-  indicador» en vez de `citaDe`; los ternarios fijo-o-selector de `FormularioHallazgo` y `FormularioCarga`; `MAXIMO_INT8` mal nombrado,
-  `idValido` y `conMayuscula` copiados; `AVISO_INDICADOR_RESTRINGIDO` vive en un componente y no en `textos.ts`; un `cast` de más en
-  `registro.ts:432` y `key={linea}` en `AQueSeRefiere.tsx:55`; `print:hidden` desparejo en `SeccionMejoramiento.tsx:53` y `:56`;
-  `archivos.ts` llega a 661 líneas (el retiro y la regla podrían ir a un módulo liviano).
+- **Del recorrido de cierre, no de esta entrega:** a 390 px el diálogo común (`src/componentes/ui/Dialogo.tsx`) ocupa todo el ancho,
+  sin margen lateral; la tabla «Resultados de» un año de la página de un indicador se desplaza dentro de su caja y corta la columna
+  «Resultado» (como las tablas anchas de siempre). (El 200 con «Página no encontrada» de `next dev` ya está en la deuda heredada:
+  F13A-R35.)
+- **Duplicaciones:** `auditarEntrada`/`auditarSalida` y `filaSinCandado`/`filaBloqueada` (`clasificacion.ts`); `SIN_CLASIFICAR`, un
+  mismo objeto compartido por todas las entradas del mapa (`clasificacion.ts:366`; nadie lo muta hoy); el mapeo `evaluablesDesde` +
+  `etiquetaDeEstado` copiado de `buscarHallazgos`; el esqueleto de diálogo, tres veces; la etiqueta del objetivo, con y sin «Calidad
+  ·», en tres sitios; «Cerrado con corrección» y «Cerrado sin acción» reescritos en vez de `etiquetaDeEstado`, y `agrupar` y las
+  consultas de causas y análisis copiadas de `lectura.ts` (`filas-de-plan.ts`); `responsablesDelProceso` repite `lideresDelProceso`;
+  `ROL_EN_PAPEL` repite el ternario de la página del hallazgo; `RespuestaAlEnte.tsx:122` arma a mano la dirección del archivo; los
+  ternarios fijo-o-selector de `FormularioHallazgo` y `FormularioCarga`; `MAXIMO_INT8` mal nombrado, `idValido` y `conMayuscula`
+  copiados; `AVISO_INDICADOR_RESTRINGIDO` vive en un componente y no en `textos.ts`; un `cast` de más en `registro.ts:432` y
+  `key={linea}` en `AQueSeRefiere.tsx:55`; `print:hidden` desparejo en `SeccionMejoramiento.tsx:53` y `:56`; `archivos.ts` llega a 667
+  líneas (el retiro y la regla podrían ir a un módulo liviano). M1, M2 y M3, arriba.
 - **Pruebas:** las ocho tablas nuevas no están en `COLUMNAS` de `tests/mejora-esquema.test.ts`; `tests/mejora-esquema-15b.test.ts`
-  mira solo el SQLSTATE, no el nombre de la restricción, y le falta el caso de la llave compuesta incoherente del enlace a un trámite;
-  el `INSERT` a mano de las tres claves no tiene prueba de idempotencia, y sus rangos se prueban en un solo borde; garantías opcionales
-  sin prueba (la justificación vacía de una marca, la anulación todo o nada de un plan, el indicador de la marca igual al de la medición);
-  la rama del objetivo inactivo de `objetivoQuePropone`, `NO_CUENTA_PARA_PLAN` con un rechazado, el orden de candados de
-  `ponerObjetivo` y `aprobacionesDe` con dos rondas o un reenvío, sin prueba; `.rejects.toThrow()` sin mensaje en la prueba de vigencia
+  mira solo el SQLSTATE, no el nombre de la restricción; el `INSERT` a mano de las tres claves no tiene prueba de idempotencia, y sus
+  rangos se prueban en un solo borde; garantías opcionales sin prueba (la justificación vacía de una marca, la anulación todo o nada de
+  un plan, el indicador de la marca igual al de la medición); la rama del objetivo inactivo de `objetivoQuePropone`,
+  `NO_CUENTA_PARA_PLAN` con un rechazado, el orden de candados de `ponerObjetivo` y `aprobacionesDe` con dos rondas o un reenvío, sin
+  prueba; de la Tarea 4, `proponeObjetivo` y `planesParaClasificar` con un objetivo inactivo en la base, el avance oculto no nulo, los
+  filtros de `listarPlanes` y el `anio` de `candidatosParaPlan`, sin prueba; `.rejects.toThrow()` sin mensaje en la prueba de vigencia
   del plan y en `tests/mejora-tramites.test.ts:285-303`, donde falta además `ENLACE_NO_EXISTE`; `toMatchObject` en el detalle de la
   bitácora y la prueba del orden del Excel no distingue `ac.orden` de `ac.id`; la página `nuevo/page.tsx` sin prueba (parámetro repetido,
   pestañas, carga, la mezcla de la conversión, `:166-177`), la del subproceso con su SGC-FO-14 tampoco; sin prueba del reporte convertido
@@ -794,16 +902,20 @@ viene después y corregirá algunos; un archivo sin carpeta es de `src/db/consul
   «sin la entrada» es tautológica; la navegación de cliente del formulario de la lista solo se prueba por su `key`; la guarda del motor
   no ve la forma de lista tras otra asignación ni un alias entre comillas (`tests/mejora-motor.test.ts:33-43`); pruebas que dependen de la
   primera página de 50 (`tests/mejora-carga.test.ts:486-489`, `tests/mejora-recorrido.test.ts:766-767`, `tests/mejora-tareas.test.ts:400`:
-  un `.not.toContain` pasaría en vacío); topes holgados del cascarón (≤ 15 contra 2, 11 y 7, `tests/cascaron-consultas.test.ts:196`); la
-  prueba del orden de la lista no ejercita la guarda «abierto AND» de lo vencido (`tests/mejora-lista.test.ts:59-103`); el retiro sin
-  prueba de un `unlink` que falla sin `ENOENT`, del botón con el plan aprobado ni de la línea del retiro en una ronda anterior; ayudantes
-  duplicados en las pruebas (`actividadDe`/`otraActividad`/`actividadPorSql`, `documentoDe`, `medicionConResultado`) y la prueba de
-  fijación copiada en `tests/mejora-plan.test.ts:719-741`; varias tareas escribieron el código antes que las pruebas (el RED se obtuvo
-  guardando `src/` aparte) y pruebas de pantalla sin RED.
-- **De la demo (Tarea 16):** el recorrido no puede mostrar la aceptación por un líder de la no conformidad de un hallazgo de
-  verificación, que quien la corrigió no la verifique, su rechazo, ni el cierre con un trámite publicado sin justificación (pasos 10, 13
-  y 16 de «Qué probar y cómo (Fase 15B)»); lo cubren las pruebas. `tests/esquema.test.ts` («la clave demo cumple la política…») pasó de
-  unos 2 s a más de 5 s en esta máquina, también con la semilla de antes: es carga del equipo, no de la demo, pero roza su tope de 5 s.
+  con más de cincuenta abiertos visibles, un `.not.toContain` pasaría en vacío; conviene buscar por `q` exacto o pedir `estado=todos` con
+  un filtro que las aísle); topes holgados del cascarón (≤ 15 contra 2, 11 y 7, `tests/cascaron-consultas.test.ts:196`); la prueba del
+  orden de la lista no ejercita la guarda «abierto AND» de lo vencido (`tests/mejora-lista.test.ts:59-103`); el retiro sin prueba de un
+  `unlink` que falla sin `ENOENT` ni del botón con el plan aprobado; ayudantes duplicados en las pruebas
+  (`actividadDe`/`otraActividad`/`actividadPorSql`, `documentoDe`, `medicionConResultado`) y la prueba de fijación copiada en
+  `tests/mejora-plan.test.ts:719-741`; varias tareas escribieron el código antes que las pruebas (el RED se obtuvo guardando `src/`
+  aparte) y pruebas de pantalla sin RED.
+- **De la demo (Tarea 16):** la demo no puede mostrar que quien corrigió la no conformidad de un hallazgo de verificación no la
+  verifique en «Por verificar» (llegar ahí pide el recorrido completo del plan; paso 10 de «Qué probar y cómo (Fase 15B)»), ni la
+  segunda página de la lista (paso 15; la añade `crear-lista-t14.ts` del espacio de trabajo): lo cubren las pruebas. El archivo de la
+  semilla, `src/db/semillas/mejoramiento-demo.ts`, llega a 2119 líneas (la costumbre es un archivo por entrega, como
+  `indicadores-demo-14b.ts`: un `mejoramiento-demo-15b.ts` dejaría legibles los casos de la 15A). `tests/esquema.test.ts` («la clave
+  demo cumple la política…») pasó de unos 2 s a más de 5 s en esta máquina, también con la semilla de antes: es carga del equipo, no
+  de la demo, pero roza su tope de 5 s.
 
 ## Fase 15A — Planes de mejoramiento: el hallazgo de punta a punta
 

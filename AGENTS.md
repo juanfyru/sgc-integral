@@ -108,11 +108,10 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
    `acuse_eventos`, `ratificaciones`, `externo_verificaciones`, `norma_cambios`,
    `medicion_eventos`, `medicion_observaciones`, `importaciones_indicadores`, `importacion_eventos`,
    `reporte_externo_eventos`, `variable_eventos`, `mejora_eventos`, `mejora_seguimientos`,
-   `mejora_ocurrencias`, `mejora_reporte_eventos`, `mejora_plan_eventos` y `mejora_marcas` son de solo
-   inserción (trigger que rechaza
-   `UPDATE` y `DELETE` incluso al dueño del esquema, más los privilegios de `sgc_app`); los usuarios
-   con historia se desactivan,
-   nunca se borran, y una verificación cerrada no se modifica. Una revisión anual cerrada tampoco,
+   `mejora_ocurrencias`, `mejora_reporte_eventos`, `mejora_plan_eventos` y `mejora_marcas` son de
+   solo inserción (trigger que rechaza `UPDATE` y `DELETE` incluso al dueño del esquema, más los
+   privilegios de `sgc_app`); los usuarios con historia se desactivan, nunca se borran, y una
+   verificación cerrada no se modifica. Una revisión anual cerrada tampoco,
    ni sus procesos ni sus decisiones: el trigger `sgc_impedir_si_revision_cerrada` rechaza `UPDATE`
    y `DELETE` sobre ellas y la inserción de filas hijas. Lo mismo en los indicadores: una medición
    cerrada no cambia salvo su reapertura, que deja quién, cuándo y por qué
@@ -590,8 +589,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `ratificaciones`, `externo_verificaciones`, `norma_cambios`, `medicion_eventos`,
   `medicion_observaciones`, `importaciones_indicadores`, `importacion_eventos`,
   `reporte_externo_eventos`, `variable_eventos`, `mejora_eventos`, `mejora_seguimientos`,
-  `mejora_ocurrencias`, `mejora_reporte_eventos`, `mejora_plan_eventos` o `mejora_marcas` usa un nombre único por corrida
-  (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de solo inserción).
+  `mejora_ocurrencias`, `mejora_reporte_eventos`, `mejora_plan_eventos` o `mejora_marcas` usa un
+  nombre único por corrida (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de
+  solo inserción).
   Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
   configuración de la entidad), los escribe dentro de una transacción que se revierte o
@@ -1260,7 +1260,9 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
 - **Los hallazgos que nacen de otros módulos** (anexo 15B §7 y §8): **la no conformidad de un hallazgo de
   verificación** de Distribución la abre el Admin SGC (`verificacionHallazgoId`), con la clase y el origen fijos, el
   proceso entre los del punto y la justificación de la acción, que nace requerida por quien la abre; aceptada va a «Por
-  formular» (`aceptadoVaA`). **El hallazgo de un impacto de norma** (`impactoId` o `impactoIndicadorId`) lo abren el
+  formular» (`aceptadoVaA`). La fila de Distribución dice «No conformidad HZ-… · {estado}», con su enlace, solo a quien
+  ve esa no conformidad: a los demás `engancheDeVerificacion` la manda nula y la fila no dice nada de ella (revisión
+  final de la 15B). **El hallazgo de un impacto de norma** (`impactoId` o `impactoIndicadorId`) lo abren el
   Admin SGC y los líderes del proceso del impacto, con el origen, la norma como requisito y el proceso fijos (también al
   editarlo). Cada uno tiene **a lo sumo un hallazgo que cuente**, garantizado por un índice único parcial entre los que
   no terminaron rechazados ni anulados; si el suyo termina así, se abre otro. Los fijos los vuelve a sacar de la base el

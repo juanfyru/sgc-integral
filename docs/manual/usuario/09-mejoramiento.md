@@ -59,8 +59,8 @@ hallazgos, el formato para el ente, el SGC-FO-14 y los hallazgos que nacen de ot
   17).
 - **Configuración de mejoramiento**, en el grupo **Administración**, solo para el Administrador del
   SGC (sección 10.3).
-- En la búsqueda (`Ctrl K` y **Buscar documentos**), los grupos **Hallazgos** y **Planes**: por
-  código o por título (o nombre), solo los que usted puede ver.
+- En la búsqueda (`Ctrl K` y **Buscar documentos**), los grupos **Hallazgos** y **Planes de
+  mejoramiento**: por código o por título (o nombre), solo los que usted puede ver.
 - En la página de un documento, un proceso, un indicador y una norma, la sección **Mejoramiento**
   (sección 18).
 
@@ -113,6 +113,30 @@ los terminados**.
 **Excel** baja la lista con los filtros que tenga puestos, todas sus páginas (sección 12), y
 **Registrar hallazgo** abre el registro (sección 3). En un teléfono, cada fila es una tarjeta.
 
+### 1.5 La página de un hallazgo
+
+Pulse el código o el título. Arriba, el código, la clase, la criticidad y las marcas, el título y una
+línea con el proceso, la fuente y quién lo registró; el botón **Imprimir** (sección 12). Debajo, el
+**recorrido**: los pasos de ese hallazgo (Registro, Aceptado, Corrección, Decisión, Causa raíz, Plan
+aprobado, Ejecución, Verificación, Eficacia y Cierre, o los del camino corto, sección 5) con su
+fecha, el paso en que va y los que faltan.
+
+Después, una sección por etapa, en el orden del formato SGC-FO-AC-01: **1. Identificación**,
+**2. Corrección o contención**, **3. Causa raíz**, **4. Plan de acción**, **5. Seguimiento**,
+**6. Verificación de eficacia** y **7. Cierre**. Las hechas se pliegan con su resumen en una línea;
+la actual queda abierta; las que faltan no aparecen. Una ronda anterior aparece plegada con su
+número y su resultado, por ejemplo **Ronda 1 · no eficaz**.
+
+A la derecha (abajo, en un teléfono):
+
+- **Lo que sigue:** lo que le toca hacer a usted, con su botón, o quién tiene el turno.
+- **Fechas:** **Plan formulado** (y si fue a tiempo), **Cierre previsto** y **Reprogramaciones**.
+- **Enlaces:** el hallazgo del que es reincidencia, el documento, el indicador, la norma. Lo que
+  usted no puede ver sale sin nombre y sin enlace («un indicador»).
+- **Ocurrencias:** las veces que el mismo problema volvió a pasar mientras el hallazgo seguía
+  abierto (sección 3.4).
+- **Historial:** cada paso, con quién y cuándo. Solo para quien ve el hallazgo completo.
+
 ### 1.6 Los archivos
 
 Quién abre cada archivo de un hallazgo lo dice la tabla de la sección 1.3: quien lo ve completo abre
@@ -137,30 +161,6 @@ el nombre. Lo que ya estaba congelado antes (la evidencia de la corrección, la 
 terminada, la de la verificación y la evaluación, el oficio de una respuesta registrada, el formato
 firmado de una carga y los archivos de una ronda anterior) no se retira por aquí: «Este archivo no se
 retira por datos personales».
-
-### 1.5 La página de un hallazgo
-
-Pulse el código o el título. Arriba, el código, la clase, la criticidad y las marcas, el título y una
-línea con el proceso, la fuente y quién lo registró; el botón **Imprimir** (sección 12). Debajo, el
-**recorrido**: los pasos de ese hallazgo (Registro, Aceptado, Corrección, Decisión, Causa raíz, Plan
-aprobado, Ejecución, Verificación, Eficacia y Cierre, o los del camino corto, sección 5) con su
-fecha, el paso en que va y los que faltan.
-
-Después, una sección por etapa, en el orden del formato SGC-FO-AC-01: **1. Identificación**,
-**2. Corrección o contención**, **3. Causa raíz**, **4. Plan de acción**, **5. Seguimiento**,
-**6. Verificación de eficacia** y **7. Cierre**. Las hechas se pliegan con su resumen en una línea;
-la actual queda abierta; las que faltan no aparecen. Una ronda anterior aparece plegada con su
-número y su resultado, por ejemplo **Ronda 1 · no eficaz**.
-
-A la derecha (abajo, en un teléfono):
-
-- **Lo que sigue:** lo que le toca hacer a usted, con su botón, o quién tiene el turno.
-- **Fechas:** **Plan formulado** (y si fue a tiempo), **Cierre previsto** y **Reprogramaciones**.
-- **Enlaces:** el hallazgo del que es reincidencia, el documento, el indicador, la norma. Lo que
-  usted no puede ver sale sin nombre y sin enlace («un indicador»).
-- **Ocurrencias:** las veces que el mismo problema volvió a pasar mientras el hallazgo seguía
-  abierto (sección 3.4).
-- **Historial:** cada paso, con quién y cuándo. Solo para quien ve el hallazgo completo.
 
 ## 2. Reportar una posible no conformidad
 
@@ -236,10 +236,19 @@ Registran el Administrador del SGC, Control Interno y los líderes (estos, solo 
 | **Criticidad** | Solo en la no conformidad: Alta, Media o Baja |
 | **Título** | Una frase de hasta 150 caracteres: es como se nombra el hallazgo en las listas, las tareas y los avisos |
 | **Descripción, con la evidencia objetiva** | Lo que se encontró, con lo que lo demuestra |
+| **Justificación de la acción correctiva** | Solo en la no conformidad que se abre desde un hallazgo de verificación (sección 18): por qué esta falla necesita tratar su causa, al menos 10 caracteres |
 | **Requisito incumplido** | **Cláusula o requisito** (por ejemplo «ISO 9001: 8.5.1»), **Norma del normograma** o **Documento interno**. En la no conformidad, al menos uno |
-| **Indicador al que se refiere (opcional)**, **Medición (opcional)** | Un indicador activo o retirado, y un periodo que ya tenga resultado |
+| **A qué se refiere (opcional)** | **Documento**: uno vigente que usted ve. **Indicador**: uno activo o retirado que usted ve y, con él, **Medición**: uno de sus periodos con resultado. Si el indicador es restringido, el formulario avisa que lo que escriba en la descripción lo leerán los responsables de las actividades |
 | **Riesgo asociado (opcional)** | El código y el nombre del riesgo en la matriz del proceso |
+| **Objetivo (opcional)** | El objetivo de calidad o institucional al que apunta el hallazgo, entre los activos. Después se cambia en la sección **Clasificación** del hallazgo (sección 14) |
 | **Fecha límite de respuesta al ente** | Solo en los orígenes externos; obligatoria en «Ente de control» |
+
+**Dentro de un plan.** Si llega desde **Registrar hallazgo en este plan** (sección 14), arriba dice
+«Se registra dentro del plan PM-…»: el hallazgo nace en ese plan, y el origen, la fuente, la fecha del
+ente y el objetivo llegan propuestos con los del plan, editables. Si llega desde otra página
+(secciones 17 y 18), llega con lo de esa página ya puesto; lo que queda fijo (el indicador y la
+medición de una marca, la clase y el origen de la no conformidad de un hallazgo de verificación, el
+origen, la norma y el proceso de un impacto) se muestra como texto y no se cambia.
 
 Antes de guardar, el formulario dice lo que va a pasar, sin que usted lo marque: «Llevará acción
 correctiva y lo aprobará Gerencia.» (criticidad alta, reincidencia u origen externo) o «Este
@@ -254,9 +263,11 @@ Dónde nace:
 | Un líder de ese proceso | Interno | Aceptado |
 | Cualquiera que pueda registrar | Externo | Aceptado |
 | Administrador del SGC o Control Interno | Interno, en un proceso sin líder activo | Aceptado: lo que le toca al líder lo hace el Administrador del SGC |
+| Administrador del SGC, desde un hallazgo de verificación de Distribución (sección 18) | Control documental | **Por aceptar**, o aceptado en un proceso sin líder activo: es una no conformidad con la acción correctiva ya requerida |
 
 «Aceptado» lleva a **Por corregir** en la no conformidad y a **Por formular** en la observación y la
-oportunidad de mejora.
+oportunidad de mejora. La no conformidad de un hallazgo de verificación va directo a **Por formular**:
+su corrección es la del hallazgo de verificación.
 
 ### 3.2 Los catorce orígenes
 
@@ -805,8 +816,8 @@ anuló o se rechazó estando en el plan sigue en él, marcado, y ya no cuenta.
    plan), la fecha del ente y el objetivo del plan, todos editables.
 2. **Añadir hallazgos:** busque por código o título y filtre por proceso, origen y año; marque
    varios y añádalos de una vez. Entran en cualquier estado, también cerrados; uno anulado o
-   rechazado, no. Si el plan tiene objetivo, **Poner al hallazgo el objetivo del plan** se lo pone a
-   los que no tienen uno.
+   rechazado, no. Si el plan tiene objetivo, la casilla **Poner el objetivo del plan a los que no
+   tienen**, marcada de entrada, se lo pone a los que no tienen uno; el que ya tiene uno lo conserva.
 3. Desde el hallazgo, en su sección **Clasificación**: **Poner en un plan**, **Cambiar de plan** o
    **Sacar del plan** (con su motivo, al menos 10 caracteres). Ahí mismo, **Poner un objetivo**.
 
@@ -919,8 +930,9 @@ panel le propone ese hallazgo.
 
 **La sección «Mejoramiento»** de la página de un documento, de un proceso (y de un subproceso), de un
 indicador y de una norma muestra los hallazgos que los citan y que usted ve, con **Ver todos** (la
-lista filtrada) y **Abrir hallazgo** (el registro, con eso ya puesto) para quien puede registrar ahí.
-A quien no ve ninguno, la sección no le muestra lista ni cifra: solo **Reportar**. En **Objetivos**,
+lista filtrada) y, salvo en la norma, **Abrir hallazgo** (el registro, con eso ya puesto) para quien
+puede registrar ahí. A quien no ve ninguno, la sección no le muestra lista ni cifra: solo **Reportar**
+(en la norma, ni eso: no tiene botones). En **Objetivos**,
 cada objetivo dice cuántos hallazgos abiertos apuntan a él y lleva a la lista filtrada.
 
 **Desde un hallazgo de verificación de un punto de uso** (Distribución, Capítulo 6), el Administrador
@@ -934,7 +946,8 @@ verificar esa no conformidad. Si el hallazgo de verificación se reabrió o su p
 hallazgos en el año (los dos números, en **Configuración de mejoramiento**), la fila lo sugiere: «Este
 hallazgo se reabrió una vez. Puede abrir una no conformidad para tratar la causa.». Tiene a lo sumo
 una no conformidad que cuente; si esa termina rechazada o anulada, se puede abrir otra. Después, la
-fila dice **No conformidad HZ-…** y en qué va. En Distribución no cambia nada más.
+fila dice **No conformidad HZ-…** y en qué va, con su enlace, solo a quien puede ver esa no
+conformidad: a los demás, la fila no dice nada de ella. En Distribución no cambia nada más.
 
 **Desde un impacto de norma** (Capítulo 7): **Abrir hallazgo** junto a cada impacto, en la página del
 cambio de norma, o junto a la revisión pendiente de un indicador, en su página. Llega con el origen
