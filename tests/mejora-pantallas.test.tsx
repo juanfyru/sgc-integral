@@ -999,6 +999,14 @@ describe("el plan de acción (maqueta 5)", () => {
     const vacia = { numero: 1, analisis: [], causas: [], similares: null, acciones: [], criterios: [] };
     expect(seccionesDeLaRonda({ ve: "completo", estado: "por_formular", ronda: 1 }, vacia)).toEqual({ causaRaiz: true, plan: true, adjuntos: true });
     expect(seccionesDeLaRonda({ ve: "completo", estado: "por_formular", ronda: 2 }, vacia)).toEqual({ causaRaiz: false, plan: false, adjuntos: false });
+    // Una observación enviada sin análisis escrito: sus adjuntos (o sus retiros) piden el bloque, solo a quien ve completo
+    // (revisión final, I2).
+    const enviada = { numero: 1, analisis: [], causas: [], similares: null, acciones: [{}], criterios: [] };
+    const enRevision = { ve: "completo", estado: "en_revision", ronda: 1 } as const;
+    expect(seccionesDeLaRonda(enRevision, enviada)).toEqual({ causaRaiz: false, plan: true, adjuntos: false });
+    expect(seccionesDeLaRonda(enRevision, enviada, true)).toEqual({ causaRaiz: false, plan: true, adjuntos: true });
+    expect(seccionesDeLaRonda({ ...enRevision, ve: "actividad" }, enviada, true)).toEqual({ causaRaiz: false, plan: true, adjuntos: false });
+    expect(seccionesDeLaRonda({ ve: "completo", estado: "por_formular", ronda: 2 }, vacia, true)).toEqual({ causaRaiz: false, plan: false, adjuntos: true });
   });
 
   it("«4. Plan de acción» en lectura: acción, actividades, responsable, fin, avance y estado; el indicador solo a quien lo ve", () => {

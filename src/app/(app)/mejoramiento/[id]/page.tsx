@@ -776,10 +776,13 @@ export default async function PaginaHallazgo({
               // Los archivos de la ronda (solo a quien ve el hallazgo completo): los del análisis y los de su verificación y su
               // evaluación, en lectura (spec §8.7).
               const deLaRonda = completo ? await archivosDe(sqlArchivos, sesion, { contexto: "mejora_ronda", contextoId: r.id }) : sinArchivos;
-              const conAdjuntos = seccionesDeLaRonda(h, r).adjuntos;
-              const adjuntos = conAdjuntos ? deLaRonda.archivos.filter((a) => a.rol === "analisis") : [];
+              const delAnalisis = deLaRonda.archivos.filter((a) => a.rol === "analisis");
               // Un adjunto que se retiró por datos personales cuando esta ronda estaba en curso (anexo 15B §11.2).
-              const retiradosDelAnalisis = conAdjuntos ? retiradosDeLaSeccion(deLaRonda, "analisis", zona) : [];
+              const retiradosDeLaRonda = retiradosDeLaSeccion(deLaRonda, "analisis", zona);
+              // Se leen aunque la ronda no tenga análisis escrito (una observación o una oportunidad; revisión final, I2).
+              const conAdjuntos = seccionesDeLaRonda(h, r, delAnalisis.length > 0 || retiradosDeLaRonda.length > 0).adjuntos;
+              const adjuntos = conAdjuntos ? delAnalisis : [];
+              const retiradosDelAnalisis = conAdjuntos ? retiradosDeLaRonda : [];
               const verificados = deLaRonda.archivos.filter((a) => a.rol === "verificacion");
               return (
                 <RondaAnterior
@@ -818,18 +821,22 @@ export default async function PaginaHallazgo({
           )}
           {rondaEnCurso
             ? await (async (r: RondaDeDetalle) => {
-                // La causa raíz y el plan se leen en texto también por quien solo es responsable de una actividad (spec §6.3).
-                const secciones = seccionesDeLaRonda(h, r);
-                const conAnalisis = secciones.causaRaiz;
-                const conPlan = secciones.plan;
                 // Los adjuntos del análisis son de la ronda: quien revisa y quien aprueba los leen aquí; solo quien ve completo.
                 const duenoDelAnalisis = { contexto: "mejora_ronda", contextoId: r.id } as const;
-                const delAnalisis = secciones.adjuntos ? await archivosDe(sqlArchivos, sesion, duenoDelAnalisis) : sinArchivos;
-                const adjuntos = delAnalisis.archivos.filter((a) => a.rol === "analisis");
+                const delAnalisis = completo ? await archivosDe(sqlArchivos, sesion, duenoDelAnalisis) : sinArchivos;
+                const delRol = delAnalisis.archivos.filter((a) => a.rol === "analisis");
+                const retiradosDeLaRonda = retiradosDeLaSeccion(delAnalisis, "analisis", zona);
+                // La causa raíz y el plan se leen en texto también por quien solo es responsable de una actividad (spec §6.3). Una
+                // observación o una oportunidad se envían sin análisis escrito: con adjuntos (o retiros), «3. Causa raíz» se pinta
+                // por ellos, a quien ve completo (revisión final, I2).
+                const secciones = seccionesDeLaRonda(h, r, delRol.length > 0 || retiradosDeLaRonda.length > 0);
+                const conAnalisis = secciones.causaRaiz || secciones.adjuntos;
+                const conPlan = secciones.plan;
+                const adjuntos = secciones.adjuntos ? delRol : [];
                 // Con el plan enviado o aprobado ya son parte de lo firmado (anexo 15B §11.2): solo se retiran por datos personales,
                 // aquí, y donde estaban queda la línea del retiro.
                 const retirablesDelAnalisis = await archivosRetirables(sqlArchivos, sesion, adjuntos, duenoDelAnalisis);
-                const retiradosDelAnalisis = retiradosDeLaSeccion(delAnalisis, "analisis", zona);
+                const retiradosDelAnalisis = secciones.adjuntos ? retiradosDeLaRonda : [];
                 const evaluableDesde =
                   conPlan && r.estadoPlan !== "aprobado" && PLAN_SIN_APROBAR.has(h.estado)
                     ? (await examinarPlan(sqlArchivos, h.id, await contextoDeMejora(sqlArchivos, ahora))).evaluableDesde

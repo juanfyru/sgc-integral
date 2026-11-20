@@ -175,7 +175,7 @@ describe("terminarActividad", () => {
       await registrarSeguimiento(responsable, seguimiento(a1, 100), c(AHORA, tx));
       await evidenciaDeActividad(tx, a2, responsable.usuarioId);
       await expect(terminarActividad(responsable, { actividadId: a1 }, c(AHORA, tx))).rejects.toThrow(
-        "Adjunte al menos un archivo de evidencia antes de terminar",
+        "Para terminar hace falta al menos un archivo de evidencia o un trámite enlazado que haya terminado bien",
       );
       // Con su archivo y el avance en 90.
       await registrarSeguimiento(responsable, seguimiento(a2, 90), c(AHORA, tx));

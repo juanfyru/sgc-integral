@@ -31,8 +31,8 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
 
 const AHORA = new Date("2026-11-17T15:00:00Z");
 const TERMINALES = ["cerrado", "rechazado", "anulado"] as const;
-const MEJORAMIENTO = "la cita un hallazgo de mejoramiento";
-const CITADO = "El indicador está citado en un hallazgo de mejoramiento";
+const MEJORAMIENTO = "está citada en Mejoramiento";
+const CITADO = "El indicador está citado en Mejoramiento";
 
 type Fallo = { codigo: string; restriccion: string | null } | null;
 type ErrorPg = { code?: string; constraint_name?: string; message?: string };

@@ -54,7 +54,9 @@ type Opciones = { sql?: Cliente; ahora?: Date };
 export const ACTIVIDAD_NO_EXISTE = "La actividad no existe";
 export const ACTIVIDAD_CERRADA = "La actividad ya terminó o se canceló";
 export const SEGUIMIENTO_FUTURO = "La fecha del seguimiento no puede ser futura";
-export const SIN_EVIDENCIA_PARA_TERMINAR = "Adjunte al menos un archivo de evidencia antes de terminar";
+/** Un trámite enlazado que terminó bien vale como evidencia, como un archivo (anexo 15B §9.4). */
+export const SIN_EVIDENCIA_PARA_TERMINAR =
+  "Para terminar hace falta al menos un archivo de evidencia o un trámite enlazado que haya terminado bien";
 export const AVANCE_INCOMPLETO = "Registre el avance en 100 % antes de terminar";
 export const SEGUIMIENTO_TRAS_LA_DEVOLUCION = "Registre un seguimiento de lo que corrigió antes de terminarla";
 export const EVIDENCIA_TRAS_LA_DEVOLUCION = "Adjunte la evidencia nueva de lo que corrigió";

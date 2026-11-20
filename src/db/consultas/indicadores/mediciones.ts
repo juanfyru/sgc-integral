@@ -348,9 +348,9 @@ export function tramos(versiones: readonly VersionDeCalculo[], inicio: string, z
 /**
  * «Medición con datos» (alias `m`): cualquier cosa que ya es historia y no se puede quitar. Una medición que no está
  * abierta, con valores, análisis, causa o acción propuesta, eventos, observaciones o soportes (`archivos` no tiene FK
- * hacia la medición: quitarla dejaría la evidencia huérfana), o que cita un hallazgo de mejoramiento (su llave foránea
- * impediría quitarla con un `23503`). Una sola definición para retirar, cambiar el inicio y aprobar un cambio de
- * periodicidad.
+ * hacia la medición: quitarla dejaría la evidencia huérfana), o que cita Mejoramiento: un hallazgo o la marca de su acción de
+ * mejora (Fase 15B; sus llaves foráneas impedirían quitarla con un `23503`). Una sola definición para retirar, cambiar el
+ * inicio y aprobar un cambio de periodicidad.
  */
 export const conDatos = (sql: Cliente) => sql`(m.estado <> 'abierta' OR m.no_aplica
   OR coalesce(btrim(m.analisis), '') <> '' OR coalesce(btrim(m.causa), '') <> '' OR coalesce(btrim(m.accion_propuesta), '') <> ''
@@ -362,9 +362,9 @@ export const conDatos = (sql: Cliente) => sql`(m.estado <> 'abierta' OR m.no_apl
   OR EXISTS (SELECT 1 FROM mejora_marcas mk WHERE mk.medicion_id = m.id))`;
 
 /**
- * Un hallazgo de mejoramiento cita al indicador (alias `i`): como su indicador, por una de sus mediciones o como el
- * indicador de eficacia de una ronda (spec 15 §19.4). Sus llaves foráneas impedirían borrarlo con un `23503`: lo comparten
- * deshacer un lote de importación y borrar un borrador.
+ * Mejoramiento cita al indicador (alias `i`): un hallazgo, como su indicador, por una de sus mediciones o como el indicador de
+ * eficacia de una ronda (spec 15 §19.4); y, desde la 15B, la marca de una de sus mediciones o un reporte que se refiere a él.
+ * Sus llaves foráneas impedirían borrarlo con un `23503`: lo comparten deshacer un lote de importación y borrar un borrador.
  */
 export const citadoEnMejoramiento = (sql: Cliente) => sql`(
   EXISTS (SELECT 1 FROM mejora_hallazgos mh WHERE mh.indicador_id = i.id)

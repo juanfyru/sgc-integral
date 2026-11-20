@@ -684,8 +684,9 @@ const IMPIDE = {
   reportes: "tiene reportes al ente",
   // Un compuesto de la 14C (anexo 14C, §6.6), aunque sea un borrador: su variable apunta a la ficha.
   tomada: "otra ficha toma el resultado de una ficha del lote",
-  // Un hallazgo de mejoramiento (spec 15 §19.4): como su indicador, por su medición o como indicador de eficacia.
-  mejoramiento: "la cita un hallazgo de mejoramiento",
+  // Mejoramiento (spec 15 §19.4; Fase 15B): un hallazgo (como su indicador, por su medición o como indicador de eficacia), la marca
+  // de una medición o un reporte.
+  mejoramiento: "está citada en Mejoramiento",
 } as const;
 
 export type Impedimento = { codigo: string; motivo: string };

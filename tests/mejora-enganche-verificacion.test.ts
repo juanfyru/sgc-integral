@@ -269,10 +269,19 @@ describe("engancheDeVerificacion", () => {
       }
       const r = await registrarHallazgo(e.b.admin, datos(e), c(AHORA, tx));
       const despues = (await engancheDeVerificacion(e.b.admin, [await fila(tx, e.b.admin, e.vh.id)], o)).get(e.vh.id);
-      expect(despues).toEqual({ noConformidad: { id: r.id, codigo: r.codigo, estado: "Por aceptar", visible: true }, puedeAbrir: false, sugerir: null });
-      // El responsable del punto (Consulta) no ve la no conformidad; el líder de su proceso, sí.
-      expect((await engancheDeVerificacion(e.responsable, [await fila(tx, e.responsable, e.vh.id)], o)).get(e.vh.id)?.noConformidad?.visible).toBe(false);
-      expect((await engancheDeVerificacion(e.b.lider, [await fila(tx, e.b.lider, e.vh.id)], o)).get(e.vh.id)?.noConformidad?.visible).toBe(true);
+      expect(despues).toEqual({ noConformidad: { id: r.id, codigo: r.codigo, estado: "Por aceptar" }, puedeAbrir: false, sugerir: null });
+      // El responsable del punto (Consulta) no ve la no conformidad: su fila dice lo mismo que antes de abrirla, nada (revisión final,
+      // I1); el líder de su proceso, que sí la ve, la lee con su código.
+      expect((await engancheDeVerificacion(e.responsable, [await fila(tx, e.responsable, e.vh.id)], o)).get(e.vh.id)).toEqual({
+        noConformidad: null,
+        puedeAbrir: false,
+        sugerir: null,
+      });
+      expect((await engancheDeVerificacion(e.b.lider, [await fila(tx, e.b.lider, e.vh.id)], o)).get(e.vh.id)).toEqual({
+        noConformidad: { id: r.id, codigo: r.codigo, estado: "Por aceptar" },
+        puedeAbrir: false,
+        sugerir: null,
+      });
       // Anulada, ya no cuenta: se puede abrir otra.
       await anularHallazgo(e.b.admin, { hallazgoId: r.id, justificacion: "Se abrió sobre el punto equivocado" }, c(AHORA, tx));
       expect((await engancheDeVerificacion(e.b.admin, [await fila(tx, e.b.admin, e.vh.id)], o)).get(e.vh.id)).toEqual({

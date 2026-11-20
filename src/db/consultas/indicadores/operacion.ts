@@ -626,8 +626,9 @@ export async function descartarIndicador(sesion: SesionFlujo, d: { indicadorId: 
 
 /**
  * Borra un indicador en borrador que nunca se envió a aprobación, con sus versiones, sus filas hijas y sus designados. Uno
- * con revisiones por cambio de norma o reportes al ente (anexo 14B, §8 y §9), o citado en un hallazgo de mejoramiento
- * (spec 15 §19.4), no se borra: un borrador nunca enviado no debería tenerlos, y si los tiene son historia.
+ * con revisiones por cambio de norma o reportes al ente (anexo 14B, §8 y §9), o citado en Mejoramiento (un hallazgo, la marca
+ * de una medición o un reporte: `citadoEnMejoramiento`; spec 15 §19.4), no se borra: un borrador nunca enviado no debería
+ * tenerlos, y si los tiene son historia.
  */
 export async function borrarIndicador(sesion: SesionFlujo, indicadorId: number, opciones?: Opciones): Promise<void> {
   exigirAdministrar(sesion);
@@ -641,7 +642,7 @@ export async function borrarIndicador(sesion: SesionFlujo, indicadorId: number, 
         ${citadoEnMejoramiento(tx)} AS mejoramiento
       FROM indicadores i WHERE i.id = ${i.id}`;
     if (historia.tiene) throw new ErrorIndicador("El indicador tiene revisiones por cambio de norma o reportes al ente: no se puede borrar");
-    if (historia.mejoramiento) throw new ErrorIndicador("El indicador está citado en un hallazgo de mejoramiento");
+    if (historia.mejoramiento) throw new ErrorIndicador("El indicador está citado en Mejoramiento");
     const nombre = await nombreDe(tx, i.id);
     const versiones = (await tx`SELECT id FROM indicador_versiones WHERE indicador_id = ${i.id} ORDER BY id FOR UPDATE`).map((v) => Number(v.id));
     if (versiones.length > 0) {

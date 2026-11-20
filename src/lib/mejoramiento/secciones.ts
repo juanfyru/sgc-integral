@@ -6,12 +6,19 @@
 import { leerCriterios } from "./eficacia";
 import type { EstadoHallazgo } from "./tipos";
 
+/**
+ * `causaRaiz`: si la ronda tiene algo escrito en «3. Causa raíz» (o se está formulando). `adjuntos`: si se pinta el bloque de los
+ * adjuntos del análisis, solo a quien ve el hallazgo completo, con texto o cuando la ronda tiene adjuntos o retiros (`conArchivos`).
+ * Una observación o una oportunidad se envían sin análisis escrito, y sus adjuntos ya firmados solo se retiran desde ese bloque
+ * (anexo 15B §11.2; revisión final, I2): sin texto, la página pinta la sección por ellos.
+ */
 export function seccionesDeLaRonda(
   h: { ve: "completo" | "actividad"; estado: EstadoHallazgo; ronda: number },
   r: { numero: number; analisis: readonly unknown[]; causas: readonly unknown[]; similares: boolean | null; acciones: readonly unknown[]; criterios: unknown },
+  conArchivos = false,
 ): { causaRaiz: boolean; plan: boolean; adjuntos: boolean } {
   const formulandose = r.numero === h.ronda && h.estado === "por_formular";
   const causaRaiz = r.analisis.length > 0 || r.causas.length > 0 || r.similares !== null || formulandose;
   const plan = r.acciones.length > 0 || leerCriterios(r.criterios).length > 0 || formulandose;
-  return { causaRaiz, plan, adjuntos: causaRaiz && h.ve === "completo" };
+  return { causaRaiz, plan, adjuntos: h.ve === "completo" && (causaRaiz || conArchivos) };
 }

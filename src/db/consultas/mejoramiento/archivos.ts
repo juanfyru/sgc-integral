@@ -517,7 +517,8 @@ async function hallazgoDelDueno(sql: Cliente, contexto: string, contextoId: numb
  * el evento `archivo_retirado` del hallazgo con el nombre, el tamaño, la huella, el rol, el dueño y quién lo había subido, y la
  * justificación, que va **solo** al evento (spec §6.4); la bitácora `mejora_archivo_retirado`, con ids y el rol; y el borrado de la
  * fila. Ninguna huella firmada cambia: los archivos no entran a la huella del plan. Después de confirmar, el archivo sale del
- * almacén; si ese borrado falla, se registra y no se deshace nada (ya no se sirve). `opciones.ahora` es la hora del evento.
+ * almacén; si ese borrado falla, o su ruta no se resuelve dentro del almacén, se registra y no se deshace nada (ya no se sirve).
+ * `opciones.ahora` es la hora del evento.
  */
 export async function retirarPorDatosPersonales(
   sesion: SesionFlujo,
@@ -581,7 +582,12 @@ export async function retirarPorDatosPersonales(
     }),
   );
   const absoluta = resolverRutaAlmacen(ruta);
-  if (!absoluta) return;
+  if (!absoluta) {
+    // La fila ya no existe y el archivo no se sirve, pero pudo quedar en disco: en un retiro por datos personales eso no pasa en
+    // silencio (revisión final, M4). La ruta es lo único que queda para encontrarlo.
+    console.error(`No se pudo borrar del almacén el archivo retirado ${archivoId}: su ruta no se resuelve dentro del almacén (${ruta})`);
+    return;
+  }
   await unlink(absoluta).catch((err: NodeJS.ErrnoException) => {
     // Ya no se sirve (la fila no existe): que falte del almacén no es un error; otro fallo se registra y no se deshace nada.
     if (err?.code !== "ENOENT") console.error(`No se pudo borrar del almacén el archivo retirado ${archivoId}:`, err);

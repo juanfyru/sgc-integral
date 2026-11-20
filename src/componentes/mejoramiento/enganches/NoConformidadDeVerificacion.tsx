@@ -9,8 +9,8 @@ const FOCO = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visib
 /**
  * Lo que la fila de un hallazgo de verificación de Distribución gana de mejoramiento (Fase 15B, anexo §7.1 y §7.4, maqueta 6), ya
  * decidido por `engancheDeVerificacion`: al Admin SGC, la sugerencia (si la hay) y «Abrir no conformidad», que lleva al registro con
- * el hallazgo puesto; después, «No conformidad HZ-… · en qué va», con enlace solo a quien la ve. Sin nada de eso no pinta nada: el
- * resto de la fila es de Distribución y no cambia.
+ * el hallazgo puesto; después, «No conformidad HZ-… · en qué va», con su enlace, solo a quien la ve (a los demás llega nula: para
+ * ellos no existe; revisión final, I1). Sin nada de eso no pinta nada: el resto de la fila es de Distribución y no cambia.
  */
 export function NoConformidadDeVerificacion({ hallazgoId, enganche }: { hallazgoId: number; enganche: EngancheDeVerificacion | undefined }) {
   if (!enganche || (!enganche.puedeAbrir && enganche.noConformidad === null)) return null;
@@ -25,13 +25,9 @@ export function NoConformidadDeVerificacion({ hallazgoId, enganche }: { hallazgo
       ) : null}
       {nc ? (
         <p className="min-w-0 break-words text-sm">
-          {nc.visible ? (
-            <Link href={rutaDeHallazgo(nc.id)} className={`rounded-sm font-medium text-marca underline-offset-2 hover:underline ${FOCO}`}>
-              {`No conformidad ${nc.codigo}`}
-            </Link>
-          ) : (
-            <span className="font-medium">{`No conformidad ${nc.codigo}`}</span>
-          )}
+          <Link href={rutaDeHallazgo(nc.id)} className={`rounded-sm font-medium text-marca underline-offset-2 hover:underline ${FOCO}`}>
+            {`No conformidad ${nc.codigo}`}
+          </Link>
           {` · ${nc.estado}`}
         </p>
       ) : null}

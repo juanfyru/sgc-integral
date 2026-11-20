@@ -127,6 +127,12 @@ async function actividadQueAdmite(sql: Cliente, sesion: SesionFlujo, actividadId
  * La actividad oculta de una solicitud (`crearSolicitud`, §9.2), dentro de su transacción y antes de insertar nada: toma el hallazgo
  * `FOR SHARE` y comprueba que la persona puede pedirle un trámite. Para toda causa (no existe, no la ve, no admite el pedido) lanza
  * `ACTIVIDAD_NO_ADMITE`: la solicitud se rechaza entera y el trigger del hallazgo terminado nunca salta dentro de su transacción.
+ *
+ * Orden de candados: el hallazgo `FOR SHARE` es lo primero de la solicitud, y después `crearSolicitud` toma la revisión anual
+ * (`FOR SHARE`), el candado del consecutivo de trámites y el impacto que resuelve. No forma ciclo (revisión final de la 15B):
+ * `FOR SHARE` choca solo con `FOR UPDATE`, y ningún camino toma un hallazgo `FOR UPDATE` y después la revisión, un impacto o ese
+ * consecutivo (el registro toma el impacto con `FOR KEY SHARE`, y `transicionar` no toca Mejoramiento). Lo que cuesta: una
+ * transición del hallazgo espera lo que dura una solicitud.
  */
 export async function validarActividadParaTramite(tx: TransactionSql, sesion: SesionFlujo, actividadId: number): Promise<{ hallazgoId: number }> {
   const a = await actividadQueAdmite(tx, sesion, actividadId, true);

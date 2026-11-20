@@ -22,11 +22,12 @@ type Opciones = { sql?: Cliente; ahora?: Date };
 
 /**
  * Lo que pinta la fila de un hallazgo de verificación (anexo §7.1 y §7.4): la no conformidad que cuenta (ni rechazada ni anulada) con
- * su código y en qué va, y si quien mira la ve (el enlace); si quien mira puede abrir una (el Admin SGC, mientras no haya una que
- * cuente); y, solo entonces, por qué se sugiere abrirla.
+ * su código y en qué va, solo a quien la ve (`filtroHallazgos`): a los demás llega nula, como si no la hubiera, porque para quien no
+ * puede ver un hallazgo no existe, ni su código (revisión final, I1); si quien mira puede abrir una (el Admin SGC, mientras no haya
+ * una que cuente); y, solo entonces, por qué se sugiere abrirla.
  */
 export type EngancheDeVerificacion = {
-  noConformidad: { id: number; codigo: string; estado: string; visible: boolean } | null;
+  noConformidad: { id: number; codigo: string; estado: string } | null;
   puedeAbrir: boolean;
   sugerir: SugerenciaDeVerificacion | null;
 };
@@ -79,7 +80,9 @@ export async function engancheDeVerificacion(
 
   for (const h of hallazgos) {
     const f = cuentan.get(h.id);
-    const noConformidad = f
+    // A quien no la ve, nada: ni el código ni en qué va. Que exista una solo cuenta para decidir si se puede abrir otra, y eso es
+    // del Admin SGC, que las ve todas.
+    const noConformidad = f?.visible === true
       ? {
           id: Number(f.id),
           codigo: f.codigo as string,
@@ -88,10 +91,9 @@ export async function engancheDeVerificacion(
             resultadoCierre: (f.resultado_cierre as ResultadoCierre | null) ?? null,
             correccionRequerida: (f.correccion_requerida as boolean | null) ?? null,
           }),
-          visible: f.visible === true,
         }
       : null;
-    const puedeAbrir = abre && noConformidad === null;
+    const puedeAbrir = abre && f === undefined;
     const cuantos = acumulan.get(h.puntoUsoId) ?? 0;
     const sugerir: SugerenciaDeVerificacion | null = !puedeAbrir
       ? null

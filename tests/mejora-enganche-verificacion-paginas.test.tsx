@@ -157,6 +157,9 @@ describe("/distribucion/verificaciones/[id] cerrada (ronda 1, punto 3)", () => {
       const delResponsable = await verificacion(responsable);
       expect(delResponsable).not.toContain("Abrir no conformidad");
       expect(delResponsable).not.toContain(`href="/mejoramiento/${r.id}"`);
+      // El responsable no ve la no conformidad: para él no existe, ni su código ni en qué va (revisión final, I1).
+      expect(delResponsable).not.toContain(r.codigo);
+      expect(delResponsable).not.toContain("No conformidad HZ-");
     }));
 });
 

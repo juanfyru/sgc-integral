@@ -462,4 +462,82 @@ describe("la página del hallazgo (anexo §11.2)", () => {
       expect(despues).toContain(`Retiró por datos personales el archivo «${adjunto.nombre}» (2 KB) de los adjuntos del análisis, que había subido ${b.lider.nombre}`);
       expect(despues).toContain(`Justificación: ${JUSTIFICACION}`);
     }));
+
+  it("una observación enviada con un adjunto del análisis y sin análisis escrito: el bloque se ve y el Admin SGC lo retira (revisión final, I2)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { clase: "observacion", criticidad: null });
+      const ronda = deLaRonda(await rondaDe(tx, h.id));
+      const adjunto = await subir(tx, ronda, "analisis", b.lider);
+      await llevarHasta(tx, b, h.id, "en_revision");
+      // El plan de una observación se envía sin análisis, sin causas y sin las dos preguntas (`examinarPlan` las pide solo en la
+      // no conformidad): «3. Causa raíz» no tiene texto.
+      expect(await tx`SELECT 1 FROM mejora_analisis WHERE hallazgo_id = ${h.id}`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM mejora_causas WHERE hallazgo_id = ${h.id}`).toHaveLength(0);
+      expect((await tx`SELECT similares FROM mejora_rondas WHERE id = ${ronda.contextoId}`)[0].similares).toBeNull();
+
+      const delAdmin = await pintar(tx, b.admin, h.id);
+      expect(delAdmin).toContain("Adjuntos del análisis");
+      expect(delAdmin).toContain(`/mejoramiento/archivos/${adjunto.id}/`);
+      expect(delAdmin).toContain(`aria-label="Retirar por datos personales el archivo ${adjunto.nombre}"`);
+      // Quien revisa lo lee, sin retirarlo; quien solo consulta no ve el hallazgo.
+      const deControl = await pintar(tx, b.control, h.id);
+      expect(deControl).toContain(`/mejoramiento/archivos/${adjunto.id}/`);
+      expect(deControl).not.toContain("Retirar por datos personales");
+      await expect(pintar(tx, b.consulta, h.id)).rejects.toThrow("NO_ENCONTRADA");
+
+      // Retirado el único adjunto, el bloque sigue, con la línea del retiro.
+      await retirar(tx, b.admin, adjunto.id);
+      const despues = await pintar(tx, b.admin, h.id);
+      expect(despues).toContain("Adjuntos del análisis");
+      expect(despues).not.toContain(`/mejoramiento/archivos/${adjunto.id}/`);
+      expect(despues.match(/Se retiró un archivo el <time dateTime="2026-11-17">/g)).toHaveLength(1);
+    }));
+
+  it("en una ronda anterior sin análisis escrito, sus adjuntos y sus retiros se leen (revisión final, I2)", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular", { clase: "observacion", criticidad: null });
+      const ronda = deLaRonda(await rondaDe(tx, h.id));
+      const queda = await subir(tx, ronda, "analisis", b.lider);
+      const sale = await subir(tx, ronda, "analisis", b.lider);
+      await llevarHasta(tx, b, h.id, "en_revision");
+      await retirar(tx, b.admin, sale.id);
+      // La ronda 1 queda anterior al abrir la 2 (por SQL: el dominio pide el plan aprobado, ejecutado y evaluado «no eficaz»).
+      await tx`INSERT INTO mejora_rondas (hallazgo_id, numero) VALUES (${h.id}, 2)`;
+      await tx`UPDATE mejora_hallazgos SET estado = 'por_formular', ronda = 2 WHERE id = ${h.id}`;
+
+      for (const quien of [b.admin, b.control]) {
+        const html = await pintar(tx, quien, h.id);
+        expect(html).toContain("Ronda 1 · no eficaz");
+        expect(html).toContain(`/mejoramiento/archivos/${queda.id}/`);
+        expect(html.match(/Se retiró un archivo el <time dateTime="2026-11-17">/g)).toHaveLength(1);
+        // En una ronda anterior no se retira nada: queda congelada.
+        expect(html).not.toContain(`aria-label="Retirar por datos personales el archivo ${queda.nombre}"`);
+      }
+    }));
+});
+
+describe("el retiro que no encuentra el archivo en el almacén (revisión final, M4)", () => {
+  it("si la ruta no se resuelve dentro del almacén, lo dice en el registro de errores con el id y la ruta", () =>
+    revertida(sql, async (tx) => {
+      const b = await baseDeMejora(tx);
+      const h = await hallazgoEn(tx, b, "por_formular");
+      const archivo = await subir(tx, delHallazgo(h.id), "evidencia", b.control);
+      await llevarHasta(tx, b, h.id, "en_revision");
+      const fuera = `mejoramiento/../../fuera-${archivo.id}.pdf`;
+      await tx`UPDATE archivos SET ruta = ${fuera} WHERE id = ${archivo.id}`;
+      expect(resolverRutaAlmacen(fuera)).toBeNull();
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await retirar(tx, b.admin, archivo.id);
+        expect(await tx`SELECT 1 FROM archivos WHERE id = ${archivo.id}`).toHaveLength(0);
+        expect(error).toHaveBeenCalledTimes(1);
+        const [mensaje] = error.mock.calls[0] as [string];
+        expect(mensaje).toContain(`archivo retirado ${archivo.id}`);
+        expect(mensaje).toContain(fuera);
+      } finally {
+        error.mockRestore();
+      }
+    }));
 });

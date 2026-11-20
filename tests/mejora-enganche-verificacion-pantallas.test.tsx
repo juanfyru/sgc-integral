@@ -35,14 +35,13 @@ describe("NoConformidadDeVerificacion", () => {
     expect(acumula).toContain("Este punto acumula 3 hallazgos en 12 meses. Puede abrir una no conformidad para tratar la causa.");
   });
 
-  it("después, la no conformidad y en qué va, con enlace solo a quien la ve", () => {
+  it("después, la no conformidad y en qué va, con su enlace; a quien no la ve, nada (revisión final, I1)", () => {
     const nc = { id: 9, codigo: "HZ-2026-033", estado: "Por formular" };
-    const visible = pieza({ noConformidad: { ...nc, visible: true }, puedeAbrir: false, sugerir: null });
+    const visible = pieza({ noConformidad: nc, puedeAbrir: false, sugerir: null });
     expect(visible).toMatch(/<a [^>]*href="\/mejoramiento\/9"[^>]*>No conformidad HZ-2026-033<\/a> · Por formular/);
     expect(visible).not.toContain("Abrir no conformidad");
-    const oculta = pieza({ noConformidad: { ...nc, visible: false }, puedeAbrir: false, sugerir: null });
-    expect(oculta).toContain("No conformidad HZ-2026-033</span> · Por formular");
-    expect(oculta).not.toContain("/mejoramiento/9");
+    // A quien no la ve, `engancheDeVerificacion` la manda nula: la fila queda como si no existiera, sin el código ni en qué va.
+    expect(pieza({ noConformidad: null, puedeAbrir: false, sugerir: null })).toBe("");
   });
 
   it("en la fila de la tabla de hallazgos de Distribución, dentro de la celda del hallazgo", () => {
