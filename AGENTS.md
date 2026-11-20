@@ -591,8 +591,7 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   `reporte_externo_eventos`, `variable_eventos`, `mejora_eventos`, `mejora_seguimientos`,
   `mejora_ocurrencias`, `mejora_reporte_eventos`, `mejora_plan_eventos` o `mejora_marcas` usa un
   nombre único por corrida (`zz_<algo>_${Date.now()}`) y no se borra (FK `RESTRICT` y trigger de
-  solo inserción).
-  Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
+  solo inserción). Nunca `DELETE` ni `UPDATE` sobre esas tablas en una limpieza. Un test que escribe datos
   capaces de bloquear la migración o el arranque, o de romper otros tests (un usuario duplicado, la
   configuración de la entidad), los escribe dentro de una transacción que se revierte o
   los restaura en `finally`: un test que falla no debe dejar la base inservible. Ningún test

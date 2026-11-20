@@ -2,9 +2,10 @@
 
 > Se actualiza al cierre de cada fase. Última actualización: **2026-11-19**, al terminar de construir la **Fase 15B — Planes de
 > mejoramiento: planes y enganches** (las dieciséis tareas de su plan, en la rama `fase-15b-planes-enganches` del worktree
-> `F:\sgc-integral-f15b` y contra la base aparte `sgc_f15b`; **su verificación de cierre y la revisión de toda la rama, con su
-> ola de corrección, están hechas; faltan el visto bueno del usuario y la fusión que él decida**; ver su sección, arriba de la de
-> la 15A). Antes, al cerrar la **Fase 15A — Planes de
+> `F:\sgc-integral-f15b` y contra la base aparte `sgc_f15b`; **hechas su verificación de cierre, la revisión de toda la rama, su
+> ola de corrección, la re-revisión de la ola y la suite después de ella; falta lo del usuario: el visto bueno a las decisiones,
+> las tres de «Avisos para el usuario (Fase 15B)» y la fusión en `main`, con la `0019` en la base `sgc`**; ver su sección,
+> arriba de la de la 15A). Antes, al cerrar la **Fase 15A — Planes de
 > mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree `F:\sgc-integral-f15a` y contra
 > la base aparte `sgc_f15a`; **fusionada en `main` el 2026-11-18 por decisión del usuario, por avance rápido, y `main`
 > publicado en `origin` ese mismo día** (`a218f4d`, CI en verde), con la `0018` aplicada a la base `sgc`; ver su sección,
@@ -44,11 +45,13 @@
    proyecto**.
 1. **Dónde quedamos:** la **Fase 15B está construida** (2026-11-19): las dieciséis tareas de su plan, cada una con su revisión,
    en el worktree `F:\sgc-integral-f15b` (rama `fase-15b-planes-enganches`, sale de `main` en `a52d155`) y contra la base aparte
-   `sgc_f15b` (veinte migraciones; la demo de la 15B, sembrada). **Hechas:** la verificación de cierre de quien coordina (la suite
-   completa con la demo recién sembrada, lint, build, la `0019` sobre una copia de `sgc` y el recorrido de «Qué probar y cómo
-   (Fase 15B)» en el navegador) y la revisión de toda la rama con su ola de corrección («Verificación de cierre (Fase 15B)»).
-   **Falta:** el visto bueno del usuario a sus decisiones («Decisiones adicionales (Fase 15B)») y a lo que se le pregunta
-   («Avisos para el usuario (Fase 15B)»), y la fusión que él decida. Lo que sigue de este punto
+   `sgc_f15b` (veinte migraciones; la demo de la 15B, sembrada). **Hechas:** las tareas 1 a 16; la verificación de cierre de
+   quien coordina (la suite completa con la demo recién sembrada, lint, build, la `0019` sobre una copia de `sgc` y el recorrido
+   de «Qué probar y cómo (Fase 15B)» en el navegador); la revisión de toda la rama, su ola de corrección, la re-revisión de la
+   ola y la suite después de ella («Verificación de cierre (Fase 15B)»). **Falta, todo del usuario:** el visto bueno a sus
+   decisiones («Decisiones adicionales (Fase 15B)»); las tres de «Avisos para el usuario (Fase 15B)» (M5, con la ruta que deja
+   en el registro el retiro de M4; M7, con la nota de §6.5; e I1, que quien coordinó ya decidió y él puede revertir); y la fusión
+   en `main`, aplicando la `0019` a la base `sgc` al fusionar. Lo que sigue de este punto
    es la historia de cómo empezó (Paso 0: diecinueve migraciones y la demo recién sembrada). El registro de la ejecución, con la línea base, está en
    `.superpowers/sdd/2026-11-18-fase15b-planes-y-enganches/progress.md` de ese worktree (ignorado por git), con su guarda
    `con-f15b.sh`. Mientras se construye, `F:\sgc-integral` no se toca y la base `sgc` del usuario solo se lee.
@@ -472,9 +475,11 @@ base aparte `sgc_f15b` (todo comando que la toca va por el guard `.superpowers/s
 
 **Estado (2026-11-19):** las dieciséis tareas están construidas, cada una con su revisión y sus rondas de corrección, y los puntos
 de control de las Tareas 4, 7, 9, 11, 12, 13, 14 y 15 se recorrieron en el navegador (el registro de la ejecución, `progress.md`
-del espacio de trabajo, ignorado por git). La verificación de cierre y la revisión de toda la rama, con su ola de corrección,
-están hechas (abajo). Falta el visto bueno del usuario a las decisiones de abajo, a lo que le pregunta «Avisos para el usuario
-(Fase 15B)» y a su recorrido, y la fusión que él decida.
+del espacio de trabajo, ignorado por git). Están hechas la verificación de cierre, la revisión de toda la rama, su ola de
+corrección, la re-revisión de la ola y la suite después de ella (abajo). **Falta, todo del usuario:** el visto bueno a las
+decisiones de abajo y su recorrido; las tres decisiones de «Avisos para el usuario (Fase 15B)» (M5, con la ruta que deja en el
+registro el retiro de M4; M7, con la nota de §6.5; e I1, que quien coordinó ya decidió y él puede revertir); y la fusión en
+`main`, aplicando la `0019` a la base `sgc` al fusionar.
 
 **Verificación de cierre (Fase 15B)** (2026-11-19; la hizo quien coordinó la ejecución). Las dieciséis tareas pasaron cada una
 su revisión, con sus rondas de corrección, y los puntos de control se recorrieron en el navegador durante la construcción.
@@ -502,6 +507,18 @@ su revisión, con sus rondas de corrección, y los puntos de control se recorrie
   los documentos que le sigue) arregló I1, I2, M4 y las frases de `citadoEnMejoramiento` y `SIN_EVIDENCIA_PARA_TERMINAR`, más los
   menores de documentos de la revisión de la Tarea 16 y el guion del recorrido. M1, M2, M3 y M6 quedan en «Deuda técnica (Fase
   15B)»; M5 y M7, en «Avisos para el usuario (Fase 15B)». Decisiones 10 (reescrita), 31 y 32.
+- **La re-revisión de la ola** (`f6ed04a..a0a2852`): los nueve puntos, resueltos; nada crítico ni importante. Tres menores de
+  redacción (el argumento del «sin ciclo» de `crearSolicitud`, un renglón suelto de `AGENTS.md` y este estado del proyecto), que
+  corrigió una vuelta corta de documentos.
+- **La suite después de la ola**, sobre `a0a2852`. La primera corrida tuvo un worker de vitest que salió de golpe con
+  `tests/mejora-tramites-acciones.test.ts`: 2 pruebas no corrieron, y ese archivo, corrido aparte, pasó 2 de 2. La corrida repetida, con la
+  demo recién sembrada y `SEMILLA_RECIEN=1`, en 654 s: **339 de 339 archivos en verde, 8999 pruebas en verde y 1 saltada**, de
+  9000, salida 0; sus 7 líneas de `stderr` son de pruebas anteriores a la 15B.
+- **El control corto de I1 e I2 en el navegador**, después de la ola: sin defectos. La fila de Distribución nombra la no
+  conformidad, con su enlace, a la coordinadora, y no le dice nada de ella a `jefe.urgencias`. Una observación enviada sin
+  análisis muestra «Adjuntos del análisis» dentro de «3. Causa raíz», con «Retirar por datos personales» y sin «Quitar». En
+  oscuro y a 390 px, sin desborde horizontal. Observación: fuera de «Por formular», «3. Causa raíz» sale plegada, así que el Admin
+  SGC la despliega para retirar.
 
 ### Hecho (Fase 15B)
 
@@ -686,8 +703,8 @@ el plan); 012 → 016; 013 → 017; 014 → 020.
 
 - **Las decisiones de la ejecución esperan su visto bueno** («Decisiones adicionales (Fase 15B)», abajo). Las que más pesan: la
   tarea de la respuesta del plan saca sus hallazgos de «Esperan su decisión» (4), la carga resuelve la marca como el registro (7),
-  la fila de Distribución calla la no conformidad a quien no la ve (10, que la revisión final invirtió), el ancla de la congelación
-  en un cargado (22) y el tope de sentencias de la lista del Admin SGC (20).
+  la fila de Distribución calla la no conformidad a quien no la ve (10: la invirtió la revisión final, quien coordinó ya la decidió
+  y usted puede revertirla), el ancla de la congelación en un cargado (22) y el tope de sentencias de la lista del Admin SGC (20).
 - **Dos casos de la misma clase, para que usted decida** (no son decisiones de la ejecución; la revisión final los dejó a usted):
   quien no ve un hallazgo no ve su código ni su título, pero por eliminación sabe que existe algo. Es la letra del anexo y roza la
   regla de §14 («para quien no lo ve, no existe»).
@@ -707,7 +724,10 @@ el plan); 012 → 016; 013 → 017; 014 → 020.
   personal que motivó el retiro queda en ellas. Dos salidas: (1) que el evento del retiro guarde solo la huella y el tamaño, sin el
   nombre (el de la bitácora de la subida seguiría, porque no se modifica); o (2) prevenirlo: decir en el manual y junto a cada zona
   de carga del módulo que el nombre de un archivo no debe llevar datos de pacientes, como ya dice el aviso de los campos de texto.
-  Las dos se pueden juntar; cualquiera es una entrega aparte.
+  Las dos se pueden juntar; cualquiera es una entrega aparte. **Va con esto la línea de registro de M4:** si el retiro no puede
+  borrar el archivo porque su ruta no se resuelve dentro del almacén, el registro de errores del servidor guarda la ruta, que
+  lleva el nombre saneado del archivo. Es la única forma de encontrarlo a mano, y esa rama solo ocurre con una ruta fuera del
+  almacén, que no debería pasar. Si prefiere, la línea guarda solo el id.
 - **Registre el SGC-FO-14 como documento** y elíjalo en **Configuración de mejoramiento** (junto con los tres de la 15A): sin él, el
   impreso sale sin código ni versión. Los tres ajustes nuevos a los textos del hospital están en el capítulo 9 del manual,
   sección 13, puntos 14 a 16.
@@ -833,9 +853,12 @@ toda la rama, después de su ola de corrección (un archivo sin carpeta es de `s
     índice que la acote (`m.requiere_accion AND NOT m.historica`). Es una sentencia y hoy el volumen es chico; si crece, un índice
     parcial `mediciones (indicador_id) WHERE requiere_accion`, en una migración futura.
 - **El orden de candados de `crearSolicitud`** (`src/db/consultas/tramites-flujo.ts`): toma el hallazgo de la actividad `FOR SHARE`
-  y, después, la revisión anual, el consecutivo de trámites y el impacto. **No forma ciclo** (lo comprobó la revisión final: `FOR
-  SHARE` choca solo con `FOR UPDATE`, y ningún camino toma un hallazgo `FOR UPDATE` y después esas tres cosas); lo único que cuesta es
-  que una transición del hallazgo espera lo que dura una solicitud. El orden y su porqué están escritos en el comentario de
+  y, después, la revisión anual, el consecutivo de trámites y el impacto. **No forma ciclo por el lado de la solicitud:** el hallazgo
+  es lo primero que bloquea (`tramites-flujo.ts:214`), así que nunca lo espera con otro candado tomado. Un ciclo pediría el orden
+  inverso en otro camino: primero la revisión, un impacto o el consecutivo, y después el hallazgo con un candado que choque con
+  `FOR SHARE` (`FOR UPDATE` o `FOR NO KEY UPDATE`, el de todo `UPDATE` simple). El registro toma el impacto con `FOR KEY SHARE`, y
+  `transicionar` no toca Mejoramiento; los demás caminos que escriben en `mejora_hallazgos` no se recorrieron uno por uno. Lo
+  que cuesta: una transición del hallazgo espera lo que dura una solicitud. El orden y su porqué están en el comentario de
   `validarActividadParaTramite` (`tramites-enlace.ts`).
 - **De la base:** dos nombres de llave foránea de `mejora_plan_respuesta_hallazgos` pasan de 63 caracteres y PostgreSQL los trunca
   (dos NOTICE al aplicar `drizzle/0019_fase15b-planes-enganches.sql`). Funciona; `drizzle-kit generate` compara contra el snapshot,
