@@ -372,13 +372,9 @@ describe("vigencia sembrada", () => {
     const miembros = await sql`SELECT m.tipo, m.referencia_id FROM lista_miembros m
       JOIN listas_distribucion l ON l.id = m.lista_id WHERE l.nombre = 'Todo el hospital'`;
     expect(miembros).toEqual([{ tipo: "todos", referencia_id: null }]);
-    // El de la 13B, de la primera verificación de Urgencias; el segundo, reabierto, es de la 15B (`tests/semilla-mejoramiento.test.ts`).
-    const hallazgos = await sql`SELECT h.estado, pu.nombre, h.reaperturas FROM hallazgos h
-      JOIN verificaciones v ON v.id = h.verificacion_id JOIN puntos_uso pu ON pu.id = v.punto_uso_id ORDER BY h.id`;
-    expect(hallazgos.map((h) => ({ ...h }))).toEqual([
-      { estado: "abierto", nombre: "Urgencias", reaperturas: 0 },
-      { estado: "abierto", nombre: "Urgencias", reaperturas: 1 },
-    ]);
+    const hallazgos = await sql`SELECT h.estado, pu.nombre FROM hallazgos h
+      JOIN verificaciones v ON v.id = h.verificacion_id JOIN puntos_uso pu ON pu.id = v.punto_uso_id`;
+    expect(hallazgos).toEqual([{ estado: "abierto", nombre: "Urgencias" }]);
   });
 
   it("el informe tiene su formato propio elegido, con sus márgenes, y sirve", async (ctx) => {

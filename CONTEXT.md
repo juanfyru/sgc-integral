@@ -403,8 +403,9 @@
    probar y cómo (Fase 14C)», paso 0. **La base de desarrollo NO se resembró en la 14C**: la demo se sembró y se probó en la
    base aparte `sgc_f14c`.
    **Desde la 15B** (`src/db/semillas/mejoramiento-demo.ts`, después de los indicadores): **25 indicadores** (`CEX-ID-004`, el de las
-   marcas), **20 hallazgos y 3 planes**, una verificación más en Urgencias con un hallazgo reabierto, la Ley 1438 que modifica la Ley
-   100 con dos impactos vencidos y escalados (`GES-PL-01` en atención) y dos trámites enlazados a una actividad. El detalle está en
+   marcas), **21 hallazgos y 3 planes**, la copia de la v2 de `GTH-CA-01` del Archivo recogida y no encontrada (con su hallazgo de
+   recogida, reabierto; el Archivo con el proceso Talento Humano), la Ley 1438 que modifica la Ley 100 con dos impactos vencidos y
+   escalados (`GES-PL-01` en atención) y tres trámites enlazados a actividades. El detalle está en
    «Qué probar y cómo (Fase 15B)», paso 0; las cifras de la 13B, la 13C y la 14 de los párrafos de arriba y de sus «Qué probar» son
    las de antes.
    **Desde el complemento de la 14C** (la agenda, con `cambiarOperacion` y `ahora` inyectado): `CEX-ID-001` exige soporte
@@ -512,13 +513,15 @@ bueno del usuario a las decisiones de abajo y su recorrido.
 - **Los archivos ya firmados (Tarea 15):** la evidencia del registro y los archivos del análisis congelados desde el envío del
   plan (en un cargado, desde su formato firmado), y **Retirar por datos personales**, con su rastro en el historial del hallazgo.
 - **La demo, el manual y los documentos (Tarea 16):** `src/db/semillas/mejoramiento-demo.ts` gana los casos del anexo §15.1
-  (veinte hallazgos y tres planes; detalle en «Qué probar y cómo (Fase 15B)», paso 0), por las funciones del dominio con su hora;
-  `tests/semilla-mejoramiento.test.ts` los comprueba (veinte casos, la guarda cuenta también los planes y, después del reloj, los
+  (veintiún hallazgos y tres planes; detalle en «Qué probar y cómo (Fase 15B)», paso 0), por las funciones del dominio con su hora;
+  `tests/semilla-mejoramiento.test.ts` los comprueba (veintidós casos; la guarda cuenta también los planes y, después del reloj, los
   eventos de un plan, las salidas, los enlaces y la clasificación). La demo toca lo de otros módulos, y sus tests lo cuentan: la
-  guarda compartida (`SEMBRADO`, `tests/utiles/demo.ts`: tres verificaciones, dos hallazgos de verificación abiertos, dos cambios
-  de norma y tres impactos pendientes), `tests/semilla-distribucion.test.ts` (mira la primera verificación de cada punto) y
-  `tests/semilla-vigencia.test.ts` (la Ley 100 modificada, su relación y su cambio, `GES-PL-01` en atención por su impacto
-  pendiente, y lo de la 13C por su cambio). El capítulo 9 del manual gana las secciones 14 a 19, la 1.6 («Los archivos») y tres puntos más en la 13;
+  guarda compartida (`SEMBRADO`, `tests/utiles/demo.ts`: dos hallazgos de Distribución abiertos, dos cambios de norma y tres
+  impactos pendientes), `tests/semilla-distribucion.test.ts` (el Archivo con Talento Humano, su copia recogida y el hallazgo de la
+  verificación de Urgencias por su verificación) y `tests/semilla-vigencia.test.ts` (la Ley 100 modificada, su relación y su cambio,
+  `GES-PL-01` en atención por su impacto pendiente, y lo de la 13C por su cambio). La ronda 1 de la revisión de la Tarea 16 añadió
+  el segundo «Por cerrar» (con su trámite), el documento que cita HZ-2026-021 y el hallazgo de la recogida del Archivo, que
+  reemplazó una segunda verificación de Urgencias. El capítulo 9 del manual gana las secciones 14 a 19, la 1.6 («Los archivos») y tres puntos más en la 13;
   `AGENTS.md` y `PLAN.md`.
 
 ### Qué probar y cómo (Fase 15B)
@@ -532,7 +535,7 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
    la cookie de `localhost`: use otra ventana de incógnito). Lo que trae la demo de la 15B:
    - **Planes** (pestaña **Planes**): **PM-2026-01** «Auditoría interna de calidad» (de Control Interno, con el primer objetivo de
      calidad): HZ-2026-006 (la nevera de vacunas, en ejecución), HZ-2026-007 «Inducción del personal asistencial sin el módulo de
-     seguridad del paciente» (Talento Humano, registrado en el plan) y HZ-2026-019 (las capacitaciones, por aceptar).
+     seguridad del paciente» (Talento Humano, registrado en el plan) y HZ-2026-020 (las capacitaciones, por aceptar).
      **PM-2026-02** «Visita de inspección de la Secretaría de Salud Departamental» (ente de control, fecha del ente dentro de 16
      días): HZ-2026-001 (cerrado eficaz, de auditoría interna: «Origen distinto»), HZ-2026-004 (Consulta Externa, de PQRSF, en
      espera de eficacia: «Origen distinto»), HZ-2026-013 (los equipos biomédicos, en aprobación: sin plan de acción aprobado),
@@ -541,23 +544,29 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
      semanales» (en ejecución, **listo para responder**). **PM-2026-03** «Autoevaluación de estándares de habilitación», sin
      hallazgos.
    - **Marcas:** `CEX-ID-004` «Días de espera para una cita de medicina general» (nuevo, de `lider.cex`, mensual, 45 días de
-     plazo): septiembre, **pendiente** con su análisis (el panel sugiere HZ-2026-018 «Usuarios de medicina general que esperan más
+     plazo): septiembre, **pendiente** con su análisis (el panel sugiere HZ-2026-019 «Usuarios de medicina general que esperan más
      de una semana por una cita», por aceptar, de Control Interno, que cita el indicador); octubre, en Crítico y **esperando su
      análisis** hasta su fecha límite (a mediados de diciembre). `SGC-IND-01`, tercer trimestre: **no requiere**. `SGC-ID-002`,
-     octubre: resuelta con el **hallazgo** HZ-2026-020.
-   - **Hallazgos de verificación** (Distribución → **Verificaciones**, Urgencias): el de la 13B («Copia no controlada de AIN-FO-01»)
-     con su no conformidad HZ-2026-020 «Copia no controlada de un formato en el servicio de urgencias» (Por formular, Atención
-     Inmediata); y otro, de una verificación posterior («Una copia impresa de una versión anterior del protocolo de triage…»),
-     corregido por `jefe.urgencias` y **reabierto** por la coordinadora, sin no conformidad: tiene la sugerencia.
+     octubre: resuelta con el **hallazgo** HZ-2026-021.
+   - **Hallazgos de Distribución** (Distribución → **Verificaciones** → hallazgos): el de la verificación de Urgencias de la 13B
+     («Copia no controlada de AIN-FO-01»), con su no conformidad HZ-2026-021 «Copia no controlada de un formato en el servicio de
+     urgencias» (Por formular, Atención Inmediata, que cita en «A qué se refiere» el documento `AIN-FO-01`); y el de una
+     **recogida**: la copia de la v2 de `GTH-CA-01` que la 13B dejó por recoger en el **Archivo** no se encontró al recogerla. La
+     coordinadora, que responde por el Archivo, lo corrigió y lo **reabrió**: no tiene no conformidad y su fila trae la sugerencia. El
+     punto Archivo gana el proceso Talento Humano (el Archivo central guarda también sus documentos), así la no conformidad puede
+     ir a ese proceso, que tiene líder.
    - **Impactos:** la Ley 1438 de 2011 modifica la Ley 100 de 1993: dos impactos (`GES-PL-01` en Gestión Estratégica y el proceso
      Atención al Usuario), **vencidos y escalados**, sin hallazgo (`/normograma/impactos/2?proceso=1` y `?proceso=5`).
    - **Trámites:** HZ-2026-007, actividad A1.1 de `lider.gth`, con SOL-2026-001 (`GTH-CA-01`, publicado) y SOL-2026-002
-     (`GTH-PR-02`, en revisión) enlazados; su actividad A1.2 es de `jefe.urgencias`. **Por cerrar:** HZ-2026-002 «Instructivo de
-     higiene de manos de urgencias desactualizado frente al protocolo institucional», cuyo análisis marcó «documentos», sin trámite.
-   - **Objetivos sin plan:** HZ-2026-003 (el tercer objetivo de calidad) y HZ-2026-018 (el primer institucional).
-   - **Cifras de la demo:** veinte hallazgos (dieciséis abiertos y cuatro terminados); `coordinadora.sgc` tiene diez tareas de
+     (`GTH-PR-02`, en revisión) enlazados; su actividad A1.2 es de `jefe.urgencias`. **Por cerrar**, dos con «documentos» en su
+     análisis: HZ-2026-002 «Instructivo de higiene de manos de urgencias desactualizado frente al protocolo institucional», sin
+     trámite; y HZ-2026-018 «Mantenimientos preventivos de equipos biomédicos sin un formato único de registro» (una observación de
+     Bienes y Servicios), con SOL-2026-003 (`GBS-PR-01`, en publicación) enlazado a su actividad.
+   - **Objetivos sin plan:** HZ-2026-003 (el tercer objetivo de calidad) y HZ-2026-019 (el primer institucional).
+   - **Cifras de la demo:** veintiún hallazgos (diecisiete abiertos y cuatro terminados); `coordinadora.sgc` tiene once tareas de
      mejoramiento, entre ellas «Registrar la respuesta al ente del plan PM-2026-02», «Decidir la acción de mejora de CEX-ID-004 Días
-     de espera para una cita de medicina general, septiembre de 2026» y «Cerrar HZ-2026-002»; `lider.cex`, dos; `lider.gth`, dos.
+     de espera para una cita de medicina general, septiembre de 2026», «Cerrar HZ-2026-002» y «Cerrar HZ-2026-018»; `lider.cex`, dos;
+     `lider.gth`, dos.
 1. **Un plan nuevo.** Como `control.interno`, **Planes** → **Nuevo plan**: una auditoría interna, con un objetivo. En su página,
    **Registrar hallazgo en este plan**: llegan el origen, la fuente (el nombre del plan) y el objetivo. **Añadir hallazgos**: dos
    que ya existen, uno de ellos cerrado (HZ-2026-009 «Registro de asistencia a la inducción…», cerrado sin acción, y HZ-2026-017,
@@ -578,21 +587,23 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
    la columna **Plan** y los demás con «Sin plan»; HZ-2026-010 con «Por formular: plan de acción en formulación»; HZ-2026-008,
    cerrado con corrección; la columna **Estado**; donde iría el código, «Consolidado del proceso». Imprima apaisado.
 7. **Decidir una marca.** Como `coordinadora.sgc`, **Mis tareas** → «Decidir la acción de mejora de CEX-ID-004 …, septiembre de
-   2026»: en el panel de la página del indicador, **Añadir como ocurrencia de HZ-2026-018** (**Sugerido**) y **Guardar la
-   decisión**: la medición dice «Ocurrencia de HZ-2026-018» y la tarea se va. Las otras dos salidas, con los pendientes que dejan
+   2026»: en el panel de la página del indicador, **Añadir como ocurrencia de HZ-2026-019** (**Sugerido**) y **Guardar la
+   decisión**: la medición dice «Ocurrencia de HZ-2026-019» y la tarea se va. Las otras dos salidas, con los pendientes que dejan
    los pasos 8 y 16: **Abrir un hallazgo nuevo** desde el octubre de `CEX-ID-004` (y, al formular, «Lo que dijo el análisis del
    indicador» con su causa y su acción), y **No requiere acción de mejora** en `SGC-ID-002`.
 8. **El que espera su análisis.** En `CEX-ID-004`, octubre dice **Todavía no es un pendiente** y el día en que se pedirá la
    decisión. Como `lider.cex`, analícelo (causa y acción propuesta): pasa a ser un pendiente, y la coordinadora tiene otra tarea.
 9. **Quién ve el panel.** Como `lider.cex`, en `CEX-ID-004`: el panel con las dos primeras salidas, sin «No requiere». Como
    `consulta`: la marca «Requiere acción de mejora» y ninguna pista del hallazgo ni de la ocurrencia.
-10. **Desde un hallazgo de verificación.** Como `coordinadora.sgc`, en los hallazgos de Distribución: la fila del de la 13B dice
-    «No conformidad HZ-2026-020 · Por formular»; la del reabierto, «Este hallazgo se reabrió una vez. Puede abrir una no
-    conformidad para tratar la causa.» y **Abrir no conformidad**. Ábrala, con su justificación: como Atención Inmediata no tiene
-    líder, nace aceptada y va directo a **Por formular**, con la corrección del hallazgo de verificación enlazada. **Lo que la demo
-    no muestra:** la aceptación por un líder (el único punto que se puede verificar otra vez sin cambiar la conformidad que
-    fotografía `SGC-ID-002` es Urgencias, sin líder) y que quien corrigió no verifique (lo corrigió `jefe.urgencias`, que no
-    verifica): lo cubren `tests/mejora-enganche-verificacion*.test.ts` y `tests/mejora-verificacion.test.ts`.
+10. **Desde un hallazgo de Distribución.** Como `coordinadora.sgc`, en los hallazgos de Distribución (o en la página de la copia de
+    `GTH-CA-01` del Archivo): la fila del de Urgencias dice «No conformidad HZ-2026-021 · Por formular»; la de la recogida del
+    Archivo, «Este hallazgo se reabrió una vez. Puede abrir una no conformidad para tratar la causa.» y **Abrir no conformidad**.
+    Ábrala con su justificación y el proceso **Gestión del Talento Humano** (el selector trae los del punto): nace «Por aceptar».
+    Como `lider.gth`, **Aceptar el hallazgo**: va directo a **Por formular**, y su sección de corrección muestra la del hallazgo de la
+    recogida, con su enlace. Quien la corrigió, `coordinadora.sgc`, no podrá verificarla: cuando la no conformidad llegue a **Por
+    verificar**, su página se lo dice («No puede verificarlo: participó en la corrección…») y verifica Control Interno; llegar ahí
+    pide el recorrido completo del plan, y lo cubren `tests/mejora-enganche-verificacion*.test.ts` y
+    `tests/mejora-verificacion.test.ts`.
 11. **Desde un impacto de norma.** En `/normograma/impactos/2?proceso=1` (Gestión Estratégica): «Este impacto está vencido y ya se
     escaló. Puede abrir un hallazgo.» → **Abrir hallazgo**: origen «Control documental», la Ley 100 como requisito incumplido y el
     proceso, fijos.
@@ -601,28 +612,30 @@ Lo que la demo no puede mostrar sin un reloj que adelantar lo dice el paso.
     **Enlazar un trámite** (SOL-2026-004 o SOL-2026-005). Como `jefe.urgencias`, en A1.2: «Pídale al líder del proceso o al
     Administrador del SGC que lo solicite desde aquí». Como `lider.gth`, registre en A1.1 un seguimiento al 100 % y **Terminar**
     sin archivo: vale SOL-2026-001.
-13. **El cierre con documentos.** Como `coordinadora.sgc`, en HZ-2026-002 (**Por cerrar**), el cierre pide **Cómo se atendieron los
-    cambios** («Ningún trámite enlazado terminó bien: diga cómo se atendieron los cambios.»). El otro caso (con un trámite
-    publicado, sin justificación) no está en la demo: un hallazgo listo para cerrar ya no admite enlazar; lo cubre
-    `tests/mejora-verificacion.test.ts`.
-14. **Las otras páginas.** La sección **Mejoramiento** en la página de Consulta Externa, de `CEX-ID-004` (HZ-2026-018) y de la
-    Resolución 3100 de 2019 (HZ-2026-006, que la cita como requisito); en un documento, **Abrir hallazgo** y, como `consulta`, solo
-    **Reportar**, sin lista ni cifra. En **Objetivos**, cada objetivo con hallazgos dice cuántos abiertos apuntan a él (con la demo
+13. **El cierre con documentos.** Como `coordinadora.sgc`, en HZ-2026-002 (**Por cerrar**, sin trámite), el cierre pide **Cómo se
+    atendieron los cambios** («Ningún trámite enlazado terminó bien: diga cómo se atendieron los cambios.»). En HZ-2026-018 (**Por
+    cerrar**, con SOL-2026-003 en publicación) lo pide también mientras el trámite no termina. Publique SOL-2026-003 (**Trámites** →
+    SOL-2026-003 → **Publicar**, con la clave) y vuelva al cierre de HZ-2026-018: ya no lo pide («Los trámites atienden los cambios
+    en documentos: no hace falta decir cómo se atendieron.») y lista el trámite; **Firmar «Cerró»**.
+14. **Las otras páginas.** La sección **Mejoramiento** en la página del documento `AIN-FO-01` (HZ-2026-021, que lo cita), de
+    Consulta Externa, de `CEX-ID-004` (HZ-2026-019) y de la Resolución 3100 de 2019 (HZ-2026-006, que la cita como requisito), con
+    **Ver todos** y **Abrir hallazgo**; como `consulta`, en `AIN-FO-01`, solo **Reportar**, sin lista ni cifra. En **Objetivos**, cada objetivo con hallazgos dice cuántos abiertos apuntan a él (con la demo
     recién sembrada, el primero de calidad, «3 hallazgos abiertos») y lleva a la lista filtrada.
-15. **La lista y los archivos.** **Hallazgos** muestra **Solo abiertos** (dieciséis); quite el filtro y busque HZ-2026-001 por su
+15. **La lista y los archivos.** **Hallazgos** muestra **Solo abiertos** (diecisiete); quite el filtro y busque HZ-2026-001 por su
     código, también con el filtro puesto. La demo no tiene segunda página: para verla, `crear-lista-t14.ts` del espacio de trabajo
     añade cincuenta. En HZ-2026-012 (En revisión): como `coordinadora.sgc`, **Devolver con observaciones**; como `lider.cex`, suba un
     archivo al análisis y reenvíe el plan: ese archivo ya no tiene **Quitar**. Como `coordinadora.sgc`, **Retirar por datos
     personales** y vea el rastro en el historial del hallazgo.
-16. **Lo que vuelve.** Anule HZ-2026-020: la tarea «Decidir la acción de mejora de SGC-ID-002 …» vuelve (y con ella la salida **No
-    requiere** del paso 7), y la fila del hallazgo de verificación vuelve a ofrecer **Abrir no conformidad**. Anule también la no
-    conformidad del paso 10 y vea lo mismo. **Rechazarla** no se puede en la demo: un hallazgo de Atención Inmediata nace aceptado;
-    el rechazo y el retiro los cubren las pruebas.
+16. **Lo que vuelve.** Anule HZ-2026-021: la tarea «Decidir la acción de mejora de SGC-ID-002 …» vuelve (y con ella la salida **No
+    requiere** del paso 7), y la fila del hallazgo de Urgencias vuelve a ofrecer **Abrir no conformidad**. Con la recogida del
+    Archivo, abra otra no conformidad en Talento Humano (o use la del paso 10 antes de aceptarla): como `lider.gth`, **Rechazar**
+    con su justificación; como `coordinadora.sgc`, que la registró, **Retirar**: queda «Rechazado» y la fila vuelve a ofrecer **Abrir
+    no conformidad**.
 
-**Los códigos del recorrido de la 15A cambiaron** con los seis hallazgos nuevos (salen en el orden de sus fechas). Con la siembra
+**Los códigos del recorrido de la 15A cambiaron** con los siete hallazgos nuevos (salen en el orden de sus fechas). Con la siembra
 del 19 de noviembre de 2026, su 001 sigue siendo HZ-2026-001; su 002 es el 003; 003 → 004; 004 → 005; 005 (el de las maquetas) →
 006; 006 → 008; 007 → 009; 008 → 010; 009 → 011; 010 → 012; 011 → 013 (ahora en el plan del ente: su respuesta se registra desde
-el plan); 012 → 016; 013 → 017; 014 → 019.
+el plan); 012 → 016; 013 → 017; 014 → 020.
 
 ### Avisos para el usuario (Fase 15B)
 
@@ -710,9 +723,13 @@ que son de proceso, como dónde corre la suite o quién revisa, no se repiten aq
     tests de la 14A a la 14C. Su penúltimo mes es el pendiente y su último, el que espera. Práctica.
 28. **La no conformidad del hallazgo de verificación de la demo nace a la hora de la siembra,** y con ella la salida «hallazgo» del
     Crítico de `SGC-ID-002`: esa marca nace con la foto de esa misma hora (la 14B la analiza entonces). Práctica.
-29. **El otro hallazgo de verificación de la demo sale de una verificación de Urgencias posterior a la de la 13B, también no
-    conforme:** la conformidad de los puntos que fotografía `SGC-ID-002` («de los dos puntos verificados, solo Farmacia») no cambia.
-    Por eso la no conformidad que se abre desde él nace aceptada (Atención Inmediata no tiene líder). Práctica.
+29. **El otro hallazgo de Distribución de la demo nace de una recogida, no de una verificación:** una verificación nueva cambia la
+    conformidad «a la fecha» que fotografía `SGC-ID-002` («de los dos puntos verificados, solo Farmacia»), salvo en Urgencias, que no
+    tiene líder; una recogida no la toca. La única copia por recoger de la demo es la de la v2 de `GTH-CA-01` en el Archivo, y el
+    Archivo (Gestión Documental, sin líder) gana el proceso Talento Humano, que tiene líder y cuyos documentos guarda: así un líder
+    acepta o rechaza la no conformidad, y quien la corrigió es una Admin SGC, que no la puede verificar. La copia de la 13B ya no
+    está por recoger: está recogida, no encontrada. (Una primera versión usó una segunda verificación de Urgencias, sin líder; la
+    corrigió la ronda 1 de la revisión.) Práctica.
 30. **El impacto vencido y escalado de la demo** es la Ley 1438 de 2011, que modifica la Ley 100 de 1993 (una relación real), registrada
     hace cuarenta días; la pasada de impactos de la 13C corre sola a los veinte. Deja `GES-PL-01` en atención en el semáforo (todo impacto
     pendiente lo hace); el impacto de la 13C sigue en plazo. Práctica.

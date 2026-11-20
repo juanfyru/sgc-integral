@@ -46,8 +46,8 @@ const ETAPAS_SEMBRADAS = ["publicado", "revision", "publicacion", "aceptacion", 
 const SEMBRADO = {
   documentos: 36,
   puntos: 7,
-  // Desde la 15B, una verificación más en Urgencias, con un hallazgo reabierto (`tests/semilla-mejoramiento.test.ts`).
-  verificaciones: 3,
+  verificaciones: 2,
+  // Desde la 15B, uno más: el de la recogida del Archivo, reabierto (`tests/semilla-mejoramiento.test.ts`).
   hallazgos: 2,
   copias: 5,
   todoElHospital: 1,

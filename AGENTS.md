@@ -1332,23 +1332,27 @@ siguen en el repo como registro hasta que la Fase 20 los reemplace. No son negoc
   orden de sus fechas; al final corre `revisarVencimientosDeMejoramiento` a esa misma hora: sembrada la demo,
   otra pasada no tiene nada nuevo que avisar. Lo comprueba `tests/semilla-mejoramiento.test.ts`, contra el reloj de
   la siembra (`sembradaEn`) y detrás de su guarda (ningún paso ni evento de un reporte después de la siembra). Desde
-  la 15B (anexo 15B §15.1) son veinte hallazgos y tres planes (`PLANES_DE_LA_DEMO`, creados en el orden de sus
+  la 15B (anexo 15B §15.1) son veintiún hallazgos y tres planes (`PLANES_DE_LA_DEMO`, creados en el orden de sus
   códigos): el interno con su objetivo, el del ente (uno cerrado, uno de otro origen, uno sin plan de acción aprobado
   y dos externos, uno respondido desde el plan con su oficio y otro listo, con su tarea `mej-ente-plan:`) y uno vacío.
   Las cuatro marcas salen de un indicador nuevo de Consulta Externa (`INDICADOR_DE_LAS_MARCAS`, 45 días de plazo: su
   penúltimo mes es el pendiente con su análisis y un hallazgo que lo cita, y su último, el que espera el análisis,
   dentro de plazo el día que se siembre), del Crítico de `SGC-IND-01` («no requiere», al día siguiente de su análisis)
   y del de `SGC-ID-002`, que nace con la foto de la hora de la siembra y lo resuelve, a esa misma hora, la no
-  conformidad del hallazgo de verificación de Urgencias. Además, otro hallazgo de verificación en Urgencias,
-  corregido y reabierto (una verificación posterior a la de la 13B y no conforme, así la conformidad que fotografía
-  `SGC-ID-002` no cambia), la Ley 1438 que modifica la Ley 100 con dos impactos vencidos y escalados (solo
-  `impactosVencidos` de la 13C, a su hora: la pasada completa avisaría lo de otros módulos), una actividad de Talento
-  Humano con dos trámites (el publicado de `GTH-CA-01` y el de `GTH-PR-02` en revisión), un «Por cerrar» cuyo análisis
-  marcó «documentos» sin trámites y el objetivo de dos hallazgos sin plan. Lo que cruza hallazgos ya sembrados va
-  después de ellos, cada paso con su hora en el pasado: las funciones del dominio leen la base como está. La guarda
-  de mejoramiento cuenta también los planes y, después del reloj, los eventos de un plan, las salidas, los enlaces y
-  la clasificación; la compartida (`SEMBRADO`, `tests/utiles/demo.ts`) cuenta la verificación, el hallazgo, el cambio
-  de norma y los impactos de más, y los tests de la demo de la 13B y la 13C miran lo suyo.
+  conformidad del hallazgo de verificación de Urgencias, que cita además el documento `AIN-FO-01`. Además, un
+  hallazgo de Distribución de una **recogida** (la copia de la v2 de `GTH-CA-01` que la 13B dejó por recoger en el
+  Archivo, no encontrada), corregido y reabierto por la coordinadora, con la sugerencia: una verificación nueva
+  cambiaría la conformidad «a la fecha» que fotografía `SGC-ID-002`, y una recogida no; el punto Archivo gana el
+  proceso Talento Humano, que tiene líder (para aceptar o rechazar la no conformidad). También la Ley 1438 que modifica
+  la Ley 100 con dos impactos vencidos y escalados (solo `impactosVencidos` de la 13C, a su hora: la pasada completa
+  avisaría lo de otros módulos), una actividad de Talento Humano con dos trámites (el publicado de `GTH-CA-01` y el de
+  `GTH-PR-02` en revisión), dos «Por cerrar» cuyo análisis marcó «documentos» (uno sin trámites y una observación con
+  el de `GBS-PR-01` en publicación, que el recorrido publica antes de cerrar) y el objetivo de dos hallazgos sin plan.
+  Lo que cruza hallazgos ya sembrados va después de ellos, cada paso con su hora en el pasado: las funciones del
+  dominio leen la base como está. La guarda de mejoramiento cuenta también los planes y, después del reloj, los eventos
+  de un plan, las salidas, los enlaces y la clasificación; la compartida (`SEMBRADO`, `tests/utiles/demo.ts`) cuenta el
+  hallazgo de Distribución, el cambio de norma y los impactos de más, y los tests de la demo de la 13B y la 13C miran lo
+  suyo.
 
 ## Comandos
 

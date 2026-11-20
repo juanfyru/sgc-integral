@@ -67,11 +67,11 @@ import { enviarReporte } from "../consultas/mejoramiento/reportes";
 import { revisarVencimientosDeMejoramiento } from "../consultas/mejoramiento/vencimientos";
 import { cerrarHallazgo, datosDeEvaluacion, evaluarEficacia, huellaDeLoVisto, verificarImplementacion } from "../consultas/mejoramiento/verificacion";
 import { generarPlaceholder } from "../placeholders";
-import { ITEMS_FIJOS } from "../../lib/distribucion/verificacion";
 import { periodoDe } from "../../lib/indicadores-documentales/periodo";
 import { anterior, periodoQueContiene } from "../../lib/indicadores/periodos";
 import { corregirHallazgo, reabrirHallazgo } from "../consultas/distribucion/hallazgos";
-import { abrirVerificacion, cerrarVerificacion, guardarAvance } from "../consultas/distribucion/verificaciones";
+import { confirmarRecogida } from "../consultas/distribucion/copias";
+import { editarPuntoUso } from "../consultas/distribucion/puntos-uso";
 import { analizar } from "../consultas/indicadores/analisis";
 import { aprobarFichas, enviarAAprobacion } from "../consultas/indicadores/aprobacion";
 import { crearIndicador } from "../consultas/indicadores/fichas";
@@ -113,6 +113,8 @@ export const HALLAZGOS_DE_LA_DEMO = {
   enteListo: { titulo: "Planta eléctrica de emergencia sin el registro de sus pruebas semanales", etiqueta: "En ejecución" },
   sugeridoDeLaMarca: { titulo: "Usuarios de medicina general que esperan más de una semana por una cita", etiqueta: "Por aceptar" },
   desdeVerificacion: { titulo: "Copia no controlada de un formato en el servicio de urgencias", etiqueta: "Por formular" },
+  // De la ronda 1 de la revisión de la Tarea 16: el cierre con un trámite que terminará bien.
+  porCerrarConTramite: { titulo: "Mantenimientos preventivos de equipos biomédicos sin un formato único de registro", etiqueta: "Por cerrar" },
 } as const satisfies Record<string, HallazgoDeLaDemo>;
 
 type Clave = keyof typeof HALLAZGOS_DE_LA_DEMO;
@@ -159,6 +161,7 @@ const REGISTRO: Record<Exclude<Clave, "porFormular" | "desdeVerificacion">, Mome
   enteListo: { dias: 9, minutos: 60 },
   rechazado: { dias: 7 },
   enArbitraje: { dias: 6 },
+  porCerrarConTramite: { dias: 5 },
   sugeridoDeLaMarca: { dias: 2 },
   porAceptar: { dias: 1, minutos: 120 },
 };
@@ -1651,6 +1654,73 @@ async function sugeridoDeLaMarca(s: Siembra): Promise<void> {
   s.ids.sugeridoDeLaMarca = id;
 }
 
+/**
+ * «Por cerrar», con un trámite que terminará bien (anexo 15B, §9.6): una observación de Bienes y Servicios (sin líder: la trabaja la
+ * coordinadora y la aprueba Gerencia) cuyo análisis marcó «documentos». A su actividad la coordinadora le enlaza el trámite del
+ * procedimiento de mantenimiento preventivo, que la 13A dejó en publicación; la termina con un archivo, Control Interno la verifica
+ * y evalúa «eficaz». El recorrido publica ese trámite y la cierra sin decir cómo se atendieron los cambios: el cierre lee la etapa
+ * del trámite al cerrar. Una observación porque su fecha mínima es la fecha de evaluación del plan: todo cabe en los días que
+ * siguen al trámite, y se detectó antes de que se pidiera, como exige el enlace.
+ */
+async function porCerrarConTramite(s: Siembra): Promise<void> {
+  const [tramite] = await s.sql`SELECT t.id FROM tramites t JOIN documentos d ON d.id = t.documento_id
+    WHERE d.codigo = 'GBS-PR-01' AND t.etapa = 'publicacion'`;
+  if (!tramite) throw new Error("La demo de mejoramiento necesita el trámite de GBS-PR-01 en publicación");
+  const { id: h } = await registrarHallazgo(
+    s.s.control,
+    identificacion(s, "porCerrarConTramite", {
+      clase: "observacion",
+      origen: "control_interno",
+      fuente: "Seguimiento de Control Interno al mantenimiento de equipos biomédicos",
+      detectado: 15,
+      procesoId: s.proceso.GBS,
+      subprocesoId: s.subproceso("GBS", "mantenimiento"),
+      descripcion:
+        "En el seguimiento al mantenimiento de equipos biomédicos, cada técnico registra el mantenimiento preventivo en un formato distinto y no siempre queda la fecha de la próxima intervención.",
+    }),
+    en(s, registroDe(s, "porCerrarConTramite")),
+  );
+  s.ids.porCerrarConTramite = h;
+  const [[formato]] = await formular(
+    s,
+    h,
+    s.s.coordinadora,
+    {
+      preguntas: { similares: null, cambios: "Actualizar el procedimiento de mantenimiento preventivo con un formato único de registro" },
+      acciones: [
+        {
+          tipo: "mejora",
+          descripcion: "Unificar el registro del mantenimiento preventivo de los equipos biomédicos",
+          causas: [],
+          actividades: [
+            { descripcion: "Incluir en el procedimiento un formato único de registro del mantenimiento preventivo", responsable: s.s.coordinadora, inicio: 5, fin: 2 },
+          ],
+        },
+      ],
+      criterios: ["otro"],
+      criterioOtro: "Todos los mantenimientos preventivos del mes quedan en el formato único, con la fecha de la próxima intervención",
+      evaluacion: 2,
+    },
+    hace(s, 5, 60),
+  );
+  await enviarPlan(s.s.coordinadora, { hallazgoId: h, credenciales: FIRMA }, en(s, hace(s, 5, 120)));
+  await aprobarPlan(s.s.gerente, { hallazgoId: h, credenciales: FIRMA }, en(s, hace(s, 5, 180)));
+  await enlazarTramite(s.s.coordinadora, { actividadId: formato, tramiteId: Number(tramite.id) }, en(s, hace(s, 4)));
+  await terminar(s, formato, s.s.coordinadora, {
+    dias: 3,
+    realizado: "Se pidió el cambio del procedimiento con el formato único y se usó el borrador del formato en los mantenimientos de la semana.",
+    evidencia: "Mantenimientos de la semana en el formato único",
+  });
+  await verificar(s, h, [formato], { dias: 2, nota: "Los mantenimientos de la semana están en el formato único, con la fecha de la próxima intervención." });
+  await evaluar(s, h, {
+    dias: 1,
+    resultado: "eficaz",
+    criterios: ["otro"],
+    hasta: "minima",
+    justificacion: "Los técnicos registran ya todos los mantenimientos preventivos en el formato único, con la fecha de la próxima intervención.",
+  });
+}
+
 /** El indicador de las marcas (`INDICADOR_DE_LAS_MARCAS`): lo mide y lo analiza `lider.cex`, que también aprueba su ficha. */
 const FICHA_DE_LAS_MARCAS: FichaDemo = {
   codigo: "CEX-ID-004",
@@ -1777,35 +1847,46 @@ async function noRequiereDeLasAuditorias(s: Siembra): Promise<void> {
 }
 
 /**
- * Otro hallazgo de verificación en Urgencias, reabierto una vez y sin no conformidad: la fila con la sugerencia (anexo 15B, §7.4).
- * Una verificación de Urgencias después de la que ya tiene: su última sigue no conforme, así la conformidad de los puntos que
- * fotografía `SGC-ID-002` no cambia. `jefe.urgencias` lo corrige y la coordinadora lo reabre con un plazo nuevo.
+ * Otro hallazgo de Distribución, reabierto una vez y sin no conformidad: la fila con la sugerencia (anexo 15B, §7.4). Nace de una
+ * recogida, no de una verificación (una verificación nueva cambiaría la conformidad de los puntos que fotografía `SGC-ID-002`): la
+ * copia de la v2 de `GTH-CA-01` que la 13B dejó por recoger en el Archivo, que la coordinadora (su responsable) no encuentra. El
+ * Archivo central también guarda los documentos de Talento Humano: el punto gana ese proceso, así la no conformidad que se abra se
+ * puede poner en Talento Humano, que tiene líder (`lider.gth` la acepta o la rechaza). La coordinadora lo corrige y lo reabre con un
+ * plazo nuevo; quien corrigió, una Admin SGC, no podrá verificar esa no conformidad (anexo 15B, §7.3).
  */
-async function reabiertoEnUrgencias(s: Siembra): Promise<void> {
-  const [punto] = await s.sql`SELECT id FROM puntos_uso WHERE nombre = 'Urgencias'`;
-  const ahora = hace(s, 8);
-  const { verificacionId } = await abrirVerificacion(s.s.coordinadora, Number(punto.id), { sql: s.sql, ahora });
-  const items = await s.sql`SELECT id, texto FROM verificacion_items WHERE verificacion_id = ${verificacionId} ORDER BY orden`;
-  const obsoletos = ITEMS_FIJOS[0];
-  await guardarAvance(
-    verificacionId,
-    s.s.coordinadora,
-    items.map((i) =>
-      i.texto === obsoletos
-        ? { itemId: Number(i.id), respuesta: "no_conforme" as const, nota: "Una copia impresa de una versión anterior del protocolo de triage en el puesto de enfermería" }
-        : { itemId: Number(i.id), respuesta: "conforme" as const, nota: null },
-    ),
-    { sql: s.sql, ahora },
+async function reabiertoEnElArchivo(s: Siembra): Promise<void> {
+  const [punto] = await s.sql`SELECT id, nombre, sede, ubicacion, responsable_id FROM puntos_uso WHERE nombre = 'Archivo'`;
+  const [copia] = await s.sql`SELECT id, por_recoger_en FROM copias_controladas WHERE punto_uso_id = ${punto.id} AND estado = 'por_recoger'`;
+  if (!copia) throw new Error("La demo de mejoramiento necesita la copia por recoger del Archivo");
+  const procesos = (await s.sql`SELECT proceso_id FROM punto_uso_procesos WHERE punto_uso_id = ${punto.id} ORDER BY proceso_id`).map((f) =>
+    Number(f.proceso_id),
   );
-  await cerrarVerificacion(verificacionId, s.s.coordinadora, { sql: s.sql, ahora: minutosDespues(ahora, 10) });
-  const [h] = await s.sql`SELECT id FROM hallazgos WHERE verificacion_id = ${verificacionId}`;
-  await corregirHallazgo(Number(h.id), s.s.jefeUrgencias, "Se retiró la copia impresa y se dejó a la vista el acceso a la versión vigente en la plataforma.", {
+  const porRecoger = (copia.por_recoger_en as Date).getTime();
+  await editarPuntoUso(
+    Number(punto.id),
+    {
+      nombre: punto.nombre as string,
+      sede: (punto.sede as string | null) ?? null,
+      ubicacion: (punto.ubicacion as string | null) ?? null,
+      responsableId: Number(punto.responsable_id),
+      procesoIds: [...procesos, s.proceso.GTH],
+    },
+    s.s.coordinadora.usuarioId,
+    { sql: s.sql },
+  );
+  const recogida = antesDeLaSiembra(s, new Date(porRecoger + 86_400_000));
+  const correccion = antesDeLaSiembra(s, new Date(porRecoger + 2 * 86_400_000));
+  const reapertura = hace(s, 2);
+  if (correccion.getTime() >= reapertura.getTime()) throw new Error("La recogida del Archivo debía quedar antes de su reapertura");
+  await confirmarRecogida(Number(copia.id), s.s.coordinadora, "no_encontrada", { sql: s.sql, ahora: recogida });
+  const [h] = await s.sql`SELECT id FROM hallazgos WHERE copia_id = ${copia.id} AND origen = 'recogida'`;
+  await corregirHallazgo(Number(h.id), s.s.coordinadora, "Se buscó la copia en las cajas del archivo de gestión de Talento Humano y se dejó constancia de la pérdida.", {
     sql: s.sql,
-    ahora: hace(s, 6),
+    ahora: correccion,
   });
-  await reabrirHallazgo(Number(h.id), s.s.coordinadora, "En la ronda de seguimiento la copia anterior seguía en el puesto de enfermería del turno de la noche.", {
+  await reabrirHallazgo(Number(h.id), s.s.coordinadora, "La constancia no basta: falta saber quién retiró la copia del archivo y dónde está.", {
     sql: s.sql,
-    ahora: hace(s, 2),
+    ahora: reapertura,
   });
 }
 
@@ -1868,14 +1949,18 @@ async function clasificar(s: Siembra): Promise<void> {
 
 /**
  * La no conformidad del hallazgo de verificación de Urgencias (anexo 15B, §7.2), a la hora de la siembra: la abre la coordinadora,
- * cita el Crítico de conformidad de `SGC-ID-002` (que la foto de la siembra marcó y analizó a esa misma hora), y con ello le escribe su
+ * cita en «A qué se refiere» la copia no controlada, `AIN-FO-01` (así la página de un documento lista un hallazgo), y el Crítico de
+ * conformidad de `SGC-ID-002` (que la foto de la siembra marcó y analizó a esa misma hora), y con ello le escribe su
  * salida «hallazgo» (§6.3). Atención Inmediata no tiene líder: nace aceptada y va a «Por formular».
  */
 async function desdeLaVerificacion(s: Siembra): Promise<void> {
   const [vh] = await s.sql`SELECT id, creado_en FROM hallazgos WHERE estado = 'abierto' AND descripcion LIKE '%AIN-FO-01%' ORDER BY id LIMIT 1`;
   const [m] = await s.sql`SELECT m.id, m.indicador_id FROM mediciones m JOIN indicadores i ON i.id = m.indicador_id
     WHERE i.codigo = 'SGC-ID-002' AND m.requiere_accion ORDER BY m.desde DESC LIMIT 1`;
-  if (!vh || !m) throw new Error("La demo de mejoramiento necesita el hallazgo de verificación de Urgencias y el Crítico de SGC-ID-002");
+  const [documento] = await s.sql`SELECT id FROM documentos WHERE codigo = 'AIN-FO-01'`;
+  if (!vh || !m || !documento) {
+    throw new Error("La demo de mejoramiento necesita el hallazgo de verificación de Urgencias, AIN-FO-01 y el Crítico de SGC-ID-002");
+  }
   const { id } = await registrarHallazgo(
     s.s.coordinadora,
     {
@@ -1889,6 +1974,7 @@ async function desdeLaVerificacion(s: Siembra): Promise<void> {
       titulo: HALLAZGOS_DE_LA_DEMO.desdeVerificacion.titulo,
       descripcion: "En la verificación del punto de uso de Urgencias se encontró una copia no controlada de AIN-FO-01, impresa sin sello, en el servicio.",
       requisitoClausula: "ISO 9001:2015, 7.5.3",
+      documentoId: Number(documento.id),
       indicadorId: Number(m.indicador_id),
       medicionId: Number(m.id),
       verificacionHallazgoId: Number(vh.id),
@@ -2003,6 +2089,7 @@ export async function sembrarMejoramiento(sql: Sql, c: ContextoDistribucion): Pr
     enteRespondido: planDelEnte,
     rechazado,
     enArbitraje,
+    porCerrarConTramite,
     sugeridoDeLaMarca,
     porAceptar,
   };
@@ -2018,7 +2105,7 @@ export async function sembrarMejoramiento(sql: Sql, c: ContextoDistribucion): Pr
 
   // Lo de la 15B que cruza hallazgos ya sembrados, cada paso con su hora en el pasado: la base se lee como está.
   await noRequiereDeLasAuditorias(s);
-  await reabiertoEnUrgencias(s);
+  await reabiertoEnElArchivo(s);
   await impactoVencido(s);
   await enlazarLosTramites(s);
   await clasificar(s);

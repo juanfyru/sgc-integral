@@ -375,7 +375,7 @@ describe("lo que la 15B le añade a la demo (anexo 15B, §15.1)", () => {
     expect(tarde).toBe(0);
   });
 
-  it("una no conformidad «Por formular» nacida de un hallazgo de verificación, y otro hallazgo de verificación con la sugerencia", async (ctx) => {
+  it("una no conformidad «Por formular» nacida de un hallazgo de verificación, y otro, de una recogida, con la sugerencia", async (ctx) => {
     await exigirMejoramiento(ctx);
     const t = await sembradaEn(sql);
     const nc = await hallazgo("desdeVerificacion");
@@ -391,6 +391,25 @@ describe("lo que la 15B le añade a la demo (anexo 15B, §15.1)", () => {
     const conSugerencia = filas.filter((f) => enganche.get(f.id)?.sugerir);
     expect(conSugerencia.length).toBeGreaterThanOrEqual(1);
     expect(conSugerencia.every((f) => enganche.get(f.id)?.puedeAbrir === true)).toBe(true);
+    // El de la recogida del Archivo, reabierto una vez: su punto tiene un proceso con líder, que podrá aceptar o rechazar la no
+    // conformidad, y lo corrigió una Admin SGC, que no podrá verificarla.
+    const [recogida] = await sql`SELECT h.id, h.reaperturas, h.corregido_por, u.rol FROM hallazgos h
+      LEFT JOIN usuarios u ON u.id = h.responsable_id WHERE h.origen = 'recogida'`;
+    expect(conSugerencia.map((f) => f.id)).toContain(Number(recogida.id));
+    expect(Number(recogida.reaperturas)).toBe(1);
+    expect(recogida.rol).toBe("admin_sgc");
+    const [{ lideres }] = await sql`SELECT count(*)::int AS lideres FROM hallazgos h
+      JOIN punto_uso_procesos pp ON pp.punto_uso_id = h.punto_uso_id
+      JOIN usuario_procesos up ON up.proceso_id = pp.proceso_id JOIN usuarios u ON u.id = up.usuario_id
+      WHERE h.id = ${recogida.id} AND u.rol = 'lider_proceso' AND u.activo`;
+    expect(lideres).toBeGreaterThanOrEqual(1);
+  });
+
+  it("la no conformidad del hallazgo de verificación cita un documento, así la página de un documento lista un hallazgo", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const nc = await hallazgo("desdeVerificacion");
+    const [doc] = await sql`SELECT codigo FROM documentos WHERE id = ${nc.documento_id}`;
+    expect(doc?.codigo).toBe("AIN-FO-01");
   });
 
   it("un impacto de norma vencido y escalado, sin hallazgo, con su sugerencia", async (ctx) => {
@@ -417,6 +436,17 @@ describe("lo que la 15B le añade a la demo (anexo 15B, §15.1)", () => {
     expect(["abierta", "en_proceso"]).toContain(enlaces[0].actividad);
     expect(enlaces.map((e) => e.etapa).filter((e) => e === "publicado")).toHaveLength(1);
     expect(enlaces.some((e) => !["publicado", "eliminado", "rechazado", "cancelado"].includes(e.etapa as string))).toBe(true);
+  });
+
+  it("otro «Por cerrar» con «documentos» y un trámite en publicación en su actividad: publicado, el cierre no pedirá cómo", async (ctx) => {
+    await exigirMejoramiento(ctx);
+    const h = await hallazgo("porCerrarConTramite");
+    expect({ estado: h.estado, clase: h.clase }).toEqual({ estado: "por_cerrar", clase: "observacion" });
+    const [ronda] = await sql`SELECT cambios FROM mejora_rondas WHERE hallazgo_id = ${h.id} AND numero = ${h.ronda}`;
+    expect((ronda.cambios as { documentos: boolean }).documentos).toBe(true);
+    const enlaces = await sql`SELECT tr.etapa, d.codigo FROM mejora_actividad_tramites e JOIN tramites tr ON tr.id = e.tramite_id
+      JOIN documentos d ON d.id = tr.documento_id WHERE e.hallazgo_id = ${h.id}`;
+    expect(enlaces.map((e) => ({ ...e }))).toEqual([{ etapa: "publicacion", codigo: "GBS-PR-01" }]);
   });
 
   it("un hallazgo «Por cerrar» cuyo análisis marcó «documentos», sin un trámite enlazado", async (ctx) => {
