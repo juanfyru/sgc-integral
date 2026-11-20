@@ -1,10 +1,10 @@
 # CONTEXT.md — Estado vivo del proyecto
 
-> Se actualiza al cierre de cada fase. Última actualización: **2026-11-19**, al terminar de construir la **Fase 15B — Planes de
+> Se actualiza al cierre de cada fase. Última actualización: **2026-11-20**, al fusionar la **Fase 15B — Planes de
 > mejoramiento: planes y enganches** (las dieciséis tareas de su plan, en la rama `fase-15b-planes-enganches` del worktree
-> `F:\sgc-integral-f15b` y contra la base aparte `sgc_f15b`; **hechas su verificación de cierre, la revisión de toda la rama, su
-> ola de corrección, la re-revisión de la ola y la suite después de ella; falta lo del usuario: el visto bueno a las decisiones,
-> las tres de «Avisos para el usuario (Fase 15B)» y la fusión en `main`, con la `0019` en la base `sgc`**; ver su sección,
+> `F:\sgc-integral-f15b` y contra la base aparte `sgc_f15b`; **fusionada en `main` el 2026-11-20 por decisión del usuario, por
+> avance rápido, y `main` publicado en `origin` ese mismo día** (`126ee87`); **la `0019` aún no está aplicada a la base `sgc`**;
+> falta lo del usuario: el visto bueno a las decisiones y las tres de «Avisos para el usuario (Fase 15B)»; ver su sección,
 > arriba de la de la 15A). Antes, al cerrar la **Fase 15A — Planes de
 > mejoramiento: el hallazgo de punta a punta** (rama `fase-15a-mejoramiento`, en el worktree `F:\sgc-integral-f15a` y contra
 > la base aparte `sgc_f15a`; **fusionada en `main` el 2026-11-18 por decisión del usuario, por avance rápido, y `main`
@@ -49,9 +49,12 @@
    quien coordina (la suite completa con la demo recién sembrada, lint, build, la `0019` sobre una copia de `sgc` y el recorrido
    de «Qué probar y cómo (Fase 15B)» en el navegador); la revisión de toda la rama, su ola de corrección, la re-revisión de la
    ola y la suite después de ella («Verificación de cierre (Fase 15B)»). **Falta, todo del usuario:** el visto bueno a sus
-   decisiones («Decisiones adicionales (Fase 15B)»); las tres de «Avisos para el usuario (Fase 15B)» (M5, con la ruta que deja
-   en el registro el retiro de M4; M7, con la nota de §6.5; e I1, que quien coordinó ya decidió y él puede revertir); y la fusión
-   en `main`, aplicando la `0019` a la base `sgc` al fusionar. Lo que sigue de este punto
+   decisiones («Decisiones adicionales (Fase 15B)»); y las tres de «Avisos para el usuario (Fase 15B)» (M5, con la ruta que deja
+   en el registro el retiro de M4; M7, con la nota de §6.5; e I1, que quien coordinó ya decidió y él puede revertir). **Fusionada
+   en `main` el 2026-11-20** por decisión del usuario («hagamos el merge a main y realiza el push»), por avance rápido
+   (`a52d155..126ee87`), y **`main` publicado en `origin`** ese mismo día. **La `0019` aún no está aplicada a la base `sgc`:**
+   hasta que se aplique y se reinicie el `next dev` del 3002, falla allí toda página con sesión. La rama, el worktree, el de la
+   suite (`F:\sgc-integral-f15b-suite`) y las bases `sgc_f15b` y `sgc_f15b_suite` se conservan. Lo que sigue de este punto
    es la historia de cómo empezó (Paso 0: diecinueve migraciones y la demo recién sembrada). El registro de la ejecución, con la línea base, está en
    `.superpowers/sdd/2026-11-18-fase15b-planes-y-enganches/progress.md` de ese worktree (ignorado por git), con su guarda
    `con-f15b.sh`. Mientras se construye, `F:\sgc-integral` no se toca y la base `sgc` del usuario solo se lee.
@@ -469,17 +472,19 @@ difieren; **el usuario lo aprobó el 2026-11-18**, con sus decisiones B1 a B8 y 
 Plan: `docs/superpowers/plans/2026-11-18-fase15b-planes-y-enganches.md` (dieciséis tareas, con subagentes; aprobado el
 2026-11-18). Rama `fase-15b-planes-enganches` (sale de `main` en `a52d155`), en el worktree `F:\sgc-integral-f15b` y contra la
 base aparte `sgc_f15b` (todo comando que la toca va por el guard `.superpowers/sdd/2026-11-18-fase15b-planes-y-enganches/con-f15b.sh`).
-**Sin dependencias npm nuevas.** Una migración, la `0019` (`drizzle/0019_fase15b-planes-enganches.sql`); veinte en total
+**Fusionada en `main` el 2026-11-20** por decisión del usuario, por avance rápido (`a52d155..126ee87`), y publicada en `origin`
+ese mismo día; la rama, el worktree y la base `sgc_f15b` se conservan. **Sin dependencias npm nuevas.** Una migración, la `0019`
+(`drizzle/0019_fase15b-planes-enganches.sql`); veinte en total
 (`drizzle/0000` a `drizzle/0019`). Solo añade (regla 11 de `AGENTS.md`). Mientras se construyó, `F:\sgc-integral`, su base
 `sgc` y su `next dev` del 3002 no se tocaron.
 
 **Estado (2026-11-19):** las dieciséis tareas están construidas, cada una con su revisión y sus rondas de corrección, y los puntos
 de control de las Tareas 4, 7, 9, 11, 12, 13, 14 y 15 se recorrieron en el navegador (el registro de la ejecución, `progress.md`
 del espacio de trabajo, ignorado por git). Están hechas la verificación de cierre, la revisión de toda la rama, su ola de
-corrección, la re-revisión de la ola y la suite después de ella (abajo). **Falta, todo del usuario:** el visto bueno a las
-decisiones de abajo y su recorrido; las tres decisiones de «Avisos para el usuario (Fase 15B)» (M5, con la ruta que deja en el
-registro el retiro de M4; M7, con la nota de §6.5; e I1, que quien coordinó ya decidió y él puede revertir); y la fusión en
-`main`, aplicando la `0019` a la base `sgc` al fusionar.
+corrección, la re-revisión de la ola y la suite después de ella (abajo). **Fusionada en `main` y publicada en `origin` el
+2026-11-20**, sin aplicar todavía la `0019` a la base `sgc`. **Falta, todo del usuario:** el visto bueno a las decisiones de abajo
+y su recorrido; y las tres decisiones de «Avisos para el usuario (Fase 15B)» (M5, con la ruta que deja en el registro el retiro de
+M4; M7, con la nota de §6.5; e I1, que quien coordinó ya decidió y él puede revertir).
 
 **Verificación de cierre (Fase 15B)** (2026-11-19; la hizo quien coordinó la ejecución). Las dieciséis tareas pasaron cada una
 su revisión, con sus rondas de corrección, y los puntos de control se recorrieron en el navegador durante la construcción.
@@ -731,8 +736,9 @@ el plan); 012 → 016; 013 → 017; 014 → 020.
 - **Registre el SGC-FO-14 como documento** y elíjalo en **Configuración de mejoramiento** (junto con los tres de la 15A): sin él, el
   impreso sale sin código ni versión. Los tres ajustes nuevos a los textos del hospital están en el capítulo 9 del manual,
   sección 13, puntos 14 a 16.
-- **La `0019` se aplica a la base `sgc` al fusionar** (`npm run db:preparar` en `F:\sgc-integral` y reiniciar el `next dev` del
-  3002): sin ella falla toda página con sesión, porque el cascarón pide las tareas de mejoramiento.
+- **La rama está fusionada en `main` y publicada (2026-11-20), pero la `0019` aún no está aplicada a la base `sgc`.** Aplíquela
+  (`npm run db:preparar` en `F:\sgc-integral`, después de un respaldo, como con la `0018`) y reinicie el `next dev` del 3002: sin
+  ella falla toda página con sesión, porque el cascarón pide las tareas de mejoramiento.
 
 ### Decisiones adicionales (Fase 15B)
 
